@@ -41,7 +41,6 @@ import {
   setSessionDisplay,
   type SessionDisplay,
 } from './session-display';
-import { applyTheme, getBackdropOn, getUserThemes, setBackdropOn } from './theme';
 
 /** The settings that belong to the user rather than a project, as one export file holds them. */
 export interface PersonalSettings {
@@ -55,9 +54,6 @@ export interface PersonalSettings {
   // Files exported before these fields leave them out; importing one keeps their current values.
   accent?: Accent;
   theme?: Theme;
-  /** The applied saved theme's id; null for the default theme. */
-  user_theme?: string | null;
-  backdrop?: boolean;
   layout?: Layout;
   locale?: LocaleChoice;
 }
@@ -73,14 +69,11 @@ export function personalSettings(): PersonalSettings {
     session_display: getSessionDisplay(),
     accent: getAccent(),
     theme: useShell.getState().theme,
-    user_theme: activeTheme(),
-    backdrop: getBackdropOn(),
     layout: getLayout(),
     locale: localeChoice(),
   };
 }
 
-const activeTheme = () => getUserThemes().list?.active_theme_id ?? null;
 const THEMES: readonly Theme[] = ['light', 'dark', 'system'];
 const LOCALE_CHOICES: readonly LocaleChoice[] = ['system', ...LOCALES];
 
@@ -137,13 +130,9 @@ export function readPersonalSettings(text: string): PersonalSettings | null {
   if (!appearance || !look || !notifications || !shortcuts || !diff || !display) return null;
   const accent = oneOf(file, 'accent', ACCENTS);
   const theme = oneOf(file, 'theme', THEMES);
-  const backdrop = oneOf(file, 'backdrop', [true, false]);
   const locale = oneOf(file, 'locale', LOCALE_CHOICES);
-  const userTheme = file.user_theme;
   const layout = 'layout' in file ? section(file.layout, readLayout) : undefined;
-  if (accent === null || theme === null || backdrop === null || locale === null || layout === null)
-    return null;
-  if (userTheme !== undefined && userTheme !== null && typeof userTheme !== 'string') return null;
+  if (accent === null || theme === null || locale === null || layout === null) return null;
   return {
     version: 1,
     appearance,
@@ -154,8 +143,6 @@ export function readPersonalSettings(text: string): PersonalSettings | null {
     session_display: display,
     accent,
     theme,
-    user_theme: userTheme,
-    backdrop,
     layout,
     locale,
   };
@@ -173,21 +160,13 @@ export function importPersonalSettings(text: string): boolean {
   setSessionDisplay(settings.session_display);
   if (settings.accent !== undefined && settings.accent !== getAccent()) setAccent(settings.accent);
   if (settings.theme !== undefined) useShell.getState().setTheme(settings.theme);
-  if (settings.backdrop !== undefined) setBackdropOn(settings.backdrop);
   if (settings.layout !== undefined) {
     setLayout(settings.layout);
     saveLayout();
   }
-  const { user_theme: userTheme, locale } = settings;
-  // A new language reloads the page, so it waits for the saved theme to apply.
-  void (
-    userTheme !== undefined && userTheme !== activeTheme()
-      ? applyTheme(userTheme)
-      : Promise.resolve()
-  ).then(() => {
-    if (locale !== undefined && locale !== localeChoice())
-      void chooseLocale(locale)?.catch(ipcFailure);
-  });
+  const { locale } = settings;
+  if (locale !== undefined && locale !== localeChoice())
+    void chooseLocale(locale)?.catch(ipcFailure);
   return true;
 }
 

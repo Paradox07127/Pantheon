@@ -30,7 +30,6 @@ const bridge = {
   ready: () => readies++,
   systemAccent: async () => null,
   onSystemAccent: () => () => {},
-  debugTarget: async () => null,
 };
 const fontLoads: string[] = [];
 let fontsAsked!: () => void;

@@ -69,6 +69,7 @@ try {
     await call('session.create', {
       project_id,
       runtime: 'fixture',
+      purpose: 'lead',
       input: `${LEAD}\n${script([{ tool: { name: 'update_board', arguments: plan } }])}`,
     })
   ).id;

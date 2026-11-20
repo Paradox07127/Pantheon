@@ -199,22 +199,14 @@ export const conflictItem = (block: { text: string; request: string }): Feedback
 });
 
 /** A column of the session's panel dock. */
-export type Panel = 'changes' | 'checks' | 'plan' | 'files' | 'browser' | 'trace' | 'monitor';
+export type Panel = 'changes' | 'checks' | 'plan' | 'browser' | 'trace' | 'monitor';
 /** What a link into a session opens: a panel, or the review or change story of the changes panel. */
 export type PanelTab = Panel | 'review' | 'story';
 /** What the changes panel shows. */
 export type ChangesView = 'diff' | 'review' | 'story';
 
-const PANELS: readonly Panel[] = [
-  'changes',
-  'checks',
-  'plan',
-  'files',
-  'browser',
-  'trace',
-  'monitor',
-];
-const NO_WORKTREE_PANELS: readonly Panel[] = ['plan', 'files', 'browser', 'trace', 'monitor'];
+const PANELS: readonly Panel[] = ['changes', 'checks', 'plan', 'browser', 'trace', 'monitor'];
+const NO_WORKTREE_PANELS: readonly Panel[] = ['plan', 'browser', 'trace', 'monitor'];
 const IN_PLACE_PANELS = PANELS.filter((panel) => panel !== 'checks');
 const CHANGES_VIEWS: readonly ChangesView[] = ['diff', 'review', 'story'];
 
@@ -223,7 +215,7 @@ export const hasBrowser = (): boolean =>
   typeof window !== 'undefined' && typeof window.pantheon?.browserOpen === 'function';
 
 /**
- * The session's panels in order; a session without a worktree has its plan and the project's files,
+ * The session's panels in order; a session without a worktree has no changes or checks,
  * one in its own folder has no checks, and the browser needs the desktop app.
  */
 export const inspectorTabs = (session: WorkbenchSession | null): readonly Panel[] =>

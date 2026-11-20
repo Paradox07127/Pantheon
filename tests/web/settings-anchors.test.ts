@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
   (await import('./web-live-stores.js')).liveStores(actual as never),
 );
-import type { RoutingCell, RuntimeStatus } from '@pantheon/protocol';
+import type { RuntimeStatus } from '@pantheon/protocol';
 import type { WorkflowPolicy } from '@pantheon/domain';
 import type { ExtensionInventory } from '@/data/extensions';
 
@@ -20,13 +20,6 @@ const policy: WorkflowPolicy = {
   handback_limit: 3,
   budget: {},
   pinned: [],
-};
-const cell: RoutingCell = {
-  domain: 'review',
-  tier: 't1',
-  first: { runtime: 'codex', model: 'gpt-5' },
-  candidates: [],
-  prior: null,
 };
 const status: RuntimeStatus = {
   runtime: 'codex',
@@ -53,7 +46,6 @@ vi.mock('@/data/workflow-policy', async (actual) => ({
   ...(await actual<object>()),
   useWorkflowPolicy: () => ({ read: policy, error: null, reload() {} }),
   useImprovements: () => ({ read: [], error: null, reload() {} }),
-  useRoutingTable: () => ({ read: { cells: [cell] }, error: null, reload() {} }),
 }));
 vi.mock('@/data/project-defaults', async (actual) => ({
   ...(await actual<object>()),
@@ -149,14 +141,8 @@ const AFTER_MOUNT = [
   'general.baselineRangeStory',
   'editor.browser',
 ];
-// Shown only for a runtime or a saved theme that has them: Claude, verified kinds, a quota, a backdrop.
-const WHEN_THERE = [
-  'harness.artifacts',
-  'harness.kinds',
-  'harness.quota',
-  'appearance.backdrop',
-  'appearance.savedTheme',
-];
+// Shown only for a runtime that has them: Claude, verified kinds, a quota.
+const WHEN_THERE = ['harness.artifacts', 'harness.kinds', 'harness.quota'];
 
 const anchors = (html: string) =>
   new Set([...html.matchAll(/data-setting-id="([^"]+)"/g)].map((m) => m[1]));
@@ -185,7 +171,6 @@ describe('setting anchors', () => {
         (r) =>
           r.page === key &&
           !r.id.endsWith('.page') &&
-          !r.board &&
           !AFTER_MOUNT.includes(r.id) &&
           !WHEN_THERE.includes(r.id),
       )

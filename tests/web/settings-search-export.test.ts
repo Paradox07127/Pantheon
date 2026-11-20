@@ -47,7 +47,6 @@ import {
   importPersonalSettings,
   personalSettings,
 } from '@/data/personal-settings';
-import { setBackdropOn, setUserThemes, useBackdropOn } from '@/data/theme';
 import { resetShortcuts, setShortcut, SHORTCUTS_KEY, shortcutKeys } from '@/lib/shortcuts';
 import { ProjectSettingsScreen } from '@/screens/settings/ProjectSettingsScreen';
 import { hitGroups } from '@/screens/settings/settings-jump';
@@ -71,9 +70,7 @@ function resetStores() {
   resetShortcuts();
   setAccent('default');
   useShell.getState().setTheme('system');
-  setBackdropOn(true);
   setLayout(DEFAULT_LAYOUT);
-  setUserThemes({ list: null, active: null });
 }
 
 beforeEach(() => {
@@ -109,8 +106,6 @@ describe('settings search', () => {
 
   it('finds the rows that had no search entry', () => {
     const found = (query: string) => searchSettings(query).map((hit) => hit.id);
-    expect(found(zh('settings.appearance.backdrop'))).toContain('appearance.backdrop');
-    expect(found(zh('settings.appearance.savedTheme'))).toContain('appearance.savedTheme');
     expect(found(zh('settings.data.exportRow'))).toContain('data.export');
     expect(found(zh('settings.data.importRow'))).toContain('data.import');
     expect(found(zh('settings.gate.runner'))).toContain('gates.runner');
@@ -170,7 +165,7 @@ describe('personal settings export and import', () => {
     expect(JSON.parse(stored.get(DIFF_PREFS_KEY)!)).toEqual(before.diff);
   });
 
-  it('carries the accent, light or dark, saved theme, backdrop, pane widths and language', async () => {
+  it("carries the accent, light or dark, pane widths and language, and ignores an old file's saved theme", async () => {
     const bridge = {
       command: vi.fn(async () => ({ ok: true, value: {} })),
       query: vi.fn(async () => ({ ok: false, error: { code: 'unknown_route', message: '' } })),
@@ -179,35 +174,32 @@ describe('personal settings export and import', () => {
     vi.stubGlobal('window', { addEventListener() {}, removeEventListener() {}, pantheon: bridge });
     setAccent('lapis');
     useShell.getState().setTheme('dark');
-    setBackdropOn(false);
     setLayout({
       sidebar: { collapsed: false, width: 300 },
       inspector: 500,
       drawer: 600,
       collapse_sidebar_at_start: true,
     });
-    setUserThemes({ list: { active_theme_id: 'dusk', themes: [] }, active: null });
     const layout = getLayout();
     const file = JSON.parse(exportPersonalSettings());
     expect(file).toMatchObject({
       accent: 'lapis',
       theme: 'dark',
-      user_theme: 'dusk',
-      backdrop: false,
       layout: { inspector: 500, drawer: 600, collapse_sidebar_at_start: true },
       locale: 'system',
     });
     resetStores();
 
-    expect(importPersonalSettings(JSON.stringify(file))).toBe(true);
+    expect(file).not.toHaveProperty('user_theme');
+    expect(file).not.toHaveProperty('backdrop');
+    expect(
+      importPersonalSettings(JSON.stringify({ ...file, user_theme: 'dusk', backdrop: false })),
+    ).toBe(true);
     await new Promise((done) => setTimeout(done));
     expect(getAccent()).toBe('lapis');
     expect(useShell.getState().theme).toBe('dark');
-    expect(mount(() => useBackdropOn()).value).toBe(false);
     expect(getLayout()).toEqual(layout);
-    expect(bridge.command.mock.calls.map((c) => (c as unknown as [any])[0])).toEqual([
-      expect.objectContaining({ type: 'theme.apply', input: { theme_id: 'dusk' } }),
-    ]);
+    expect(bridge.command).not.toHaveBeenCalled();
     expect(bridge.setLocale).not.toHaveBeenCalled();
 
     expect(importPersonalSettings(JSON.stringify({ ...file, locale: 'en' }))).toBe(true);
@@ -218,8 +210,7 @@ describe('personal settings export and import', () => {
   it('reads a file without the newer fields and rejects one with an unknown accent', () => {
     change();
     const file = JSON.parse(exportPersonalSettings());
-    for (const key of ['accent', 'theme', 'user_theme', 'backdrop', 'layout', 'locale'])
-      delete file[key];
+    for (const key of ['accent', 'theme', 'layout', 'locale']) delete file[key];
     expect(importPersonalSettings(JSON.stringify(file))).toBe(true);
     expect(importPersonalSettings(JSON.stringify({ ...file, accent: 'teal' }))).toBe(false);
   });

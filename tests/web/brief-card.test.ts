@@ -233,7 +233,7 @@ const sent = (type: string) =>
 /** A lane of the time track by its name and the counts its label writes out. */
 const laneLabel = (lane: string, count: number, ...parts: string[]) =>
   zhf('board.brief.laneLabel', { lane, count, parts: listText(...parts) });
-/** The points of a lane, as the buttons it draws and the proposals it reads first. */
+/** The points of a lane, as the buttons it draws. */
 const points = (lane: ReactElement<any>) => nodes(lane.props.children).filter((n) => n !== lane);
 const pointLabel = (at: number, type: string, title: string) =>
   zhf('board.brief.point', { time: dayText(at, NOW, { time: true }), type, title });
@@ -346,28 +346,20 @@ describe('since you left card', () => {
     expect(onOpenTask.mock.calls.map(([id]) => id)).toEqual(['lead-1:audit']);
   });
 
-  it('draws the plan lane with the new assumptions and the agent proposals', async () => {
+  it('draws the plan lane with the new assumptions and none of the agent proposals the brief lists', async () => {
     serve(served);
     const h = await card('project-brief-c');
     const lane = group(
       h.value,
-      laneLabel(
-        zh('board.brief.lane.plan'),
-        2,
-        zhf('board.brief.assumptionsCount', { count: 1 }),
-        zhf('board.brief.proposalsCount', { count: 1 }),
-      ),
+      laneLabel(zh('board.brief.lane.plan'), 1, zhf('board.brief.assumptionsCount', { count: 1 })),
     );
-    const [assumption, proposal] = points(lane).filter(
-      (n) =>
-        n.type === 'button' || (typeof n.type === 'function' && n.type.name === 'ProposalPoint'),
-    );
+    const [assumption, ...rest] = points(lane).filter((n) => n.type === 'button');
+    expect(rest).toEqual([]);
     expect(assumption!.props['aria-label']).toBe(
       pointLabel(NOW - 1_000_000, zh('board.brief.type.assumption'), 'UTC is the day boundary'),
     );
     assumption!.props.onClick();
     expect(mock.openSession).toHaveBeenCalledWith('lead-1');
-    expect(proposal!.props.point).toMatchObject({ key: 'proposal-1', at: NOW - 500_000 });
   });
 
   it('draws the decided lane with a point per decision, which opens the approved list on its type', async () => {

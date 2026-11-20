@@ -9,8 +9,6 @@ import type {
   StaleWorkspaces,
   WorkbenchSession,
 } from '@pantheon/protocol';
-import { readInsightsSection } from '../../apps/web/src/screens/insights/InsightsScreen.js';
-import { pickRepoTab, RepoScreen } from '../../apps/web/src/screens/repo/RepoScreen.js';
 import {
   BranchPanel,
   MergeHeat,
@@ -549,21 +547,6 @@ describe('merge heat', () => {
       expect(html).not.toContain('<hr');
       expect(html).not.toContain(zh('insights.repo.sharedFiles'));
     }
-  });
-});
-
-describe('repository tab', () => {
-  it('moves from the engineering board to the overview tab of the repository page', () => {
-    pickRepoTab('repo-overview-tab', 'overview');
-    const html = renderToStaticMarkup(
-      createElement(RepoScreen, { projectId: 'repo-overview-tab', onOpenSession() {} }),
-    );
-    const tabs = [...html.matchAll(/role="tab"[^>]*>([^<]*)</g)].map((m) => m[1]);
-    expect(tabs).toEqual(
-      ['timeline', 'changes', 'compare', 'overview', 'pulls'].map((k) => zh(`repo.tabs.${k}`)),
-    );
-    expect(titles(html)).toEqual([zh('board.repo.title')]);
-    expect(readInsightsSection('repo')).toBe('iterations');
   });
 });
 

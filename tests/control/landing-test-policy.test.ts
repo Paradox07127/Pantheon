@@ -75,65 +75,83 @@ const cases = [
     'true',
   ],
   ['CI workflow', '.github/workflows/ci.yml', 'run: false\n', 'run: true\n', 'true'],
+  [
+    'assertion removed from the acceptance test',
+    'tests/answer.test.ts',
+    'expect(answer).toBe(42);\nexpect(answer).toBeGreaterThan(0);\n',
+    'expect(answer).toBe(42);\n',
+    'vitest run tests/answer.test.ts',
+  ],
 ] as const;
+
+/** A task session that changes file from before to after (undefined deletes it), not yet merged. */
+async function taskChange(
+  file: string,
+  before: string,
+  after: string | undefined,
+  acceptance: string,
+) {
+  const f = await workbenchFixture();
+  mkdirSync(path.dirname(path.join(f.source, file)), { recursive: true });
+  writeFileSync(path.join(f.source, file), before);
+  git(f.source, 'add', '.');
+  git(f.source, 'commit', '--quiet', '-m', 'Add verification input');
+  const sourceHead = git(f.source, 'rev-parse', 'HEAD');
+  const lead = await f.create('Maintain the answer');
+  await awaitWorkspaceReady(f.control, lead.workspace_id!);
+  await eventually(
+    () => f.turns(lead.id).every((turn) => turn.state === 'completed'),
+    () => f.control.tick(),
+  );
+  f.store.insert<BoardPlan>('board_plans', {
+    id: lead.id,
+    revision: 1,
+    project_id: f.project.id,
+    headline: 'Maintain the answer',
+    lanes: [{ id: 'core', title: 'Core' }],
+    tasks: [
+      {
+        id: 'answer',
+        title: 'Answer',
+        goal: 'Maintain the answer',
+        lane: 'core',
+        depends_on: [],
+        source: [],
+        scope: [path.dirname(file)],
+        acceptance: [acceptance],
+      },
+    ],
+    risks: [],
+    assumptions: [],
+    plan_version: 0,
+    pending_edits: [],
+    inbox: [],
+    notified: {},
+    updated_at: f.store.now(),
+  });
+  const worker = await f.create();
+  const workspace = await awaitWorkspaceReady(f.control, worker.workspace_id!);
+  await eventually(
+    () => f.turns(worker.id).every((turn) => turn.state === 'completed'),
+    () => f.control.tick(),
+  );
+  const idle = f.store.must<Session>('sessions', worker.id);
+  f.store.update(
+    'sessions',
+    { ...idle, task: { lead_session_id: lead.id, id: 'answer' } },
+    idle.revision,
+  );
+  if (after === undefined) rmSync(path.join(workspace.path, file));
+  else writeFileSync(path.join(workspace.path, file), after);
+  git(workspace.path, 'add', '.');
+  git(workspace.path, 'commit', '--quiet', '-m', 'Change verification input');
+  return { f, lead, worker, sourceHead };
+}
 
 it.each(cases)(
   'hands an unlisted %s to the lead until its exact path is scoped',
   async (_label, file, before, after, acceptance) => {
-    const f = await workbenchFixture();
-    mkdirSync(path.dirname(path.join(f.source, file)), { recursive: true });
-    writeFileSync(path.join(f.source, file), before);
-    git(f.source, 'add', '.');
-    git(f.source, 'commit', '--quiet', '-m', 'Add verification input');
-    const sourceHead = git(f.source, 'rev-parse', 'HEAD');
-    const lead = await f.create('Maintain the answer');
-    await awaitWorkspaceReady(f.control, lead.workspace_id!);
-    await eventually(
-      () => f.turns(lead.id).every((turn) => turn.state === 'completed'),
-      () => f.control.tick(),
-    );
-    f.store.insert<BoardPlan>('board_plans', {
-      id: lead.id,
-      revision: 1,
-      project_id: f.project.id,
-      headline: 'Maintain the answer',
-      lanes: [{ id: 'core', title: 'Core' }],
-      tasks: [
-        {
-          id: 'answer',
-          title: 'Answer',
-          goal: 'Maintain the answer',
-          lane: 'core',
-          depends_on: [],
-          source: [],
-          scope: [path.dirname(file)],
-          acceptance: [acceptance],
-        },
-      ],
-      risks: [],
-      assumptions: [],
-      plan_version: 0,
-      pending_edits: [],
-      inbox: [],
-      notified: {},
-      updated_at: f.store.now(),
-    });
-    const worker = await f.create();
-    const workspace = await awaitWorkspaceReady(f.control, worker.workspace_id!);
-    await eventually(
-      () => f.turns(worker.id).every((turn) => turn.state === 'completed'),
-      () => f.control.tick(),
-    );
-    const idle = f.store.must<Session>('sessions', worker.id);
-    f.store.update(
-      'sessions',
-      { ...idle, task: { lead_session_id: lead.id, id: 'answer' } },
-      idle.revision,
-    );
-    if (after === undefined) rmSync(path.join(workspace.path, file));
-    else writeFileSync(path.join(workspace.path, file), after);
-    git(workspace.path, 'add', '.');
-    git(workspace.path, 'commit', '--quiet', '-m', 'Change verification input');
+    const { f, lead, worker, sourceHead } = await taskChange(file, before, after, acceptance);
     f.call(
       'session.merge',
       {
@@ -179,5 +197,51 @@ it.each(cases)(
     expect(
       f.store.kindEvents(f.project.id, ['session.verification_change_allowed']).at(-1)?.payload,
     ).toEqual({ files: [file], reason: 'explicit_task_scope' });
+  },
+);
+
+const allowed = [
+  [
+    'case added to the acceptance test',
+    'tests/answer.test.ts',
+    "it('works', () => {});\n",
+    "it('works', () => {});\nit('adds', () => {});\n",
+    'vitest run tests/answer.test.ts',
+  ],
+  [
+    'case added to an unnamed test',
+    'tests/answer.test.ts',
+    "it('works', () => {});\n",
+    "it('works', () => {});\nit('adds', () => {});\n",
+    'true',
+  ],
+  [
+    'source edit under a gate on the whole tree',
+    'src/answer.ts',
+    'export const answer = 41;\n',
+    'export const answer = 42;\n',
+    'eslint . && pytest --rootdir=.',
+  ],
+] as const;
+
+it.each(allowed)(
+  'lands a %s without asking the lead',
+  async (_label, file, before, after, acceptance) => {
+    const { f, worker } = await taskChange(file, before, after, acceptance);
+    f.call(
+      'session.merge',
+      { session_id: worker.id },
+      f.store.must<Session>('sessions', worker.id).revision,
+    );
+    await eventually(
+      () =>
+        f.store.must<Session>('sessions', worker.id).merge?.state === 'blocked' ||
+        f.store.must<Session>('sessions', worker.id).outcome === 'merged',
+      () => f.control.tick(),
+      10000,
+    );
+    expect(f.store.must<Session>('sessions', worker.id).merge?.reason).toBeUndefined();
+    expect(f.store.must<Session>('sessions', worker.id).outcome).toBe('merged');
+    expect(f.store.kindEvents(f.project.id, ['session.verification_change_allowed'])).toEqual([]);
   },
 );

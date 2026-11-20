@@ -679,10 +679,6 @@ describe('app diagnostics', () => {
           ],
         },
         'workspace.stale': { count: 0, worktree_root: '/worktrees' },
-        'repo.worktrees': [
-          { path: '/private/work/alpha', kind: 'checkout' },
-          { path: '/elsewhere/alpha-feature', kind: 'external' },
-        ],
       };
       return {
         ...actual,
@@ -723,8 +719,6 @@ describe('app diagnostics', () => {
       '/worktrees/alpha-login',
       '/work/alpha-source',
       '/worktrees',
-      '/private/work/alpha',
-      '/elsewhere/alpha-feature',
     ];
     for (const target of shown)
       expect(await call(main, 'pantheon:revealPath', target)).toEqual({ ok: true, value: null });

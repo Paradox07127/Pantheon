@@ -24,6 +24,7 @@ await call(
 const other = await call('session.create', {
   project_id,
   runtime: 'fixture',
+  purpose: 'lead',
   input: `verify-route-other-${stamp}\nfixture-script\n${JSON.stringify([
     {
       tool: {

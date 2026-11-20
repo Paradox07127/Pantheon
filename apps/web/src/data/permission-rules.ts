@@ -18,13 +18,6 @@ export function usePermissionRules(project: Project): QueryState<ProjectPermissi
   );
 }
 
-export const addPermissionRule = (
-  projectId: string,
-  rule: string,
-  sessionId: string,
-): Promise<BridgeResult<unknown>> =>
-  runCommand('permission.rule.add', { project_id: projectId, rule, session_id: sessionId }, null);
-
 export const removePermissionRule = (
   projectId: string,
   rule: string,

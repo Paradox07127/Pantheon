@@ -25,13 +25,11 @@ vi.mock('@/data/commands', () => ({ runCommand }));
 const agentMock = vi.hoisted(() => ({
   agents: null as any,
   templates: null as any,
-  proposal: (_id: string): any => null,
 }));
 vi.mock('@/data/agents', async (actual) => ({
   ...(await actual<object>()),
   useAgents: () => agentMock.agents,
   useAgentTemplates: () => agentMock.templates,
-  useAgentProposal: (id: string | null) => (id ? agentMock.proposal(id) : null),
 }));
 const toast = vi.hoisted(() => vi.fn());
 vi.mock('@/components/Toast', async (actual) => ({ ...(await actual<object>()), toast }));
@@ -40,8 +38,6 @@ import { MenuItem } from '@/components/Menu';
 import { Sidebar } from '@/components/Sidebar';
 import { NewAgentDialog } from '@/screens/sessions/AgentForm';
 import { AgentProfilePanel } from '@/screens/sessions/AgentProfile';
-import { AgentProposalCall } from '@/screens/sessions/AgentProposal';
-import type { ToolItem } from '@/data/transcript';
 import { runtimeName } from '@/components/RuntimeGlyph';
 import { buildTranscript } from '@/data/transcript';
 import { SessionListRow, SessionRowButton } from '@/screens/sessions/SessionRow';
@@ -105,7 +101,6 @@ beforeEach(() => {
   toast.mockClear();
   agentMock.agents = null;
   agentMock.templates = null;
-  agentMock.proposal = () => null;
 });
 afterEach(() => {
   unmountAll();
@@ -669,153 +664,6 @@ describe('agent profile', () => {
     const h = profile('agent-assistant');
     expect(labelled(h.value, zh('sessions.agents.field.name'))).toBeTruthy();
     expect(pressed(h.value, zh('sessions.agents.archive'))).toBeUndefined();
-  });
-});
-
-describe('agent proposal', () => {
-  const proposal = (id: string) => ({
-    id,
-    revision: 1,
-    project_id: 'alpha',
-    session_id: 'res-assistant',
-    fields: {
-      template: 'ideas',
-      name: 'Ideas',
-      role: 'Ideas',
-      instructions: 'Keep the ideas.',
-      tools: ['board', 'memory'],
-    },
-    state: 'pending',
-    at: 1,
-  });
-  const call = (id: string, receipt: object = {}) =>
-    host(() =>
-      AgentProposalCall({
-        item: {
-          kind: 'tool',
-          id: `call-${id}`,
-          name: 'mcp__pantheon__propose_agent',
-          input: { project_id: 'alpha', ...proposal(id).fields },
-          output: JSON.stringify({ receipt: { ...proposal(id), ...receipt } }),
-          ok: true,
-        } as ToolItem,
-        state: 'ok',
-        depth: 0,
-        open: false,
-        enter: '',
-        sessionId: 'res-assistant',
-      }),
-    );
-  beforeEach(() => {
-    mock.board.board.sessions = [{ id: 'res-assistant', project_id: 'alpha', revision: 1 }];
-    agentMock.proposal = proposal;
-  });
-
-  it('offers Create, Edit and Decline, and creates with the name edited in place', async () => {
-    const h = call('proposal-a');
-    for (const name of [
-      'sessions.agents.create',
-      'sessions.agents.proposal.edit',
-      'sessions.agents.proposal.decline',
-    ])
-      expect(pressed(h.value, zh(name)), name).toBeTruthy();
-    pressed(h.value, zh('sessions.agents.proposal.edit'))!.props.onClick();
-    h.render();
-    labelled(h.value, zh('sessions.agents.field.name')).props.onChange({
-      target: { value: 'Idea box' },
-    });
-    h.render();
-    pressed(h.value, zh('sessions.agents.create'))!.props.onClick();
-    await h.flush();
-    expect(runCommand).toHaveBeenLastCalledWith(
-      'agent.proposal.resolve',
-      { proposal_id: 'proposal-a', decision: 'create', fields: { name: 'Idea box' } },
-      null,
-    );
-  });
-
-  it('adds a routine template without its check and creates with the template’s prompt and time', async () => {
-    const withRoutines = (id: string) => ({
-      ...proposal(id),
-      fields: { ...proposal(id).fields, routines: [] },
-    });
-    agentMock.proposal = withRoutines;
-    const h = call('proposal-e', { fields: withRoutines('proposal-e').fields });
-    pressed(h.value, zh('sessions.agents.proposal.edit'))!.props.onClick();
-    h.render();
-    nodes(h.value)
-      .find(
-        (n) => n.type === MenuItem && text(n) === zh('sessions.agents.routineTemplate.bug-hunt'),
-      )!
-      .props.onClick();
-    h.render();
-    const row = nodes(h.value).find(
-      (n) => n.props['aria-label'] === zhf('sessions.agents.routine.label', { number: 1 }),
-    )!;
-    expect(
-      nodes(row).find((n) => n.props['aria-label'] === zh('sessions.agents.routine.removeCheck')),
-    ).toBeUndefined();
-    pressed(h.value, zh('sessions.agents.create'))!.props.onClick();
-    await h.flush();
-    const { prompt } = ROUTINE_TEMPLATES.find((each) => each.id === 'bug-hunt')!;
-    expect(runCommand).toHaveBeenLastCalledWith(
-      'agent.proposal.resolve',
-      {
-        proposal_id: 'proposal-e',
-        decision: 'create',
-        fields: { routines: [{ prompt, at: '09:00', enabled: true }] },
-      },
-      null,
-    );
-    expect((runCommand.mock.calls.at(-1)![1] as any).fields.routines[0]).not.toHaveProperty(
-      'precheck',
-    );
-  });
-
-  it('leaves one line once declined', async () => {
-    runCommand.mockResolvedValueOnce({
-      ok: true,
-      value: { ...proposal('proposal-b'), state: 'declined', resolved_at: 2 },
-    });
-    const h = call('proposal-b');
-    pressed(h.value, zh('sessions.agents.proposal.decline'))!.props.onClick();
-    await h.flush();
-    expect(runCommand).toHaveBeenLastCalledWith(
-      'agent.proposal.resolve',
-      { proposal_id: 'proposal-b', decision: 'decline' },
-      null,
-    );
-    expect(pressed(h.value, zh('sessions.agents.create'))).toBeUndefined();
-    expect(text(h.value)).toContain(zhf('sessions.agents.proposal.declined', { name: 'Ideas' }));
-  });
-
-  it('shows a just made proposal the daemon has as created as one line, without Create', () => {
-    agentMock.proposal = (id) => ({ ...proposal(id), state: 'created', resolved_at: Date.now() });
-    const h = call('proposal-c', { at: Date.now() });
-    expect(pressed(h.value, zh('sessions.agents.create'))).toBeUndefined();
-    expect(text(h.value)).toContain(zhf('sessions.agents.proposal.created', { name: 'Ideas' }));
-  });
-
-  it('names the agent by the name the user edited once created', async () => {
-    runCommand.mockResolvedValueOnce({
-      ok: true,
-      value: {
-        ...proposal('proposal-d'),
-        state: 'created',
-        edited_fields: { name: 'Idea box' },
-        resolved_at: 2,
-      },
-    });
-    const h = call('proposal-d');
-    pressed(h.value, zh('sessions.agents.proposal.edit'))!.props.onClick();
-    h.render();
-    labelled(h.value, zh('sessions.agents.field.name')).props.onChange({
-      target: { value: 'Idea box' },
-    });
-    h.render();
-    pressed(h.value, zh('sessions.agents.create'))!.props.onClick();
-    await h.flush();
-    expect(text(h.value)).toContain(zhf('sessions.agents.proposal.created', { name: 'Idea box' }));
   });
 });
 

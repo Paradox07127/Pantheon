@@ -41,7 +41,7 @@ vi.mock('@/components/Toast', async (actual) => ({
     return '';
   },
 }));
-import { Markdown, MarkdownFilesProvider } from '@/components/Markdown';
+import { Markdown } from '@/components/Markdown';
 import { failureText } from '@/data/needs-you';
 import { workspaceFile } from '@/data/tool-calls';
 import { ToolFiles, ToolImages } from '@/screens/sessions/items';
@@ -68,23 +68,17 @@ const click = (modifier = false) => ({
 });
 
 describe('file links in the conversation', () => {
-  it('opens a Markdown file link in the files panel rather than the editor', () => {
+  it('opens a Markdown file link in the editor', () => {
     const openFile = vi.fn(async () => ({ ok: true, value: null }));
     vi.stubGlobal('window', { pantheon: { openFile } });
-    const shown = vi.fn(() => true);
-    mock.contexts.set(MarkdownFilesProvider, shown);
     link('see [the chart](out/chart.png)', 'out/chart.png').props.onClick(click());
-    expect(shown).toHaveBeenCalledWith({ path: 'out/chart.png' });
-    expect(openFile).not.toHaveBeenCalled();
+    expect(openFile).toHaveBeenCalledWith({ path: 'out/chart.png' });
   });
 
-  it('leaves a link to the editor when a modifier is held or the panel cannot show it', () => {
+  it('opens a link in the editor at its line, with a modifier held or outside the worktree', () => {
     const openFile = vi.fn(async () => ({ ok: true, value: null }));
     vi.stubGlobal('window', { pantheon: { openFile } });
-    const shown = vi.fn(() => false);
-    mock.contexts.set(MarkdownFilesProvider, shown);
     link('see [main](src/main.ts:4)', 'src/main.ts:4').props.onClick(click(true));
-    expect(shown).not.toHaveBeenCalled();
     expect(openFile).toHaveBeenCalledWith({ path: 'src/main.ts', line: 4 });
     link('see [other](/elsewhere/a.ts)', '/elsewhere/a.ts').props.onClick(click());
     expect(openFile).toHaveBeenLastCalledWith({ path: '/elsewhere/a.ts' });
@@ -109,7 +103,7 @@ describe('file links in the conversation', () => {
     expect(workspaceFile('file://server/work/tree/a.md', bases)).toBeNull();
   });
 
-  it('opens a file a tool wrote in the files panel, and in the editor from the button beside it', () => {
+  it('opens a file a tool wrote in the editor, from its path and from the button beside it', () => {
     const openSession = vi.fn();
     mock.openSession = openSession;
     const openFile = vi.fn(async () => ({ ok: true, value: null }));
@@ -118,8 +112,9 @@ describe('file links in the conversation', () => {
       ToolFiles({ files: ['out/chart.png'], base: '/work/tree', sessionId: 'session-a' }),
     );
     find(h.value, (n) => n.type === 'button' && text(n) === 'out/chart.png').props.onClick(click());
-    expect(openSession).toHaveBeenCalledWith('session-a', 'files');
-    expect(openFile).not.toHaveBeenCalled();
+    expect(openFile).toHaveBeenCalledWith({ path: 'out/chart.png', base: '/work/tree' });
+    expect(openSession).not.toHaveBeenCalled();
+    openFile.mockClear();
     find(
       h.value,
       (n) =>
@@ -147,16 +142,22 @@ describe('file links in the conversation', () => {
 describe('images from tools', () => {
   const png = 'iVBORw0KGgoAAAA';
 
-  it('reads an image file a tool wrote for its thumbnail and opens it in the files panel', async () => {
+  it('reads an image file a tool wrote for its thumbnail and opens it in the editor', async () => {
     const openSession = vi.fn();
     mock.openSession = openSession;
     const query = vi.fn(async () => ({
       ok: true,
       value: { path: 'out/chart.png', mime: 'image/png', data: png, size: 11, truncated: false },
     }));
-    vi.stubGlobal('window', { pantheon: { query } });
+    const openFile = vi.fn(async () => ({ ok: true, value: null }));
+    vi.stubGlobal('window', { pantheon: { query, openFile } });
     const h = mount(() =>
-      ToolImages({ images: [], files: ['out/chart.png'], sessionId: 'session-a' }),
+      ToolImages({
+        images: [],
+        files: ['out/chart.png'],
+        base: '/work/tree',
+        sessionId: 'session-a',
+      }),
     );
     await h.flush();
     expect(query).toHaveBeenCalledWith('files.read', {
@@ -171,12 +172,18 @@ describe('images from tools', () => {
     );
     expect(find(thumb, (n) => n.type === 'img').props.src).toBe(`data:image/png;base64,${png}`);
     thumb.props.onClick();
-    expect(openSession).toHaveBeenCalledWith('session-a', 'files');
+    expect(openFile).toHaveBeenCalledWith({ path: 'out/chart.png', base: '/work/tree' });
+    expect(openSession).not.toHaveBeenCalled();
   });
 
   it('opens a returned image large', () => {
     const h = mount(() =>
-      ToolImages({ images: [{ mime: 'image/png', data: png }], files: [], sessionId: 'session-a' }),
+      ToolImages({
+        images: [{ mime: 'image/png', data: png }],
+        files: [],
+        base: '/work/tree',
+        sessionId: 'session-a',
+      }),
     );
     find(h.value, (n) => n.props['aria-label'] === zh('sessions.parts.openImage')).props.onClick();
     h.render();

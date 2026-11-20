@@ -86,47 +86,6 @@ check(
   ),
 );
 
-// The same delivery in the app.
-await page.click({ role: 'button', name: '工程看板', exact: true });
-await page.click({ role: 'tab', name: '信号', exact: true });
-// The delivery's own wake turn can end the outage, so the row sits in the filter of its state now.
-await poll(async () =>
-  (await turnsOf(queued.id)).every((t) => !['queued', 'running'].includes(t.state)),
-);
-const nowState = outageIn(await query('signal.list', { project_id }))?.state;
-result.stateAfterDelivery = nowState;
-const FILTER = { muted: '已静音', resolved: '已解决' }[nowState];
-if (FILTER) await page.click({ role: 'radio', name: FILTER, exact: false });
-const label = await poll(() =>
-  page.evaluate(
-    `[...document.querySelectorAll('.sg-rows [role=option]')].map((r) => r.getAttribute('aria-label')).find((l) => l.startsWith(${JSON.stringify(outage?.title ?? '')})) ?? null`,
-  ),
-);
-check('信号页的行说 已发给问题处理', label?.includes('已发给问题处理'), label);
-await page.evaluate(
-  `[...document.querySelectorAll('.sg-rows [role=option]')].find((r) => r.getAttribute('aria-label').startsWith(${JSON.stringify(outage?.title ?? '')})).click()`,
-);
-const panel = await poll(() =>
-  page.evaluate(`(() => {
-    const a = document.querySelector('aside.sg-insp[aria-label="信号详情"]');
-    if (!a) return null;
-    return {
-      facts: [...a.querySelectorAll('dt')].map((d) => [d.textContent, d.nextElementSibling?.textContent]),
-      history: [...a.querySelectorAll('.sg-hist li')].map((l) => l.textContent),
-    };
-  })()`),
-);
-result.panel = panel;
-const sentFact = panel?.facts.find(([l]) => l === '发给')?.[1];
-check('详情 发给 一行含 问题处理', sentFact?.includes('问题处理'), sentFact);
-check(
-  '历史里有 已发给问题处理',
-  panel?.history.some(
-    (h) => h.includes('Sent to 问题处理') || h.includes('已发给问题处理') || h.includes('问题处理'),
-  ),
-  panel?.history,
-);
-
 // The Triage conversation.
 await page.click({
   role: 'button',

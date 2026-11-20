@@ -186,6 +186,7 @@ async function runCell(behaviour, structure, goalChange) {
     const lead = await fixture.call('session.create', {
       project_id: project.id,
       runtime: adapter.name,
+      purpose: 'lead',
       input: script(
         { tool: { name: 'update_board', arguments: plan } },
         { tool: { name: 'start_task', arguments: { task_ids: ['A'] } } },

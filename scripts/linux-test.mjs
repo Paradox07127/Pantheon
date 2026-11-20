@@ -23,7 +23,16 @@ execFileSync('docker', ['build', '-q', '-t', image, '-'], {
 });
 
 // Tracked and untracked files minus ignored ones, so the container builds its own node_modules for Linux.
-const files = execFileSync('git', ['ls-files', '-co', '--exclude-standard', '-z'], { cwd: repo });
+// git still lists a tracked file that is deleted in the working tree, and tar stops on a missing file.
+const deleted = new Set(
+  execFileSync('git', ['ls-files', '-d', '-z'], { cwd: repo }).toString().split('\0'),
+);
+const files = execFileSync('git', ['ls-files', '-co', '--exclude-standard', '-z'], { cwd: repo })
+  .toString()
+  .split('\0')
+  .filter((file) => file && !deleted.has(file))
+  .map((file) => `${file}\0`)
+  .join('');
 const archive = execFileSync('tar', ['-c', '--null', '-T', '-', '-f', '-'], {
   cwd: repo,
   input: files,

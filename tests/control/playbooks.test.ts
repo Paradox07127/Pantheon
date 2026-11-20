@@ -74,6 +74,7 @@ function leadSession(f: Fixture, runtime: string): Session {
     workspace_id: workspace.id,
     state: 'open',
     turn_count: 0,
+    lead: true,
   });
 }
 

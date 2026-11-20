@@ -4,7 +4,6 @@ import {
   isValidElement,
   useEffect,
   useState,
-  type MouseEvent,
   type ReactNode,
   type Ref,
 } from 'react';
@@ -51,7 +50,6 @@ import {
   isImageFile,
   isTruncated,
   orchestrationLabel,
-  pantheonTool,
   subagentCall,
   toolGroupLabel,
   toolLabel,
@@ -80,11 +78,9 @@ import {
 } from '../../data/transcript';
 import { t } from '../../i18n';
 import { readQuery } from '../../data/workbench-sessions';
-import { AgentProposalCall } from './AgentProposal';
 import { appModeOf, useAppDisplay } from './app-display';
 import { InlineApp } from './AppPanels';
 import { showUrl } from './BrowserPanel';
-import { showFile } from './FilesPanel';
 import { hasBrowser } from './inspector-model';
 import { itemId } from './model';
 import { openMemory } from './MemoryUsed';
@@ -242,18 +238,6 @@ export function Items(props: {
           item={item}
           open={props.verbose}
           enter={enter(item)}
-        />
-      );
-    if (item.kind === 'tool' && pantheonTool(item.name) === 'propose_agent')
-      return (
-        <AgentProposalCall
-          key={`tool-${item.id}`}
-          item={item}
-          state={toolState(item, props.ended)}
-          depth={depth(item)}
-          open={props.verbose}
-          enter={enter(item)}
-          sessionId={props.sessionId}
         />
       );
     if (item.kind === 'tool')
@@ -611,7 +595,12 @@ function ToolCall(props: {
         />
       )}
       {(item.images?.length || pictures.length > 0) && (
-        <ToolImages images={item.images ?? []} files={pictures} sessionId={props.sessionId} />
+        <ToolImages
+          images={item.images ?? []}
+          files={pictures}
+          base={props.folders[0]}
+          sessionId={props.sessionId}
+        />
       )}
       {item.artifact && (
         <ArtifactCard
@@ -650,7 +639,13 @@ function ToolCall(props: {
   );
 }
 
-/** The files a call touched, each opening in the files panel, or with ⌘ or the button beside it in the editor. */
+/** Opens a file in the external editor; outside the desktop app it does nothing. */
+const editor = (path: string, base: string | undefined) =>
+  void window.pantheon?.openFile({ path, base }).then((r) => {
+    if (!r.ok) toast({ title: failureText(r.error), kind: 'failure' });
+  });
+
+/** The files a call touched, each opening in the editor. */
 export function ToolFiles(props: {
   files: string[];
   /** The folder the paths are in. */
@@ -658,10 +653,6 @@ export function ToolFiles(props: {
   sessionId: string;
 }) {
   const bridge = window.pantheon;
-  const editor = (path: string) =>
-    void bridge?.openFile({ path, base: props.base }).then((r) => {
-      if (!r.ok) toast({ title: failureText(r.error), kind: 'failure' });
-    });
   return (
     <ul className="ss-tfiles">
       {props.files.map((path) => {
@@ -674,9 +665,7 @@ export function ToolFiles(props: {
             <button
               type="button"
               className="ss-tfile mono"
-              onClick={(e: MouseEvent) =>
-                (e.metaKey || e.ctrlKey) && bridge ? editor(path) : showFile(props.sessionId, path)
-              }
+              onClick={() => editor(path, props.base)}
             >
               {path}
             </button>
@@ -686,7 +675,7 @@ export function ToolFiles(props: {
                   type="button"
                   className="ib"
                   aria-label={label}
-                  onClick={() => editor(path)}
+                  onClick={() => editor(path, props.base)}
                 >
                   <ExternalLink aria-hidden="true" />
                 </button>
@@ -737,9 +726,9 @@ export function ArtifactCard(props: {
         <button
           type="button"
           className="btn ghost sm"
-          onClick={() => showFile(props.sessionId, local)}
+          onClick={() => editor(local, props.folders[0])}
         >
-          {t({ id: 'sessions.parts.artifactPreviewLocal', defaultMessage: 'Preview local' })}
+          {t({ id: 'sessions.parts.artifactOpenInEditor', defaultMessage: 'Open in editor' })}
         </button>
       )}
     </div>
@@ -748,9 +737,15 @@ export function ArtifactCard(props: {
 
 /**
  * Thumbnails of the images a call returned, which open large, and of the image files it wrote,
- * which open in the files panel.
+ * which open in the editor.
  */
-export function ToolImages(props: { images: ToolImage[]; files: string[]; sessionId: string }) {
+export function ToolImages(props: {
+  images: ToolImage[];
+  files: string[];
+  /** The folder the file paths are in. */
+  base: string | undefined;
+  sessionId: string;
+}) {
   const scope = useBoard((s) => {
     const session = s.board?.sessions.find((each) => each.id === props.sessionId);
     return session
@@ -819,7 +814,7 @@ export function ToolImages(props: { images: ToolImage[]; files: string[]; sessio
                 { id: 'sessions.parts.openImageFile', defaultMessage: 'Open {path}' },
                 { path },
               )}
-              onClick={() => showFile(props.sessionId, path)}
+              onClick={() => editor(path, props.base)}
             >
               <img src={read[path]} alt="" draggable={false} />
             </button>

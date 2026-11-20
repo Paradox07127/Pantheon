@@ -380,7 +380,7 @@ describe('project extension overrides', () => {
             f.project.revision,
           );
         if (source === 'legacy') setLegacyExtensions(f.store, f.project);
-        const session = await f.create();
+        const session = await f.create(undefined, undefined, 'lead');
         await awaitWorkspaceReady(f.control, session.workspace_id!);
         await eventually(
           () => f.start.mock.calls.length > 0,
@@ -437,7 +437,7 @@ describe('project extension overrides', () => {
           { project_id: f.project.id, runtime: adapter.name, overrides: { ...empty, ...saved } },
           f.project.revision,
         );
-        const session = await f.create();
+        const session = await f.create(undefined, undefined, 'lead');
         await awaitWorkspaceReady(f.control, session.workspace_id!);
         await eventually(
           () => f.start.mock.calls.length > 0,
@@ -475,7 +475,7 @@ describe('project extension overrides', () => {
         },
         f.project.revision,
       );
-      const session = await f.create();
+      const session = await f.create(undefined, undefined, 'lead');
       await awaitWorkspaceReady(f.control, session.workspace_id!);
       await eventually(
         () => f.start.mock.calls.length > 0,
@@ -538,7 +538,7 @@ describe('project extension overrides', () => {
           { project_id: f.project.id, runtime: adapter.name, overrides: { ...empty, ...opened } },
           f.project.revision,
         );
-      const session = await f.create();
+      const session = await f.create(undefined, undefined, 'lead');
       await awaitWorkspaceReady(f.control, session.workspace_id!);
       await eventually(
         () => f.start.mock.calls.length > 0,

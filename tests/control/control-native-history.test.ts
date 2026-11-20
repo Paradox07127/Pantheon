@@ -21,7 +21,7 @@ function commitProjectRoot(root: string) {
   git(root, 'commit', '--quiet', '-m', 'Initial files');
 }
 
-async function setup() {
+async function setup(purpose?: 'lead') {
   const f = await fixture({ managedWorkspaces: true });
   cleanups.push(() => f.close());
   commitProjectRoot(f.projectRoot);
@@ -30,6 +30,7 @@ async function setup() {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: '{"facts":{"opaque":true}}',
+    ...(purpose ? { purpose } : {}),
   });
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   const spec: SessionSpec = {
@@ -86,8 +87,27 @@ it('never relocates a legacy native ID implicitly during resume', async () => {
   ).toMatchObject({ mode: 'legacy' });
 });
 
-it('passes the managed store and readable title through actual control startup before an adapter receives input', async () => {
+it.each([
+  ['starts a new session the user opened in the provider home', undefined, undefined],
+  [
+    'keeps the managed store of a session the user opened before',
+    '/managed/native-sessions/project/runtime',
+    '/managed/native-sessions/project/runtime',
+  ],
+])('%s', async (_, stored, selected) => {
   const f = await setup();
+  f.store.update(
+    'sessions',
+    { ...f.session, ...(stored ? { native_state_dir: stored } : {}) },
+    f.session.revision,
+  );
+  const spec = managedSessionSpec(f.ctx, { ...f.spec, user_session: true });
+  expect(spec.native_state_dir).toBe(selected);
+  expect(f.store.must<Session>('sessions', f.session.id).native_state_dir).toBe(selected);
+});
+
+it('passes the managed store and readable title through actual control startup before an adapter receives input', async () => {
+  const f = await setup('lead');
   const start = f.adapter.start.bind(f.adapter);
   const seen: SessionSpec[] = [];
   vi.spyOn(f.adapter, 'start').mockImplementation(async (spec, sink) => {

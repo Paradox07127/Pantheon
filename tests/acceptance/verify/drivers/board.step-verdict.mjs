@@ -143,6 +143,7 @@ const plan = {
 await call('session.create', {
   project_id,
   runtime: 'fixture',
+  purpose: 'lead',
   input: `Plan ${stamp}\n${script(
     { tool: { name: 'update_board', arguments: plan } },
     { tool: { name: 'start_task', arguments: { task_ids: KEYS } } },

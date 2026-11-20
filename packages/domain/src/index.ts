@@ -723,6 +723,8 @@ export interface Session extends Entity {
   app_debug?: true;
   /** A session starting a project from an empty folder with the setup guide. */
   project_setup?: true;
+  /** A session opened to lead on the board; a direct session without it gets no Pantheon tools. */
+  lead?: true;
   /** Native history fork applied before the next input; after is a runtime message or turn id. */
   native_fork?: { session_id: string; after: string };
   baseline?: import('./planning.js').BaselineTag;
@@ -1364,6 +1366,28 @@ export const NATIVE_ENV_ALLOWLIST: readonly string[] = [
   // Gate sandboxes set it; git aborts when it cannot read the system config there.
   'GIT_CONFIG_NOSYSTEM',
 ];
+/** Daemon variables a session the user opened does not inherit; a name ending in `*` is a prefix. */
+export const INHERITED_ENV_DENYLIST: readonly string[] = [
+  // Sessions run only on the subscription the CLI is logged in to, never on a key or another endpoint.
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN',
+  'ANTHROPIC_BASE_URL',
+  'CLAUDE_CODE_OAUTH_TOKEN',
+  'CLAUDE_CODE_USE_BEDROCK',
+  'CLAUDE_CODE_USE_VERTEX',
+  'OPENAI_API_KEY',
+  'OPENAI_BASE_URL',
+  'CODEX_API_KEY',
+  'CLAUDE_CONFIG_DIR',
+  'CODEX_HOME',
+  'CLAUDE_SECURESTORAGE_CONFIG_DIR',
+  'PANTHEON_*',
+  'DYLD_*',
+  'LD_PRELOAD',
+  'LD_LIBRARY_PATH',
+  'NODE_OPTIONS',
+  'ELECTRON_*',
+];
 export interface ProcessIdentity {
   pid: number;
   /** Microseconds since the Unix epoch. */
@@ -1430,6 +1454,8 @@ export interface SessionSpec {
   workspace?: { id: string; path: string };
   /** A task session dispatched by a lead, rather than a user or lead conversation. */
   task_session?: boolean;
+  /** A session the user opened directly, without Pantheon tools: it runs as the bare runtime would. */
+  user_session?: true;
   /** A runtime analyst receives evidence only through its bound MCP tools. */
   runtime_analysis?: true;
   /** A planner may also run the Bash commands readOnlyBash judges read-only. */

@@ -68,7 +68,6 @@ it('finds the tool names the instructions call', () => {
     'project_baseline_submit',
     'review_finding',
     'review_verdict',
-    'style_read',
   ])
     expect(names).toContain(name);
 });

@@ -105,7 +105,7 @@ describe('board panel layout', () => {
       'gates',
     ]);
     expect(keys(DEFAULT_LAYOUT, 'usage')).toEqual(['quota', 'runtime', 'usage', 'roles']);
-    expect(keys(DEFAULT_LAYOUT, 'digest')).toEqual(['digest']);
+    expect(Object.keys(DEFAULT_LAYOUT)).toEqual(['progress', 'milestones', 'quality', 'usage']);
     expect(
       Object.values(DEFAULT_LAYOUT)
         .flat()
@@ -135,6 +135,23 @@ describe('board panel layout', () => {
     expect(place(merged, 'trend').span).toBe(6);
     expect(keys(merged, 'milestones')).toEqual(['milestones', 'risks']);
     expect(Object.keys(merged)).toEqual(Object.keys(DEFAULT_LAYOUT));
+  });
+
+  it('ignores a stored layout of the iterations, collaboration, workflow, weekly digest and signals tabs', () => {
+    const merged = mergeLayout(
+      {
+        iterations: [{ key: 'iterations', span: 12 }],
+        collab: [{ key: 'collab', span: 12 }],
+        workflow: [{ key: 'workflow', span: 12 }],
+        digest: [{ key: 'digest', span: 6, hidden: true }],
+        signals: [{ key: 'signals', span: 12 }],
+        usage: [{ key: 'roles', span: 6 }],
+      },
+      DEFAULT_LAYOUT,
+    );
+    expect(Object.keys(merged)).toEqual(['progress', 'milestones', 'quality', 'usage']);
+    expect(keys(merged, 'usage')).toEqual(['roles', 'quota', 'runtime', 'usage']);
+    expect(merged.quality).toEqual(DEFAULT_LAYOUT.quality);
   });
 
   it('falls back to the default for each value it cannot read', () => {

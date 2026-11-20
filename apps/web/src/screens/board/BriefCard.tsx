@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
-import { Bot, Check, CircleDashed, Crown, Flag, Route, Square, X } from 'lucide-react';
+import { Bot, Check, CircleDashed, Crown, Flag, Route, X } from 'lucide-react';
 import {
   decisionType,
   type BoardModel,
@@ -11,7 +11,6 @@ import { Clip } from '../../components/Clip';
 import { RUNNING, RunningFor } from '../../components/RunningFor';
 import { Tip } from '../../components/Tip';
 import { toast } from '../../components/Toast';
-import { useAgentProposal } from '../../data/agents';
 import { useAppSettings } from '../../data/app-settings';
 import { useBoard } from '../../data/board';
 import { useBoardHistory } from '../../data/board-history';
@@ -57,7 +56,7 @@ function hourMarks(from: number, to: number): number[] {
 interface LanePoint {
   key: string;
   at: number;
-  kind: 'merge' | 'failure' | 'decided' | 'assumption' | 'proposal' | 'replan' | 'replanMet';
+  kind: 'merge' | 'failure' | 'decided' | 'assumption' | 'replan' | 'replanMet';
   glyph: ReactNode;
   type: string;
   title: string;
@@ -93,27 +92,6 @@ function pointButton(point: LanePoint, axis: Axis) {
         {point.glyph}
       </button>
     </Tip>
-  );
-}
-
-/** An agent's proposal on the plan lane, named and opened once its proposal is read. */
-function ProposalPoint({
-  point,
-  axis,
-  openSession,
-}: {
-  point: LanePoint;
-  axis: Axis;
-  openSession: (sessionId: string) => void;
-}) {
-  const stored = useAgentProposal(point.key);
-  return pointButton(
-    {
-      ...point,
-      title: stored?.fields.name || point.title,
-      open: stored ? () => openSession(stored.session_id) : undefined,
-    },
-    axis,
   );
 }
 
@@ -174,7 +152,9 @@ export function BriefCard({
       d.kind === 'replan' && !!d.replan && d.at > brief.since,
   );
   const waitingReplans = history?.pending_replans ?? [];
-  if (brief.items.length === 0 && replans.length === 0 && waitingReplans.length === 0) return null;
+  // The card draws no agent proposals, which the brief still lists.
+  const drawn = brief.items.filter((item) => item.kind !== 'proposal');
+  if (drawn.length === 0 && replans.length === 0 && waitingReplans.length === 0) return null;
   /** Shows the whole history, with the re-plan made at `at` open. */
   const toTimeline = (at?: number) => {
     if (at !== undefined) askReplan(at);
@@ -344,7 +324,6 @@ export function BriefCard({
     decidedItems.filter((item) => decisionType(item) === type).length;
 
   const assumptions = of('assumption');
-  const proposals = of('proposal');
   const planned: LanePoint[] = [
     ...assumptions.map((item): LanePoint => {
       const lead = eventSession(item.ref.id);
@@ -358,14 +337,6 @@ export function BriefCard({
         open: lead ? () => openSession(lead) : undefined,
       };
     }),
-    ...proposals.map((item): LanePoint => ({
-      key: item.ref.id,
-      at: item.at,
-      kind: 'proposal',
-      glyph: <Square aria-hidden="true" />,
-      type: t({ id: 'board.brief.type.proposal', defaultMessage: 'Agent proposal' }),
-      title: t({ id: 'board.brief.untitledProposal', defaultMessage: 'Untitled proposal' }),
-    })),
     ...replans.map((d): LanePoint => ({
       key: `replan:${d.at}`,
       at: d.at,
@@ -495,14 +466,6 @@ export function BriefCard({
             },
             { count: assumptions.length },
           ),
-        proposals.length > 0 &&
-          t(
-            {
-              id: 'board.brief.proposalsCount',
-              defaultMessage: '{count, plural, one {# agent proposal} other {# agent proposals}}',
-            },
-            { count: proposals.length },
-          ),
         replans.length > 0 &&
           t(
             {
@@ -521,13 +484,7 @@ export function BriefCard({
             { count: waitingReplans.length },
           ),
       ],
-      points: planned.map((point) =>
-        point.kind === 'proposal' ? (
-          <ProposalPoint key={point.key} point={point} axis={axis} openSession={openSession} />
-        ) : (
-          pointButton(point, axis)
-        ),
-      ),
+      points: planned.map((point) => pointButton(point, axis)),
     },
   ];
 

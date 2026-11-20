@@ -18,7 +18,6 @@ import { useBoard } from '../../data/board';
 import { useBoardView } from '../../data/board-view';
 import { effectiveUsageTargets, settingOf, useProjectDefaults } from '../../data/project-defaults';
 import { t } from '../../i18n';
-import { useDelayed } from '../../lib/use-delayed';
 import { SCREEN_NAMES } from '../../screens';
 import { useShell } from '../../store';
 import {
@@ -47,39 +46,14 @@ import {
   QualityKpis,
   ReviewMatrixPanel,
 } from '../board/QualityCharts';
-import { TaskDrawer } from '../board/TaskDrawer';
 import { QuotaPanel, RoleUsagePanel, UsageRings, UsageStackPanel } from '../board/UsageCharts';
-import { localDay } from '../board/usage-model';
-import { CollabTab } from './CollabTab';
-import { DigestPanel, weekSwitch } from './DigestPanel';
-import { IterationsTab } from './IterationsTab';
-import { SignalsTab } from './SignalsTab';
-import { WorkflowTab } from './WorkflowTab';
 import '../board/board.css';
+import './insights.css';
 
-export type InsightsSection =
-  'iterations' | 'collab' | 'workflow' | 'quality' | 'usage' | 'digest' | 'signals';
+export type InsightsSection = 'quality' | 'usage';
 
 // Labels are getters, so each is read in the language loaded by then.
 const SECTIONS: { key: InsightsSection; label: string }[] = [
-  {
-    key: 'iterations',
-    get label() {
-      return t({ id: 'insights.sections.iterations', defaultMessage: 'Iterations' });
-    },
-  },
-  {
-    key: 'collab',
-    get label() {
-      return t({ id: 'insights.sections.collab', defaultMessage: 'Collaboration' });
-    },
-  },
-  {
-    key: 'workflow',
-    get label() {
-      return t({ id: 'insights.sections.workflow', defaultMessage: 'Workflow' });
-    },
-  },
   {
     key: 'quality',
     get label() {
@@ -92,26 +66,12 @@ const SECTIONS: { key: InsightsSection; label: string }[] = [
       return t({ id: 'board.sections.usage', defaultMessage: 'Usage' });
     },
   },
-  {
-    key: 'digest',
-    get label() {
-      return t({ id: 'insights.digest.label', defaultMessage: 'Weekly digest' });
-    },
-  },
-  {
-    key: 'signals',
-    get label() {
-      return t({ id: 'insights.sections.signals', defaultMessage: 'Signals' });
-    },
-  },
 ];
 const TABS = SECTIONS.map((s) => s.key);
 
-/** The stored engineering board tab; anything else opens the iterations tab. */
+/** The stored engineering board tab; anything else opens the quality tab. */
 export function readInsightsSection(raw: string | null): InsightsSection {
-  // The retrospectives moved to memory; their old tab opens quality.
-  if (raw === 'retro') return 'quality';
-  return SECTIONS.find((s) => s.key === raw)?.key ?? 'iterations';
+  return SECTIONS.find((s) => s.key === raw)?.key ?? 'quality';
 }
 
 const sectionKey = (projectId: string) => `pantheon.insights.${projectId}`;
@@ -120,7 +80,7 @@ function storedSection(projectId: string): InsightsSection {
   try {
     return readInsightsSection(localStorage.getItem(sectionKey(projectId)));
   } catch {
-    return 'iterations';
+    return 'quality';
   }
 }
 
@@ -146,7 +106,7 @@ export function pickInsightsSection(projectId: string, section: InsightsSection)
 export function useInsightsSection(projectId: string | null): InsightsSection {
   const read = () => (projectId ? picked[projectId] : undefined);
   const chosen = useSyncExternalStore(subscribePicked, read, read);
-  return projectId ? (chosen ?? storedSection(projectId)) : 'iterations';
+  return projectId ? (chosen ?? storedSection(projectId)) : 'quality';
 }
 
 export const insightsSectionLabel = (section: InsightsSection) =>
@@ -159,66 +119,7 @@ const OWN_READS: ReadonlySet<string> = new Set([
   'gates',
   'quota',
   'roles',
-  'collab',
-  'workflow',
-  'digest',
-  'signals',
 ]);
-
-/** The weekly digest of the 7 days through the day `week` weeks before today, read on its own. */
-function WeeklyDigest({
-  projectId,
-  bar,
-  week,
-  onWeek,
-}: {
-  projectId: string;
-  bar: HTMLElement | null;
-  week: number;
-  onWeek: (week: number) => void;
-}) {
-  const today = new Date();
-  const until =
-    week > 0
-      ? localDay(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 7 * week))
-      : undefined;
-  const view = useBoardView(projectId, 7, until);
-  // A digest already shown that a read is replacing gets its status bar only once that read runs long.
-  const slow = useDelayed(!!view.refreshing);
-  // The read keeps the last week's board until the picked week's lands; its first day says which week it is.
-  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 6).getTime();
-  const shown = view.data ? Math.round((start - view.data.since) / (7 * 86_400_000)) : week;
-  if (!view.data && view.error)
-    return (
-      <>
-        <Failure error={view.error} onRetry={view.reload} />
-        {bar && weekSwitch({ bar, week, onWeek })}
-      </>
-    );
-  return (
-    <>
-      {(view.error || !view.refreshing || slow) && (
-        <ReadStatus
-          label={t({ id: 'insights.digest.label', defaultMessage: 'Weekly digest' })}
-          stale={view.stale}
-          inner
-          refreshing={view.refreshing}
-          error={view.error}
-          readAt={view.readAt}
-          reload={view.reload}
-        />
-      )}
-      <DigestPanel
-        model={view.data}
-        projectId={projectId}
-        bar={bar}
-        week={shown}
-        // The panel steps from the week it shows; the step applies to the picked week.
-        onWeek={(next) => onWeek(Math.max(0, week + next - shown))}
-      />
-    </>
-  );
-}
 
 /** The page tabs that fit in the bar, the picked one always among them; the rest in a menu after them. */
 function SectionTabs({
@@ -300,7 +201,6 @@ interface InsightsViewProps {
   projectId?: string;
   onOpenSession: (sessionId: string) => void;
   onOpenStory: (sessionId: string) => void;
-  onStartTask?: (task: BoardModel['tasks'][number]) => void;
   /** Snapshot sessions and the command runner behind the review actions; absent without a project. */
   actions?: { sessions: readonly SnapshotSession[]; run: RunBoardCommand };
   /** The project's token targets by runtime, for the usage rings. */
@@ -309,28 +209,12 @@ interface InsightsViewProps {
 
 export function InsightsView(props: InsightsViewProps) {
   const { model, loading, error, onRetry, days, onDays, section, onSection, projectId } = props;
-  const { onOpenSession, onOpenStory, onStartTask, actions } = props;
-  const [selected, setSelected] = useState<string | null>(null);
+  const { onOpenSession, onOpenStory, actions } = props;
   const [selectedProject, setSelectedProject] = useState(projectId);
   const [seen, setSeen] = useState<readonly InsightsSection[]>([section]);
-  const [digestWeek, setDigestWeek] = useState(0);
-  // Each tab's place in the top bar; switching tabs hides the others' in the same commit.
-  const [bars, setBars] = useState<Partial<Record<InsightsSection, HTMLElement | null>>>({});
-  const [barRefs] = useState(
-    () =>
-      Object.fromEntries(
-        TABS.map((key) => [
-          key,
-          (bar: HTMLElement | null) =>
-            setBars((all) => (all[key] === bar ? all : { ...all, [key]: bar })),
-        ]),
-      ) as Record<InsightsSection, (bar: HTMLElement | null) => void>,
-  );
   if (selectedProject !== projectId) {
     setSelectedProject(projectId);
-    setSelected(null);
     setSeen([section]);
-    setDigestWeek(0);
   } else if (!seen.includes(section)) setSeen([...seen, section]);
   const scoped = actions && projectId && !props.stale ? { ...actions, projectId } : undefined;
   const pending =
@@ -340,60 +224,8 @@ export function InsightsView(props: InsightsViewProps) {
     if (projectId) saveLayout(projectId, change(layout));
   };
   const rangeLabel = RANGES.find((r) => r.days === days)!.label;
-  const drawer = model && (
-    <TaskDrawer
-      model={model}
-      taskId={selected}
-      onSelect={setSelected}
-      onOpenSession={onOpenSession}
-      onOpenStory={onOpenStory}
-      onStartTask={onStartTask}
-      tell={scoped && { sessions: scoped.sessions, run: scoped.run }}
-    />
-  );
   const panels: BoardPanels = model
     ? {
-        iterations: {
-          title: t({ id: 'insights.sections.iterations', defaultMessage: 'Iterations' }),
-          withFailure: drawer,
-          node: (
-            <>
-              <IterationsTab
-                model={model}
-                projectId={projectId}
-                edit={scoped && { projectId: scoped.projectId, run: scoped.run }}
-                onOpenTask={setSelected}
-                bar={bars.iterations}
-              />
-              {drawer}
-            </>
-          ),
-        },
-        collab: {
-          title: t({ id: 'insights.sections.collab', defaultMessage: 'Collaboration' }),
-          node: (
-            <CollabTab
-              model={model}
-              projectId={projectId}
-              onOpenSession={onOpenSession}
-              bar={bars.collab}
-              readOnly={props.stale}
-            />
-          ),
-        },
-        workflow: projectId
-          ? {
-              title: t({ id: 'insights.sections.workflow', defaultMessage: 'Workflow' }),
-              node: (
-                <WorkflowTab
-                  projectId={projectId}
-                  model={model}
-                  onOpenSession={onOpenSession}
-                  bar={bars.workflow}
-                />
-              ),
-            }
-          : undefined,
         qualityKpis: {
           title: t({ id: 'insights.quality.label', defaultMessage: 'Quality overview' }),
           node: <QualityKpis model={model} />,
@@ -450,25 +282,6 @@ export function InsightsView(props: InsightsViewProps) {
               node: <ReviewMatrixPanel projectId={projectId} />,
             }
           : undefined,
-        digest: projectId
-          ? {
-              title: t({ id: 'insights.digest.label', defaultMessage: 'Weekly digest' }),
-              node: (
-                <WeeklyDigest
-                  projectId={projectId}
-                  bar={bars.digest ?? null}
-                  week={digestWeek}
-                  onWeek={setDigestWeek}
-                />
-              ),
-            }
-          : undefined,
-        signals: projectId
-          ? {
-              title: t({ id: 'insights.sections.signals', defaultMessage: 'Signals' }),
-              node: <SignalsTab projectId={projectId} />,
-            }
-          : undefined,
         merges: {
           title: t({ id: 'board.merges.title', defaultMessage: 'Local merge history' }),
           node: (
@@ -521,23 +334,18 @@ export function InsightsView(props: InsightsViewProps) {
           {projectId && model && (hidden.length > 0 || changed) && (
             <HiddenMenu hidden={hidden} tabs={TABS} onLayout={onLayout} />
           )}
-          {section !== 'digest' && section !== 'signals' && (
-            <RadioGroup<BoardDays>
-              className="tb-seg"
-              aria-label={t({ id: 'board.headline.range', defaultMessage: 'Time range' })}
-              value={days}
-              onValueChange={onDays}
-            >
-              {RANGES.map((r) => (
-                <Radio.Root key={r.days} value={r.days}>
-                  {r.label}
-                </Radio.Root>
-              ))}
-            </RadioGroup>
-          )}
-          {SECTIONS.map(({ key }) => (
-            <span key={key} className="ins-bar" hidden={key !== section} ref={barRefs[key]} />
-          ))}
+          <RadioGroup<BoardDays>
+            className="tb-seg"
+            aria-label={t({ id: 'board.headline.range', defaultMessage: 'Time range' })}
+            value={days}
+            onValueChange={onDays}
+          >
+            {RANGES.map((r) => (
+              <Radio.Root key={r.days} value={r.days}>
+                {r.label}
+              </Radio.Root>
+            ))}
+          </RadioGroup>
         </div>
       </TopBar>
       <main className="bd">
@@ -600,7 +408,6 @@ export function InsightsScreen({
   const view = useBoardView(projectId, days);
   const section = useInsightsSection(projectId);
   const openSession = useShell((s) => s.openSession);
-  const openTaskSession = useShell((s) => s.openTaskSession);
   const sessions = useBoard((s) => s.board?.sessions);
   const ownTargets = useBoard(
     (s) => s.board?.projects.find((p) => p.id === projectId)?.usage_targets,
@@ -626,7 +433,6 @@ export function InsightsScreen({
       }}
       onOpenSession={onOpenSession}
       onOpenStory={(sessionId) => openSession(sessionId, 'story')}
-      onStartTask={({ id, title, goal }) => openTaskSession({ id, title, goal })}
       {...(projectId && {
         projectId,
         actions: sessions ? { sessions, run: runBoardCommand } : undefined,

@@ -83,16 +83,10 @@ const cards = (tree: ReactNode) => nodes(tree).filter((n) => n.props.visual);
 const cells = (tree: ReactNode) => nodes(tree).filter((n) => n.props.className === 'mdg-cell');
 
 describe('memory diagrams tab', () => {
-  it('sits between the graph and the learned tabs and draws the pinned diagrams', () => {
+  it('sits after the graph tab and draws the pinned diagrams', () => {
     const tree = mount(() => MemoryScreen({ projectId: 'project-1' })).value;
     const tabs = nodes(tree).filter((n) => n.props.className === 'tb-tab');
-    expect(tabs.map((n) => n.props.value)).toEqual([
-      'overview',
-      'entries',
-      'graph',
-      'diagrams',
-      'learned',
-    ]);
+    expect(tabs.map((n) => n.props.value)).toEqual(['overview', 'entries', 'graph', 'diagrams']);
     expect(text(tabs[3])).toBe(zh('memory.tab.diagrams'));
     const panel = find(
       tree,

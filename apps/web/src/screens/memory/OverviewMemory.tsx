@@ -27,7 +27,6 @@ import {
   useMemoryContext,
   useMemoryDrafts,
   useMemoryRecent,
-  waitingSince,
   type BudgetRefusal,
   type ContextError,
   type MemoryContext,
@@ -38,7 +37,6 @@ import {
 import { useMemoryView } from '../../data/memory-view';
 import { ageText, failureText } from '../../data/needs-you';
 import { cachedQuery, storeQuery } from '../../data/query-cache';
-import { useImprovements } from '../../data/workflow-policy';
 import { shortId } from '../../data/format';
 import { sessionTitle } from '../../data/transcript';
 import { t } from '../../i18n';
@@ -79,11 +77,10 @@ export interface OverviewMemoryData {
   directoryError: string | null;
   /** Why the recent changes could not be read, while there are none to show. */
   recentError: string | null;
-  /** Why the drafts, their records or the experience candidates could not be read. */
+  /** Why the drafts or their records could not be read. */
   pendingError: string | null;
   recent: MemoryRecentItem[] | null;
   drafts: Waiting;
-  candidates: Waiting;
   /** Runtime of each open session, by session id. */
   runtimes: Record<string, string>;
   /** Title of each open session as the board names it, by session id. */
@@ -100,7 +97,6 @@ export interface OverviewMemoryActions {
   onEntries: () => void;
   /** Opens the entries tab with `memoryId` selected, or with nothing selected. */
   onEntry: (memoryId: string | null) => void;
-  onLearned: () => void;
   onSession: (sessionId: string) => void;
   onMaintain: () => void;
   onCommit: (item: MemoryItem) => void;
@@ -431,17 +427,16 @@ function Recent({ data, actions }: { data: OverviewMemoryData; actions: Overview
 
 function Pending({
   drafts,
-  candidates,
   pending,
   pendingError,
   signature,
   now,
   actions,
-}: Pick<OverviewMemoryData, 'drafts' | 'candidates' | 'pending' | 'pendingError' | 'now'> & {
+}: Pick<OverviewMemoryData, 'drafts' | 'pending' | 'pendingError' | 'now'> & {
   signature?: string;
   actions: OverviewMemoryActions;
 }) {
-  if (drafts.count === 0 && candidates.count === 0 && !pendingError) return null;
+  if (drafts.count === 0 && !pendingError) return null;
   const title = t({ id: 'memory.agent.pending', defaultMessage: 'Waiting for you' });
   const row = (label: string, waiting: Waiting, onClick: () => void) =>
     waiting.count > 0 && (
@@ -470,7 +465,6 @@ function Pending({
           drafts,
           actions.onEntries,
         )}
-        {row(experiencesText(), candidates, actions.onLearned)}
       </div>
       {pendingError && <LoadError message={pendingError} onRetry={actions.onRetry} />}
       {pending.length > 0 && (
@@ -613,7 +607,6 @@ export function OverviewMemoryView({
       <div className="acx-col">
         <Pending
           drafts={data.drafts}
-          candidates={data.candidates}
           pending={data.pending}
           pendingError={data.pendingError}
           signature={data.directory?.signature}
@@ -742,15 +735,8 @@ export function OverviewMemory({
     drafts.data?.records ?? null,
     directory.data?.epoch,
   );
-  const improvements = useImprovements(projectId);
-  const candidates = waitingSince(improvements.read ?? []);
   const holding =
-    directory.loading ||
-    context.loading ||
-    recent.loading ||
-    drafts.loading ||
-    histories.loading ||
-    improvements.loading;
+    directory.loading || context.loading || recent.loading || drafts.loading || histories.loading;
   // Before paint, so the page never shows a frame of this panel half read.
   useLayoutEffect(() => onHold(holding), [onHold, holding]);
   const board = useBoard((s) => s.board);
@@ -820,16 +806,12 @@ export function OverviewMemory({
           contextError: context.error,
           directoryError: directory.data ? null : directory.error,
           recentError: recent.data ? null : recent.error,
-          pendingError:
-            (drafts.data ? null : drafts.error) ??
-            (improvements.read ? null : improvements.error) ??
-            histories.error,
+          pendingError: (drafts.data ? null : drafts.error) ?? histories.error,
           recent: recent.data?.items ?? null,
           drafts: {
             count: directory.data?.counts.draft ?? 0,
             oldest: oldest(drafts.data?.records ?? []),
           },
-          candidates,
           runtimes,
           titles,
           pending,
@@ -843,7 +825,6 @@ export function OverviewMemory({
             useMemoryView.getState().select(id);
             shell().setMemoryTab('entries');
           },
-          onLearned: () => shell().setMemoryTab('learned'),
           onSession: (id) => shell().openSession(id),
           onMaintain: () => {
             if (!maintaining) void maintain();
@@ -856,7 +837,6 @@ export function OverviewMemory({
             read.reload();
             recent.reload();
             drafts.reload();
-            improvements.reload();
             histories.reload();
           },
         }}

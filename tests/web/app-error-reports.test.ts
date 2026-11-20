@@ -13,7 +13,7 @@ beforeAll(() => {
   vi.stubGlobal('window', {
     addEventListener: (type: string, listener: (event: unknown) => void) =>
       listeners.set(type, listener),
-    pantheon: { command, debugTarget: async () => null },
+    pantheon: { command },
   });
   console.error = () => {};
   captureAppErrors();

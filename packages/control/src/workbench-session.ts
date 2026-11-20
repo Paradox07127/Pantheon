@@ -89,6 +89,7 @@ import {
   sessionMcp,
   sessionAdapter,
   userOnly,
+  usesPantheonTools,
   type ControlContext,
   type Handler,
   type Handlers,
@@ -114,9 +115,15 @@ import {
   taskSessions,
   taskState,
 } from './board-plan.js';
-import { checkedSource, numstatFiles, PATCH_BOUND, sourceGit, TIME_BOUND } from './source-git.js';
+import {
+  checkedSource,
+  numstatFiles,
+  PATCH_BOUND,
+  sourceGit,
+  TIME_BOUND,
+  userGit,
+} from './source-git.js';
 import { runGit, type GitResult } from './git.js';
-import { userGit } from './repo-write.js';
 import { mergePreview } from './merge-preview.js';
 import { repositoryInsights } from './repository-insights.js';
 import {
@@ -130,7 +137,7 @@ import {
   type LandingProgress,
 } from './landing.js';
 import { appendNote, blockedReport, contractLines } from './lead-inbox.js';
-import { managedSessionSpec } from './native-session.js';
+import { inheritedEnvAllowlist, managedSessionSpec, sessionExtensions } from './native-session.js';
 import { projectFacts } from './project-facts.js';
 import { runTimes, sessionRun } from './run-state.js';
 import { sessionTasks } from './session-tasks.js';
@@ -282,7 +289,10 @@ export function workbenchSessionSpec(ctx: ControlContext, session: Session): Ses
           : {}),
       })
     : undefined;
-  const pantheonMcp = sessionMcp(ctx, session, credentialRole(session, workspace.kind));
+  const pantheonTools = usesPantheonTools(ctx, session);
+  const pantheonMcp = pantheonTools
+    ? sessionMcp(ctx, session, credentialRole(session, workspace.kind))
+    : undefined;
   const adapter = sessionAdapter(ctx, session);
   const questionTool = adapter?.questionTool;
   // The runtime names a conversation the user opened; a board lead's first turn has an origin.
@@ -307,11 +317,12 @@ export function workbenchSessionSpec(ctx: ControlContext, session: Session): Ses
     account_ref: session.account_ref,
     role: 'writer',
     ...(session.task ? { task_session: true } : {}),
+    ...(pantheonTools ? {} : { user_session: true as const }),
     control_instructions: [
       ...(pantheonMcp && (session.task || planningLead) ? [PLATFORM_CORE] : []),
       `You are working for the user in the git worktree at ${workspace.path}. When your changes are complete, commit them there with git. Do not write files outside this worktree.`,
       // A planning lead asks with ask_user, which LEAD_INSTRUCTIONS names; workerInstructions tells a task session.
-      ...(questionTool && !planningLead && !(pantheonMcp && session.task)
+      ...(questionTool && pantheonTools && !planningLead && !(pantheonMcp && session.task)
         ? [
             `When the user must decide or answer something, ask with the ${questionTool} tool instead of asking in plain text. Give 2 to 4 short options with the one you recommend first; the user can also type an answer of their own.`,
           ]
@@ -334,7 +345,7 @@ export function workbenchSessionSpec(ctx: ControlContext, session: Session): Ses
         }
       : {}),
     cwd: workspace.path,
-    env_allowlist: NATIVE_ENV_ALLOWLIST,
+    env_allowlist: pantheonTools ? NATIVE_ENV_ALLOWLIST : inheritedEnvAllowlist(project),
     skills: [],
     mcp_servers: cdpPort
       ? [
@@ -354,25 +365,7 @@ export function workbenchSessionSpec(ctx: ControlContext, session: Session): Ses
         ]
       : [],
     pantheon_mcp: pantheonMcp,
-    extensions: {
-      mode: 'inherit',
-      // User-level MCP servers, skills and account connectors stay off until the project opens them.
-      overrides: {
-        disabled_mcp_servers: [],
-        disabled_plugins: [],
-        disabled_skills: [],
-        disable_hooks: false,
-        ...saved,
-        disable_apps:
-          session.enabled_user_connectors !== undefined
-            ? !session.enabled_user_connectors.length
-            : saved?.disable_apps === true || !saved?.enabled_user_connectors?.length,
-        enabled_user_mcp_servers: saved?.enabled_user_mcp_servers ?? [],
-        enabled_user_skills: saved?.enabled_user_skills ?? [],
-        enabled_user_connectors:
-          session.enabled_user_connectors ?? saved?.enabled_user_connectors ?? [],
-      },
-    },
+    extensions: sessionExtensions(session, saved, !pantheonTools),
     device_id: session.device_id ?? 'local',
     budget: { max_turns: 1, wall_time_ms: ctx.turnWallTimeMs ?? WORKBENCH_TURN_MS },
     permission_mode: session.permission_mode ?? 'ask',
@@ -4812,6 +4805,7 @@ export function openWorktreeSession(
       ...(input.ultracode ? { ultracode: true as const } : {}),
       ...(input.purpose === 'app_debug' ? { app_debug: true as const } : {}),
       ...(input.purpose === 'project_setup' ? { project_setup: true as const } : {}),
+      ...(input.purpose === 'lead' ? { lead: true as const } : {}),
       title: derivedTitle(
         board?.task.title ??
           (input.input.split('\n').find((line) => line.trim() !== '') ?? '').trim(),
@@ -4837,7 +4831,7 @@ export function openWorktreeSession(
   const turn = queuedTurn(session, input.input, 'send', {
     ...extras,
     // The guide goes ahead of the user's words but stays out of the thread.
-    ...(input.purpose
+    ...(input.purpose && input.purpose !== 'lead'
       ? {
           reference_context: [
             diagnosis

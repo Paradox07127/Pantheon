@@ -225,13 +225,7 @@ export class DaemonBridge {
   }
 
   async command(command: Command): Promise<BridgeResult<unknown>> {
-    // A repository write runs the user's git with its hooks and signing, each call allowed 120 s by the daemon.
-    const result = await this.request(
-      'POST',
-      '/v1/commands',
-      JSON.stringify(command),
-      command.type.startsWith('repo.') ? 150_000 : 5000,
-    );
+    const result = await this.request('POST', '/v1/commands', JSON.stringify(command), 5000);
     return result.ok ? { ok: true, value: (result.value as { receipt: unknown }).receipt } : result;
   }
 

@@ -571,7 +571,7 @@ it('mounts a lead credential on a workbench session and a worker credential on a
     const spec = f.starts.mock.calls.find(([spec]) => spec.platform_session_id === session.id)![0];
     return { session, spec };
   };
-  const lead = await opened({ input: 'Plan the export feature' });
+  const lead = await opened({ input: 'Plan the export feature', purpose: 'lead' });
   expect(lead.spec.pantheon_mcp).toBeDefined();
   expect(lead.spec.pantheon_mcp!.ask_tools).toEqual(['rerun_baseline']);
   expect(f.auth.authenticate(`Bearer ${sessionToken(lead.spec)}`)).toMatchObject({
@@ -608,7 +608,6 @@ it('mounts a lead credential on a workbench session and a worker credential on a
     'request_review',
     'merge_task',
     'draw',
-    'theme',
     'browser_open',
     'browser_read',
     'browser_screenshot',
@@ -659,7 +658,6 @@ it('mounts a lead credential on a workbench session and a worker credential on a
     'report',
     'status_line',
     'draw',
-    'theme',
     'browser_open',
     'browser_read',
     'browser_screenshot',
@@ -722,6 +720,7 @@ it('tells a lead to plan a small change as one direct task before it changes the
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Add an optional phone field to createContact',
+    purpose: 'lead',
   });
   await awaitWorkspaceReady(f.control, lead.workspace_id!);
   await eventually(
@@ -749,6 +748,7 @@ it('lets a lead stop a task of its plan through stop_task, without a project id'
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Plan the export feature',
+    purpose: 'lead',
   });
   await awaitWorkspaceReady(f.control, lead.workspace_id!);
   await eventually(
@@ -807,6 +807,7 @@ it('hands a lead that calls sync_board its plan and the recent commits of the pr
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Plan the export feature',
+    purpose: 'lead',
   });
   await awaitWorkspaceReady(f.control, lead.workspace_id!);
   await eventually(

@@ -45,10 +45,13 @@ it('opens a project setup session whose first message starts with the setup guid
   expect(session.workspace_id).toBeDefined();
 });
 
-it('opens a session without a purpose with no setup guide', async () => {
-  const { input } = await firstInput({});
-  expect(input).not.toContain(projectSetupSkill);
-});
+it.each([undefined, 'lead'])(
+  'opens a session with purpose %s with no setup guide',
+  async (purpose) => {
+    const { input } = await firstInput(purpose ? { purpose } : {});
+    expect(input).not.toContain(projectSetupSkill);
+  },
+);
 
 it('opens an app debug session whose runtime reaches the app at the port the desktop wrote for each turn', async () => {
   const { f, session, input } = await firstInput({ purpose: 'app_debug' });
@@ -88,7 +91,7 @@ it('opens an app debug session whose runtime reaches the app at the port the des
 it.each([
   ['project_setup', false],
   ['app_debug', false],
-  [undefined, true],
+  ['lead', true],
 ])(
   'gives a session with purpose %s the lead planning instructions: %s',
   async (purpose, planned) => {

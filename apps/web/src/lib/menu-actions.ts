@@ -1,12 +1,9 @@
 import { useEffect } from 'react';
 import type { MenuAction } from '@pantheon/protocol';
-import { toggleDebugView } from '../components/DebugView';
-import { noticeResult, toast } from '../components/Toast';
+import { noticeResult } from '../components/Toast';
 import { useBoard } from '../data/board';
 import { currentProject, useCurrentProject } from '../data/current-project';
-import { failureText } from '../data/needs-you';
 import { openPersonalAgent } from '../data/personal-agent';
-import { setUserStyleEnabled } from '../data/user-style';
 import { t } from '../i18n';
 import { useProjectsView } from '../screens/projects/view';
 import { copyDiagnostics } from '../screens/settings/AboutPage';
@@ -57,12 +54,7 @@ export function runMenuAction(action: MenuAction): void {
             },
       ),
     );
-  else if (action === 'debug-view') toggleDebugView();
   else if (action === 'personal-agent') void openPersonalAgent();
-  else if (action === 'disable-user-style')
-    void setUserStyleEnabled(false).then((result) => {
-      if (!result.ok) toast({ title: failureText(result.error), kind: 'failure' });
-    });
   else if (action === 'open-project' && !runShortcut('open-project'))
     useProjectsView.getState().setOpening(true);
 }

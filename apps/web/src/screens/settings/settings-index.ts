@@ -8,7 +8,6 @@ import {
 import { DECISION_NAME, DELIVERY_NAME } from '../../data/notifications';
 import { LOCALE_NAMES, t, type Message } from '../../i18n';
 import { revealText } from '../../lib/platform-text';
-import type { InsightsSection } from '../insights/InsightsScreen';
 import type { SettingsPage } from './view';
 
 /** One setting the search can land on; the texts match in the loaded language and in English. */
@@ -19,8 +18,6 @@ export interface SettingRecord {
   label: Message;
   keywords?: Message;
   options?: () => string[];
-  /** The engineering board tab the setting is changed on, which the hit opens instead of the page. */
-  board?: InsightsSection;
 }
 
 // Named so the message extractor reads these descriptors as messages.
@@ -109,7 +106,6 @@ const sessionDefaults = defineMessage({
   id: 'settings.defaults.roles',
   defaultMessage: 'Model for each role',
 });
-const routing = defineMessage({ id: 'settings.pages.routing', defaultMessage: 'Routing' });
 const gate = defineMessage({ id: 'settings.gate.title', defaultMessage: 'Merge gate' });
 const worktreeSetup = defineMessage({
   id: 'settings.worktreeSetup.title',
@@ -124,10 +120,6 @@ const acceptance = defineMessage({
 const improvementMode = defineMessage({
   id: 'data.workflowPolicy.param.improvementMode',
   defaultMessage: 'Workflow improvement',
-});
-const boardWorkflow = defineMessage({
-  id: 'insights.sections.workflow',
-  defaultMessage: 'Workflow',
 });
 const personal = defineMessage({
   id: 'settings.data.personal',
@@ -330,19 +322,6 @@ export const SETTINGS_INDEX: SettingRecord[] = [
     }),
   },
   {
-    id: 'appearance.backdrop',
-    page: 'appearance',
-    section: themeAndColour,
-    label: defineMessage({
-      id: 'settings.appearance.backdrop',
-      defaultMessage: 'Animated background',
-    }),
-    keywords: defineMessage({
-      id: 'settings.search.keywords.backdrop',
-      defaultMessage: 'backdrop, wallpaper, theme, motion',
-    }),
-  },
-  {
     id: 'appearance.colorblind',
     page: 'appearance',
     section: themeAndColour,
@@ -353,19 +332,6 @@ export const SETTINGS_INDEX: SettingRecord[] = [
     keywords: defineMessage({
       id: 'settings.search.keywords.colorblind',
       defaultMessage: 'color blind, accessibility, contrast',
-    }),
-  },
-  {
-    id: 'appearance.savedTheme',
-    page: 'appearance',
-    section: themeAndColour,
-    label: defineMessage({
-      id: 'settings.appearance.savedTheme',
-      defaultMessage: 'Saved theme',
-    }),
-    keywords: defineMessage({
-      id: 'settings.search.keywords.savedTheme',
-      defaultMessage: 'custom theme, export, delete',
     }),
   },
   {
@@ -1402,44 +1368,6 @@ export const SETTINGS_INDEX: SettingRecord[] = [
       defaultMessage: 'single model, one model, routing, reviewer',
     }),
   },
-  {
-    id: 'routing.kind',
-    page: 'project',
-    section: routing,
-    label: defineMessage({ id: 'settings.routing.kind', defaultMessage: 'Task kind' }),
-  },
-  {
-    id: 'routing.first',
-    page: 'project',
-    section: routing,
-    label: defineMessage({ id: 'settings.routing.first', defaultMessage: 'First choice' }),
-    keywords: defineMessage({
-      id: 'settings.search.keywords.routingModel',
-      defaultMessage: 'model, preferred model',
-    }),
-  },
-  {
-    id: 'routing.alternate',
-    page: 'project',
-    section: routing,
-    label: defineMessage({ id: 'settings.routing.alternate', defaultMessage: 'Alternate' }),
-  },
-  {
-    id: 'routing.samples',
-    page: 'project',
-    section: routing,
-    label: defineMessage({ id: 'settings.routing.samples', defaultMessage: 'Local samples' }),
-  },
-  {
-    id: 'routing.leaderboard',
-    page: 'project',
-    section: routing,
-    label: defineMessage({ id: 'settings.routing.leaderboard', defaultMessage: 'Leaderboard' }),
-    keywords: defineMessage({
-      id: 'settings.search.keywords.leaderboard',
-      defaultMessage: 'benchmark, ranking',
-    }),
-  },
 
   page('project'),
   {
@@ -1690,44 +1618,5 @@ export const SETTINGS_INDEX: SettingRecord[] = [
     section: improvementMode,
     label: improvementMode,
     options: () => Object.values(IMPROVEMENT_MODE_LABEL),
-  },
-  {
-    id: 'workflow.customSteps',
-    page: 'workflow',
-    section: boardWorkflow,
-    label: defineMessage({ id: 'insights.workflow.chart', defaultMessage: 'Steps' }),
-    keywords: defineMessage({
-      id: 'settings.search.keywords.customSteps',
-      defaultMessage: 'custom steps, command, approval, prompt, review, hooks',
-    }),
-    board: 'workflow',
-  },
-  {
-    id: 'workflow.planReviewTiers',
-    page: 'workflow',
-    section: boardWorkflow,
-    label: defineMessage({
-      id: 'insights.workflow.planReviewTiersOf',
-      defaultMessage: 'Plan review tiers',
-    }),
-    keywords: defineMessage({
-      id: 'settings.search.keywords.planReviewTiers',
-      defaultMessage: 'plan review, tiers, difficulty',
-    }),
-    board: 'workflow',
-  },
-  {
-    id: 'workflow.reviewRounds',
-    page: 'workflow',
-    section: boardWorkflow,
-    label: defineMessage({
-      id: 'insights.workflow.maxRounds',
-      defaultMessage: 'Most code review rounds',
-    }),
-    keywords: defineMessage({
-      id: 'settings.search.keywords.reviewRounds',
-      defaultMessage: 'review rounds, round limit, code review',
-    }),
-    board: 'workflow',
   },
 ];

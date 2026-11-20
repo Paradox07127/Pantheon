@@ -5,7 +5,6 @@ import { needsGlyph } from '../../components/NeedsPopover';
 import { ProjectMonogram } from '../../components/ProjectMonogram';
 import { blocksText, decisionText } from '../../data/attention';
 import { useBoard } from '../../data/board';
-import { focusRequest } from '../../data/focus-request';
 import { ageText, needReasonText, needRowKey, type NeedsYouItem } from '../../data/needs-you';
 import { needsKey } from '../../data/notice-tiers';
 import { crossProjectWaiting, type PersonalCall } from '../../data/personal-agent';
@@ -25,10 +24,8 @@ function openNeed(item: NeedsYouItem) {
   const sessionId = item.session_id ?? (item.source.table === 'sessions' ? item.source.id : null);
   if (card) shell.openProjectNeed(item.project_id, card);
   else if (item.kind === 'board.lane.approval') shell.openProjectBoard(item.project_id);
-  else if (sessionId) {
-    if (item.kind === 'agent.proposal' && item.agent_proposal) focusRequest(item.agent_proposal.id);
-    shell.openProjectSession(item.project_id, sessionId);
-  } else shell.openProject(item.project_id);
+  else if (sessionId) shell.openProjectSession(item.project_id, sessionId);
+  else shell.openProject(item.project_id);
 }
 
 /** What waited across the projects when the personal agent read it, by project; it holds that read. */

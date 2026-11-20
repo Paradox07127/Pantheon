@@ -13,6 +13,7 @@ import {
 import path from 'node:path';
 import { afterAll, afterEach, expect, it, vi } from 'vitest';
 import { FixtureAdapter } from '@pantheon/adapters';
+import { NATIVE_ENV_ALLOWLIST } from '@pantheon/domain';
 import { Control, type ControlOptions } from '@pantheon/control';
 import type {
   Approval,
@@ -417,6 +418,7 @@ it('lets a device session call a session tool that runs on this machine', async 
   cleanups.push(async () => rmSync(root, { recursive: true, force: true }));
   const session = await f.create(
     script({ tool: { name: 'report', arguments: { summary: 'Done on the device' } } }),
+    { purpose: 'lead' },
   );
   await f.settle(session);
 
@@ -756,6 +758,18 @@ it('keeps the project variables of a device session and gives it the temporary d
     API_BASE: 'https://api.example.invalid',
     TMPDIR: path.join(path.dirname(f.deviceRepo), 'tmp', id),
   });
+});
+
+it('passes only the allowlisted variables to a device session the user opened', async () => {
+  const { f, session } = await sharedSessions();
+  const local = f.local(session);
+  const spec = remoteSessionSpec(f.ctx, f.current(session.id), {
+    cwd: local,
+    workspace: { id: session.workspace_id!, path: local },
+    user_session: true,
+    env_allowlist: [...NATIVE_ENV_ALLOWLIST, 'PLAIN_DAEMON_VARIABLE'],
+  } as unknown as SessionSpec);
+  expect(spec.env_allowlist).toEqual(NATIVE_ENV_ALLOWLIST);
 });
 
 it('copies the attachments of a device turn to the device and names the copies there', async () => {

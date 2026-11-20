@@ -110,6 +110,11 @@ function fakeServer(activeProfile?: string | null, reviewer?: string) {
       case 'thread/resume':
         result = {
           thread: { id: 'sandbox-thread' },
+          sandbox:
+            (frame.params?.config as Record<string, unknown> | undefined)?.default_permissions ===
+            ':read-only'
+              ? { type: 'readOnly' }
+              : { type: 'workspaceWrite', networkAccess: false },
           approvalsReviewer: reviewer ?? frame.params?.approvalsReviewer ?? 'auto_review',
           activePermissionProfile:
             activeProfile === null
@@ -2526,3 +2531,230 @@ it.each(['start', 'resume'] as const)(
     });
   },
 );
+
+describe('Codex sessions the user opened directly', () => {
+  const userSpec = (): SessionSpec => ({ ...writerSpec(), user_session: true });
+  const turnStarts = (frames: Frame[]) =>
+    frames.filter((frame) => frame.method === 'turn/start').map((frame) => frame.params!);
+
+  it.each(['start', 'resume'] as const)(
+    'leaves the sandbox and approvals to the user Codex config on %s',
+    async (method) => {
+      const f = await opened(userSpec(), method);
+      const params = threadParams(f.frames);
+      expect(params).not.toHaveProperty('approvalPolicy');
+      expect(params).not.toHaveProperty('approvalsReviewer');
+      expect(params).not.toHaveProperty('sandbox');
+      expect(params.developerInstructions).not.toContain('permission profile');
+      const config = params.config as Record<string, unknown>;
+      expect(config).not.toHaveProperty('default_permissions');
+      expect(Object.keys(config).filter((key) => key.startsWith('permissions.'))).toEqual([]);
+      expect(config.mcp_servers).toEqual({ blocked: { enabled: false } });
+      expect(JSON.stringify(config)).not.toMatch(/approval_mode|approvals_reviewer/);
+      expect(config).not.toHaveProperty('features');
+      await f.adapter.send(f.handle, { turn_id: 'user-turn', input: 'edit a file' });
+      expect(turnStarts(f.frames).at(-1)).not.toHaveProperty('permissions');
+      expect(turnStarts(f.frames).at(-1)).not.toHaveProperty('sandboxPolicy');
+    },
+  );
+
+  // In plan mode the adapter declines escalations itself, so the user's auto reviewer must not answer them.
+  it.each([
+    ['plan', { default_permissions: ':read-only' }, undefined, 'user'],
+    ['full_access', {}, 'danger-full-access', undefined],
+  ] as const)('runs %s mode on its own sandbox', async (mode, config, sandbox, reviewer) => {
+    const f = await opened({ ...userSpec(), permission_mode: mode });
+    const params = threadParams(f.frames);
+    expect(params).not.toHaveProperty('approvalPolicy');
+    expect(params.approvalsReviewer).toBe(reviewer);
+    expect(params.sandbox).toBe(sandbox);
+    expect(params.config).toMatchObject(config);
+  });
+
+  it('does not start a plan mode session the server left writable', async () => {
+    const server = fakeServer();
+    server.intercept.mockImplementation((frame) => {
+      if (frame.method !== 'thread/start') return false;
+      const profile = (frame.params!.config as Record<string, unknown>).default_permissions;
+      server.send({
+        id: frame.id,
+        result: {
+          thread: { id: 'sandbox-thread' },
+          sandbox: { type: 'workspaceWrite' },
+          // Everything else the server reports is what the session asked for.
+          approvalsReviewer: frame.params!.approvalsReviewer,
+          activePermissionProfile: { id: profile },
+        },
+      });
+      return true;
+    });
+    await expect(
+      new CodexAdapter('fake-codex').start({ ...userSpec(), permission_mode: 'plan' }, () => {}),
+    ).rejects.toThrow();
+    expect(server.close).toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      'the reported sandbox',
+      { sandbox: { type: 'workspaceWrite', networkAccess: true } },
+      { sandboxPolicy: { type: 'workspaceWrite', networkAccess: true } },
+    ],
+    [
+      'the active permission profile',
+      { sandbox: { type: 'workspaceWrite' }, activePermissionProfile: { id: 'user-profile' } },
+      { permissions: 'user-profile' },
+    ],
+  ])('runs a read-only turn read-only and then returns to %s', async (_, reported, restored) => {
+    const server = fakeServer();
+    server.intercept.mockImplementation((frame) => {
+      if (frame.method !== 'thread/start') return false;
+      server.send({
+        id: frame.id,
+        result: { thread: { id: 'sandbox-thread' }, approvalsReviewer: 'auto_review', ...reported },
+      });
+      return true;
+    });
+    const adapter = new CodexAdapter('fake-codex');
+    const events: AgentEvent[] = [];
+    const handle = await adapter.start(userSpec(), (event) => events.push(event));
+    cleanup.push(() => adapter.close(handle, Date.now() + 1000));
+    const turn = async (turn_id: string, read_only?: true) => {
+      const done = events.filter((event) => event.kind === 'turn.completed').length;
+      await adapter.send(handle, { turn_id, input: 'look', ...(read_only ? { read_only } : {}) });
+      const params = turnStarts(server.frames).at(-1)!;
+      completed(server.send);
+      await vi.waitFor(() =>
+        expect(events.filter((event) => event.kind === 'turn.completed')).toHaveLength(done + 1),
+      );
+      return params;
+    };
+    const first = await turn('first-turn');
+    expect(first).not.toHaveProperty('sandboxPolicy');
+    expect(first).not.toHaveProperty('permissions');
+    expect(first).not.toHaveProperty('approvalsReviewer');
+    expect(await turn('read-only-turn', true)).toMatchObject({
+      sandboxPolicy: { type: 'readOnly', networkAccess: false },
+      approvalsReviewer: 'user',
+    });
+    expect(await turn('next-turn')).toMatchObject({
+      ...restored,
+      approvalsReviewer: 'auto_review',
+    });
+    const last = await turn('last-turn');
+    expect(last).not.toHaveProperty('sandboxPolicy');
+    expect(last).not.toHaveProperty('permissions');
+    expect(last).not.toHaveProperty('approvalsReviewer');
+  });
+
+  it.each([
+    ['a command', commandParams, 'allow'],
+    [
+      'a write outside the sandbox',
+      { additionalPermissions: { fileSystem: { write: ['/x'] } } },
+      'allow',
+    ],
+    [
+      'network access',
+      { networkApprovalContext: { host: 'example.invalid', protocol: 'https' } },
+      'allow',
+    ],
+    ['a retry without the sandbox', { reason: 'command failed; retry without sandbox?' }, 'deny'],
+  ] as const)('asks the user about escalating %s and answers %s', async (_, params, decision) => {
+    const f = await running(userSpec());
+    f.send(requestFrame(commandApproval, params));
+    expect(f.frames.some((frame) => frame.id === 'approval')).toBe(false);
+    const request = permission(f.events);
+    expect(request.tool).toBe('commandExecution');
+    await f.adapter.answerPermission(f.handle, request.request_id, decision);
+    expect(f.frames.at(-1)).toEqual({
+      id: 'approval',
+      result: { decision: decision === 'allow' ? 'accept' : 'decline' },
+    });
+  });
+
+  it.each([
+    ['in plan mode', { permission_mode: 'plan' }, undefined],
+    ['during a read-only turn', {}, true],
+  ] as const)('declines a command escalation %s without asking', async (_, extra, read_only) => {
+    const f = await opened({ ...userSpec(), ...extra });
+    await f.adapter.send(f.handle, {
+      turn_id: 'user-turn',
+      input: 'look',
+      ...(read_only ? { read_only } : {}),
+    });
+    f.send(requestFrame(commandApproval, commandParams));
+    expect(f.frames.at(-1)).toEqual({ id: 'approval', result: { decision: 'decline' } });
+    expect(f.events.filter((event) => event.kind.startsWith('permission.'))).toEqual([]);
+  });
+
+  const clone = path.join(process.cwd(), 'clone');
+  const update = (target: string, move_path: string | null = null) => ({
+    path: target,
+    kind: { type: 'update', move_path },
+  });
+  it.each([
+    [
+      'asks about',
+      'outside the writable roots',
+      [update(path.join(process.cwd(), 'x'))],
+      null,
+      true,
+    ],
+    [
+      'asks about',
+      'in a write-protected directory',
+      [update(path.join(process.cwd(), 'source', 'x'))],
+      null,
+      true,
+    ],
+    [
+      'asks about',
+      'in the worktree git hooks',
+      [update(path.join(clone, '.git/hooks/pre-commit'))],
+      null,
+      true,
+    ],
+    ['asks about', 'with a grant root outside the roots', [update(patchTarget)], '/outside', true],
+    [
+      'declines',
+      'in a hidden directory',
+      [update(path.join(process.cwd(), 'private', 'key'))],
+      null,
+      false,
+    ],
+    [
+      'declines',
+      'moved into a hidden directory',
+      [update(patchTarget, path.join(process.cwd(), 'private', 'key'))],
+      null,
+      false,
+    ],
+    [
+      'declines',
+      'with a grant root in a hidden directory',
+      [update(patchTarget)],
+      path.join(process.cwd(), 'private'),
+      false,
+    ],
+  ])('%s a file change %s', async (_, __, changes, grantRoot, asked) => {
+    const f = await running(userSpec());
+    f.send(patchStarted(changes));
+    f.send(requestFrame(fileApproval, { ...fileParams, grantRoot }));
+    if (asked) {
+      expect(f.frames.some((frame) => frame.id === 'approval')).toBe(false);
+      expect(permission(f.events).tool).toBe('fileChange');
+    } else {
+      expect(f.frames.at(-1)).toEqual({ id: 'approval', result: { decision: 'decline' } });
+      expect(f.events.filter((event) => event.kind.startsWith('permission.'))).toEqual([]);
+    }
+  });
+
+  it('declines a file change outside the writable roots in plan mode without asking', async () => {
+    const f = await running({ ...userSpec(), permission_mode: 'plan' });
+    f.send(patchStarted([update(path.join(process.cwd(), 'x'))]));
+    f.send(requestFrame(fileApproval, fileParams));
+    expect(f.frames.at(-1)).toEqual({ id: 'approval', result: { decision: 'decline' } });
+    expect(f.events.filter((event) => event.kind.startsWith('permission.'))).toEqual([]);
+  });
+});

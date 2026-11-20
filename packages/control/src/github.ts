@@ -17,7 +17,7 @@ import { projectAccess, userOnly, type ControlContext, type Handler } from './co
 import { githubConnection, githubJson } from './connections-status.js';
 import { remoteOf } from './import-candidates.js';
 import { runGit } from './git.js';
-import { listedWorktrees, sessionWorktrees } from './repo.js';
+import { listedWorktrees, sessionWorktrees } from './source-git.js';
 
 const cached = new WeakMap<ControlContext, Map<string, { at: number; value: GithubItems }>>();
 const details = new WeakMap<ControlContext, Map<string, { at: number; value: GithubPullDetail }>>();

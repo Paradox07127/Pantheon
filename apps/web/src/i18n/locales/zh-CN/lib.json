@@ -24,7 +24,6 @@
   "lib.shortcuts.label.appDock": "停靠最近的应用",
   "lib.shortcuts.label.appFullscreen": "全屏显示最近的应用",
   "lib.shortcuts.label.appReload": "重新加载最近的应用",
-  "lib.shortcuts.label.debugView": "调试视图",
   "lib.shortcuts.label.threadFind": "在会话里搜索",
   "lib.shortcuts.label.goBoard": "去项目看板",
   "lib.shortcuts.label.listSelect": "选中 / 取消选中",

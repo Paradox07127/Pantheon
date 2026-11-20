@@ -1,7 +1,6 @@
 import { Toast } from '@base-ui/react/toast';
 import { Check, CircleDot, X } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { appErrors } from '../data/app-errors';
 import { useNow } from '../data/needs-you';
 import { t } from '../i18n';
 import { useShell } from '../store';
@@ -26,8 +25,6 @@ export interface ToastOptions {
   kind?: ToastKind;
   /** Runs once the toast is gone, however it went. */
   onClose?: () => void;
-  /** False keeps a failure without action from offering to ask the debug agent about it. */
-  askAgent?: boolean;
 }
 
 /** A button on a notice card; pressing it also closes the card. */
@@ -75,30 +72,9 @@ type ToastItem = Toast.Root.ToastObject<{ count: number; card?: NoticeCard }>;
 let last: { key: string; id: string; count: number } | null = null;
 
 /** Shows a short notice, held while the pointer or focus is on it. */
-export function toast({
-  title,
-  action,
-  kind = 'result',
-  onClose,
-  askAgent = true,
-}: ToastOptions): string {
+export function toast({ title, action, kind = 'result', onClose }: ToastOptions): string {
   const key = `${kind}:${title}`;
   const count = !action && last?.key === key ? last.count + 1 : 1;
-  // A failure toast follows the failure it reports, so an entry this fresh is that failure.
-  const newest = appErrors().at(-1);
-  const error = newest && Date.now() - Date.parse(newest.at) <= 2000 ? newest : undefined;
-  const button =
-    action ??
-    (kind === 'failure' && askAgent
-      ? {
-          label: t({ id: 'components.toast.askAgent', defaultMessage: 'Ask agent' }),
-          // Loaded on demand: the debug report reaches modules that themselves show toasts.
-          run: () =>
-            void import('../data/ask-debug').then((m) =>
-              m.askDebugAgent({ title, ...(error ? { error } : {}) }),
-            ),
-        }
-      : undefined);
   // The button stays pressable while the toast fades out.
   let ran = false;
   const id: string = toastManager.add({
@@ -112,15 +88,15 @@ export function toast({
       if (last?.id === id) last = null;
       onClose?.();
     },
-    ...(button
+    ...(action
       ? {
           actionProps: {
-            children: button.label,
+            children: action.label,
             onClick: () => {
               toastManager.close(id);
               if (ran) return;
               ran = true;
-              button.run();
+              action.run();
             },
           },
         }

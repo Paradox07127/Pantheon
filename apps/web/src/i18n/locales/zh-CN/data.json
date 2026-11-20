@@ -357,11 +357,6 @@
   "data.workflowPolicy.param.runtimeParallel": "运行时并发上限",
   "data.workflowPolicy.param.dispatchPaused": "暂停派发",
   "data.workflowPolicy.path.parallel": "拆成几个并行的任务会话",
-  "data.askDebug.copied": "已复制错误报告",
-  "data.askDebug.noProject": "先把 Pantheon 仓库加成项目，才能问 agent；报告已复制",
-  "data.askDebug.sent": "已发给调试会话",
-  "data.askDebug.open": "打开",
-  "data.toolCalls.action.proposeAgent": "提议智能体",
   "data.transcript.busy.archived": "会话已归档，恢复后才能发送或插话",
   "data.reason.settingProposalAwaitingDecision": "设置改动等你决定",
   "data.reason.planReassessmentReady": "lead 重估了暂停的计划"

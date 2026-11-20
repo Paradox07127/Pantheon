@@ -18,7 +18,6 @@ import { useProjectQuery } from '@/data/project-read';
 import { useSessionGates, useSessionPreflight } from '@/data/session-panel';
 import { startSync, type DaemonEvent, type SyncView } from '@/data/sync';
 import { buildTranscript, type SessionTurn } from '@/data/transcript';
-import { useRepoWorkingDiff } from '@/data/repo-local';
 import { useProjectHead } from '@/data/runtime-models';
 import { useRunSpans, useSessionTrace, useTurnSteps } from '@/data/trace';
 import {
@@ -414,28 +413,20 @@ it('reads the whole session list again after a baseline is confirmed or the gate
   expect(reads).toEqual(['session.list', 'session.list', 'session.list']);
 });
 
-it('reads the diffs, the session list, the project head and the local changes again when the window regains focus', async () => {
+it('reads the diffs, the session list, and the project head again when the window regains focus', async () => {
   answers['session.diff'] = { files: [], truncated: false };
   answers['session.turn_diff'] = { files: [], truncated: false };
   answers['project.head'] = { branch: 'main', sha: 'abc', subject: 'first' };
-  answers['repo.working_diff'] = { files: [] };
   mock.board = { ...mock.board, board: { cursor: 0, sessions: [], session_turns: [] } };
   const views = [
     mount(() => useSessionDiff('session-a')),
     mount(() => useTurnDiff('session-a', 'turn-a')),
     mount(() => useSessionList('project-a')),
     mount(() => useProjectHead('project-a')),
-    mount(() => useRepoWorkingDiff('project-a')),
   ];
   for (const h of views) await h.flush();
   const before = [...reads].sort();
-  expect(before).toEqual([
-    'project.head',
-    'repo.working_diff',
-    'session.diff',
-    'session.list',
-    'session.turn_diff',
-  ]);
+  expect(before).toEqual(['project.head', 'session.diff', 'session.list', 'session.turn_diff']);
   for (const listener of listeners.focus ?? []) listener();
   for (const h of views) {
     h.render();

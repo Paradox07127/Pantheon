@@ -142,32 +142,6 @@ it('skips a listed file deleted before its size is read', async () => {
   ]);
 });
 
-it('refuses a session the repository working diff, which runs git outside its sandbox', async () => {
-  const f = await workbenchFixture();
-  const own = await boundTaskSession(f, 'lead-of-the-task', 'task-under-test');
-  await awaitWorkspaceReady(f.control, own.workspace_id!);
-  await expect(f.control.repoWorkingDiff(workerOf(f, own), f.project.id)).rejects.toThrow(denied);
-  expect((await f.control.repoWorkingDiff(user, f.project.id)).files).toBeDefined();
-});
-
-it('refuses a session the repository reads, which span the project’s worktrees', async () => {
-  const f = await workbenchFixture();
-  const own = await boundTaskSession(f, 'lead-of-the-task', 'task-under-test');
-  const workspace = await awaitWorkspaceReady(f.control, own.workspace_id!);
-  const worker = workerOf(f, own);
-  const project_id = f.project.id;
-  const reads = (p: Principal) => [
-    () => f.control.repoWorktrees(p, project_id),
-    () => f.control.repoStatus(p, project_id, workspace.path),
-    () => f.control.repoStatus(p, project_id, f.source),
-    () => f.control.repoLog(p, { project_id, limit: 10, skip: 0 }),
-    () => f.control.repoBlame(p, { project_id, path: 'answer.txt' }),
-    () => f.control.repoFileHistory(p, { project_id, path: 'answer.txt' }),
-  ];
-  for (const read of reads(worker)) await expect(read()).rejects.toThrow(denied);
-  for (const read of reads(user)) await expect(read()).resolves.toBeDefined();
-});
-
 it('lets a task worker search only its own worktree for file names', async () => {
   const f = await workbenchFixture();
   const own = await boundTaskSession(f, 'lead-of-the-task', 'task-under-test');

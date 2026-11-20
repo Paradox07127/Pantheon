@@ -365,6 +365,7 @@ export function buildClaudeOptions(
         | 'env_allowlist'
         | 'project_roots'
         | 'mcp_servers'
+        | 'user_session'
       >
     > &
     (
@@ -530,15 +531,22 @@ export function buildClaudeOptions(
             permissions: {
               deny: [
                 ...deniedSkills,
-                ...spec.sandbox.protected_entries.flatMap((entry) =>
-                  [
-                    ...(entry.deny === 'read_write' ? ['Read'] : []),
-                    ...(mountedOnLinux(entry.path) ? ['Edit'] : []),
-                  ].flatMap((tool) => [`${tool}(/${entry.path})`, `${tool}(/${entry.path}/**)`]),
-                ),
+                ...spec.sandbox.protected_entries
+                  .filter((entry) => !spec.user_session || entry.deny === 'read_write')
+                  .flatMap((entry) =>
+                    [
+                      ...(entry.deny === 'read_write' ? ['Read'] : []),
+                      ...(mountedOnLinux(entry.path) ? ['Edit'] : []),
+                    ].flatMap((tool) => [`${tool}(/${entry.path})`, `${tool}(/${entry.path}/**)`]),
+                  ),
               ],
             },
           },
+        }
+      : {}),
+    // A user session runs in the sandbox its own Claude settings choose, if any.
+    ...(spec.sandbox && !spec.user_session
+      ? {
           sandbox: {
             enabled: true,
             failIfUnavailable: true,
@@ -598,10 +606,11 @@ export function buildClaudeOptions(
                   },
                 };
               const mode = permissionMode();
-              // The classifier or bypass decides what Pantheon's own checks do not refuse.
+              // The classifier or bypass decides what Pantheon's own checks do not refuse; in a user
+              // session the native permission rules decide in every mode.
               if (
                 input.hook_event_name === 'PreToolUse' &&
-                (mode === 'auto' || mode === 'full_access') &&
+                (spec.user_session || mode === 'auto' || mode === 'full_access') &&
                 !input.tool_name.startsWith('mcp__pantheon__') &&
                 !['AskUserQuestion', 'ExitPlanMode'].includes(input.tool_name)
               ) {
@@ -640,7 +649,7 @@ export function buildClaudeOptions(
             : ['Read', 'Glob', 'Grep']
           : { type: 'preset', preset: 'claude_code' }
         : [],
-    allowedTools: [],
+    ...(spec.user_session ? {} : { allowedTools: [] }),
     permissionMode: spec.permission_mode
       ? NATIVE_PERMISSION_MODES[spec.permission_mode]
       : 'dontAsk',
@@ -687,7 +696,9 @@ export function buildClaudeOptions(
         return { behavior: 'deny', message: PLAN_MODE_INSTRUCTION };
       if (allowedRules()?.includes(permissionRule(tool, input)))
         return { behavior: 'allow', updatedInput: input };
-      if (mode === 'ask' || mode === 'plan' || mode === 'auto') {
+      if (spec.user_session) {
+        // No Pantheon sandbox bounds its reads: what the native rules send here is asked.
+      } else if (mode === 'ask' || mode === 'plan' || mode === 'auto') {
         if (READ_ONLY_TOOLS.has(tool) || readOnlyCommand)
           return { behavior: 'allow', updatedInput: input };
       } else if (
@@ -774,17 +785,20 @@ function askedQuestions(questions: unknown[]): ApprovalQuestion[] {
 }
 
 function toolDenial(
-  spec: Pick<SessionSpec, 'cwd' | 'sandbox'>,
+  spec: Pick<SessionSpec, 'cwd' | 'sandbox' | 'user_session'>,
   tool: string,
   input: Record<string, unknown>,
   resolve: (target: string) => string = toolPath,
 ): string | undefined {
   if (!spec.sandbox) return 'Tools are not enabled for the text probe';
-  if (tool === 'Bash' && input.dangerouslyDisableSandbox) return 'Bash must run inside the sandbox';
+  // In a user session the native rules govern these and writes; only read_write entries stay denied.
+  if (tool === 'Bash' && input.dangerouslyDisableSandbox && !spec.user_session)
+    return 'Bash must run inside the sandbox';
   if (
-    tool === 'EnterWorktree' ||
-    tool === 'ExitWorktree' ||
-    ((tool === 'Agent' || tool === 'Task') && input.isolation !== undefined)
+    !spec.user_session &&
+    (tool === 'EnterWorktree' ||
+      tool === 'ExitWorktree' ||
+      ((tool === 'Agent' || tool === 'Task') && input.isolation !== undefined))
   )
     return 'The session must stay in the worktree Pantheon gave it';
   const writing = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(tool);
@@ -809,11 +823,12 @@ function toolDenial(
     };
     if (
       spec.sandbox.protected_entries.some(
-        (entry) => (writing || entry.deny === 'read_write') && inside(entry.path),
+        (entry) =>
+          ((writing && !spec.user_session) || entry.deny === 'read_write') && inside(entry.path),
       )
     )
       return 'File target is protected';
-    if (writing && !spec.sandbox.writable_roots.some(inside))
+    if (writing && !spec.user_session && !spec.sandbox.writable_roots.some(inside))
       return 'File writes must stay inside the writable roots';
   } catch {
     return 'Unable to resolve file target safely';
@@ -822,7 +837,7 @@ function toolDenial(
 
 /** toolDenial for a session on a device, whose files only the device can resolve. */
 async function deviceToolDenial(
-  spec: Pick<SessionSpec, 'cwd' | 'sandbox'>,
+  spec: Pick<SessionSpec, 'cwd' | 'sandbox' | 'user_session'>,
   remote: RemoteLaunch,
   tool: string,
   input: Record<string, unknown>,
@@ -972,7 +987,7 @@ const MANAGED_SETTINGS = [
  * which protected paths its sandbox can name. Refuses the session when the device cannot be checked.
  */
 async function deviceSandbox(
-  spec: Pick<SessionSpec, 'cwd' | 'env' | 'env_allowlist' | 'extensions'>,
+  spec: Pick<SessionSpec, 'cwd' | 'env' | 'env_allowlist' | 'extensions' | 'user_session'>,
   remote: RemoteLaunch,
   sandbox: NonNullable<SessionSpec['sandbox']>,
 ): Promise<(target: string) => boolean> {
@@ -982,7 +997,7 @@ async function deviceSandbox(
   const protectedPaths = sandbox.protected_entries.map((entry) => entry.path);
   const config = { ...remote.env, ...spec.env }.CLAUDE_CONFIG_DIR;
   const files: (readonly ['managed' | 'user' | 'project' | 'local', string])[] =
-    spec.extensions?.mode === 'inherit'
+    spec.extensions?.mode === 'inherit' && !spec.user_session
       ? [
           ...MANAGED_SETTINGS.map((file) => ['managed', file] as const),
           ['user', config ? path.posix.join(config, 'settings.json') : '~/.claude/settings.json'],
@@ -2020,7 +2035,8 @@ export class ClaudeAdapter implements HarnessAdapter {
       (spec.sandbox.protected_entries.length || spec.extensions?.mode === 'inherit')
         ? await deviceSandbox(spec, spec.remote, spec.sandbox)
         : undefined;
-    if (!spec.remote && spec.sandbox && spec.extensions?.mode === 'inherit') {
+    // A user session has no Pantheon sandbox for its settings to widen.
+    if (!spec.remote && spec.sandbox && spec.extensions?.mode === 'inherit' && !spec.user_session) {
       await refuseInheritedReadAllows(spec.cwd, spec.sandbox);
       await refuseInheritedWriteAllows(spec.cwd, spec.sandbox);
     }

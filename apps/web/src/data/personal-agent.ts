@@ -5,7 +5,7 @@ import { toast } from '../components/Toast';
 import { useShell } from '../store';
 import { useBoard } from './board';
 import { runCommand } from './commands';
-import { failureText, type NeedsYouItem } from './needs-you';
+import { failureText, offeredNeeds, type NeedsYouItem } from './needs-you';
 import type { DaemonEvent } from './sync';
 import type { ToolItem } from './transcript';
 import { useQuery } from './workbench-sessions';
@@ -173,7 +173,7 @@ export function personalCall(item: ToolItem): PersonalCall | null {
   const call: PersonalCall | null =
     tool === 'needs_you'
       ? Array.isArray(items)
-        ? { kind: 'needs', items: items as NeedsYouItem[], at: item.completed_at }
+        ? { kind: 'needs', items: offeredNeeds(items), at: item.completed_at }
         : null
       : typeof input?.project_id === 'string'
         ? {

@@ -6,8 +6,6 @@
   "board.plan.flow.review.elapsed": "已过 {duration}",
   "board.task.orderLocked": "顺序已锁定",
   "board.task.pullRequest": "拉取请求 #{number}",
-  "insights.iterations.capacity": "{count, plural, other {还能排 # 个任务}}",
-  "insights.iterations.forecast": "预计 {time} 做完",
   "settings.search.keywords.browser": "链接, 网页, Chrome, Safari, Firefox, Arc, Edge",
   "settings.search.keywords.cloudflare": "wrangler, Workers, Pages, 账号, 登录",
   "settings.search.keywords.huggingface": "hf, 模型, 数据集, 账号, 登录"

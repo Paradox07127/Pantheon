@@ -68,6 +68,7 @@ try {
   await call('session.create', {
     project_id,
     runtime: 'fixture',
+    purpose: 'lead',
     input: `${LEAD}\n${script({
       tool: { name: 'update_board', arguments: plan(0, ['keep', 'drop_one', 'drop_two']) },
     })}`,
@@ -162,7 +163,7 @@ try {
   check('"需要你" 有紧凑行 "{root} 的门禁：1 条命令改为 1 条"', row, rows);
   check('对照组：同一读法找不到 "1 条命令改为 0 条"', !gateRow(rows, 1, 0), rows);
 
-  // The diff groups as drawn anywhere on the page, or inside the experience details.
+  // The diff groups as drawn inside a scope of the page.
   const diff = (scope = 'document') =>
     page.evaluate(`(() => {
       const root = ${scope};
@@ -214,86 +215,6 @@ try {
     inRow?.now,
   );
 
-  // 4 (before confirming). The candidate's details on the memory page draw the same change.
-  // The row is named after learned.list: the proposed commands' names, the kind, the group.
-  // The tab's name carries the count of changes that need you.
-  const openLearned = async (group, id) => {
-    await page.click({ role: 'button', name: '记忆', exact: true });
-    await page.click({ role: 'tab', name: '经验', exact: false });
-    const item = (await query('learned.list', { project_id })).find((i) => i.id === id);
-    if (!item) return false;
-    const commands =
-      JSON.parse(item.diff.to)
-        .map((c) => c.name)
-        .join(', ') || '没有命令';
-    const name = `${commands}，门禁命令，${group}`;
-    const option = await poll(async () =>
-      page.evaluate(`(() => {
-        const g = document.querySelector('[role="listbox"][aria-label=${JSON.stringify(group)}]');
-        return !!g && [...g.querySelectorAll('[role="option"]')].some((o) => o.getAttribute('aria-label') === ${JSON.stringify(name)});
-      })()`),
-    );
-    if (!option) return false;
-    await page.click({
-      role: 'option',
-      name,
-      exact: true,
-      within: { role: 'listbox', name: group, exact: true },
-    });
-    return true;
-  };
-  // The details draw one line diff: kept lines plain, the value before with −, after with +.
-  const detail = () =>
-    page.evaluate(`(() => {
-      const ul = document.querySelector('aside[aria-label="经验详情"] ul.mld-diff');
-      if (!ul) return null;
-      const lines = [...ul.querySelectorAll('li')].map((li) => ({
-        kind: li.getAttribute('data-kind'),
-        sign: li.firstElementChild?.textContent ?? '',
-        text: li.querySelector('code')?.textContent ?? '',
-      }));
-      return {
-        lines,
-        now: lines.filter((l) => l.kind !== 'add').map((l) => l.text).join('\\n'),
-        proposed: lines.filter((l) => l.kind !== 'del').map((l) => l.text).join('\\n'),
-        signs: lines.every((l) => l.sign === (l.kind === 'del' ? '−' : l.kind === 'add' ? '+' : '')),
-      };
-    })()`);
-  const shows = (text, gate) => {
-    try {
-      return same(JSON.parse(text), gate);
-    } catch {
-      return false;
-    }
-  };
-  check(
-    '记忆页 "需要你" 里有这条候选',
-    await openLearned('需要你', candidate.id),
-    await names('门禁命令'),
-  );
-  const pending = await poll(async () => {
-    const d = await detail();
-    return d?.lines.length && d;
-  }, 5000);
-  result.candidate_detail = pending;
-  check(
-    '候选详情 "现在" 一侧(未改和带 − 的行)是项目真实的门禁，不是空',
-    pending?.signs && shows(pending.now, gatesSet[ROOT]),
-    { shown: pending?.now, gates: gatesSet[ROOT] },
-  );
-  check(
-    '候选详情 "提议" 一侧对上 change.to，带 + 的行是 "skippable": true',
-    pending?.signs &&
-      shows(pending.proposed, candidate.change.to) &&
-      pending.lines.some((l) => l.kind === 'add' && l.text.includes('"skippable": true')),
-    { shown: pending?.lines, to: candidate.change.to },
-  );
-  check(
-    '对照组：同一读法对 "现在" 一侧判不出 change.to',
-    !shows(pending?.now, candidate.change.to),
-  );
-  result.shot = await page.screenshot('learned-change-candidate');
-
   // 3. Confirm from the needs-you row.
   await page.click({ role: 'button', name: '项目看板', exact: true });
   await poll(async () => gateRow(await strip(), 1, 1));
@@ -320,39 +241,12 @@ try {
   );
   check('确认后 change.from 是确认前的门禁', same(after.it?.change?.from, GATE), after.it?.change);
 
-  // 4. The active change's details show the value before confirming, from change.from.
-  check(
-    '记忆页 "生效中" 里有这一条',
-    await openLearned('生效中', candidate.id),
-    await names('门禁命令'),
-  );
-  const active = await poll(async () => {
-    const d = await detail();
-    return d?.lines.length && d;
-  }, 5000);
-  result.active_detail = active;
-  check(
-    '生效中详情 "现在" 一侧是确认前的值(change.from)',
-    active?.signs && shows(active.now, GATE),
-    { shown: active?.now, from: after.it?.change?.from },
-  );
-  check(
-    '生效中详情 "提议" 一侧是 change.to',
-    active?.signs && shows(active.proposed, PROPOSED),
-    active?.proposed,
-  );
-
-  // 5. Revert it from the details.
-  try {
-    await page.click({
-      role: 'button',
-      name: '撤回',
-      exact: true,
-      within: { role: 'complementary', name: '经验详情', exact: true },
-    });
-  } catch (error) {
-    await page.click({ role: 'button', name: '撤回', exact: true });
-  }
+  // 4. Revert it; the page has no revert control for an improvement.
+  await call('improvement.decide', {
+    project_id,
+    improvement_id: candidate.id,
+    decision: 'revert',
+  });
   const reverted = await poll(async () => {
     const [list, gates] = await Promise.all([improvements(), gatesOf()]);
     const it = list.find((i) => i.id === candidate.id);
@@ -373,7 +267,7 @@ try {
     revertedNow.it?.status,
   );
 
-  // 6. A proposal that clears the gate: its proposed side says there is no gate; rejecting it keeps the gate.
+  // 5. A proposal that clears the gate: rejecting it from the needs-you row keeps the gate.
   await send({
     tool: {
       name: 'propose_improvement',
@@ -389,28 +283,6 @@ try {
     (await gateItems()).map((i) => [i.status, i.change.to]),
   );
   if (clearing) {
-    check(
-      '记忆页 "需要你" 里有清空门禁的候选',
-      await openLearned('需要你', clearing.id),
-      await names('门禁命令'),
-    );
-    const cleared = await poll(async () => {
-      const d = await detail();
-      return d?.lines.length && d;
-    }, 5000);
-    result.clear_detail = cleared;
-    check(
-      '清空门禁的候选："提议" 一侧是一行带 + 的 [](不是空白)',
-      cleared?.signs &&
-        shows(cleared.proposed, []) &&
-        cleared.lines.some((l) => l.kind === 'add' && l.text === '[]'),
-      cleared?.lines,
-    );
-    check(
-      '清空门禁的候选："现在" 一侧是当前门禁',
-      cleared?.signs && shows(cleared.now, GATE),
-      cleared?.now,
-    );
     await page.click({ role: 'button', name: '项目看板', exact: true });
     const clearRows = await poll(async () => {
       const r = await strip();

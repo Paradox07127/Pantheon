@@ -482,21 +482,23 @@ describe('session overview', () => {
     expect(text(shown)).not.toContain('switched-off');
   });
 
-  it('lists the files the session changed after its context, each opening in the files panel', () => {
+  it('lists the files the session changed after its context, each opening its changes', () => {
     mock.diff = {
       files: [
         { path: 'docs/bug-list.md', additions: 12, deletions: 0, untracked: true },
         { path: 'src/verify.ts', additions: 3, deletions: 1, untracked: false },
       ],
     };
-    const h = card();
+    const onTab = vi.fn();
+    const h = card(listed(), onTab);
     expect(regions(h.value)).toEqual([title.context, title.outputs]);
     const shown = region(h.value, title.outputs);
     const open = labelled(shown, 'docs/bug-list.md')!;
     expect(open.type).toBe('button');
     expect(text(open)).toBe('bug-list.md');
     open.props.onClick();
-    expect(mock.shell.openSession).toHaveBeenCalledExactlyOnceWith('session-a', 'files');
+    expect(onTab).toHaveBeenCalledExactlyOnceWith('changes');
+    expect(mock.shell.openSession).not.toHaveBeenCalled();
     expect(labelled(shown, 'src/verify.ts')).toBeTruthy();
   });
 
@@ -532,7 +534,8 @@ describe('session overview', () => {
     expect(onTab.mock.calls).toEqual([['changes'], ['changes']]);
     expect(mock.shell.openSession).not.toHaveBeenCalled();
     labelled(outputs(listed()), 'src/verify.ts')!.props.onClick();
-    expect(mock.shell.openSession).toHaveBeenCalledExactlyOnceWith('session-a', 'files');
+    expect(onTab.mock.calls).toEqual([['changes'], ['changes'], ['changes']]);
+    expect(mock.shell.openSession).not.toHaveBeenCalled();
   });
 
   it('shows the merge bar only where it showed before', () => {

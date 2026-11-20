@@ -149,14 +149,6 @@ export interface NeedsYouItem {
   reassessment?: { done: string; blocked: string; change: string; at: number };
   /** On a lane waiting for plan approval: whether the automatic plan review of its tasks still runs. */
   plan_review_running?: boolean;
-  /** The agent a pending proposal creates or changes, and how long it has waited in milliseconds. */
-  agent_proposal?: {
-    id: string;
-    name: string;
-    template: 'assistant' | 'triage' | 'ideas' | 'goals' | 'custom';
-    agent_id?: string;
-    waited_ms: number;
-  };
   /** The setting a pending proposal changes, from its current to the proposed value, and the user's words it quotes. */
   setting_proposal?: {
     id: string;
@@ -259,8 +251,6 @@ export function touchesNeedsYou(kind: string): boolean {
       'lead.question_answered',
       'lead.question_kept_open',
       'lead.question_overruled',
-      'agent_proposal.created',
-      'agent_proposal.resolved',
       'setting_proposal.created',
       'setting_proposal.resolved',
       'board.plan_paused',
@@ -802,6 +792,13 @@ export function ageText(created_at: number, now: number): string {
   );
 }
 
+/** The items the interface shows; the daemon still lists agent proposals, which it offers no decision on. */
+export function offeredNeeds(items: readonly unknown[]): NeedsYouItem[] {
+  return items.filter(
+    (item) => (item as { kind?: unknown } | null)?.kind !== 'agent.proposal',
+  ) as NeedsYouItem[];
+}
+
 async function readNeedsYou(
   bridge: Pick<DesktopBridge, 'query'>,
   project_id: string | null,
@@ -819,7 +816,7 @@ async function readNeedsYou(
   const items = (result.value as { items?: unknown } | null)?.items;
   if (!Array.isArray(items))
     return { ok: false, error: { code: 'bad_response', message: 'items is not a list' } };
-  return { ok: true, value: items as NeedsYouItem[] };
+  return { ok: true, value: offeredNeeds(items) };
 }
 
 /** The needs-you list of a project, or of every project when project_id is null. */

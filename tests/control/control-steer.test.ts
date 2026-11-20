@@ -104,11 +104,12 @@ async function steeringFixture(support = false) {
   const f = await fixture({ adapter, managedWorkspaces: true });
   commitProjectRoot(f.projectRoot);
   /** Creates a session with its first send and prepares the worktree without starting that turn. */
-  const open = async (text = 'send') => {
+  const open = async (text = 'send', purpose?: 'lead') => {
     const session = await f.call<Session>('session.create', {
       project_id: f.project.id,
       runtime: adapter.name,
       input: text,
+      ...(purpose ? { purpose } : {}),
     });
     await f.control.tick();
     await eventually(
@@ -467,7 +468,7 @@ describe('session input delivery', () => {
         text: 'Use precise terminology',
       });
       s.f.call('memory.commit', { memory_id: draft.id }, draft.revision);
-      const { session, first } = await s.open();
+      const { session, first } = await s.open(undefined, 'lead');
       await s.f.control.tick();
       // A changed packet goes out again; an unchanged one is not resent.
       const next = s.f.call<{ id: string; revision: number }>('memory.propose', {

@@ -18,13 +18,14 @@ import {
   revision,
   sessionMcp,
   userOnly,
+  usesPantheonTools,
   sessionAdapter,
   type ControlContext,
   type Handlers,
 } from './context.js';
 import { sessionDefaults } from './user-config.js';
 import { assertNativeSessionFree } from './native-liveness.js';
-import { managedSessionSpec } from './native-session.js';
+import { inheritedEnvAllowlist, managedSessionSpec, sessionExtensions } from './native-session.js';
 import { inPlaceSandbox } from './protection.js';
 import { reviewsRoots } from './session.js';
 import { registerInPlaceWorkspace } from './workspace.js';
@@ -109,7 +110,10 @@ export async function inPlaceSessionSpec(
   });
   const questionTool = sessionAdapter(ctx, session)?.questionTool;
   const saved = project.extension_overrides?.[session.runtime];
-  const pantheonMcp = sessionMcp(ctx, session, credentialRole(session, workspace.kind));
+  const pantheonTools = usesPantheonTools(ctx, session);
+  const pantheonMcp = pantheonTools
+    ? sessionMcp(ctx, session, credentialRole(session, workspace.kind))
+    : undefined;
   // A new folder session without a task leads like a worktree session the user opened.
   const planningLead = pantheonMcp && session.in_place && !session.task && !session.app_debug;
   return managedSessionSpec(ctx, {
@@ -130,7 +134,7 @@ export async function inPlaceSessionSpec(
       // A planning lead asks with ask_user, which LEAD_INSTRUCTIONS names.
       ...(planningLead ? [leadInstructions(startedLeadPlaybook(ctx, session))] : []),
       // workerInstructions tells a task session how to ask.
-      ...(questionTool && !planningLead && !session.task
+      ...(questionTool && pantheonTools && !planningLead && !session.task
         ? [
             `When the user must decide or answer something, ask with the ${questionTool} tool instead of asking in plain text. Give 2 to 4 short options with the one you recommend first; the user can also type an answer of their own.`,
           ]
@@ -143,29 +147,12 @@ export async function inPlaceSessionSpec(
       protected_entries: sandbox.protected_entries.map(({ path, deny }) => ({ path, deny })),
     },
     cwd: workspace.path,
-    env_allowlist: NATIVE_ENV_ALLOWLIST,
+    env_allowlist: pantheonTools ? NATIVE_ENV_ALLOWLIST : inheritedEnvAllowlist(project),
     skills: [],
     mcp_servers: [],
+    ...(pantheonTools ? {} : { user_session: true as const }),
     pantheon_mcp: pantheonMcp,
-    extensions: {
-      mode: 'inherit',
-      // User-level MCP servers, skills and account connectors stay off until the project opens them.
-      overrides: {
-        disabled_mcp_servers: [],
-        disabled_plugins: [],
-        disabled_skills: [],
-        disable_hooks: false,
-        ...saved,
-        disable_apps:
-          session.enabled_user_connectors !== undefined
-            ? !session.enabled_user_connectors.length
-            : saved?.disable_apps === true || !saved?.enabled_user_connectors?.length,
-        enabled_user_mcp_servers: saved?.enabled_user_mcp_servers ?? [],
-        enabled_user_skills: saved?.enabled_user_skills ?? [],
-        enabled_user_connectors:
-          session.enabled_user_connectors ?? saved?.enabled_user_connectors ?? [],
-      },
-    },
+    extensions: sessionExtensions(session, saved, !pantheonTools),
     device_id: session.device_id ?? 'local',
     budget: { max_turns: 1, wall_time_ms: ctx.turnWallTimeMs ?? IN_PLACE_TURN_MS },
     permission_mode: session.permission_mode ?? 'ask',

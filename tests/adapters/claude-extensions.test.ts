@@ -635,6 +635,41 @@ describe('Claude extension discovery', () => {
     await f.adapter.close(handle, Date.now() + 1000);
   });
 
+  it.each([
+    { sandbox: { filesystem: { allowWrite: ['~/elsewhere'] } } },
+    { sandbox: { excludedCommands: ['docker *'] } },
+    { permissions: { allow: ['Edit'] } },
+    { sandbox: { filesystem: { allowRead: [path.join(os.tmpdir(), 'pantheon-protected-data')] } } },
+  ])(
+    'starts a user session whose inherited settings would widen the Pantheon sandbox: %j',
+    async (settings) => {
+      const input: SessionSpec = {
+        ...spec({ mode: 'inherit', overrides: empty }),
+        user_session: true,
+      };
+      input.sandbox = {
+        writable_roots: [input.cwd],
+        protected_entries: [
+          { path: path.join(os.tmpdir(), 'pantheon-protected-data'), deny: 'read_write' },
+        ],
+      };
+      vi.mocked(resolveSettings).mockResolvedValue({
+        effective: {},
+        provenance: {},
+        sources: [
+          { source: 'user', path: path.join(os.homedir(), '.claude/settings.json'), settings },
+        ],
+      });
+      onTestFinished(() => {
+        vi.mocked(resolveSettings).mockReset();
+      });
+      const f = fakeQuery();
+      const handle = await f.adapter.start(input, () => {});
+      expect(f.query).toHaveBeenCalledOnce();
+      await f.adapter.close(handle, Date.now() + 1000);
+    },
+  );
+
   it('completes the turn when reading the extensions it loaded fails', async () => {
     const f = fakeQuery(),
       events: AgentEvent[] = [];

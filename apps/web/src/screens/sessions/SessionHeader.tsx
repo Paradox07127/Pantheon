@@ -7,7 +7,6 @@ import {
   Columns2,
   Ellipsis,
   FileDiff,
-  Folder,
   Gauge,
   GitBranch,
   GitFork,
@@ -126,12 +125,6 @@ export const PANELS: Record<Panel, { icon: LucideIcon; label: string }> = {
     icon: ListTodo,
     get label() {
       return t({ id: 'sessions.panel.dock.plan', defaultMessage: 'Plan' });
-    },
-  },
-  files: {
-    icon: Folder,
-    get label() {
-      return t({ id: 'sessions.panel.dock.files', defaultMessage: 'Files' });
     },
   },
   browser: {
@@ -551,15 +544,7 @@ export function SessionHeader({
   );
 }
 
-const TOGGLED: readonly Panel[] = [
-  'changes',
-  'checks',
-  'plan',
-  'files',
-  'browser',
-  'trace',
-  'monitor',
-];
+const TOGGLED: readonly Panel[] = ['changes', 'checks', 'plan', 'browser', 'trace', 'monitor'];
 
 /** Why the session lacks a panel; only changes and checks can be missing. */
 const offReason = (panel: Panel): string =>

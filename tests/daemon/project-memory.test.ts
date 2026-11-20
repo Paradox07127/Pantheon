@@ -57,6 +57,7 @@ it('runs HTTP decisions through real MCP child processes, two adapter sessions, 
         project_id: project.id,
         runtime: 'fixture',
         input: 'Read current project memory',
+        purpose: 'lead',
       });
       sessions.push(s);
       await eventually(

@@ -70,7 +70,12 @@ try {
   await page.click({ role: 'button', name: '设置', exact: true });
   await page.click({ role: 'button', name: '项目', exact: true });
   await page.click({ role: 'button', name: `verify-environment-${stamp}`, exact: false });
-  const first = await poll(async () => (await section())?.button && (await section()));
+  // The section renders its button before the board snapshot that carries the gate commands set above.
+  const first =
+    (await poll(async () => {
+      const s = await section();
+      return s?.rows.length === 2 && s;
+    })) || (await section());
   check('门禁页有"环境"一节', first?.title === '环境', first?.title);
   check('按钮是"检查环境"且可用', first?.button === '检查环境' && !first.disabled, first);
   // Before any check the root lists its gate commands as not run.

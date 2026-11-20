@@ -80,7 +80,7 @@ function sessionOf(f: Fixture, task?: Session['task']): Session {
     workspace_id: workspace.id,
     state: 'open',
     turn_count: 0,
-    ...(task ? { task } : {}),
+    ...(task ? { task } : { lead: true as const }),
   });
 }
 

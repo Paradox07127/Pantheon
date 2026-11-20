@@ -11,7 +11,6 @@ import { Menu } from '@base-ui/react/menu';
 import { Popover } from '@base-ui/react/popover';
 import { CircleCheck, Ellipsis } from 'lucide-react';
 import type { WorkbenchSession } from '@pantheon/protocol';
-import { templateName } from '../data/agents';
 import { blocksText, decisionText, nextKey, primaryAction } from '../data/attention';
 import { useBoard } from '../data/board';
 import { runCommand } from '../data/commands';
@@ -25,13 +24,11 @@ import {
   useNow,
   type NeedsYouItem,
 } from '../data/needs-you';
-import { focusRequest } from '../data/focus-request';
 import { openPlanMemory } from '../data/memory-view';
 import { needsKey } from '../data/notice-tiers';
 import { visibleProjects } from '../data/projects';
 import { sessionTitle } from '../data/transcript';
 import { t } from '../i18n';
-import { listText } from '../lib/list-text';
 import { holdRootFlag } from '../lib/root-flag';
 import {
   needActions,
@@ -297,8 +294,6 @@ export function NeedsPopover({
     const failed = answers[key];
     // A lead's question is answered on its card, which the lead's thread does not show.
     const card = item.kind === 'lead.question' ? needsKey(item) : null;
-    // An agent proposal is decided on its card in the proposing conversation.
-    const proposal = item.kind === 'agent.proposal' ? item.agent_proposal : undefined;
     const kind = noVerdictKind(item as NeedItem) ?? decisionText(item.decision);
     const named = item.lane_title ?? (session && board ? sessionTitle(session, board) : undefined);
     const row: ListRow = {
@@ -312,13 +307,6 @@ export function NeedsPopover({
       ...(item.kind === 'memory.decision_budget' && {
         open: () => openPlanMemory(item.project_id),
       }),
-      ...(proposal &&
-        sessionId && {
-          open: () => {
-            focusRequest(proposal.id);
-            useShell.getState().openProjectSession(item.project_id, sessionId);
-          },
-        }),
       since: item.created_at,
       blocks: item.blocks,
       icon: needsGlyph(item),
@@ -326,19 +314,6 @@ export function NeedsPopover({
       count: blocksText(item.blocks),
       detail: failed ? (
         <span role="alert">{failed}</span>
-      ) : proposal ? (
-        listText(
-          proposal.agent_id
-            ? t(
-                { id: 'projects.needs.changeAgent', defaultMessage: 'Change agent: {name}' },
-                { name: proposal.name },
-              )
-            : t(
-                { id: 'projects.needs.newAgent', defaultMessage: 'New agent: {name}' },
-                { name: proposal.name },
-              ),
-          templateName(proposal.template),
-        )
       ) : kind ? (
         (item.question?.question ?? named ?? reason)
       ) : named ? (

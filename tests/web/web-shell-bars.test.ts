@@ -23,12 +23,11 @@ describe('shell', () => {
     expect(startScreen(null)).toBe('projects');
   });
 
-  it('has the sessions, board, insights, repo, runtime, flow, trace, memory, automations, projects, personal and settings screens only', () => {
+  it('has the sessions, board, insights, runtime, flow, trace, memory, automations, projects, personal and settings screens only', () => {
     expect(Object.keys(SCREEN_NAMES)).toEqual([
       'sessions',
       'board',
       'insights',
-      'repo',
       'runtime',
       'flow',
       'trace',

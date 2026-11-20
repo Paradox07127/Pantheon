@@ -105,39 +105,3 @@ it('waits for refreshed device probes and for MCP servers to start', async () =>
   await bridge.query('mcp.status', { project_id: 'project' });
   expect(timeouts).toEqual([25_000, 5000, 25_000, 65_000]);
 });
-
-it('waits for a repository write as long as the daemon lets its git run, while other commands keep five seconds', async () => {
-  const root = mkdtempSync(path.join(os.tmpdir(), 'bridge-deadline-'));
-  roots.push(root);
-  const token = path.join(root, 'user.token');
-  writeFileSync(token, 'token');
-  writeFileSync(
-    path.join(root, 'daemon.json'),
-    JSON.stringify({ url: 'http://127.0.0.1:1234', token_file: token, pid: 1 }),
-  );
-  const timeouts: number[] = [];
-  vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms) => {
-    timeouts.push(ms);
-    return new AbortController().signal;
-  });
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async () => new Response(JSON.stringify({ version: '0.1.0', protocol_version: 1 }))),
-  );
-  const bridge = new DaemonBridge({
-    directory: root,
-    packaged: true,
-    repo: root,
-    logFile: path.join(root, 'daemon.log'),
-  });
-  await bridge.daemon();
-  timeouts.length = 0;
-  const command = (type: string) =>
-    ({ command_id: type, idempotency_key: type, type, input: {} }) as never;
-  await bridge.command(command('repo.commit'));
-  await bridge.command(command('repo.discard'));
-  await bridge.command(command('session.send'));
-  expect(timeouts[0]).toBeGreaterThan(120_000);
-  expect(timeouts[1]).toBeGreaterThan(120_000);
-  expect(timeouts[2]).toBe(5000);
-});

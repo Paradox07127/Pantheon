@@ -9,12 +9,8 @@ import type {
   WorkflowPolicy,
 } from '@pantheon/domain';
 import type {
-  EffortLevel,
   ImprovementListItem,
   ImprovementSession,
-  RoutingCell,
-  RoutingTable,
-  ImprovementSignalFinding,
   WorkflowPolicyView,
 } from '@pantheon/protocol';
 import { t } from '../i18n';
@@ -28,7 +24,6 @@ export type {
   ImprovementListItem,
   ImprovementSession,
   Retrospective,
-  RoutingCell,
   WorkflowParam,
   WorkflowPolicy,
   WorkflowPolicyView,
@@ -78,11 +73,6 @@ export const isPolicy = (value: unknown): value is WorkflowPolicy =>
   isObject(value.path) &&
   Array.isArray(value.pinned);
 
-const isRoutingTable = (value: unknown): boolean =>
-  isObject(value) &&
-  Array.isArray(value.cells) &&
-  value.cells.every((c) => isObject(c) && Array.isArray(c.candidates));
-
 const isImprovements = (value: unknown): boolean =>
   Array.isArray(value) &&
   value.every(
@@ -98,43 +88,11 @@ const isImprovements = (value: unknown): boolean =>
           Array.isArray(i.trial.metrics))),
   );
 
-type PolicyChange = Extract<Improvement['change'], { type: 'policy_change' }>;
-
-/** One rule of improvement.signals the project's retrospectives meet, and the change it suggests. */
-export interface ImprovementFinding {
-  signal: ImprovementSignal;
-  /** The domain and tier the rule read; absent for a rule over the whole project. */
-  cell?: TaskKind;
-  /** The retrospectives it rests on, newest first. */
-  retrospective_ids: string[];
-  /** Absent for a signal that changes no parameter. */
-  suggestion?: Omit<PolicyChange, 'from'> | Extract<Improvement['change'], { type: 'experience' }>;
-  /** Why the suggestion is not to be proposed. */
-  withheld?: 'pinned' | 'already_set';
-  /** What a rule over the last 7 days of events saw; such a finding rests on no retrospective. */
-  evidence?: ImprovementSignalFinding['evidence'];
-}
-
-const isFindings = (value: unknown): boolean =>
-  Array.isArray(value) &&
-  value.every(
-    (f) => isObject(f) && typeof f.signal === 'string' && Array.isArray(f.retrospective_ids),
-  );
-
-/** GET /v1/improvement.signals: the rules the project's retrospectives meet now. */
-export const useImprovementSignals = (project_id: string | null) =>
-  useProjectQuery<ImprovementFinding[]>('improvement.signals', project_id, isFindings, undefined, {
-    events: true,
-  });
-
 /** GET /v1/workflow.policy; the defaults at version 0 until the project stores its own. */
 export const useWorkflowPolicy = (project_id: string | null) =>
   useProjectQuery<WorkflowPolicyView>('workflow.policy', project_id, isPolicy, undefined, {
     events: true,
   });
-
-export const useRoutingTable = (project_id: string) =>
-  useProjectQuery<RoutingTable>('routing.table', project_id, isRoutingTable);
 
 /** GET /v1/improvement.list: the project's improvements of every status, newest first. */
 export const useImprovements = (project_id: string | null) =>
@@ -222,19 +180,6 @@ export const setPolicy = (policy: WorkflowPolicy, patch: PolicyPatch): Promise<M
     'workflow.policy.set',
     { project_id: policy.project_id, ...patch },
     policyRevision(policy),
-  );
-
-/** Sets one slot of a routing cell; null leaves it to the records. */
-export const setRouting = (
-  project: { id: string; revision: number },
-  cell: RoutingCell,
-  slot: 'first' | 'alternate',
-  choice: { runtime: string; model: string; effort?: EffortLevel } | null,
-): Promise<MutationResult> =>
-  sendProjectCommand(
-    'routing.set',
-    { project_id: project.id, domain: cell.domain, tier: cell.tier, slot, choice },
-    project.revision,
   );
 
 export const decideImprovement = (
@@ -538,18 +483,10 @@ export const DOMAIN_LABEL: Record<TaskKind['domain'], string> = {
   },
 };
 
-const DOMAINS = Object.keys(DOMAIN_LABEL);
-
 export const tierText = (tier: TaskKind['tier']) => tier.toUpperCase();
 
 export const kindText = (domain: TaskKind['domain'], tier: TaskKind['tier']) =>
   `${DOMAIN_LABEL[domain]} ${tierText(tier)}`;
-
-/** Cells in the domain order of the task kinds, then by tier. */
-export const sortedCells = (cells: readonly RoutingCell[]): RoutingCell[] =>
-  [...cells].sort(
-    (a, b) => DOMAINS.indexOf(a.domain) - DOMAINS.indexOf(b.domain) || a.tier.localeCompare(b.tier),
-  );
 
 function valueText(param: WorkflowParam, value: unknown): string {
   if (value === undefined || value === null)

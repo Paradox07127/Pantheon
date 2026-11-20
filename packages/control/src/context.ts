@@ -464,6 +464,21 @@ export function sessionAction(ctx: ControlContext, principal: Principal, action:
   );
 }
 
+/** Whether a session gets the Pantheon tools and memory; a session the user opened directly runs as the bare runtime. */
+export function usesPantheonTools(ctx: ControlContext, session: Session): boolean {
+  return Boolean(
+    session.task ||
+    session.resident ||
+    session.lead ||
+    session.app_debug ||
+    session.project_setup ||
+    // An adopted folder session keeps its planner credential.
+    credentialRole(session, sessionWorkspaceKind(ctx, session)) !== 'lead' ||
+    // A direct session that already owns a board plan keeps leading it.
+    ctx.store.get('board_plans', session.id),
+  );
+}
+
 export function sessionMcp(
   ctx: ControlContext,
   session: Session,

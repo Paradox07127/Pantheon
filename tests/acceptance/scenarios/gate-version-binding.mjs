@@ -211,6 +211,7 @@ export async function run({ workspace, evidenceDir }) {
       await call('plan', 'session.create', {
         project_id: projectId,
         runtime: adapter.name,
+        purpose: 'lead',
         input: script({ tool: { name: 'update_board', arguments: plan } }),
       })
     ).id;

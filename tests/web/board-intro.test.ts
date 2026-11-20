@@ -4,7 +4,7 @@ import type { ProjectBaseline, ProjectIntro } from '@pantheon/domain';
 import { t } from '@/i18n';
 import { find, mount, nodes, text, unmountAll } from './web-hook-host.js';
 import { zh } from './i18n-setup.js';
-const mock = vi.hoisted(() => ({ board: {} as any, retros: [] as unknown[][] }));
+const mock = vi.hoisted(() => ({ board: {} as any }));
 vi.mock('react', async (actual) =>
   (await import('./web-hook-host.js')).reactMock(actual, { layoutEffect: true, useId: 'intro-id' }),
 );
@@ -25,10 +25,6 @@ vi.mock('@/store', () => ({
       }),
     { setState() {} },
   ),
-}));
-vi.mock('@/screens/settings/settings-jump', async (actual) => ({
-  ...(await actual<object>()),
-  openRetrospective: (...args: unknown[]) => void mock.retros.push(args),
 }));
 import { readBoardPage, useBoardPage } from '@/data/board-page';
 import { BoardView } from '@/screens/board/BoardScreen';
@@ -201,8 +197,6 @@ describe('board views', () => {
     expect(typeName(panel)).toBe('OverviewMemory');
     expect(panel.props.projectId).toBe('refunds');
     expect(has(h.value, (n) => typeName(n) === 'MainView')).toBe(false);
-    // The learned tab holds the rules page of the same project.
-    expect(find(h.value, (n) => typeName(n) === 'LearnedPage').props.projectId).toBe('refunds');
     // The introduction covers the whole project, so it offers no time range.
     expect(has(h.value, (n) => n.props['aria-label'] === zh('board.headline.range'))).toBe(false);
     let hold!: (held: boolean) => void;
@@ -218,13 +212,6 @@ describe('board views', () => {
     expect(has(page.value, (n) => typeName(n) === 'ProjectProfile')).toBe(true);
     expect(has(page.value, (n) => n === panel)).toBe(true);
     expect(has(page.value, (n) => typeName(n) === 'IntroView')).toBe(true);
-  });
-
-  it('opens the retrospective a learned rule names on the learned page', () => {
-    mock.board.board.projects = [{ id: 'refunds', revision: 1, name: 'Refunds', roots: [] }];
-    const h = mount(() => MemoryScreen({ projectId: 'refunds' }));
-    find(h.value, (n) => typeName(n) === 'LearnedPage').props.onOpenRetros('retro-7');
-    expect(mock.retros).toEqual([['retro-7']]);
   });
 });
 

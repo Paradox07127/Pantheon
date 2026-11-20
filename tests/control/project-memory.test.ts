@@ -46,7 +46,7 @@ it('delivers current scoped memory to the actual adapter on every send', async (
     text: 'Use precise terminology',
   });
   f.call('memory.commit', { memory_id: draft.id }, draft.revision);
-  const session = await f.create();
+  const session = await f.create(undefined, user, 'lead');
   await f.control.tick();
   await eventually(
     () => send.mock.calls.length > 0,
@@ -241,7 +241,7 @@ it('does not mistake a delayed delivery receipt for acknowledgement of a newer d
     save('changed during send');
     return actual(handle, input);
   });
-  const s = await f.create();
+  const s = await f.create(undefined, user, 'lead');
   await eventually(
     () => !!f.store.must<any>('sessions', s.id).memory_delivery?.delivered_signature,
     () => f.control.tick(),
@@ -653,7 +653,7 @@ it('delivers an empty replacement packet when the last improvement experience is
     change: { type: 'experience', procedure: 'Distinct revoked procedure' },
     proposed_at: Date.now(),
   } as any);
-  const session = await f.create();
+  const session = await f.create(undefined, user, 'lead');
   await eventually(
     () =>
       f.store.must<any>('sessions', session.id).state === 'open' && send.mock.calls.length === 1,
@@ -687,7 +687,7 @@ it('exposes delivery capability, stale packages and the records delivered for a 
     text: 'Delivered evidence',
   });
   const active = f.call<any>('memory.commit', { memory_id: draft.id }, draft.revision);
-  const s = await f.create();
+  const s = await f.create(undefined, user, 'lead');
   expect(
     f.control.memoryRead(user, f.project.id).sessions.find((x) => x.id === s.id),
   ).toMatchObject({
@@ -913,7 +913,7 @@ it('delivers an unchanged memory packet once and again after the session compact
     text: 'Distinct delivered rule',
   });
   f.call('memory.commit', { memory_id: draft.id }, draft.revision);
-  const session = await f.create();
+  const session = await f.create(undefined, user, 'lead');
   const sendTurn = async (input: string, count: number) => {
     await eventually(
       () =>

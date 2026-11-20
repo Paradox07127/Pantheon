@@ -97,60 +97,36 @@ const progress = (projectId: string) =>
 const tabs = (html: string) => [...html.matchAll(/role="tab"[^>]*>([^<]*)</g)].map((m) => m[1]);
 
 describe('engineering board tabs', () => {
-  const sections: InsightsSection[] = [
-    'iterations',
-    'collab',
-    'workflow',
-    'quality',
-    'usage',
-    'digest',
-    'signals',
-  ];
+  const sections: InsightsSection[] = ['quality', 'usage'];
 
-  it('names the tabs iterations, collaboration, workflow, quality, usage, weekly digest and signals in that order', () => {
+  it('names the tabs quality and usage in that order', () => {
     const html = insights('quality');
     expect(html).toContain(`aria-label="${zh('insights.tabs.label')}"`);
-    expect(tabs(html)).toEqual(
-      [
-        'insights.sections.iterations',
-        'insights.sections.collab',
-        'insights.sections.workflow',
-        'board.sections.quality',
-        'board.sections.usage',
-        'insights.digest.label',
-        'insights.sections.signals',
-      ].map(zh),
-    );
+    expect(tabs(html)).toEqual(['board.sections.quality', 'board.sections.usage'].map(zh));
     expect(sections.map(insightsSectionLabel)).toEqual(tabs(html));
   });
 
-  it('has no repository tab, and opens iterations for a stored repository tab', () => {
+  it('has no repository tab, and opens quality for a stored repository tab', () => {
     expect(tabs(insights('quality'))).not.toContain(zh('board.repo.title'));
-    expect(readInsightsSection('repo')).toBe('iterations');
+    expect(readInsightsSection('repo')).toBe('quality');
   });
 
-  it('reads each stored tab back and opens iterations for anything else', () => {
+  it('reads each stored tab back and opens quality for anything else', () => {
     for (const key of sections) expect(readInsightsSection(key)).toBe(key);
     for (const raw of [null, '', 'progress', 'milestones', 'review', '"usage"'])
-      expect(readInsightsSection(raw)).toBe('iterations');
+      expect(readInsightsSection(raw)).toBe('quality');
+  });
+
+  it('opens quality for a stored iterations, collaboration, workflow, weekly digest or signals tab', () => {
+    for (const raw of ['iterations', 'collab', 'workflow', 'digest', 'signals'])
+      expect(readInsightsSection(raw)).toBe('quality');
   });
 
   it('has no retrospectives tab, and opens quality for a stored retrospectives tab', () => {
-    expect(tabs(insights('quality'))).not.toContain(zh('board.panels.retro'));
+    expect(tabs(insights('quality'))).not.toContain('复盘');
     expect(readInsightsSection('retro')).toBe('quality');
-    expect(insights('quality')).not.toContain(zh('board.task.retro.empty'));
-    expect(progress('retro-on-board')).not.toContain(zh('board.task.retro.empty'));
-  });
-
-  it('shows the weekly digest on its own tab', () => {
-    expect(insights('digest', 'weekly-digest')).toContain('class="wkd"');
-    expect(insights('quality', 'weekly-digest')).not.toContain('class="wkd"');
-  });
-
-  it('gives each tab its own place at the end of the top bar, only the shown tab’s on screen', () => {
-    const places = [...insights('collab').matchAll(/<span class="ins-bar"( hidden="")?/g)];
-    expect(places).toHaveLength(7);
-    expect(places.filter((m) => !m[1])).toHaveLength(1);
+    expect(insights('quality')).not.toContain('还没有复盘');
+    expect(progress('retro-on-board')).not.toContain('还没有复盘');
   });
 
   it('shows the usage overview on the usage tab', () => {
@@ -247,10 +223,7 @@ describe('engineering board top bar in a narrow window', () => {
   const sheet = (file: string) =>
     readFileSync(new URL(`../../apps/web/src/${file}`, import.meta.url), 'utf8');
 
-  it('scrolls the tab strip sideways and cuts a long iteration title short', () => {
+  it('scrolls the tab strip sideways', () => {
     expect(sheet('index.css')).toMatch(/\n\.tb-tabs\{[^}]*overflow-x:auto/);
-    expect(sheet('screens/insights/iterations.css')).toMatch(
-      /\n\.itr-pick > \.itr-pickt \{[^}]*max-width: [^;]+;[^}]*text-overflow: ellipsis;/,
-    );
   });
 });

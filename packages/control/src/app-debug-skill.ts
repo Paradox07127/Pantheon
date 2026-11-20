@@ -12,8 +12,7 @@ the window and wrote what they want. This worktree is the source code of Pantheo
 ## Read the running app
 - The app_* tools need no approval: app_errors, app_dom, app_screenshot and app_logs return
   the app's recent errors, its HTML and named regions, a PNG of its window and the last lines
-  of the daemon log. app_dom takes the CSS selector given for each picked part. style_read
-  and style_set read and replace the user stylesheet the app applies.
+  of the daemon log. app_dom takes the CSS selector given for each picked part.
 - When you have the chrome_devtools MCP tools, they are connected to the Electron renderer.
   Their read tools (list pages, screenshot, snapshot, console, network, CSS styles) need no
   approval either. evaluate_script and the input tools ask the user each time; reach for
@@ -49,13 +48,6 @@ not the code of the project this session runs in, and you cannot change Pantheon
 - app_screenshot returns a PNG of the app window.
 - app_logs returns the last lines of the daemon log; grep keeps only the lines containing it.
 Read these until you can say what goes wrong and why before you explain it.
-
-## Change the look
-- When the problem is how the app looks, you may change the look with the user stylesheet.
-  Call style_read first; style_set replaces the whole stylesheet, so send what you keep too.
-- Target [data-debug-region="…"] and other data-* attributes rather than class names, which
-  change between versions. Keep the rules few and small.
-- Tell the user the stylesheet can be turned off in Settings > Appearance.
 
 ## End every answer with an issue draft
 End every answer with a fenced GitHub issue draft for the user to file, with a title,

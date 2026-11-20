@@ -222,7 +222,6 @@
   "board.layout.hidden": "已隐藏 {count}",
   "board.layout.show": "显示{panel}",
   "board.panels.main": "主视图",
-  "board.panels.retro": "复盘",
   "board.panels.byRuntime": "按运行时",
   "board.panels.byRole": "按角色",
   "board.readStatus": "看板",

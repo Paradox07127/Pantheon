@@ -2,6 +2,7 @@ import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { ClaudeAdapter, CodexAdapter, FixtureAdapter } from '@pantheon/adapters';
+import { NATIVE_ENV_ALLOWLIST } from '@pantheon/domain';
 import type {
   Approval,
   BoardPlan,
@@ -18,6 +19,7 @@ import {
   workbenchSessionSpec,
   workerInstructions,
 } from '../../packages/control/dist/workbench-session.js';
+import { MEMORY_INSTRUCTIONS } from '../../packages/control/dist/memory.js';
 import { awaitWorkspaceReady, eventually, fixture, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
@@ -671,7 +673,17 @@ it('binds a session created from a board task', async () => {
 const closings: (() => Promise<void>)[] = [];
 afterEach(async () => {
   for (const close of closings.splice(0)) await close();
+  vi.unstubAllEnvs();
 });
+
+/** Daemon variables a session the user opened must not inherit. */
+const deniedVariables = ['ANTHROPIC_API_KEY', 'PANTHEON_X', 'CLAUDE_CONFIG_DIR'];
+
+/** Sets a plain daemon variable and one of each kind a session must not inherit. */
+function stubDaemonEnvironment() {
+  vi.stubEnv('PLAIN_DAEMON_VARIABLE', 'kept');
+  for (const name of deniedVariables) vi.stubEnv(name, 'denied');
+}
 
 /** The session spec of a task session started for the CSV export task of a lead's plan. */
 async function csvTaskSession(task: Record<string, unknown> = {}) {
@@ -746,6 +758,13 @@ async function csvTaskSession(task: Record<string, unknown> = {}) {
   });
 }
 
+it('keeps a task session on the managed native home and the allowlisted environment', async () => {
+  stubDaemonEnvironment();
+  const spec = await csvTaskSession();
+  expect(spec.native_state_dir).toContain('/native-sessions/');
+  expect(spec.env_allowlist).toEqual(NATIVE_ENV_ALLOWLIST);
+});
+
 it('gives a task session the user quote, scope and acceptance commands of its task', async () => {
   const instructions = (await csvTaskSession()).control_instructions!;
   for (const text of [
@@ -800,7 +819,7 @@ it.each([
   Object.assign(f.adapter, { questionTool: real.questionTool });
   f.control.adapters.set(runtime, f.adapter);
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
-  const session = await f.create();
+  const session = await f.create(undefined, user, 'lead');
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   const instructions = workbenchSessionSpec(
     ctx,
@@ -836,7 +855,7 @@ async function declaredRuntime(runtime: string, declared: Partial<HarnessAdapter
 
 it('asks with the question tool and lets the runtime title the session as its adapter declares', async () => {
   const f = await declaredRuntime('agy', { questionTool: 'ask_human', generatesTitles: true });
-  const session = await f.create();
+  const session = await f.create(undefined, user, 'lead');
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   const spec = workbenchSessionSpec(f.ctx, f.store.must<Session>('sessions', session.id));
   expect(spec.control_instructions).toContain('ask with the ask_human tool');
@@ -850,6 +869,112 @@ it('gives a runtime whose adapter declares neither no question tool and no title
   const spec = workbenchSessionSpec(f.ctx, f.store.must<Session>('sessions', session.id));
   expect(spec.control_instructions).not.toContain('When the user must decide or answer something');
   expect(spec).not.toHaveProperty('auto_title');
+});
+
+/** A runtime with a question tool whose sessions can hold a credential, in a project with a memory decision. */
+async function credentialedRuntime() {
+  const f = await declaredRuntime('agy', { questionTool: 'ask_human' });
+  Object.assign(f.ctx, {
+    issueSessionCredential: () => ({
+      token_file: path.join(f.root, 'token'),
+      daemon_url: 'http://127.0.0.1:1',
+    }),
+  });
+  const draft = f.call<{ id: string; revision: number }>('memory.propose', {
+    project_id: f.project.id,
+    key: 'language',
+    kind: 'decision',
+    text: 'Use precise terminology',
+  });
+  f.call('memory.commit', { memory_id: draft.id }, draft.revision);
+  const send = vi.spyOn(f.adapter, 'send');
+  /** Starts the session and returns its spec and its first runtime input. */
+  const started = async (session: Session) => {
+    await awaitWorkspaceReady(f.control, session.workspace_id!);
+    await eventually(
+      () => send.mock.calls.length > 0,
+      () => f.control.tick(),
+    );
+    return {
+      spec: f.start.mock.calls.find(([each]) => each.platform_session_id === session.id)![0],
+      input: send.mock.calls[0]![1].input,
+    };
+  };
+  return { ...f, started };
+}
+
+it('runs a worktree session the user opened without Pantheon tools, text or memory', async () => {
+  const f = await credentialedRuntime();
+  const session = await f.create();
+  const { spec, input } = await f.started(session);
+  const workspace = f.store.must<Workspace>('workspaces', session.workspace_id!);
+  expect(spec.pantheon_mcp).toBeUndefined();
+  expect(spec.control_instructions).toBe(
+    `You are working for the user in the git worktree at ${workspace.path}. When your changes are complete, commit them there with git. Do not write files outside this worktree.`,
+  );
+  expect(input).not.toContain('[Pantheon current project memory]');
+});
+
+it("runs a worktree session the user opened on the user's native home, extensions and daemon environment", async () => {
+  stubDaemonEnvironment();
+  const f = await credentialedRuntime();
+  const session = await f.create();
+  const { spec } = await f.started(session);
+  expect(spec.native_state_dir).toBeUndefined();
+  expect(f.store.must<Session>('sessions', session.id).native_state_dir).toBeUndefined();
+  expect(spec.env_allowlist).toContain('PLAIN_DAEMON_VARIABLE');
+  for (const name of deniedVariables) expect(spec.env_allowlist).not.toContain(name);
+  expect(spec.extensions).toEqual({
+    mode: 'inherit',
+    overrides: {
+      disabled_mcp_servers: [],
+      disabled_plugins: [],
+      disabled_skills: [],
+      disable_hooks: false,
+      disable_apps: false,
+    },
+  });
+});
+
+it.each<{
+  name: string;
+  open: (f: Awaited<ReturnType<typeof credentialedRuntime>>) => Promise<Session>;
+}>([
+  { name: 'opened to lead', open: (f) => f.create(undefined, user, 'lead') },
+  {
+    name: 'that already owns a board plan',
+    open: async (f) => {
+      const session = await f.create();
+      f.store.insert<BoardPlan>('board_plans', {
+        id: session.id,
+        revision: 1,
+        project_id: f.project.id,
+        headline: 'Export',
+        lanes: [],
+        tasks: [],
+        risks: [],
+        assumptions: [],
+        plan_version: 0,
+        pending_edits: [],
+        inbox: [],
+        notified: {},
+        updated_at: f.store.now(),
+      });
+      return session;
+    },
+  },
+])('gives a worktree session $name the lead credential, guide and memory', async ({ open }) => {
+  stubDaemonEnvironment();
+  const f = await credentialedRuntime();
+  const { spec, input } = await f.started(await open(f));
+  expect(spec.pantheon_mcp).toBeDefined();
+  expect(spec.native_state_dir).toContain('/native-sessions/');
+  expect(spec.env_allowlist).toEqual(NATIVE_ENV_ALLOWLIST);
+  expect(spec.control_instructions).toContain(MEMORY_INSTRUCTIONS);
+  expect(spec.control_instructions).toContain('You are a lead session');
+  // A lead asks with ask_user, not with the runtime's question tool.
+  expect(spec.control_instructions).not.toContain('ask with the ask_human tool');
+  expect(input).toContain('[Pantheon current project memory]');
 });
 
 type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;

@@ -1,10 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { act, createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-vi.mock('@/data/app-errors', async (actual) => ({
-  ...(await actual<object>()),
-  debugTarget: async () => ({ port: 9222 }),
-}));
 import { TitleBarEnd } from '@/components/TitleBarEnd';
 import type { NeedsYouItem } from '@/data/needs-you';
 import { FakeDocument, FakeElement, FakeNode } from './web-fake-dom.js';
@@ -55,9 +51,8 @@ describe('title bar end in the window', () => {
     removeEventListener() {},
   };
   doc.defaultView = win;
-  /** Which of the waiting count and the debug toggle the root is marked for. */
-  const marks = () =>
-    ['data-title-needs', 'data-title-debug'].map((name) => doc.documentElement.hasAttribute(name));
+  /** Whether the root is marked for the waiting count. */
+  const marks = () => doc.documentElement.hasAttribute('data-title-needs');
   const show = async (count: number) => {
     const container = doc.createElement('div');
     doc.body.appendChild(container);
@@ -87,21 +82,21 @@ describe('title bar end in the window', () => {
     vi.unstubAllGlobals();
   });
 
-  it('marks the root while it shows the waiting count and the debug toggle, and unmarks it as they go', async () => {
+  it('marks the root while it shows the waiting count, and unmarks it as it goes', async () => {
     const root = await show(2);
-    expect(marks()).toEqual([true, true]);
+    expect(marks()).toBe(true);
     await act(async () => root.render(createElement(TitleBarEnd, { needs: [] })));
-    expect(marks()).toEqual([false, true]);
+    expect(marks()).toBe(false);
     act(() => root.unmount());
-    expect(marks()).toEqual([false, false]);
+    expect(marks()).toBe(false);
   });
 
-  it('keeps the marks while another title bar end still shows them', async () => {
+  it('keeps the mark while another title bar end still shows it', async () => {
     const first = await show(1);
     const second = await show(1);
     act(() => first.unmount());
-    expect(marks()).toEqual([true, true]);
+    expect(marks()).toBe(true);
     act(() => second.unmount());
-    expect(marks()).toEqual([false, false]);
+    expect(marks()).toBe(false);
   });
 });

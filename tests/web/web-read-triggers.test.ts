@@ -14,7 +14,6 @@ import { useAgents } from '@/data/agents';
 import { useAgentWakes, useRoutines } from '@/data/automations';
 import { useFactsRead } from '@/data/facts-read';
 import { useProjectQuery } from '@/data/project-read';
-import { useRepoStatus } from '@/data/repo';
 import { useProjectHead } from '@/data/runtime-models';
 import { useSessionReviews } from '@/data/session-panel';
 import { startSync, type DaemonEvent } from '@/data/sync';
@@ -290,12 +289,6 @@ it.each([
     gitAnswer,
     (project: string) => useProjectHead(project),
   ],
-  [
-    'repo.status',
-    'workspace.repository_changed',
-    gitAnswer,
-    (project: string) => useRepoStatus(project, '/src/project'),
-  ],
   ['agent.list', 'agent_profile.updated', [], (project: string) => useAgents(project)],
   ['agent.routines', 'agent.routine_skipped', [], (project: string) => useRoutines(project)],
   ['agent.routines', 'agent.wake_held', [], (project: string) => useRoutines(project)],
@@ -335,28 +328,28 @@ it.each([
   },
 );
 
-it.each([
-  ['project.head', 1, (project: string) => useProjectHead(project)],
-  ['repo.status', 2, (project: string) => useRepoStatus(project, '/src/project')],
-])('reads %s %i times when a tool call finishes', async (method, count, read) => {
-  const { at, sync, push } = await connected();
-  const project = `project-tool-${method}`;
-  const h = mount(() => read(project));
-  await h.flush();
-  reads[0]!.answer({
-    ok: true,
-    value: { files: [], branch: 'main', sha: 'abc', subject: 'first' },
-  });
-  await h.flush();
+it.each([['project.head', 1, (project: string) => useProjectHead(project)]])(
+  'reads %s %i times when a tool call finishes',
+  async (method, count, read) => {
+    const { at, sync, push } = await connected();
+    const project = `project-tool-${method}`;
+    const h = mount(() => read(project));
+    await h.flush();
+    reads[0]!.answer({
+      ok: true,
+      value: { files: [], branch: 'main', sha: 'abc', subject: 'first' },
+    });
+    await h.flush();
 
-  at.cursor = 6;
-  push({ type: 'event', event: event(6, 'agent.tool.completed', project) });
-  await vi.advanceTimersByTimeAsync(200);
-  h.render();
-  await h.flush();
-  expect(reads.map((r) => r.method)).toEqual(Array(count).fill(method));
-  sync.stop();
-});
+    at.cursor = 6;
+    push({ type: 'event', event: event(6, 'agent.tool.completed', project) });
+    await vi.advanceTimersByTimeAsync(200);
+    h.render();
+    await h.flush();
+    expect(reads.map((r) => r.method)).toEqual(Array(count).fill(method));
+    sync.stop();
+  },
+);
 
 it('asks the daemon again on reload once the read out answers instead of joining it', async () => {
   const first = mount(() => useProjectQuery('project.facts.read', 'project-reload', isFacts));

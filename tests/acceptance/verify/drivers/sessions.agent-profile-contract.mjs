@@ -111,19 +111,18 @@ try {
         runs: [...(sec('例行运行')?.querySelectorAll('[role=group]') ?? [])].map((g) => ({ name: g.getAttribute('aria-label'), run: g.querySelector('button')?.textContent, disabled: g.querySelector('button')?.disabled, text: g.innerText.replace(/\\s+/g, ' ') })),
         weekWakes: week?.querySelector('.ag-lw .ag-big')?.textContent ?? null,
         weekText: week?.innerText.replace(/\\s+/g, ' ') ?? null,
-        helped: sec('有没有用？')?.innerText.replace(/\\s+/g, ' ') ?? null,
       };
     })()`);
   const loaded = await poll(async () => {
     const p = await panel();
-    return p && !p.busy && p.weekWakes !== null && p.sections.includes('有没有用？') && p;
+    return p && !p.busy && p.weekWakes !== null && p;
   });
   const shown = loaded || (await panel());
   result.panel = shown;
-  const ORDER = ['约定', '最近唤醒', '例行运行', '本周', '有没有用？'];
+  const ORDER = ['约定', '最近唤醒', '例行运行', '本周'];
   const at = ORDER.map((cap) => shown?.sections.indexOf(cap));
   check(
-    '分区依次有 约定、最近唤醒、例行运行、本周、有没有用？',
+    '分区依次有 约定、最近唤醒、例行运行、本周',
     at.every((i, k) => i >= 0 && (k === 0 || i > at[k - 1])),
     shown?.sections,
   );
@@ -250,20 +249,7 @@ try {
     ledger: week2.wakes,
   });
 
-  // 5. Did it help: the routine turned on has an outcome.
-  const outcomes = await query('change.outcomes', { project_id });
-  const own = outcomes.filter((o) => o.agent_id === triage.id && o.kind === 'routine_enabled');
-  check('有没有用？ 在 change.outcomes 有 routine_enabled 时出现', own.length && now?.helped, {
-    outcomes: own.length,
-    shown: now?.helped,
-  });
-  check(
-    '有没有用？ 的标题写 "开启了 {例行任务}"',
-    now?.helped?.includes(`开启了 ${SWEEP}`),
-    now?.helped,
-  );
-
-  // 6. Weekly budget used up: fixture turns report no input tokens, so spent stays 0 and the cap is at least 1.
+  // 5. Weekly budget used up: fixture turns report no input tokens, so spent stays 0 and the cap is at least 1.
   result.held_blocked =
     'agent.ledger input_tokens is 0 for fixture turns and weekly_input_tokens must be positive; "唤醒已暂停" cannot be reached';
   result.shot = await page.screenshot(result.id);

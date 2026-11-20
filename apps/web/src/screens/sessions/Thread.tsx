@@ -28,7 +28,7 @@ import {
   User,
 } from 'lucide-react';
 import type { BoardHistory, BoardSnapshot, WorkbenchSession } from '@pantheon/protocol';
-import { MarkdownLinks } from '../../components/Markdown';
+import { MarkdownBaseProvider } from '../../components/Markdown';
 import { Skeleton } from '../../components/Skeleton';
 import { RuntimeGlyph } from '../../components/RuntimeGlyph';
 import { useBoard } from '../../data/board';
@@ -49,7 +49,6 @@ import {
   type PersonalCall,
 } from '../../data/personal-agent';
 import type { DaemonEvent } from '../../data/sync';
-import { workspaceFile } from '../../data/tool-calls';
 import {
   buildTranscript,
   composeState,
@@ -99,7 +98,6 @@ import {
   type TerminalToggle,
 } from './SessionHeader';
 import { RoutingLine } from '../board/PublishBar';
-import { showFile } from './FilesPanel';
 import { SessionCompose } from './SessionCompose';
 import { fail, useSecondTick } from './shared';
 import { CheckpointBack, ReplyActions, TurnActions } from './TurnMenu';
@@ -203,14 +201,6 @@ export function Thread(props: {
   // Held by content: every board snapshot is new, and each turn row takes these folders.
   const joined = session ? sessionFolders(board, session).join('\0') : '';
   const folders = useMemo(() => (joined ? joined.split('\0') : []), [joined]);
-  const showLinked = useCallback(
-    (ref: { path: string; line?: number }) => {
-      const path = workspaceFile(ref.path, folders);
-      if (path !== null) showFile(sessionId, path, ref.line);
-      return path !== null;
-    },
-    [folders, sessionId],
-  );
   const arrived = useRef(NO_ARRIVALS);
   arrived.current = arrivals(arrived.current, view ? threadIds(view, pending) : null);
   const { fresh } = arrived.current;
@@ -399,7 +389,7 @@ export function Thread(props: {
             slim={timeline === 'marks' || props.panels.length > 0}
           />
         )}
-        <MarkdownLinks base={folders[0]} show={showLinked}>
+        <MarkdownBaseProvider value={folders[0]}>
           <div
             className="ss-scroll"
             ref={scroller}
@@ -506,7 +496,7 @@ export function Thread(props: {
               {session?.baseline && <BaselineReview session={session} />}
             </div>
           </div>
-        </MarkdownLinks>
+        </MarkdownBaseProvider>
       </div>
       {session ? (
         <SessionCompose

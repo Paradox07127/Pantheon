@@ -537,6 +537,7 @@ try {
         { say: 'Plan written: two milestones, nine tasks.' },
         { tool: { name: 'update_board', arguments: plan } },
       ),
+      { purpose: 'lead' },
     );
     await settled(ids.lead, 'the lead to write the plan');
   });
@@ -919,11 +920,6 @@ try {
       );
       await delay(1500);
     });
-  await visit('memory-retro', async () => {
-    await nav('记忆');
-    await click({ role: 'tab', name: tr('memory.tab.learned'), exact: true });
-    await delay(1500);
-  });
 
   for (const [key, label] of await labelled('screens/trace/TraceScreen.tsx', 'tab')) {
     await visit(`trace-${key}`, async () => {

@@ -11,7 +11,6 @@ import {
 import type {
   AgentLedgerWeek,
   AgentProfile,
-  AgentProposal,
   AgentRoutineRow,
   AgentToolGroup,
   AgentWake,
@@ -21,14 +20,7 @@ import { useBoard } from './board';
 import { useProjectQuery } from './project-read';
 import { useQuery } from './workbench-sessions';
 
-export type {
-  AgentLedgerWeek,
-  AgentProfile,
-  AgentProposal,
-  AgentRoutineRow,
-  AgentToolGroup,
-  AgentWake,
-};
+export type { AgentLedgerWeek, AgentProfile, AgentRoutineRow, AgentToolGroup, AgentWake };
 export type AgentRoutine = AgentProfile['routines'][number];
 export type EventSource = NonNullable<AgentProfile['listens']>[number];
 /** A profile as agent.list returns it, with the built-in role prompt of its template and what it works with. */
@@ -215,24 +207,6 @@ export function useAgentRoutines(projectId: string, agentId: string): AgentRead<
   };
 }
 
-/** The proposal as the daemon stores it, read again once it is decided; null until read. */
-export function useAgentProposal(id: string | null): AgentProposal | null {
-  const resolved = useBoard((s) =>
-    id
-      ? (s.events.findLast((e) => e.kind === 'agent_proposal.resolved' && e.aggregate_id === id)
-          ?.sequence ?? 0)
-      : 0,
-  );
-  return useQuery<AgentProposal>(
-    'agent.proposal',
-    id,
-    (proposal_id) => ({ proposal_id }),
-    (value) =>
-      value && typeof value === 'object' && 'state' in value ? (value as AgentProposal) : null,
-    resolved,
-  ).data;
-}
-
 /** The defaults of the ideas, goals and custom templates; null until read. */
 export function useAgentTemplates(): AgentTemplateDefaults[] | null {
   return useQuery<AgentTemplateDefaults[]>(
@@ -293,26 +267,5 @@ export function useAgentProfileShown(): string | null {
     },
     () => profileOf,
     () => profileOf,
-  );
-}
-
-const decided = new Map<string, AgentProposal>();
-const decidedListeners = new Set<() => void>();
-
-/** Keeps the proposal as the user's decision answered it, so its card shows the outcome. */
-export function noteProposalDecided(proposal: AgentProposal): void {
-  decided.set(proposal.id, proposal);
-  decidedListeners.forEach((listener) => listener());
-}
-
-/** The proposal as a decision made in this window left it; undefined while none was made here. */
-export function useDecidedProposal(id: string | null): AgentProposal | undefined {
-  return useSyncExternalStore(
-    (listener) => {
-      decidedListeners.add(listener);
-      return () => void decidedListeners.delete(listener);
-    },
-    () => (id ? decided.get(id) : undefined),
-    () => (id ? decided.get(id) : undefined),
   );
 }

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactElement, ReactNode } from 'react';
 import type { Improvement, WorkflowPolicy } from '@pantheon/domain';
-import type { BridgeResult, RoutingCell } from '@pantheon/protocol';
+import type { BridgeResult } from '@pantheon/protocol';
 import {
   find,
   mount as host,
@@ -19,7 +19,6 @@ vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
 import { useBoard } from '@/data/board';
 import { changeText, PATH_LABEL } from '@/data/workflow-policy';
 import { ProjectSettingsScreen } from '@/screens/settings/ProjectSettingsScreen';
-import { RoutingPage } from '@/screens/settings/RoutingPage';
 import { SETTINGS_PAGES, useSettingsView } from '@/screens/settings/view';
 import { WorkflowPage } from '@/screens/settings/WorkflowPage';
 
@@ -359,55 +358,5 @@ describe('workflow page', () => {
   it('shows a failed read', async () => {
     const h = await page();
     expect(alerts(tree(h)).join('\n')).toContain('workflow.policy');
-  });
-});
-
-describe('routing page', () => {
-  const cells: RoutingCell[] = [
-    {
-      domain: 'backend-logic',
-      tier: 't2',
-      first: { runtime: 'codex', model: 'gpt-5.1-codex' },
-      alternate: { runtime: 'claude', model: 'claude-sonnet-4-5' },
-      candidates: [
-        { runtime: 'codex', model: 'gpt-5.1-codex', p: 0.8, n: 10, s: 8, success_rate: 0.8 },
-        { runtime: 'claude', model: 'claude-sonnet-4-5', p: 0.5, n: 0, s: 0, success_rate: null },
-      ],
-      prior: { source: 'swe-bench', fetched_at: '2026-11-09T09:12:00.000Z' },
-    },
-    {
-      domain: 'review',
-      tier: 't1',
-      first: { runtime: 'claude', model: 'claude-opus-4-5', effort: 'high' },
-      candidates: [
-        { runtime: 'claude', model: 'claude-opus-4-5', p: 0.7, n: 4, s: 3, success_rate: 0.75 },
-      ],
-      prior: null,
-    },
-  ];
-
-  it('gives each task kind a row with its first and alternate choice', async () => {
-    bridge.answers['routing.table'] = { cells };
-    const h = await mount(() => RoutingPage({ project: project as never }));
-    const rows = nodes(tree(h)).filter((n) => n.props.role === 'row' && n.key !== null);
-    expect(rows.map((r) => r.key)).toEqual(['review:t1', 'backend-logic:t2']);
-    const chosen = nodes(rows[1])
-      .filter((n) => n.props.slot)
-      .map((n) => n.props.cell[n.props.slot].model);
-    expect(chosen).toEqual(['gpt-5.1-codex', 'claude-sonnet-4-5']);
-    expect(text(rows[1])).toContain('swe-bench');
-    expect(find(rows[1], (n) => n.type === 'time').props.dateTime).toBe('2026-11-09T09:12:00.000Z');
-  });
-
-  it('offers no refresh', async () => {
-    bridge.answers['routing.table'] = { cells };
-    const h = await mount(() => RoutingPage({ project: project as never }));
-    expect(nodes(tree(h)).filter((n) => n.type === 'button')).toEqual([]);
-  });
-
-  it('says so when no task kind has candidates', async () => {
-    bridge.answers['routing.table'] = { cells: [] };
-    const h = await mount(() => RoutingPage({ project: project as never }));
-    expect(text(tree(h))).toContain(zh('settings.routing.empty'));
   });
 });

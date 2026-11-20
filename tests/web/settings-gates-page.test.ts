@@ -495,7 +495,7 @@ describe('the handback count after a failed gate', () => {
           ),
     ).props.onClick();
     expect(useSettingsView.getState().open).toBe(false);
-    expect(useShell.getState().memoryTab).toBe('learned');
+    expect(useShell.getState().memoryTab).toBe('overview');
     expect(useShell.getState().screen).toBe('memory');
   });
 });

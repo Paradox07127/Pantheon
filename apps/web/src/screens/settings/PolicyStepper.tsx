@@ -3,10 +3,19 @@ import { Minus, Plus } from 'lucide-react';
 import { RuntimeGlyph, runtimeName } from '../../components/RuntimeGlyph';
 import { offeredRuntimes, type RuntimeStatusRead } from '../../data/runtime-status';
 import { t } from '../../i18n';
-import { withRuntimeLimit } from '../insights/CollabTab';
 
 /** The protocol's highest per-runtime limit. */
 const RUNTIME_LIMIT_MAX = 8;
+
+/** The runtime_parallel record with one runtime's limit set, or taken out for no limit. */
+function withRuntimeLimit(
+  record: Record<string, number> | undefined,
+  runtime: string,
+  limit: number | null,
+): Record<string, number> {
+  const rest = Object.fromEntries(Object.entries(record ?? {}).filter(([r]) => r !== runtime));
+  return limit === null ? rest : { ...rest, [runtime]: limit };
+}
 
 export interface StepperProps {
   /** The value's name, read by the input and its two buttons. */

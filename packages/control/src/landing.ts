@@ -727,7 +727,10 @@ export async function landWorkspace(
         const existed = await presentIn(
           workspace.path,
           landsOn,
-          changed.filter((file) => inputs.some((input) => within(file, input))),
+          changed.filter((file) =>
+            // A token with no path segment, such as a bare `.`, would contain every file.
+            inputs.some((input) => segments(input).length && within(file, input)),
+          ),
         );
         const verificationFiles: string[] = [];
         for (const file of changed) {
@@ -736,16 +739,29 @@ export async function landWorkspace(
               file,
             );
           const patch = patches.get(file);
+          const deleted = patch !== undefined && /\ndeleted file mode /.test(patch);
+          // Hunk lines only: the `---` and `+++` headers would match the line rules.
+          let hunk = false;
+          const body = (patch ?? '')
+            .split('\n')
+            .filter((line) => {
+              if (line.startsWith('diff --git ')) hunk = false;
+              else if (line.startsWith('@@')) hunk = true;
+              else return hunk;
+              return false;
+            })
+            .join('\n');
           const weakened =
-            patch !== undefined &&
-            (/\ndeleted file mode /.test(patch) ||
-              /^-.*\b(?:expect\s*\(|(?:it|test|describe|xit|xtest|xdescribe)\s*(?:\(|\.))/m.test(
-                patch,
-              ) ||
-              /^\+.*(?:\b(?:it|test|describe)\s*\.\s*skip\b|\.\s*only\b|\b(?:xit|xtest|xdescribe)\s*\()/m.test(
-                patch,
-              ));
-          if (weakened || configuration || existed.has(file)) verificationFiles.push(file);
+            deleted ||
+            /^-.*\b(?:expect\s*\(|(?:it|test|describe|xit|xtest|xdescribe)\s*(?:\(|\.))/m.test(
+              body,
+            ) ||
+            /^\+.*(?:\b(?:it|test|describe)\s*\.\s*skip\b|\.\s*only\b|\b(?:xit|xtest|xdescribe)\s*\()/m.test(
+              body,
+            );
+          // A named test only gains cases from pure additions.
+          const named = existed.has(file) && (!testPath(file) || deleted || /^-/m.test(body));
+          if (weakened || configuration || named) verificationFiles.push(file);
         }
         const unlisted = verificationFiles.filter(
           (file) => !task.scope.some((entry) => segments(entry).join('/') === file),

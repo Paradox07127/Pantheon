@@ -235,9 +235,6 @@ export function StateGlyph({
   return <Svg glyph={tone ? { ...GLYPHS[name], tone } : GLYPHS[name]} place={place} />;
 }
 
-/** The colour token of one state glyph. */
-export const stateGlyphTone = (name: GlyphName): string => GLYPHS[name].tone;
-
 /** The name of the glyph SessionStateIcon draws for the session. */
 export function sessionGlyphName(session: WorkbenchSession): GlyphName {
   if (session.stopping) return 'stopping';

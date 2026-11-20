@@ -1,11 +1,8 @@
-import { useEffect, useState, type CSSProperties } from 'react';
-import { AlertDialog } from '@base-ui/react/alert-dialog';
+import { useEffect, useState } from 'react';
 import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
 import { ZOOM_FACTORS } from '@pantheon/protocol';
 import { ThemeSwitch } from '../../components/ThemeSwitch';
-import { toast } from '../../components/Toast';
-import { useBoard } from '../../data/board';
 import {
   ACCENTS,
   CODE_SIZE,
@@ -36,23 +33,9 @@ import {
   type SendKey,
   type UiFamily,
 } from '../../data/layout';
-import { failureText } from '../../data/needs-you';
-import {
-  applyTheme,
-  defaultSwatches,
-  deleteTheme,
-  readUserTheme,
-  setBackdropOn,
-  useBackdropOn,
-  useUserThemes,
-  type Swatches,
-} from '../../data/theme';
-import { sessionTitle } from '../../data/transcript';
-import { clearUserStyle, setUserStyleEnabled, useUserStyle } from '../../data/user-style';
 import { t } from '../../i18n';
 import { keyText } from '../../lib/shortcuts';
-import { scrimFlag } from '../../lib/root-flag';
-import { resolveTheme, useShell } from '../../store';
+import { useShell } from '../../store';
 import { ipcFailure } from './editors';
 import { Row, Section } from './ProjectSettingsScreen';
 
@@ -131,10 +114,6 @@ export function AppearancePage() {
     defaultMessage: 'Inspector width',
   });
   const drawerWidth = t({ id: 'settings.appearance.drawerWidth', defaultMessage: 'Drawer width' });
-  const { list, active } = useUserThemes();
-  const activeBuiltIn = list?.themes.some((saved) => saved.built_in && saved.id === active?.id);
-  const backdropOn = useBackdropOn();
-  const backdrop = t({ id: 'settings.appearance.backdrop', defaultMessage: 'Animated background' });
   const accent = useAccent();
   const systemAccent = useSystemAccent();
   const accentTitle = t({ id: 'settings.appearance.accent', defaultMessage: 'Accent colour' });
@@ -149,7 +128,6 @@ export function AppearancePage() {
   };
   return (
     <>
-      <ThemeCards />
       <Section>
         <div className="ps-rows">
           <Row
@@ -185,17 +163,6 @@ export function AppearancePage() {
               )}
             </RadioGroup>
           </Row>
-          {active?.backdrop !== undefined && (
-            <Row label={backdrop} settingId="appearance.backdrop">
-              <input
-                type="checkbox"
-                className="ps-sw"
-                aria-label={backdrop}
-                checked={backdropOn}
-                onChange={(e) => setBackdropOn(e.target.checked)}
-              />
-            </Row>
-          )}
           <Row label={colorblind} settingId="appearance.colorblind">
             <input
               type="checkbox"
@@ -205,10 +172,6 @@ export function AppearancePage() {
               onChange={(e) => setLook({ colorblind: e.target.checked })}
             />
           </Row>
-          {active && !activeBuiltIn && (
-            <SavedThemeRow key={active.id} id={active.id} label={active.label} />
-          )}
-          <UserStyleRow />
         </div>
       </Section>
       <Section title={t({ id: 'settings.appearance.text', defaultMessage: 'Text' })}>
@@ -451,278 +414,6 @@ export function AppearancePage() {
         </div>
       </Section>
     </>
-  );
-}
-
-/** The default theme, the built-in ones, then each saved theme, newest first; pressing one applies it. */
-function ThemeCards() {
-  const list = useUserThemes().list;
-  const board = useBoard((s) => s.board);
-  const scheme = useShell((s) => s.theme);
-  const dark =
-    resolveTheme(scheme, window.matchMedia('(prefers-color-scheme: dark)').matches) === 'dark';
-  const [fallback, setFallback] = useState<Swatches | null>(null);
-  useEffect(() => setFallback(defaultSwatches(dark)), [dark]);
-  const title = t({ id: 'settings.appearance.theme', defaultMessage: 'Theme' });
-  const activeId = list?.active_theme_id ?? null;
-  const builtInNames: Record<string, string> = {
-    'builtin-travertine': t({
-      id: 'settings.appearance.builtinTheme.travertine',
-      defaultMessage: 'Travertine',
-    }),
-    'builtin-dusk': t({ id: 'settings.appearance.builtinTheme.dusk', defaultMessage: 'Dusk' }),
-    'builtin-lapis': t({ id: 'settings.appearance.builtinTheme.lapis', defaultMessage: 'Lapis' }),
-    'builtin-terracotta': t({
-      id: 'settings.appearance.builtinTheme.terracotta',
-      defaultMessage: 'Terracotta',
-    }),
-  };
-  const from = (sessionId: string | undefined) => {
-    const session = board?.sessions.find((s) => s.id === sessionId);
-    return session && sessionTitle(session, board!);
-  };
-  const pick = async (id: string | null) => {
-    const result = await applyTheme(id);
-    if (!result.ok) toast({ title: failureText(result.error), kind: 'failure' });
-  };
-  return (
-    <section className="ps-sec" aria-label={title} aria-busy={list === null || undefined}>
-      <div className="ps-sec-hd">
-        <h3>{title}</h3>
-      </div>
-      <div className="ps-thm-grid">
-        <ThemeCard
-          label={t({ id: 'settings.appearance.defaultTheme', defaultMessage: 'Default' })}
-          swatches={fallback}
-          selected={activeId === null}
-          onPick={() => void pick(null)}
-        />
-        {list?.themes.map((saved) => (
-          <ThemeCard
-            key={saved.id}
-            label={(saved.built_in && builtInNames[saved.id]) || saved.label}
-            from={from(saved.session_id)}
-            swatches={saved.swatches}
-            selected={saved.id === activeId}
-            onPick={() => void pick(saved.id)}
-          />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-/** A small window in the theme's canvas, surface and ink over its name; null colours draw the app's own. */
-function ThemeCard(props: {
-  label: string;
-  from?: string;
-  swatches: Swatches | null;
-  selected: boolean;
-  onPick: () => void;
-}) {
-  const colours = props.swatches && {
-    '--th-0': props.swatches.surface0,
-    '--th-1': props.swatches.surface1,
-    '--th-a': props.swatches.accent,
-  };
-  return (
-    <button
-      type="button"
-      className="ps-thc"
-      aria-pressed={props.selected}
-      style={(colours ?? undefined) as CSSProperties | undefined}
-      onClick={props.onPick}
-    >
-      <span className="ps-thc-mini" aria-hidden="true">
-        <span className="ps-thc-sd">
-          <i />
-          <i />
-          <i />
-        </span>
-        <span className="ps-thc-ct">
-          <i />
-          <i />
-          <b />
-        </span>
-      </span>
-      <span className="ps-thc-nm">
-        <b>{props.label}</b>
-        {props.from && <span className="mu">{props.from}</span>}
-        <span className="ps-thc-sw" aria-hidden="true">
-          <i />
-          <i />
-          <i />
-        </span>
-      </span>
-    </button>
-  );
-}
-
-/** The applied saved theme: its name, a JSON copy of it and, once confirmed, deleting it. */
-function SavedThemeRow({ id, label }: { id: string; label: string }) {
-  const [confirming, setConfirming] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const exportTheme = async () => {
-    const read = await readUserTheme(id);
-    if (!read.ok) {
-      toast({ title: failureText(read.error), kind: 'failure' });
-      return;
-    }
-    // The bridge has no save dialog; a download link gets the browser's, or Electron's.
-    const url = URL.createObjectURL(
-      new Blob([JSON.stringify(read.value, null, 2)], { type: 'application/json' }),
-    );
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${id}.json`;
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url));
-  };
-  const remove = async () => {
-    setBusy(true);
-    const result = await deleteTheme(id);
-    setBusy(false);
-    if (result.ok) setConfirming(false);
-    else toast({ title: failureText(result.error), kind: 'failure' });
-  };
-  return (
-    <Row label={label} settingId="appearance.savedTheme">
-      <button type="button" className="btn sm" onClick={() => void exportTheme()}>
-        {t({ id: 'settings.appearance.exportTheme', defaultMessage: 'Export' })}
-      </button>
-      <button type="button" className="btn sm dng" onClick={() => setConfirming(true)}>
-        {t({ id: 'settings.appearance.deleteTheme', defaultMessage: 'Delete' })}
-      </button>
-      <AlertDialog.Root
-        open={confirming}
-        onOpenChange={(next) => {
-          if (!next && !busy) setConfirming(false);
-        }}
-      >
-        <AlertDialog.Portal>
-          <AlertDialog.Backdrop className="pj-scrim" ref={scrimFlag} />
-          <AlertDialog.Popup className="pj-dlg pj-rm pop">
-            <div className="pj-dh">
-              <AlertDialog.Title className="pj-dt">
-                {t(
-                  {
-                    id: 'settings.appearance.deleteThemeTitle',
-                    defaultMessage: 'Delete theme “{label}”?',
-                  },
-                  { label },
-                )}
-              </AlertDialog.Title>
-            </div>
-            <AlertDialog.Description className="pj-rm-body">
-              {t({
-                id: 'settings.appearance.deleteThemeBody',
-                defaultMessage:
-                  'The theme is deleted for good and the default theme applies again. This cannot be undone.',
-              })}
-            </AlertDialog.Description>
-            <div className="pj-df">
-              <span style={{ flex: 1 }} />
-              <AlertDialog.Close className="btn" disabled={busy}>
-                {t({ id: 'sessions.parts.cancel', defaultMessage: 'Cancel' })}
-              </AlertDialog.Close>
-              <button
-                type="button"
-                className="btn dng"
-                disabled={busy}
-                aria-disabled={busy || undefined}
-                onClick={() => void remove()}
-              >
-                {t({ id: 'settings.appearance.deleteThemeConfirm', defaultMessage: 'Delete' })}
-              </button>
-            </div>
-          </AlertDialog.Popup>
-        </AlertDialog.Portal>
-      </AlertDialog.Root>
-    </Row>
-  );
-}
-
-/** The user stylesheet a session wrote: on or off, its rule count and, once confirmed, clearing it. */
-function UserStyleRow() {
-  const style = useUserStyle();
-  const [confirming, setConfirming] = useState(false);
-  const [busy, setBusy] = useState(false);
-  if (!style?.css) return null;
-  const label = t({ id: 'settings.appearance.userStyle', defaultMessage: 'User styles' });
-  const enable = async (enabled: boolean) => {
-    const result = await setUserStyleEnabled(enabled);
-    if (!result.ok) toast({ title: failureText(result.error), kind: 'failure' });
-  };
-  const clear = async () => {
-    setBusy(true);
-    const result = await clearUserStyle();
-    setBusy(false);
-    if (result.ok) setConfirming(false);
-    else toast({ title: failureText(result.error), kind: 'failure' });
-  };
-  return (
-    <Row label={label}>
-      <span className="mu">
-        {t(
-          {
-            id: 'settings.appearance.userStyleRules',
-            defaultMessage: '{count, plural, one {# rule} other {# rules}}',
-          },
-          { count: style.rules },
-        )}
-      </span>
-      <input
-        type="checkbox"
-        className="ps-sw"
-        aria-label={label}
-        checked={style.enabled}
-        onChange={(e) => void enable(e.target.checked)}
-      />
-      <button type="button" className="btn sm dng" onClick={() => setConfirming(true)}>
-        {t({ id: 'settings.appearance.clearUserStyle', defaultMessage: 'Clear' })}
-      </button>
-      <AlertDialog.Root
-        open={confirming}
-        onOpenChange={(next) => {
-          if (!next && !busy) setConfirming(false);
-        }}
-      >
-        <AlertDialog.Portal>
-          <AlertDialog.Backdrop className="pj-scrim" ref={scrimFlag} />
-          <AlertDialog.Popup className="pj-dlg pj-rm pop">
-            <div className="pj-dh">
-              <AlertDialog.Title className="pj-dt">
-                {t({
-                  id: 'settings.appearance.clearUserStyleTitle',
-                  defaultMessage: 'Clear the user styles?',
-                })}
-              </AlertDialog.Title>
-            </div>
-            <AlertDialog.Description className="pj-rm-body">
-              {t({
-                id: 'settings.appearance.clearUserStyleBody',
-                defaultMessage: 'The stylesheet is deleted for good. This cannot be undone.',
-              })}
-            </AlertDialog.Description>
-            <div className="pj-df">
-              <span style={{ flex: 1 }} />
-              <AlertDialog.Close className="btn" disabled={busy}>
-                {t({ id: 'sessions.parts.cancel', defaultMessage: 'Cancel' })}
-              </AlertDialog.Close>
-              <button
-                type="button"
-                className="btn dng"
-                disabled={busy}
-                aria-disabled={busy || undefined}
-                onClick={() => void clear()}
-              >
-                {t({ id: 'settings.appearance.clearUserStyleConfirm', defaultMessage: 'Clear' })}
-              </button>
-            </div>
-          </AlertDialog.Popup>
-        </AlertDialog.Portal>
-      </AlertDialog.Root>
-    </Row>
   );
 }
 

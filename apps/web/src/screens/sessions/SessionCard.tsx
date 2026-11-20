@@ -69,7 +69,6 @@ import {
 } from './model';
 import { detachedText, sessionBranch, type ChangesView, type Panel } from './inspector-model';
 import { BrowserPanel } from './BrowserPanel';
-import { FilesPanel, showFile } from './FilesPanel';
 import { askFix, ChecksTab, MergeBar, PlanTab, ReviewTab, StoryTab } from './panel';
 import { ThreadTrace, useThreadTurns } from './trace';
 import { MonitorPanel } from './MonitorPanel';
@@ -308,20 +307,6 @@ export function SessionCard(props: {
     (server) => server.state !== 'disabled' && server.name !== 'pantheon',
   );
   const outputs = diff.data?.files ?? [];
-  const outputPatch = diff.data?.patch ?? null;
-  // A merged session's worktree is gone and a deleted file has none to read; their diff remains.
-  const diffOnly = useMemo(
-    () =>
-      new Set(
-        outputPatch === null
-          ? []
-          : parsePatch(outputPatch)
-              .filter((file) => file.status === 'D')
-              .map((file) => file.path),
-      ),
-    [outputPatch],
-  );
-  const merged = props.listed?.state === 'merged';
   const placed = machine !== null || folder !== null || onBranch !== null;
   if (
     !placed &&
@@ -468,8 +453,6 @@ export function SessionCard(props: {
                   aria-label={file.path}
                   title={file.path}
                   onClick={() => {
-                    if (!merged && !diffOnly.has(file.path))
-                      return showFile(props.sessionId, file.path);
                     showChangedFile(props.sessionId, file.path);
                     props.onTab('changes');
                   }}
@@ -1088,12 +1071,6 @@ export function SessionInspector(props: {
           reviews={reviews.data}
           onReview={() => props.onOpen('review')}
         />
-      );
-    if (tab === 'files')
-      return (
-        projectId && (
-          <FilesPanel projectId={projectId} sessionId={props.sessionId} worktree={worktree} />
-        )
       );
     if (tab === 'browser') return <BrowserPanel sessionId={props.sessionId} />;
     if (tab === 'trace') return <ThreadTrace sessionId={props.sessionId} />;

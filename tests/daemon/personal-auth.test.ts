@@ -75,7 +75,7 @@ it('accepts project.seen and refuses commands off its list from a personal princ
     command(personal.id, 'project.seen', { project_id: project.id }),
   );
   expect(seen.status).toBe(200);
-  for (const type of ['app.logs', 'style.read', 'project.open', 'request.reroute'] as const) {
+  for (const type of ['app.logs', 'project.open', 'request.reroute'] as const) {
     const refused = await request('POST', '/v1/commands', command(personal.id, type, {}));
     expect(refused.status).toBe(403);
   }

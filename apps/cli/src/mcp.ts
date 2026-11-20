@@ -84,8 +84,6 @@ const descriptions: Record<ToolCommand, string> = {
     'Change your plan by task id instead of sending it whole: 1-32 ops that add, remove or move a task, set its fields or dependencies, set a milestone or iterations, or resolve a user edit that still waits for you (resolve_edit with apply or reject and a reason). Only the user can lock or unlock the task order. An edit the user already applied or withdrew needs no resolve. A change that is the user\'s to decide needs their answer first. Returns the updated plan. Refused "The plan is at version N": call project_read and rebuild your still-needed change on version N.',
   'board.plan.propose':
     "Put a change to your own plan on a card for the user: base_version (your plan's plan_version), a reason under 280 characters and 1-32 ops. Under the project setting it may apply at once instead of waiting; the result's applied says which, so get the user's answer first when the decision is theirs. A waiting proposal can be taken back with withdraw_board_proposal. Refused for a stale base_version: read the plan and resend; a lead session that is not a resident is refused until it has written a plan.",
-  'theme.set':
-    'Make and apply a colour theme for the Pantheon app. Call it only when the user asks to change how the app looks. Give label and light, dark or both (prefer both, with dark a second version of the idea rather than an inversion); see the field descriptions for anchors, roles and backdrop. The theme is saved and applied at once and the user can undo it. Returns theme_id and warnings. Refused when contrast is too low: the error lists each colour pair with its ratio; change those colours and call again.',
   'board.plan.proposal.withdraw':
     'Take back one of your plan proposals that still waits for the user, by proposal_id, for example when the work changed and the proposal no longer fits. A proposal the user already decided, or one that applied at once, cannot be withdrawn; refused then.',
   'milestone.accept':
@@ -154,10 +152,6 @@ const descriptions: Record<ToolCommand, string> = {
     'Read the HTML of the running Pantheon desktop app window, or of the first element the CSS selector (at most 200 characters) matches, and the named regions of the window with their rectangles. Regions are the [data-debug-region] elements. Fails when no desktop window is connected.',
   'app.logs':
     'Read the last lines of the Pantheon daemon log: lines (1–500, default 200) of them, only those containing grep (at most 200 characters) when given. Returns no lines while the log does not exist.',
-  'style.read':
-    'Read the user stylesheet the Pantheon app applies over its own styles: css, enabled, the number of rules and the revision.',
-  'style.set':
-    'Replace the user stylesheet the Pantheon app applies over its own styles with css (at most 65536 characters) and turn it on; the app shows it at once. Read style_read first and send the whole stylesheet. Select [data-debug-region] and other data-* attributes rather than class names. @import, url() other than data: URLs and backslash escapes are refused. The user can turn it off in Settings > Appearance. Returns the stylesheet as style_read does.',
   'agent.app_help':
     'Read the Pantheon app manual. Without topic: one line per command group and the screens where the user does things. With topic (a group name from that index): each command of the group, and the tool that calls it or the place in the app where the user does it. Use it when you are unsure what Pantheon can do; when only the user can do it, tell them where.',
   'agent.sessions':
@@ -276,7 +270,6 @@ const boundRevision = (type: CommandType) =>
   type === 'task.report' ||
   type === 'task.status_line' ||
   type === 'visual.draw' ||
-  type === 'theme.set' ||
   type === 'project.intro.submit' ||
   type === 'review.request' ||
   type === 'trace.evidence' ||
@@ -298,8 +291,6 @@ const boundRevision = (type: CommandType) =>
   type === 'board.sync' ||
   type === 'project.baseline.start' ||
   type === 'app.logs' ||
-  type === 'style.read' ||
-  type === 'style.set' ||
   browserTool(type);
 
 // Submits after which the session ends its turn; other write receipts carry ids the next call needs.
@@ -437,8 +428,6 @@ export async function createMcpServer(daemonUrl: string, token: string): Promise
       boundInputs[name] = boundFields.filter(
         (field) => 'shape' in unbound && field in unbound.shape,
       );
-      // The theme schema carries a refinement, which omit refuses; it has no bound fields.
-      if (type === 'theme.set') return [name, unbound];
       if (type === 'review.finding')
         return [
           name,

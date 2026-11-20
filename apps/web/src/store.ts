@@ -17,7 +17,6 @@ export type Screen =
   | 'sessions'
   | 'board'
   | 'insights'
-  | 'repo'
   | 'runtime'
   | 'flow'
   | 'trace'
@@ -27,7 +26,7 @@ export type Screen =
   | 'personal';
 
 export type TraceTab = 'timeline' | 'runs' | 'activity' | 'diagnose' | 'approved';
-export type MemoryTab = 'overview' | 'entries' | 'graph' | 'diagrams' | 'learned';
+export type MemoryTab = 'overview' | 'entries' | 'graph' | 'diagrams';
 
 export type Theme = 'light' | 'dark' | 'system';
 
@@ -67,7 +66,6 @@ const PROJECT_SCREENS: readonly string[] = [
   'sessions',
   'board',
   'insights',
-  'repo',
   'trace',
   'memory',
   'automations',

@@ -18,7 +18,6 @@ import {
   ChevronRight,
   Clock,
   Columns3,
-  GitBranch,
   Globe,
   IdCard,
   LayoutDashboard,
@@ -1339,15 +1338,6 @@ export function Sidebar({
             <button
               type="button"
               className="sb-it"
-              aria-current={current('repo')}
-              onClick={() => setScreen('repo')}
-            >
-              <GitBranch aria-hidden="true" />
-              {SCREEN_NAMES.repo}
-            </button>
-            <button
-              type="button"
-              className="sb-it"
               aria-current={current('trace')}
               onClick={() => setScreen('trace')}
             >
@@ -1619,15 +1609,6 @@ export function Sidebar({
               <ChartLine aria-hidden="true" />,
               {
                 current: current('insights'),
-              },
-            )}
-            {icon(
-              SCREEN_NAMES.repo,
-              SCREEN_NAMES.repo,
-              () => setScreen('repo'),
-              <GitBranch aria-hidden="true" />,
-              {
-                current: current('repo'),
               },
             )}
             {icon(

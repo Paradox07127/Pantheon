@@ -27,8 +27,6 @@ import { milestoneCheckHandlers } from './milestone-checks.js';
 import { improvementHandlers, improvementPreparers } from './improvements.js';
 import { inPlaceSessionHandlers } from './in-place-session.js';
 import { visualHandlers } from './visual.js';
-import { themeHandlers } from './theme.js';
-import { styleHandlers } from './user-style.js';
 import { appSettingsHandlers } from './app-settings.js';
 import { deviceHandlers } from './devices.js';
 import { externalEventHandlers } from './external-events.js';
@@ -86,8 +84,6 @@ export const handlers: Handlers = {
   ...briefProseHandlers,
   ...personalKeyHandlers,
   ...visualHandlers,
-  ...themeHandlers,
-  ...styleHandlers,
 };
 
 export const preparers: Preparers = {

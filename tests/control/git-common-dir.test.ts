@@ -11,7 +11,7 @@ import {
 } from 'node:fs';
 import path from 'node:path';
 import { expect, it } from 'vitest';
-import { user } from '../helpers.js';
+import { runGit } from '../../packages/control/dist/git.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
 it("does not read configuration that a .git/commondir in the project's checkout points git at", async () => {
@@ -46,10 +46,10 @@ it("does not read configuration that a .git/commondir in the project's checkout 
   git(f.source, 'config', '--file', config, 'log.showSignature', 'true');
   git(f.source, 'config', '--file', config, 'gpg.program', program);
   writeFileSync(path.join(metadata, 'commondir'), 'planted\n');
-  const read = await f.control.repoLog(user, { project_id: f.project.id, limit: 5, skip: 0 }).then(
-    () => undefined,
-    (error: Error) => error,
-  );
+  const read = await runGit(f.source, ['log', '-5'], undefined, true);
   expect(existsSync(marker)).toBe(false);
-  expect(read).toMatchObject({ code: 'sandbox_path_replaced' });
+  expect(read).toMatchObject({
+    exit_code: null,
+    error: expect.stringMatching(/^sandbox_path_replaced/),
+  });
 });

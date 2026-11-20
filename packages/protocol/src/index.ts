@@ -13,7 +13,6 @@ import { planReplayQuerySchema } from './plan-replay.js';
 import type { PendingReplan, ReplanHistoryTrigger } from './replan-history.js';
 import type { ProjectWaiting } from './project-waiting.js';
 import { evalReceiptSchema } from './eval-receipt.js';
-import { themeInputSchema, type ThemeInput } from './theme.js';
 import { alwaysOnInputSchemas, alwaysOnToolEffects, alwaysOnTools } from './always-on-tools.js';
 import { agentWakeInputSchemas, agentWakeQuerySchemas } from './agent-wakes.js';
 export type { AgentRoutineRow, AgentWake, WakeOutcome } from './agent-wakes.js';
@@ -286,14 +285,12 @@ const browserTools = {
   browser_read: 'browser.read',
   browser_screenshot: 'browser.screenshot',
 } as const;
-/** The tools that read the running app and change its user stylesheet; only app_debug sessions get them. */
+/** The tools that read the running app; only app_debug sessions get them. */
 export const appDebugTools = {
   app_errors: 'app.errors',
   app_screenshot: 'app.screenshot',
   app_dom: 'app.dom',
   app_logs: 'app.logs',
-  style_read: 'style.read',
-  style_set: 'style.set',
 } as const;
 export const sessionTools = {
   reviewer: { ...memoryTools, review_finding: 'review.finding', ...reviewerTools },
@@ -301,7 +298,6 @@ export const sessionTools = {
     ...memoryTools,
     project_read: 'project.read',
     draw: 'visual.draw',
-    theme: 'theme.set',
     ...browserTools,
     ...appDebugTools,
   },
@@ -330,7 +326,6 @@ export const sessionTools = {
     request_review: 'review.request',
     merge_task: 'session.merge',
     draw: 'visual.draw',
-    theme: 'theme.set',
     ...browserTools,
     ...appDebugTools,
     ...alwaysOnTools,
@@ -347,7 +342,6 @@ export const sessionTools = {
     report: 'task.report',
     status_line: 'task.status_line',
     draw: 'visual.draw',
-    theme: 'theme.set',
     ...browserTools,
     ...appDebugTools,
     ...workflowTools,
@@ -384,7 +378,6 @@ export const leadToolEffects = {
   request_review: 'write',
   merge_task: 'write',
   draw: 'write',
-  theme: 'write',
   browser_open: 'write',
   browser_read: 'read',
   browser_screenshot: 'read',
@@ -392,8 +385,6 @@ export const leadToolEffects = {
   app_screenshot: 'read',
   app_dom: 'read',
   app_logs: 'read',
-  style_read: 'read',
-  style_set: 'write',
   ...alwaysOnToolEffects,
   ...appToolEffects,
   ...agentToolEffects,
@@ -440,7 +431,6 @@ export const leadToolGroups: Record<
   sync_board: 'board',
   rerun_baseline: 'board',
   draw: 'board',
-  theme: 'board',
   status_line: 'board',
   start_task: 'dispatch',
   message_task: 'dispatch',
@@ -564,27 +554,6 @@ const appDom = z.strictObject({
 });
 /** The HTML of the app window or of one selector in it, and the window's named regions. */
 export type AppDom = z.infer<typeof appDom>;
-/** The most characters of the user stylesheet. */
-export const USER_STYLE_LIMIT = 65_536;
-/** Why the app may not apply this stylesheet: it would load something from outside. */
-export function userStyleProblems(css: string): string[] {
-  const problems: string[] = [];
-  if (/@import/i.test(css)) problems.push('stylesheet uses @import');
-  for (const match of css.matchAll(/url\(\s*["']?\s*([^)"'\s]*)/gi))
-    if (!/^data:/i.test(match[1]!))
-      problems.push(`stylesheet url(${match[1]}) must be a data: URL`);
-  // image-set() takes a plain string URL, which the url( check above does not see.
-  if (/image-set\(/i.test(css)) problems.push('stylesheet uses image-set()');
-  // Escapes can spell @import or url( past the checks above.
-  if (css.includes('\\')) problems.push('stylesheet contains a backslash escape');
-  return problems;
-}
-const userStyleCss = z
-  .string()
-  .max(USER_STYLE_LIMIT)
-  .superRefine((css, ctx) => {
-    for (const message of userStyleProblems(css)) ctx.addIssue({ code: 'custom', message });
-  });
 const milestoneInput = {
   title: str,
   required_sessions: strings.min(1),
@@ -2339,31 +2308,10 @@ export interface SessionRecappedPayload extends SessionRecap {
   usage?: { input_tokens: number; output_tokens: number };
 }
 
-/** The user only; each acts on the project's first folder, with paths relative to it. */
-const repoWriteInputSchemas = {
-  /** Restores tracked files in the index and the worktree to HEAD and deletes untracked ones; returns { undo_id }. */
-  'repo.discard': z.strictObject({ project_id: str, paths: z.array(str).min(1) }),
-  /** Applies patch, taken from repo.working_diff, in reverse to the worktree; returns { undo_id }. */
-  'repo.discard_patch': z.strictObject({ project_id: str, patch: z.string().min(1) }),
-  /** Writes back what a discard within the last 10 minutes changed; returns {}. */
-  'repo.discard_undo': z.strictObject({ project_id: str, undo_id: str }),
-  /** Commits only paths with the user's own git identity, configuration and hooks; returns { sha }. */
-  'repo.commit': z.strictObject({
-    project_id: str,
-    paths: z.array(str).min(1),
-    message: z.string().min(1).max(10000),
-  }),
-  /** Pushes the checked-out branch to its upstream, or to origin setting it as the upstream, never forced; returns {}. */
-  'repo.push': z.strictObject({ project_id: str }),
-  /** Reverts sha in a new commit, or the whole range of the recorded session merge that ended at sha; returns { sha }. */
-  'repo.revert': z.strictObject({ project_id: str, sha: str }),
-};
-
 export const inputSchemas = {
   ...memoryInputSchemas,
   ...changeStoryInputSchemas,
   ...rangeStoryInputSchemas,
-  ...repoWriteInputSchemas,
   ...alwaysOnInputSchemas,
   ...agentWakeInputSchemas,
   ...appInputSchemas,
@@ -2411,12 +2359,6 @@ export const inputSchemas = {
   'visual.unpin': z.strictObject({ visual_id: str }),
   /** The user only; order contains exactly the project's pinned visual ids. */
   'visual.arrange': z.strictObject({ project_id: str, order: z.array(str) }),
-  /** A session credential or the user; saves the theme and applies it, returns ThemeSetReceipt. */
-  'theme.set': themeInputSchema,
-  /** The user only; null goes back to the default theme. */
-  'theme.apply': z.strictObject({ theme_id: str.nullable() }),
-  /** The user only; deleting the applied theme goes back to the default first. */
-  'theme.delete': z.strictObject({ theme_id: str }),
   /** A session credential; opens url in the session's browser panel of the desktop window, returns BrowserPage. */
   'browser.open': z.strictObject({
     url: z
@@ -2475,18 +2417,6 @@ export const inputSchemas = {
       .optional()
       .describe('Keep only the lines that contain this text.'),
   }),
-  /** Returns UserStyleRead. */
-  'style.read': z.strictObject({}),
-  /** A session credential or the user; replaces the user stylesheet and turns it on, returns UserStyleRead. */
-  'style.set': z.strictObject({
-    css: userStyleCss.describe(
-      'The whole stylesheet, at most 65536 characters. Select [data-debug-region] and other data-* attributes rather than class names. @import, url() other than data: URLs and backslash escapes are refused.',
-    ),
-  }),
-  /** The user only; turns the user stylesheet on or off and keeps its CSS, returns UserStyleRead. */
-  'style.enable': z.strictObject({ enabled: z.boolean() }),
-  /** The user only; empties the user stylesheet, returns UserStyleRead. */
-  'style.clear': z.strictObject({}),
   'project.read': z.strictObject({ project_id: str }),
   'board.plan.update': boardPlanInputSchema.refine(
     (plan) =>
@@ -3126,8 +3056,9 @@ export const inputSchemas = {
       /**
        * project_setup: the first message starts with the guide for a project built from nothing.
        * app_debug: the first message starts with the guide for debugging an error the running app reported.
+       * lead: the session plans on the board with the Pantheon tools; without a purpose or task it runs as the bare runtime.
        */
-      purpose: z.enum(['project_setup', 'app_debug']).optional(),
+      purpose: z.enum(['project_setup', 'app_debug', 'lead']).optional(),
     })
     .refine(validSessionWorkspace, { message: 'An in-place session cannot have a start point' }),
   /** Opens a new worktree session with the source's files and a text handoff. */
@@ -3419,36 +3350,6 @@ export const querySchemas = {
   'runtime.models': z.strictObject({ project_id: str, runtime: str }),
   'permission.rules': z.strictObject({ project_id: str }),
   'project.branches': z.strictObject({ project_id: str, root: str.optional() }),
-  'repo.worktrees': z.strictObject({ project_id: str }),
-  /** path is one of the project's worktrees, as repo.worktrees lists them. */
-  'repo.status': z.strictObject({ project_id: str, path: str }),
-  /** Without ref the log starts at the HEAD of the project's first folder. */
-  'repo.log': z.strictObject({
-    project_id: str,
-    ref: str.optional(),
-    limit: z.coerce.number().int().min(1).max(500).default(200),
-    skip: z.coerce.number().int().min(0).default(0),
-  }),
-  'repo.commit_diff': z.strictObject({ project_id: str, sha: str }),
-  'repo.compare': z.strictObject({ project_id: str, base: str, head: str }),
-  /** RepoCommitAfter; later commits are read from the HEAD of the project's first folder. */
-  'repo.commit_after': z.strictObject({ project_id: str, sha: str }),
-  /** from and to are Unix milliseconds, to after from and at most 400 days later; group defaults to branch over a day or less, else workstream. */
-  'repo.timeline': z
-    .strictObject({
-      project_id: str,
-      from: z.coerce.number().int().min(0),
-      to: z.coerce.number().int().min(0),
-      group: z.enum(['workstream', 'branch', 'author']).optional(),
-    })
-    .refine((range) => range.to > range.from, 'to must be after from')
-    .refine((range) => range.to - range.from <= 400 * 24 * 60 * 60 * 1000, 'At most 400 days'),
-  /** RepoBlame; path is relative to the project's first folder, and ref defaults to its HEAD. */
-  'repo.blame': z.strictObject({ project_id: str, path: str, ref: str.optional() }),
-  /** RepoFileHistory; path is relative to the project's first folder, read from its HEAD. */
-  'repo.file_history': z.strictObject({ project_id: str, path: str }),
-  /** RepoWorkingDiff; the first folder's uncommitted and untracked changes against its HEAD. */
-  'repo.working_diff': z.strictObject({ project_id: str }),
   'workspace.stale': z.strictObject({ project_id: str }),
   'project.head': z.strictObject({ project_id: str }),
   /** Without session_id the project's first folder is searched. */
@@ -3631,12 +3532,6 @@ export const querySchemas = {
   'app.settings': z.strictObject({}),
   /** ProjectDefaultsRead; the user only. */
   'project.defaults': z.strictObject({}),
-  /** ThemeList; the user only. */
-  'theme.list': z.strictObject({}),
-  /** ThemeRead; the user only. */
-  'theme.get': z.strictObject({ theme_id: str }),
-  /** UserStyleRead; the user only. */
-  'style.read': z.strictObject({}),
   /** The user only; returns {id, label, created_at, revoked_at?}[], every personal agent key in creation order. */
   'personal.key.list': z.strictObject({}),
   /** BackendSummary[]. */
@@ -3697,58 +3592,9 @@ export interface AppSettings {
   /** The decisions the personal agent may answer for the user; empty unless the user turned one on. */
   personal_answers: PersonalAnswerKind[];
 }
-export interface ThemeSetReceipt {
-  theme_id: string;
-  warnings: string[];
-}
-/** Event theme.applied; a null theme_id is the default theme. */
-export interface ThemeAppliedPayload {
-  theme_id: string | null;
-  previous_theme_id?: string;
-  by_session_id?: string;
-}
 /** The app.logs receipt; empty while the daemon log does not exist. */
 export interface AppLogs {
   lines: string[];
-}
-/** GET /v1/style.read and the style commands' receipt; revision 0 before the first change. */
-export interface UserStyleRead {
-  css: string;
-  enabled: boolean;
-  /** The blocks the stylesheet opens, nested ones included. */
-  rules: number;
-  revision: number;
-}
-/** Event style.changed, after every change of the user stylesheet. */
-export interface StyleChangedPayload {
-  revision: number;
-  enabled: boolean;
-  rules: number;
-  by_session_id?: string;
-}
-/** GET /v1/theme.list; the built-in themes, then the saved ones newest first, swatches from the light mode when the theme has one. */
-export interface ThemeList {
-  active_theme_id: string | null;
-  themes: {
-    id: string;
-    label: string;
-    modes: ('light' | 'dark')[];
-    has_backdrop: boolean;
-    /** Ships with the app; it can be applied but not deleted. */
-    built_in: boolean;
-    session_id?: string;
-    created_at: number;
-    swatches: { surface0: string; surface1: string; accent: string };
-  }[];
-}
-/** GET /v1/theme.get; css applies while the root carries data-user-theme="id". */
-export interface ThemeRead {
-  id: string;
-  label: string;
-  css: string;
-  backdrop?: string;
-  glass?: NonNullable<ThemeInput['backdrop']>['glass'];
-  modes: ('light' | 'dark')[];
 }
 /** GET /v1/device.list; this machine (id `local`) or a configured device, with what its last probe found. */
 export interface DeviceStatus {
@@ -4188,232 +4034,6 @@ export interface ProjectHead {
   committed_at: number;
   ahead_upstream?: number;
   uncommitted: number;
-}
-/** GET /v1/repo.worktrees; the worktrees of the repository in the project's first folder. */
-export interface RepoWorktree {
-  /** Real path of the worktree folder. */
-  path: string;
-  /** null when HEAD is detached. */
-  branch: string | null;
-  head_sha: string;
-  /** checkout: the project's first folder; session: a session's worktree; external: made outside Pantheon. */
-  kind: 'checkout' | 'session' | 'external';
-  /** The session working in this worktree; present only for kind session. */
-  session_id?: string;
-  /** Commits in this HEAD that the first folder's HEAD lacks. */
-  ahead: number;
-  /** Commits in the first folder's HEAD that this HEAD lacks. */
-  behind: number;
-  /** Files with uncommitted changes, untracked files included. */
-  uncommitted: number;
-  /** Lines added from the merge base with the first folder's HEAD to this HEAD, or from that HEAD when the two share no history; uncommitted changes not included. */
-  additions: number;
-  /** Lines removed over the same range. */
-  deletions: number;
-  /** Files that would conflict merging this HEAD into the first folder's HEAD; absent when this git has no merge preview or the two share no history. */
-  conflicts?: number;
-}
-export interface RepoStatusFile {
-  path: string;
-  /** The path before a rename or copy; absent otherwise. */
-  old_path?: string;
-  /** Status letter of the staged side, such as M, A, D or R; null when unchanged there. */
-  index: string | null;
-  /** Status letter of the unstaged side; null when unchanged there. */
-  worktree: string | null;
-  /** Not tracked; index and worktree are then null. */
-  untracked: boolean;
-  /** An unresolved merge conflict; index and worktree give git's two conflict letters. */
-  conflicted: boolean;
-}
-/** GET /v1/repo.status; the uncommitted state of one worktree. */
-export interface RepoStatus {
-  path: string;
-  /** null when HEAD is detached. */
-  branch: string | null;
-  head_sha: string;
-  /** Absent without an upstream branch or when it no longer exists; counts are commits. */
-  upstream?: { name: string; ahead: number; behind: number };
-  files: RepoStatusFile[];
-}
-export interface RepoCommit {
-  sha: string;
-  /** Empty for a root commit; the first parent first. */
-  parents: string[];
-  /** Branch and tag names pointing here, as git log --decorate prints them. */
-  refs: string[];
-  author: string;
-  author_email: string;
-  /** Unix milliseconds of the commit time. */
-  committed_at: number;
-  subject: string;
-  /** The message after the subject line; empty when there is none. */
-  body: string;
-  /** The session whose recorded merge landed this commit; absent when no merge did. */
-  session_id?: string;
-}
-/** GET /v1/repo.log; commits reachable from ref, newest first. */
-export interface RepoLog {
-  commits: RepoCommit[];
-  /** True when commits beyond skip + limit exist. */
-  has_more: boolean;
-}
-/** GET /v1/repo.compare; head against base, diffed from their merge base, or from base when they share no history, to head. */
-export interface RepoCompare extends LandingDiff {
-  /** null when base and head share no history. */
-  merge_base: string | null;
-  /** Commits in head that base lacks. */
-  ahead: number;
-  /** Commits in base that head lacks. */
-  behind: number;
-  /** Files that would conflict merging head into base, at most 20; absent when this git has no merge preview or the two share no history. */
-  conflicts?: RepoConflict[];
-  /** Unix milliseconds when that merge preview ran; absent with conflicts. */
-  previewed_at?: number;
-  /** Changed files of head that no other session's worktree changes against the first folder's HEAD. */
-  single_owner_files: number;
-}
-/** The first conflict in one file of a merge preview. */
-export interface RepoConflict {
-  path: string;
-  /** Line of the merged result where the conflict starts; null when the file has no conflict markers, as when one side deleted it or it is binary. */
-  line: number | null;
-  /** Up to 5 of base's lines in that conflict. */
-  base_lines: string[];
-  /** Up to 5 of head's lines in that conflict. */
-  head_lines: string[];
-}
-/** GET /v1/repo.commit_after; what followed one commit. Times are Unix milliseconds. */
-export interface RepoCommitAfter {
-  /** The last gate run before the recorded session merge that ended at this commit; null when none ended here or it ran no gate. */
-  gate: {
-    passed: number;
-    failed: number;
-    /** Never counted in passed. */
-    skipped: number;
-    /** The commit the gate ran on. */
-    sha: string;
-    /** The steps' durations added up. */
-    duration_ms: number;
-  } | null;
-  /** The gate duration of the session merge before that one on the same branch; null without one or its gate. */
-  previous_gate_ms: number | null;
-  /** Entries of dependencies, devDependencies, peerDependencies and optionalDependencies added, removed or changed, over every package.json against the first parent. */
-  dependencies: number;
-  /** Commits after this one on the first folder's HEAD that change lines it added or changed, newest first, at most 10. */
-  later: { sha: string; at: number; subject: string }[];
-  /** The upstream of the first folder's branch and the commits HEAD has that it lacks; null without one. */
-  upstream: { name: string; ahead: number } | null;
-  /** The recorded session merge that ended at this commit and the commits it landed; null when none did or it has no from_sha. */
-  session_merge: { from_sha: string; commits: number } | null;
-}
-/** One row of repo.timeline; times are Unix milliseconds. */
-export interface RepoLane {
-  /** main, a workstream id, a session id, author:<name>, runtime:<runtime>, or other. */
-  key: string;
-  /** The checked-out branch, the workstream title, the session's branch or else its title, the commit author's name, or the runtime id; other for kind other. */
-  label: string;
-  /** other is the commits no workstream matched, or lanes folded together past the lane limit; author holds the commits no session made by one git author, runtime the sessions of one runtime and their commits. */
-  kind: 'main' | 'workstream' | 'branch' | 'author' | 'runtime' | 'other';
-  /** How many lanes were folded into this one; absent unless lanes were folded. */
-  merged_lanes?: number;
-  /** One per session alive in the range; end is null while the session has not ended. */
-  spans: {
-    session_id: string;
-    title: string;
-    /** null when the session's worktree is gone or detached. */
-    branch: string | null;
-    start: number;
-    end: number | null;
-    state: 'merged' | 'running' | 'review' | 'failed' | 'idle' | 'archived';
-  }[];
-  /** The lane's commits in the range, oldest first; absent when there are more than 200, then bins holds them. */
-  points?: { sha: string; at: number; kind: 'commit' | 'merge' | 'revert'; session_id?: string }[];
-  /** Commit and merge counts per bin_ms from the range start; present only when points is absent. */
-  bins?: { start: number; commits: number; merges: number }[];
-  /** Gate runs in the range, oldest first. */
-  gates: { at: number; session_id: string; passed: boolean }[];
-  /** Turns with a rollback checkpoint that started in the range; present only for group branch. */
-  turns?: { at: number; session_id: string; turn_id: string }[];
-}
-/** GET /v1/repo.timeline; the project's commits, sessions and gates by lane over a time range. */
-export interface RepoTimeline {
-  /** Start of the range, Unix milliseconds, inclusive. */
-  from: number;
-  /** End of the range, Unix milliseconds, exclusive. */
-  to: number;
-  /** Width of each bin: an hour, a day or a week, the smallest giving at most 120 bins. */
-  bin_ms: number;
-  /** At most 8; main first. */
-  lanes: RepoLane[];
-  /** Tags whose time falls in the range. */
-  releases: { name: string; sha: string; at: number }[];
-  /** gate_first_pass is the share of sessions gated in the range whose first gate run passed; null without gate runs in the range. */
-  totals: { commits: number; merges: number; gate_runs: number; gate_first_pass: number | null };
-  /** Weekly commit counts of the whole history of the first folder's HEAD, whatever the range; agent counts commits a recorded merge landed. */
-  overview: { start: number; agent: number; user: number }[];
-  /** Commit times of the oldest and newest commit of that history; null when it has none. */
-  extent: { first: number; last: number } | null;
-}
-/** GET /v1/repo.blame; line numbers start at 1. */
-export interface RepoBlame {
-  path: string;
-  /** The commit blamed. */
-  sha: string;
-  /** The file as the blamed commit has it, the lines chunks number; absent for a binary file. */
-  text?: string;
-  /** True when text stops at the read bound. */
-  truncated: boolean;
-  /** Runs of lines whose last change came from one commit; at is Unix milliseconds of its author time. */
-  chunks: {
-    start: number;
-    count: number;
-    sha: string;
-    author: string;
-    at: number;
-    /** The session whose recorded merge landed the commit. */
-    session_id?: string;
-  }[];
-  /** Committed changes of each session worktree since its merge base with the first folder's HEAD, moved onto the lines of the blamed commit's file; count 0 is an insertion after line start. */
-  pending: { session_id: string; ranges: { start: number; count: number }[] }[];
-}
-/** GET /v1/repo.file_history; read from the first folder's HEAD. */
-export interface RepoFileHistory {
-  /** The latest 50 commits that changed the file, newest first. */
-  changes: RepoCommit[];
-  /** The last 26 weeks, oldest first, the current week last; count is commits that changed the file. */
-  weekly: { start: number; count: number }[];
-  /** The 10 files changed most often in the same commit, among the scanned commits; most first. */
-  cochange: { path: string; together: number }[];
-  /** Commits scanned for cochange: the latest 500, or fewer when the history is shorter. */
-  scanned: number;
-}
-export interface RepoWorkingDiffFile {
-  /** Relative to the project's first folder. */
-  path: string;
-  /** The path before a rename; absent otherwise. */
-  old_path?: string;
-  /** untracked: not known to git; the others compare the worktree and index with HEAD. */
-  status: 'added' | 'modified' | 'deleted' | 'renamed' | 'untracked';
-  /** null for a binary file. */
-  additions: number | null;
-  /** null for a binary file. */
-  deletions: number | null;
-}
-/** GET /v1/repo.working_diff; the first folder's staged, unstaged and untracked changes against HEAD. */
-export interface RepoWorkingDiff {
-  /** The commit the changes are against. */
-  head_sha: string;
-  /** null when HEAD is detached. */
-  branch: string | null;
-  /** The branch's upstream and the commits HEAD has that it lacks (ahead) and it has that HEAD lacks (behind); null without one or when it no longer exists. */
-  upstream: { name: string; ahead: number; behind: number } | null;
-  /** Tracked changes first, then untracked files. */
-  files: RepoWorkingDiffFile[];
-  /** Every change as one patch, untracked files as new-file diffs; null when truncated. */
-  patch: string | null;
-  /** True when the patch exceeded its output bound. */
-  truncated: boolean;
 }
 export interface SessionCreatePreview {
   /** null for a detached HEAD. */

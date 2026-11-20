@@ -91,6 +91,7 @@ const LEAD = `verify-lead-${stamp}`;
 const lead = await call('session.create', {
   project_id,
   runtime: 'fixture',
+  purpose: 'lead',
   input: `${LEAD}\nfixture-script\n${JSON.stringify([{ tool: { name: 'update_board', arguments: plan } }])}`,
 });
 const DIRECT = `verify-direct-${stamp}`;

@@ -658,6 +658,36 @@ process.stdout.write(out.toString('latin1').replaceAll(local, device));
     },
   );
 
+  it.each([
+    { sandbox: { filesystem: { allowWrite: ['./link'] } } },
+    { sandbox: { excludedCommands: ['docker *'] } },
+    { permissions: { allow: ['Edit'] } },
+  ])(
+    'starts a device user session whose device settings would widen the Pantheon sandbox: %j',
+    async (settings) => {
+      const spec: SessionSpec = {
+        ...deviceWriterSpec(),
+        user_session: true,
+        extensions: {
+          mode: 'inherit',
+          overrides: {
+            disabled_mcp_servers: [],
+            disabled_plugins: [],
+            disabled_skills: [],
+            disable_apps: false,
+            disable_hooks: false,
+          },
+        },
+      };
+      const [device, local] = spec.remote!.plain_transport!.slice(-2) as [string, string];
+      spec.env = { CLAUDE_CONFIG_DIR: `${device}/home/.claude` };
+      mkdirSync(path.join(local, 'work/.claude'));
+      writeFileSync(path.join(local, 'work/.claude/settings.json'), JSON.stringify(settings));
+      const { options } = await running(spec);
+      expect(options.sandbox).toBeUndefined();
+    },
+  );
+
   it('does not start a device session whose sandbox paths the device cannot check', async () => {
     const spec = deviceWriterSpec(['/usr/bin/false']);
     spec.sandbox!.protected_entries = [{ path: `${spec.cwd}/.git/config`, deny: 'write' }];
@@ -1056,9 +1086,10 @@ it.each(['start', 'resume'] as const)(
 describe('Claude workbench permission modes', () => {
   const PLAN_DENIAL = 'Plan mode is on: read and plan only, then call ExitPlanMode with the plan.';
   const edit = { file_path: 'file', old_string: 'a', new_string: 'b' };
-  const modeOptions = (permission_mode?: SessionSpec['permission_mode']) => {
+  const modeOptions = (permission_mode?: SessionSpec['permission_mode'], user_session?: true) => {
     const spec = writerSpec();
     if (permission_mode) spec.permission_mode = permission_mode;
+    if (user_session) spec.user_session = user_session;
     const requestPermission = vi.fn(async (_tool: string) => ({
       behavior: 'deny' as const,
       message: 'Asked the user',
@@ -1418,6 +1449,90 @@ describe('Claude workbench permission modes', () => {
     expect(requests()).toHaveLength(2);
     expect(requests().at(-1)).toMatchObject({ tool: 'Edit' });
   });
+
+  it.each([
+    ['ask', 'default'],
+    ['auto_edit', 'acceptEdits'],
+    ['plan', 'plan'],
+    ['auto', 'auto'],
+    ['full_access', 'bypassPermissions'],
+  ] as const)(
+    'runs a user session in %s mode as native %s without the Pantheon sandbox',
+    (mode, native) => {
+      const { spec, options } = modeOptions(mode, true);
+      expect(options.permissionMode).toBe(native);
+      expect(options.sandbox).toBeUndefined();
+      expect(options).not.toHaveProperty('allowedTools');
+      const [unreadable, unwritable] = spec.sandbox!.protected_entries;
+      const rules = (options.settings as { permissions: { deny: string[] } }).permissions.deny;
+      expect(rules).toEqual(
+        expect.arrayContaining([`Read(/${unreadable!.path})`, `Edit(/${unreadable!.path})`]),
+      );
+      expect(rules).not.toContain(`Edit(/${unwritable!.path})`);
+    },
+  );
+
+  it.each(['ask', 'auto_edit', 'plan'] as const)(
+    'leaves a tool call of a user session in %s mode to the native permission rules',
+    async (mode) => {
+      const f = modeOptions(mode, true);
+      expect(await f.hook('Bash', { command: 'touch x' })).toBe(undefined);
+      expect(
+        await f.hook('Read', { file_path: path.join(f.spec.cwd, 'private-link/secret') }),
+      ).toEqual({
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: 'File target is protected',
+      });
+      expect(await f.hook('AskUserQuestion', { questions: [] })).toEqual(hookAsks);
+    },
+  );
+
+  it('asks before the shell commands and edits a user session in auto_edit mode sends to Pantheon', async () => {
+    const f = modeOptions('auto_edit', true);
+    expect(await f.call('Bash', { command: 'touch x' })).toEqual(asked);
+    expect(await f.call('Edit', edit)).toEqual(asked);
+    // Without the Pantheon sandbox a read the native rules did not allow is asked too.
+    expect(await f.call('Read', { file_path: '../outside/file' })).toEqual(asked);
+    expect(await f.call('Bash', { command: 'cat ../outside/file' })).toEqual(asked);
+    f.spec.allowed_rules = [permissionRule('Bash', { command: 'touch y' })];
+    expect(await f.call('Bash', { command: 'touch y' })).toMatchObject({ behavior: 'allow' });
+    expect(f.requestPermission.mock.calls.map(([tool]) => tool)).toEqual([
+      'Bash',
+      'Edit',
+      'Read',
+      'Bash',
+    ]);
+  });
+
+  it.each([
+    ['Write', { file_path: '../outside/new/file', content: 'x' }],
+    ['Edit', { file_path: 'outside-link/file', old_string: 'a', new_string: 'b' }],
+    ['MultiEdit', { file_path: '../source/file', edits: [] }],
+    ['Edit', { file_path: '.git/config', old_string: '', new_string: 'x' }],
+    ['EnterWorktree', { name: 'elsewhere' }],
+    ['Bash', { command: 'touch x', dangerouslyDisableSandbox: true }],
+  ] as const)('asks the user before %s %j of a user session', async (name, input) => {
+    const f = modeOptions('ask', true);
+    expect(await f.call(name, input)).toEqual(asked);
+    expect(f.requestPermission).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['Read', { file_path: 'private-link/secret' }],
+    ['Grep', { path: '../private', pattern: 'x' }],
+    ['Write', { file_path: 'private-link/new/file', content: 'x' }],
+  ] as const)(
+    'denies %s %j of a user session in a folder Pantheon keeps unreadable',
+    async (name, input) => {
+      const f = modeOptions('auto_edit', true);
+      expect(await f.call(name, input)).toEqual({
+        behavior: 'deny',
+        message: 'File target is protected',
+      });
+      expect(f.requestPermission).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe('Claude read-only lead turns', () => {

@@ -16,7 +16,9 @@ import { durationText } from '../../lib/time-text';
 import type { DaemonEvent } from '../../data/sync';
 import { pantheonTool, subagentCall, toolLabel } from '../../data/tool-calls';
 import {
+  composeState,
   isQuietEvent,
+  type Session,
   type SessionTurn,
   type Transcript,
   type TranscriptItem,
@@ -808,3 +810,8 @@ export function arrivals(before: Arrivals, ids: readonly string[] | null): Arriv
 /** A running session takes a message into its current turn; any other state starts a turn. */
 export const messageCommand = (state: string | undefined): 'session.steer' | 'session.send' =>
   state === 'running' ? 'session.steer' : 'session.send';
+
+/** Whether session.send or session.steer, whichever the session's state takes, can go to it now. */
+export const canMessage = (session: Session): boolean =>
+  composeState(session)[messageCommand(session.state) === 'session.steer' ? 'steer' : 'send']
+    .enabled;

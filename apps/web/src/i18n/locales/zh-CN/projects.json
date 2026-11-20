@@ -156,8 +156,6 @@
   "projects.add.reading": "读取仓库 {duration}",
   "projects.add.another": "换一个文件夹",
   "projects.add.skipBaseline": "跳过基线",
-  "projects.needs.newAgent": "新智能体：{name}",
-  "projects.needs.changeAgent": "修改智能体：{name}",
   "projects.row.decisionsWaiting": "等你决定：{count}",
   "projects.row.kindWaiting": "{kind} {count}",
   "projects.row.brief": "你离开后：{text}"

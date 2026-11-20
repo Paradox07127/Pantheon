@@ -10,7 +10,6 @@ import {
 import type { WorkbenchSession } from '@pantheon/protocol';
 import { BackgroundHooks } from './components/BackgroundHooks';
 import { CommandPalette } from './components/CommandPalette';
-import { DebugView, toggleDebugView } from './components/DebugView';
 import type { PaletteItem } from './components/palette';
 import { recentActivityTitle } from './components/RecentActivity';
 import { RuntimeBanner } from './components/RuntimeBanner';
@@ -20,12 +19,6 @@ import { ShortcutSheet } from './components/Shortcuts';
 import { Sidebar, useSidebarLayout } from './components/Sidebar';
 import { toast, Toasts } from './components/Toast';
 import { TitleBarEnd } from './components/TitleBarEnd';
-import {
-  ThemeBackdrop,
-  useForcedScheme,
-  useUserStyleSheet,
-  useUserTheme,
-} from './components/UserTheme';
 import { WindowControls } from './components/WindowControls';
 import { useBoard } from './data/board';
 import { currentProject, useCurrentProject } from './data/current-project';
@@ -50,7 +43,7 @@ import { failureText, reasonText, useNeedsYou } from './data/needs-you';
 import { crossProjectWaiting, personalHomeOf, personalSessionOf } from './data/personal-agent';
 import { visibleProjects } from './data/projects';
 import { applySessionDisplay, useSessionDisplay } from './data/session-display';
-import { useSystemReducedMotion, windowColours, windowDark } from './data/theme';
+import { useSystemReducedMotion, windowColours } from './data/theme';
 import { storedUnread } from './data/unread';
 import { useSessionList } from './data/workbench-sessions';
 import { t } from './i18n';
@@ -68,9 +61,7 @@ import { useAppDisplay } from './screens/sessions/app-display';
 import { answerBrowser } from './screens/sessions/BrowserPanel';
 import { groupWorkbenchSessions, sessionRow } from './screens/sessions/model';
 import { PersonalAgentScreen } from './screens/sessions/PersonalAgentScreen';
-import { RepoScreen } from './screens/repo/RepoScreen';
 import { SessionsScreen } from './screens/sessions/SessionsScreen';
-import { openRetrospective } from './screens/settings/settings-jump';
 import { SettingsDialog } from './screens/settings/SettingsDialog';
 import { AddProject } from './screens/projects/AddProject';
 import { SETTINGS_PAGES, useSettingsView } from './screens/settings/view';
@@ -87,7 +78,6 @@ const KEPT: readonly Screen[] = [
   'sessions',
   'board',
   'insights',
-  'repo',
   'trace',
   'memory',
   'automations',
@@ -226,10 +216,6 @@ export function App() {
   const look = useLook();
   const systemReduced = useSystemReducedMotion();
   const display = useSessionDisplay();
-  const userTheme = useUserTheme();
-  useUserStyleSheet();
-  // A saved theme that gives one scheme holds the window in it, leaving the stored choice as it is.
-  const forced = useForcedScheme();
   const accent = useAccent();
 
   useEffect(() => {
@@ -250,15 +236,15 @@ export function App() {
   useLayoutEffect(() => {
     const query = window.matchMedia('(prefers-color-scheme: dark)');
     const apply = () => {
-      const dark = windowDark(resolveTheme(theme, query.matches), forced);
+      const dark = resolveTheme(theme, query.matches) === 'dark';
       document.documentElement.classList.toggle('dark', dark);
       void window.pantheon?.setTitleBarTheme?.({ dark, ...windowColours() }).catch(() => {});
     };
     apply();
-    if (theme !== 'system' || forced) return;
+    if (theme !== 'system') return;
     query.addEventListener('change', apply);
     return () => query.removeEventListener('change', apply);
-  }, [theme, forced, userTheme, accent]);
+  }, [theme, accent]);
 
   // The body is the .pt shell.
   useLayoutEffect(() => {
@@ -438,27 +424,11 @@ function MainWindow({ kind }: { kind: 'main' | 'project' }) {
               t({ id: 'app.palette.resetLayout', defaultMessage: 'Reset layout' }),
               resetLayout,
             ),
-            action(
-              'debug-view',
-              SHORTCUTS.find((s) => s.id === 'debug-view')!.label,
-              toggleDebugView,
-              shortcutKeys('debug-view') || undefined,
-            ),
             ...(current
               ? [page('screen-board', SCREEN_NAMES.board, () => setScreen('board'))]
               : []),
             ...(current
               ? [page('screen-insights', SCREEN_NAMES.insights, () => setScreen('insights'))]
-              : []),
-            ...(current ? [page('screen-repo', SCREEN_NAMES.repo, () => setScreen('repo'))] : []),
-            ...(current
-              ? [
-                  page(
-                    'screen-retro',
-                    t({ id: 'board.panels.retro', defaultMessage: 'Retrospectives' }),
-                    () => openRetrospective(),
-                  ),
-                ]
               : []),
             ...(current
               ? [
@@ -573,7 +543,6 @@ function MainWindow({ kind }: { kind: 'main' | 'project' }) {
   useShortcut('shortcuts', () => setSheet((now) => !now));
   useShortcut('back', back);
   useShortcut('forward', forward);
-  useShortcut('debug-view', toggleDebugView);
 
   const main = useRef<HTMLDivElement>(null);
   // A kept screen leaves display:none here, which would run every entrance transition in it again.
@@ -603,7 +572,6 @@ function MainWindow({ kind }: { kind: 'main' | 'project' }) {
         { '--main-x': `${layout.collapsed ? SIDEBAR.rail + 8 : layout.width}px` } as CSSProperties
       }
     >
-      <ThemeBackdrop />
       <div className="app-drag" aria-hidden="true" />
       <Sidebar
         layout={layout}
@@ -626,8 +594,6 @@ function MainWindow({ kind }: { kind: 'main' | 'project' }) {
                 <BoardScreen projectId={current} onOpenSession={openSession} />
               ) : s === 'insights' ? (
                 <InsightsScreen projectId={current} onOpenSession={openSession} />
-              ) : s === 'repo' ? (
-                <RepoScreen projectId={current} onOpenSession={openSession} />
               ) : s === 'trace' ? (
                 <TraceScreen projectId={current} sessions={list.data} />
               ) : s === 'memory' ? (
@@ -678,7 +644,6 @@ function MainWindow({ kind }: { kind: 'main' | 'project' }) {
       <ShortcutSheet open={sheet} onOpenChange={setSheet} />
       <SettingsDialog />
       <AddProject projects={allProjects} onOpened={openProject} />
-      <DebugView />
       <Toasts />
       {/* Notice cards, the badge, keeping awake and queued sends run once, in the main window. */}
       {kind === 'main' && (

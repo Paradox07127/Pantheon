@@ -222,7 +222,6 @@ describe('small lucide strokes on the board', () => {
     ['status.css', '.bd-bdg svg.lucide'],
     ['overview.css', '.bms-due svg'],
     ['frame.css', '.bf-inbox svg'],
-    ['retro.css', '.ret-n svg.lucide'],
   ])('draws the 12px lucide icons of %s %s at the 16px stroke', (file, selector) => {
     expect(rule(sheet(file), selector)).toMatch(/stroke-width:\s*2;/);
   });

@@ -100,6 +100,7 @@ const LEAD = `Lead ${stamp}`;
 await call('session.create', {
   project_id,
   runtime: 'fixture',
+  purpose: 'lead',
   input: `${LEAD}\n${script(
     { tool: { name: 'update_board', arguments: plan } },
     { tool: { name: 'start_task', arguments: { task_ids: IDS } } },
@@ -595,6 +596,7 @@ const NARROW_LEAD = `Narrow lead ${stamp}`;
 await call('session.create', {
   project_id: narrow.project_id,
   runtime: 'fixture',
+  purpose: 'lead',
   input: `${NARROW_LEAD}\n${script({
     tool: {
       name: 'update_board',

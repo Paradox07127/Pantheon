@@ -277,12 +277,14 @@ export async function runOne(spec) {
         ? {
             project_id: project.id,
             runtime: leadRuntime,
+            purpose: 'lead',
             ...(spec.task.model ? { model: spec.task.model } : {}),
             input: spec.task.goal,
           }
         : {
             project_id: project.id,
             runtime: leadRuntime,
+            purpose: 'lead',
             input: script(
               { tool: { name: 'update_board', arguments: oneTaskPlan(spec.task) } },
               { tool: { name: 'start_task', arguments: { task_ids: ['A'] } } },

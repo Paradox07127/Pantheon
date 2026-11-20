@@ -249,14 +249,8 @@
   "sessions.panel.dock.stepNow": "进行中",
   "sessions.panel.dock.stepLater": "未开始",
   "sessions.panel.dock.noPlan": "还没有计划",
-  "sessions.panel.dock.files": "文件",
   "sessions.panel.dock.browser": "浏览器",
   "sessions.panel.dock.trace": "Trace",
-  "sessions.panel.files.binary": "二进制文件",
-  "sessions.panel.files.truncated": "已截断",
-  "sessions.panel.files.source": "看源码",
-  "sessions.panel.files.openInEditor": "在外部编辑器中打开",
-  "sessions.panel.files.tooLarge": "文件太大，无法预览",
   "sessions.panel.browser.back": "后退",
   "sessions.panel.browser.forward": "前进",
   "sessions.panel.browser.reload": "刷新",
@@ -272,5 +266,6 @@
   "sessions.panel.monitor.runningGroup": "运行中",
   "sessions.panel.monitor.finishedGroup": "已结束",
   "sessions.panel.monitor.openRuns": "在运行页打开",
-  "sessions.panel.monitor.clearFinished": "清除已结束"
+  "sessions.panel.monitor.clearFinished": "清除已结束",
+  "repo.changes.storyBy": "{runtime} 解读于{unit, select, now {刚刚} minute {{count, plural, other { # 分钟前}}} hour {{count, plural, other { # 小时前}}} other {{count, plural, other { # 天前}}}}"
 }

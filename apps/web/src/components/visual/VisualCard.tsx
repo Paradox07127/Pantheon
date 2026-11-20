@@ -16,7 +16,6 @@ import {
   X,
 } from 'lucide-react';
 import type { Visual, VisualContent } from '@pantheon/domain';
-import { canMessage } from '../../data/ask-debug';
 import { useBoard } from '../../data/board';
 import { failureText } from '../../data/needs-you';
 import { sessionTitle, type Session } from '../../data/transcript';
@@ -26,6 +25,7 @@ import { keyText } from '../../lib/shortcuts';
 import { dayText } from '../../lib/time-text';
 import { scrimFlag } from '../../lib/root-flag';
 import { askFix } from '../../screens/sessions/panel';
+import { canMessage } from '../../screens/sessions/thread-model';
 import { useShell } from '../../store';
 import { RUNNING, RunningFor } from '../RunningFor';
 import { noticeResult, toast } from '../Toast';

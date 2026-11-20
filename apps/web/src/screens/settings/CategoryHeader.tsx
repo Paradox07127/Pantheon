@@ -7,11 +7,11 @@ import { revealSetting } from './settings-jump';
 import { allProjects, thisComputer } from './SettingsNav';
 import { SETTINGS_PAGES, useSettingsView, type SettingsPage } from './view';
 
-/** The page's groups in order, each with the first setting it holds; a setting outside a section is its own group, one changed on the board is none. */
+/** The page's groups in order, each with the first setting it holds; a setting outside a section is its own group. */
 function pageGroups(page: SettingsPage): { label: Message; id: string }[] {
   const groups = new Map<string, { label: Message; id: string }>();
   for (const record of SETTINGS_INDEX) {
-    if (record.page !== page || record.id === `${page}.page` || record.board) continue;
+    if (record.page !== page || record.id === `${page}.page`) continue;
     const label = record.section ?? record.label;
     if (!groups.has(label.id)) groups.set(label.id, { label, id: record.id });
   }

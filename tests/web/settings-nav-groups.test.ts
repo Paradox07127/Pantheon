@@ -2,28 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
   (await import('./web-live-stores.js')).liveStores(actual as never),
 );
-import type { RoutingCell } from '@pantheon/protocol';
-import type { Improvement } from '@pantheon/domain';
 
 const mock = vi.hoisted(() => ({ improvements: [] as unknown[] }));
-const cell: RoutingCell = {
-  domain: 'review',
-  tier: 't1',
-  first: { runtime: 'codex', model: 'gpt-5' },
-  candidates: [],
-  prior: null,
-};
 vi.mock('@/data/workflow-policy', async (actual) => ({
   ...(await actual<object>()),
   useImprovements: () => ({ read: mock.improvements, error: null, reload() {} }),
-  useRoutingTable: () => ({ read: { cells: [cell] }, error: null, reload() {} }),
 }));
 
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { BoardModel } from '@pantheon/protocol';
 import { useBoard } from '@/data/board';
-import { RetroPanel } from '@/screens/board/RetroPanel';
 import { CategoryHeader } from '@/screens/settings/CategoryHeader';
 import { ConnectionsPage } from '@/screens/settings/ConnectionsPage';
 import { ProjectSettingsScreen } from '@/screens/settings/ProjectSettingsScreen';
@@ -122,16 +110,6 @@ describe('settings navigation groups', () => {
     expect(html).not.toContain('Claude');
   });
 
-  it("shows the routing table on a project's page, not under the default model", () => {
-    const defaults = shownOn('defaults');
-    expect(defaults).toContain('data-setting-id="defaults.runtime"');
-    expect(defaults).not.toContain('data-setting-id="routing.first"');
-    useSettingsView.setState({ detail: 'alpha' });
-    const html = shownOn('projects');
-    expect(html).toContain(`<h1>${zh('settings.pages.projects')}</h1>`);
-    expect(html).toContain('data-setting-id="routing.first"');
-  });
-
   it("ends a project's page with removing the project and holds no app-wide setting", () => {
     useSettingsView.setState({ detail: 'alpha' });
     const html = shownOn('project');
@@ -178,23 +156,5 @@ describe('settings page header frame', () => {
     } finally {
       registerPageHeader('connections', {});
     }
-  });
-});
-
-describe('the retrospective proposals', () => {
-  it('open the learned tab of memory', () => {
-    mock.improvements = [
-      { id: 'i1', status: 'candidate', retrospective_ids: [] } as unknown as Improvement,
-    ];
-    useShell.setState({ screen: 'board', memoryTab: 'overview' });
-    const panel = RetroPanel({
-      model: { now: 0, tasks: [] } as unknown as BoardModel,
-      projectId: 'alpha',
-      onOpenTask() {},
-    });
-    (panel.props as { num: { props: { onClick: () => void } } }).num.props.onClick();
-    expect(useShell.getState().memoryTab).toBe('learned');
-    expect(useShell.getState().screen).toBe('memory');
-    expect(useSettingsView.getState().open).toBe(false);
   });
 });

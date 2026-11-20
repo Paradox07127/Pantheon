@@ -316,7 +316,7 @@ describe('workflow settings page', () => {
     chip.props.onClick();
     expect(useSettingsView.getState().open).toBe(false);
     expect(useCurrentProject.getState().projectId).toBe('alpha');
-    expect(useShell.getState().memoryTab).toBe('learned');
+    expect(useShell.getState().memoryTab).toBe('overview');
     expect(useShell.getState().screen).toBe('memory');
   });
 });

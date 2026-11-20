@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
+  NATIVE_ENV_ALLOWLIST,
   requireThat,
   type AgentEventSink,
   type Session,
@@ -141,6 +142,8 @@ export function remoteSessionSpec(
       ],
     },
     env: { ...spec.env, TMPDIR: paths.tmp },
+    // The daemon's own variables describe this machine, not the device.
+    env_allowlist: NATIVE_ENV_ALLOWLIST,
     pantheon_mcp: forwarded && {
       command: 'nc',
       args: ['-U', forwarded.socket],

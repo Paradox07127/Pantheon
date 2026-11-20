@@ -1,7 +1,0 @@
-{
-  "memory.learnedPage.empty": "还没有经验",
-  "memory.learnedPage.openRetros": "看复盘",
-  "memory.learnedPage.searchHint": "输入「复盘」",
-  "memory.learnedPage.readFailed": "读不到经验列表：{error}",
-  "memory.learnedPage.retros": "复盘"
-}

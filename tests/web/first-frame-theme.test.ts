@@ -52,34 +52,6 @@ describe('the first frame of the page', () => {
     }
   });
 
-  it('paints a saved theme from its cached copy and holds the scheme it forces', () => {
-    const script = /<script>([\s\S]*?)<\/script>/.exec(head)![1]!;
-    const run = (stored: Record<string, string>) => {
-      const styles: { id: string; textContent: string }[] = [];
-      const classes = new Set<string>();
-      const dataset: Record<string, string> = {};
-      runInNewContext(script, {
-        localStorage: { getItem: (key: string) => stored[key] ?? null },
-        matchMedia: () => ({ matches: false }),
-        JSON,
-        document: {
-          head: { append: (el: { id: string; textContent: string }) => styles.push(el) },
-          createElement: () => ({ id: '', textContent: '' }),
-          documentElement: { classList: { add: (name: string) => classes.add(name) }, dataset },
-        },
-      });
-      return { styles, dark: classes.has('dark'), id: dataset.userTheme };
-    };
-    const tide = JSON.stringify({ id: 'tide', css: ':root{}', forced: 'dark' });
-    expect(run({ 'pantheon.theme': 'light', 'pantheon.userTheme.v1': tide })).toEqual({
-      styles: [{ id: 'pt-user-theme', textContent: ':root{}' }],
-      dark: true,
-      id: 'tide',
-    });
-    const paper = JSON.stringify({ id: 'paper', css: ':root{}', forced: 'light' });
-    expect(run({ 'pantheon.theme': 'dark', 'pantheon.userTheme.v1': paper }).dark).toBe(false);
-  });
-
   it('paints the saved accent colour as the app writes it, and nothing for the default', async () => {
     const script = /<script>([\s\S]*?)<\/script>/.exec(head)![1]!;
     const items = new Map<string, string>();

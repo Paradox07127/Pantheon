@@ -56,6 +56,7 @@ const plan = {
 const lead = await call('session.create', {
   project_id,
   runtime: 'fixture',
+  purpose: 'lead',
   input: `verify-decided-lead-${stamp}\nfixture-script\n${JSON.stringify([{ tool: { name: 'update_board', arguments: plan } }])}`,
 });
 await poll(

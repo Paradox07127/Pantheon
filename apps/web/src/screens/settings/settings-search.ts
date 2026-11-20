@@ -1,5 +1,4 @@
 import { t, type Message } from '../../i18n';
-import type { InsightsSection } from '../insights/InsightsScreen';
 import { PAGE_NAME, SETTINGS_INDEX, type SettingRecord } from './settings-index';
 import { SETTINGS_PAGES, type SettingsPage } from './view';
 
@@ -15,8 +14,6 @@ export interface SettingHit {
   pageOnly: boolean;
   /** The parts of the label that hold a query word, as [start, end) for <mark>. */
   ranges: [number, number][];
-  /** The engineering board tab the hit opens instead of its page. */
-  board?: InsightsSection;
 }
 
 const SPLIT = /[\s\p{P}]+/u;
@@ -129,7 +126,6 @@ export function searchSettings(query: string): SettingHit[] {
       score: whole ? 100 : Math.min(...scores.map((s) => s.score)),
       pageOnly: scores.every((s) => s.pageOnly),
       ranges: rangesIn(label, terms),
-      board: record.board,
       order,
     });
   });

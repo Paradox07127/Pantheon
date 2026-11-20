@@ -462,7 +462,6 @@ describe('thread header panel toggles', () => {
       zh('sessions.screen.tabChanges'),
       zh('sessions.screen.tabChecks'),
       zh('sessions.panel.dock.plan'),
-      zh('sessions.panel.dock.files'),
       zh('sessions.panel.dock.browser'),
       zh('sessions.panel.dock.trace'),
       zh('sessions.panel.dock.monitor'),
@@ -476,12 +475,12 @@ describe('thread header panel toggles', () => {
       toggle(h, label!).props.onClick?.();
     }
     expect(onPanel).not.toHaveBeenCalled();
-    for (const label of ['plan', 'files', 'browser', 'trace', 'monitor'].map((p) =>
+    for (const label of ['plan', 'browser', 'trace', 'monitor'].map((p) =>
       zh(`sessions.panel.dock.${p}`),
     ))
       expect(toggle(h, label).props['aria-disabled']).toBeUndefined();
-    toggle(h, zh('sessions.panel.dock.files')).props.onClick();
-    expect(onPanel).toHaveBeenCalledExactlyOnceWith('files');
+    toggle(h, zh('sessions.panel.dock.plan')).props.onClick();
+    expect(onPanel).toHaveBeenCalledExactlyOnceWith('plan');
   });
 
   it("shows the branch of the project's first folder for a session without a worktree", async () => {

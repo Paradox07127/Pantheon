@@ -23,9 +23,6 @@ const places = (...list: [string, PanelSpan][]): PanelPlace[] =>
 export const DEFAULT_LAYOUT: BoardLayout = {
   progress: places(['main', 12], ['table', 12], ['trend', 6], ['cycle', 6], ['stall', 12]),
   milestones: places(['milestones', 12], ['risks', 12]),
-  iterations: places(['iterations', 12]),
-  collab: places(['collab', 12]),
-  workflow: places(['workflow', 12]),
   quality: places(
     ['qualityKpis', 12],
     ['qualityTrend', 12],
@@ -38,8 +35,6 @@ export const DEFAULT_LAYOUT: BoardLayout = {
     ['gates', 12],
   ),
   usage: places(['quota', 12], ['runtime', 12], ['usage', 12], ['roles', 12]),
-  digest: places(['digest', 12]),
-  signals: places(['signals', 12]),
 };
 
 const record = (value: unknown): Record<string, unknown> | null =>

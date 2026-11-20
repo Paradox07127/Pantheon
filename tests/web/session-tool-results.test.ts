@@ -12,7 +12,6 @@ vi.mock('@/store', () => ({
 }));
 import { ArtifactCard, ToolImages } from '@/screens/sessions/items';
 import { BrowserPanel } from '@/screens/sessions/BrowserPanel';
-import { FilesPanel } from '@/screens/sessions/FilesPanel';
 
 const hosts: HookHost<any>[] = [];
 afterEach(() => {
@@ -114,27 +113,12 @@ describe('artifact card', () => {
     expect(bridge.browserOpen).not.toHaveBeenCalled();
   });
 
-  it('previews the local file in the files panel while it is in the worktree', async () => {
-    const query = vi.fn(async (method: string, params: Record<string, string>) => ({
-      ok: true,
-      value:
-        method === 'files.list'
-          ? { entries: [], truncated: false }
-          : { path: params.path, text: '<p>Landing</p>', size: 14, truncated: false },
-    }));
-    desktop({ query });
-    button(card().value, zh('sessions.parts.artifactPreviewLocal')).props.onClick();
-    expect(shell.openSession).toHaveBeenCalledWith('session-a', 'files');
-    const files = render(() =>
-      FilesPanel({ projectId: 'project-a', sessionId: 'session-a', worktree: true }),
-    );
-    await files.flush();
-    await files.flush();
-    expect(query).toHaveBeenCalledWith('files.read', {
-      project_id: 'project-a',
-      session_id: 'session-a',
-      path: 'design/landing.html',
-    });
+  it('opens the local file in the editor while it is in the worktree', () => {
+    const openFile = vi.fn(async () => ({ ok: true, value: null }));
+    desktop({ openFile });
+    button(card().value, zh('sessions.parts.artifactOpenInEditor')).props.onClick();
+    expect(openFile).toHaveBeenCalledWith({ path: 'design/landing.html', base: '/work/tree' });
+    expect(shell.openSession).not.toHaveBeenCalled();
     expect(buttons(card({ ...page, path: '/elsewhere/landing.html' }).value)).toEqual([
       zh('sessions.parts.artifactOpen'),
     ]);
@@ -142,7 +126,7 @@ describe('artifact card', () => {
 
   it('offers no Open outside the desktop app, which has no browser panel', () => {
     vi.stubGlobal('window', {});
-    expect(buttons(card().value)).toEqual([zh('sessions.parts.artifactPreviewLocal')]);
+    expect(buttons(card().value)).toEqual([zh('sessions.parts.artifactOpenInEditor')]);
   });
 });
 
@@ -156,6 +140,7 @@ describe('images a call returned', () => {
       ToolImages({
         images: [{ mime: 'image/png', hash, size: 4 }],
         files: [],
+        base: '/work/tree',
         sessionId: 'session-a',
       }),
     );

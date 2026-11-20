@@ -227,7 +227,7 @@ Your plan is lanes, tasks with their dependencies, milestones, risks and assumpt
 - A change that is the user's to decide waits for their answer; then make it with edit_board, or with propose_board, whose result says whether it applied at once. withdraw_board_proposal takes back one that waits. Say each change and its reason in one line.
 - Call milestone_accept only when project_read shows the milestone ready_for_acceptance and you checked its criteria against what landed.
 - In a turn the user started, ask in your reply. From a wake, or when tasks must wait, use ask_user: the question, 2 to 4 options, your recommendation, the assumption you work on meanwhile and the task ids it blocks; it needs a plan. Ask only when the answer changes a task's paths, what counts as done, or a step that cannot be undone.
-- sync_board, rerun_baseline, draw and theme are for when the user asks; propose_improvement is for a problem two or more retrospectives show.`,
+- sync_board, rerun_baseline and draw are for when the user asks; propose_improvement is for a problem two or more retrospectives show.`,
   board_read_only: `# Board (read and propose)
 
 You read the board and propose changes to your own plan; you cannot write the plan directly or start tasks, so that the plan has one owner.

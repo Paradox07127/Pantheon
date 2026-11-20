@@ -127,8 +127,6 @@ it('lists the allowed tools of the diagnosis session only', async () => {
     'app.screenshot',
     'app.dom',
     'app.logs',
-    'style.read',
-    'style.set',
     'project.read',
   ]);
   const worktree = await open(f, { purpose: 'app_debug' });
@@ -144,20 +142,16 @@ it('refuses an app tool to an ordinary session and an editing tool to the diagno
     return () => f.control.execute(principal, command(principal.id, type, input));
   };
   const ordinary = await open(f);
-  for (const type of ['app.logs', 'style.read'] as const)
+  for (const type of ['app.logs'] as const)
     expect(run(ordinary, type, {}), type).toThrow(
       expect.objectContaining({
         code: 'permission_denied',
         message: 'Action outside session role',
       }),
     );
-  expect(run(ordinary, 'style.set', { css: '' })).toThrow(
-    expect.objectContaining({ code: 'permission_denied' }),
-  );
   const inPlace = await diagnosis(f);
   expect(run(inPlace, 'app.logs', {})()).toEqual({ lines: [] });
   for (const [type, input] of [
-    ['theme.set', { label: 'Paper', light: { anchors: {} } }],
     ['visual.draw', { title: 'x', kind: 'mermaid', spec: { source: 'graph LR; a-->b' } }],
     ['memory.propose', {}],
   ] as const)
@@ -213,19 +207,10 @@ it('refuses a diagnosis session on another device, as every session in the proje
 });
 
 it('has the diagnosis guide keep the project as it is and end with an issue draft', () => {
-  for (const tool of [
-    'app_errors',
-    'app_dom',
-    'app_screenshot',
-    'app_logs',
-    'style_read',
-    'style_set',
-  ])
+  for (const tool of ['app_errors', 'app_dom', 'app_screenshot', 'app_logs'])
     expect(appDiagnoseSkill).toContain(tool);
   expect(appDiagnoseSkill).toMatch(/not the code of the project/);
   expect(appDiagnoseSkill).toMatch(/Do not create, edit or delete files in the project/);
-  expect(appDiagnoseSkill).toContain('[data-debug-region="…"]');
-  expect(appDiagnoseSkill).toContain('Settings > Appearance');
   expect(appDiagnoseSkill).toMatch(/fenced GitHub issue draft/);
   for (const part of [
     'title',

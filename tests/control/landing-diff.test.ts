@@ -3,8 +3,21 @@ import path from 'node:path';
 import { expect, it } from 'vitest';
 import type { LandingDiff } from '@pantheon/protocol';
 import { renderStoryBrief } from '../../packages/control/src/change-story-brief.js';
+import { rangeDiffWithSyncBounds } from '../../packages/control/src/landing-diff.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 import { user } from '../helpers.js';
+
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
+
+/** The change one commit made against its parent, as a landing reads it. */
+function commitDiff(f: Fixture, sha: string): Promise<LandingDiff> {
+  const root = f.project.roots[0]!;
+  return rangeDiffWithSyncBounds(f.control['ctx'], user, f.project.id, {
+    source: root,
+    from_sha: git(root, 'rev-parse', `${sha}^`),
+    to_sha: sha,
+  });
+}
 
 it('splits a commit into hunks whatever color the checkout configures', async () => {
   const f = await workbenchFixture();
@@ -12,7 +25,7 @@ it('splits a commit into hunks whatever color the checkout configures', async ()
   git(root, 'config', 'color.ui', 'always');
   writeFileSync(path.join(root, 'answer.txt'), 'base\nsecond\n');
   git(root, 'commit', '--quiet', '-am', 'Second');
-  const diff = await f.control.repoCommitDiff(user, f.project.id, git(root, 'rev-parse', 'HEAD'));
+  const diff = await commitDiff(f, git(root, 'rev-parse', 'HEAD'));
   expect(diff.hunks).toHaveLength(1);
   expect(diff.hunks[0]!.text).toContain('+second');
 });
@@ -44,7 +57,7 @@ it('marks only indentation and blank lines as whitespace, not a split line or sp
     'returned.js': 'function f() {\n  return\n  value;\n}\n',
     'run.sh': 'echo cleanup\nrm -rf "$TARGET"\n',
   });
-  expect(marks(await f.control.repoCommitDiff(user, f.project.id, sha))).toEqual([
+  expect(marks(await commitDiff(f, sha))).toEqual([
     ['layout.js', 'whitespace'],
     ['literal.js', undefined],
     ['returned.js', undefined],
@@ -58,10 +71,8 @@ it('marks build output as generated only beside a change to other files', async 
   commitFiles(root, { 'dist/index.js': 'run(1);\n', 'src/index.js': 'run(1);\n' });
   const alone = commitFiles(root, { 'dist/index.js': 'run(2);\n' });
   const beside = commitFiles(root, { 'dist/index.js': 'run(3);\n', 'src/index.js': 'run(3);\n' });
-  expect(marks(await f.control.repoCommitDiff(user, f.project.id, alone))).toEqual([
-    ['dist/index.js', undefined],
-  ]);
-  expect(marks(await f.control.repoCommitDiff(user, f.project.id, beside))).toEqual([
+  expect(marks(await commitDiff(f, alone))).toEqual([['dist/index.js', undefined]]);
+  expect(marks(await commitDiff(f, beside))).toEqual([
     ['dist/index.js', 'generated'],
     ['src/index.js', undefined],
   ]);
@@ -73,7 +84,7 @@ it('asks the story to tell a moved block that may run differently in a card', as
   const calls = 'sendEmail(user);\nchargeCard(user);\nlogAudit(user);\n';
   commitFiles(root, { 'a.js': `start();\n${calls}end();\n` });
   const sha = commitFiles(root, { 'a.js': 'start();\nend();\n', 'unused.js': calls });
-  const diff = await f.control.repoCommitDiff(user, f.project.id, sha);
+  const diff = await commitDiff(f, sha);
   expect(marks(diff)).toEqual([
     ['a.js', 'moved'],
     ['unused.js', 'moved'],

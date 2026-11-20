@@ -202,7 +202,7 @@ function patchPaths(
   spec: SessionSpec,
   changes: PatchChange[],
   gitFile: (root: string) => boolean,
-): { protectedPaths: string[]; roots: string[]; targets: string[] } | undefined {
+): { protectedPaths: string[]; roots?: string[]; targets: string[] } | undefined {
   const sandbox = spec.sandbox!;
   const targets = changes.flatMap((change) => [
     change.path,
@@ -213,6 +213,14 @@ function patchPaths(
     targets.some((target) => typeof target !== 'string' || !target || target.includes('\0'))
   )
     return undefined;
+  // The user approves a user-opened session's writes anywhere but in a hidden path.
+  if (spec.user_session)
+    return {
+      protectedPaths: sandbox.protected_entries
+        .filter((entry) => entry.deny === 'read_write')
+        .map((entry) => entry.path),
+      targets: (targets as string[]).map((target) => path.resolve(spec.cwd, target)),
+    };
   return {
     protectedPaths: [
       ...sandbox.protected_entries.map((entry) => entry.path),
@@ -234,7 +242,7 @@ function pathsDenied(
   resolve: (target: string) => string,
 ): boolean {
   const protectedPaths = paths.protectedPaths.map(resolve);
-  const roots = paths.roots.map(resolve);
+  const roots = paths.roots?.map(resolve);
   return paths.targets.some((target) => {
     const resolved = resolve(target);
     const inside = (root: string): boolean => {
@@ -244,7 +252,7 @@ function pathsDenied(
         (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
       );
     };
-    return protectedPaths.some(inside) || !roots.some(inside);
+    return protectedPaths.some(inside) || (roots !== undefined && !roots.some(inside));
   });
 }
 
@@ -282,7 +290,7 @@ async function devicePatchDenied(spec: SessionSpec, changes: PatchChange[]): Pro
   if (!facts) return true;
   const paths = patchPaths(spec, changes, (root) => facts.files[roots.indexOf(root)] !== undefined);
   if (!paths) return true;
-  const asked = [...new Set([...paths.protectedPaths, ...paths.roots, ...paths.targets])];
+  const asked = [...new Set([...paths.protectedPaths, ...(paths.roots ?? []), ...paths.targets])];
   const real = await realPathsOnDevice(remote, asked, spec.env_allowlist, deadline);
   if (!real) return true;
   return pathsDenied(paths, (target) => real[asked.indexOf(target)]!);
@@ -873,6 +881,12 @@ interface CodexSession {
   profiles?: { writer: string; readOnly: string };
   /** The profile the last turn/start selected; undefined means the thread's default writer profile. */
   profileSent?: string;
+  /** The sandbox the user's Codex config gave a user-opened session, selected again after a read-only turn. */
+  userSandbox?: { permissions: string } | { sandboxPolicy: unknown };
+  /** Who answers approvals in a user-opened session, as its thread reported; a read-only turn overrides it. */
+  userReviewer?: string;
+  /** The last turn/start narrowed a user-opened session to read-only. */
+  readOnlySent?: boolean;
   /** Running commandExecution items by item id; background once the turn that started them ended. */
   commands: Map<string, BackgroundTask & { background?: true }>;
   /** The MCP tools of the latest status read on this process; empty until one succeeds. */
@@ -1123,6 +1137,20 @@ async function startNativeTurn(
     const profile =
       wanted !== (session.profileSent ?? session.profiles?.writer) ? wanted : undefined;
     if (profile !== undefined) session.profileSent = profile;
+    // A turn/start sandbox stays in force for later turns, so the turn after a read-only one restores it.
+    const userSandbox =
+      session.spec.user_session && session.spec.permission_mode !== 'full_access'
+        ? current.readOnly
+          ? // The user's auto reviewer would approve an escalation past the read-only sandbox.
+            { sandboxPolicy: { type: 'readOnly', networkAccess: false }, approvalsReviewer: 'user' }
+          : session.readOnlySent
+            ? {
+                ...session.userSandbox,
+                ...(session.userReviewer ? { approvalsReviewer: session.userReviewer } : {}),
+              }
+            : undefined
+        : undefined;
+    if (session.spec.user_session) session.readOnlySent = current.readOnly;
     const started = await session.rpc.request<{ turn: { id: string } }>('turn/start', {
       threadId,
       input: nativeInput(turn),
@@ -1137,6 +1165,7 @@ async function startNativeTurn(
         : {}),
       ...(effort !== undefined ? { effort } : {}),
       ...(profile !== undefined ? { permissions: profile } : {}),
+      ...userSandbox,
     });
     if (session.turn !== current) return;
     if (!started?.turn?.id) throw new Error('Codex did not return a turn id');
@@ -2136,13 +2165,17 @@ export class CodexAdapter implements HarnessAdapter {
         case 'item/commandExecution/requestApproval':
           tool = 'commandExecution';
           // A require_escalated command carries no marker here, and approving it widens the profile.
-          denied = true;
+          // A user-opened session asks the user, as bare Codex does, unless it may not write.
+          denied =
+            !session.spec.user_session ||
+            session.turn?.readOnly === true ||
+            session.spec.permission_mode === 'plan';
           break;
         case 'item/fileChange/requestApproval':
           tool = 'fileChange';
           // Approving a patch would write past the read-only profile.
           denied =
-            p.grantRoot != null ||
+            (p.grantRoot != null && !session.spec.user_session) ||
             session.turn?.readOnly === true ||
             session.spec.permission_mode === 'plan';
           break;
@@ -2196,11 +2229,14 @@ export class CodexAdapter implements HarnessAdapter {
       let input = p;
       if (tool === 'fileChange') {
         const changes = typeof p.itemId === 'string' ? current.patches.get(p.itemId) : undefined;
+        // The root a user-opened session's patch asks to keep writing is checked as a target.
+        const checked =
+          changes && p.grantRoot != null ? [...changes, { path: p.grantRoot }] : changes;
         if (
-          !changes ||
+          !checked ||
           (session.spec.remote
-            ? await devicePatchDenied(session.spec, changes)
-            : patchDenied(session.spec, changes)) ||
+            ? await devicePatchDenied(session.spec, checked)
+            : patchDenied(session.spec, checked)) ||
           session.turn !== current ||
           session.stopping ||
           current.readOnly
@@ -2434,11 +2470,14 @@ export class CodexAdapter implements HarnessAdapter {
           }
         : {};
       // Use a fresh name so merging config cannot retain a user's broader profile entries.
-      const permissions = spec.sandbox ? `pantheon_${id()}` : undefined;
+      // A user-opened session runs on the sandbox and approvals of the user's own Codex config.
+      const permissions = spec.sandbox && !spec.user_session ? `pantheon_${id()}` : undefined;
       const promptTools = (names: string[]) =>
         Object.fromEntries(names.map((name) => [name, { approval_mode: 'prompt' }]));
-      if (spec.sandbox && permissions) {
-        if (spec.permission_mode !== 'full_access') {
+      if (spec.sandbox) {
+        if (spec.user_session && spec.permission_mode === 'plan')
+          config.default_permissions = ':read-only';
+        else if (permissions && spec.permission_mode !== 'full_access') {
           config[`permissions.${permissions}`] = {
             filesystem:
               spec.permission_mode === 'plan' || spec.runtime_analysis
@@ -2461,7 +2500,8 @@ export class CodexAdapter implements HarnessAdapter {
                 ...(server.enabled_tools ? { enabled_tools: server.enabled_tools } : {}),
               };
         const servers = extensions!.mcp_servers.filter(
-          (server) => server.enabled || disabled!.mcp_servers.includes(server.name),
+          (server) =>
+            (server.enabled && !spec.user_session) || disabled!.mcp_servers.includes(server.name),
         );
         const mcpServers = Object.fromEntries(
           servers
@@ -2480,7 +2520,9 @@ export class CodexAdapter implements HarnessAdapter {
           plugins.set(server.plugin, plugin);
         }
         if (plugins.size) config.plugins = Object.fromEntries(plugins);
-        const appPolicy = { default_tools_approval_mode: 'prompt', approvals_reviewer: 'user' };
+        const appPolicy = spec.user_session
+          ? {}
+          : { default_tools_approval_mode: 'prompt', approvals_reviewer: 'user' };
         // An entry here replaces the user's, whose enabled key defaults to true, so each one names it.
         const policies = extensions!.app_policies;
         if (!disabled!.apps)
@@ -2498,8 +2540,10 @@ export class CodexAdapter implements HarnessAdapter {
                   {
                     ...appPolicy,
                     enabled: openedApps ? openedApps.includes(app.name) : app.enabled,
-                    ...(app.tools.length ? { tools: promptTools(app.tools) } : {}),
-                    ...(app.links.length
+                    ...(app.tools.length && !spec.user_session
+                      ? { tools: promptTools(app.tools) }
+                      : {}),
+                    ...(app.links.length && !spec.user_session
                       ? { links: Object.fromEntries(app.links.map((name) => [name, appPolicy])) }
                       : {}),
                   },
@@ -2548,7 +2592,7 @@ export class CodexAdapter implements HarnessAdapter {
         }
       }
       // Codex otherwise allows request_user_input only in Plan collaboration mode.
-      if (spec.sandbox && spec.role === 'writer')
+      if (spec.sandbox && spec.role === 'writer' && !spec.user_session)
         config.features = {
           ...(config.features as Record<string, unknown> | undefined),
           default_mode_request_user_input: true,
@@ -2573,13 +2617,20 @@ export class CodexAdapter implements HarnessAdapter {
         modelProvider: modelProvider(spec),
         ...(spec.sandbox
           ? {
-              approvalPolicy: spec.role === 'planner' ? 'never' : 'on-request',
-              // The user's auto_review setting would let a Codex agent approve escalations and MCP calls.
-              approvalsReviewer: 'user',
+              ...(spec.user_session
+                ? // Plan mode declines escalations in this adapter; the user's auto reviewer would approve them.
+                  spec.permission_mode === 'plan'
+                  ? { approvalsReviewer: 'user' }
+                  : {}
+                : {
+                    approvalPolicy: spec.role === 'planner' ? 'never' : 'on-request',
+                    // The user's auto_review setting would let a Codex agent approve escalations and MCP calls.
+                    approvalsReviewer: 'user',
+                  }),
               developerInstructions: withControlInstructions(
                 spec.role === 'planner'
                   ? plannerInstructions(spec)
-                  : spec.permission_mode === 'full_access'
+                  : spec.permission_mode === 'full_access' || spec.user_session
                     ? ''
                     : 'Use tools inside the Pantheon permission profile. Do not request permissions outside the sandbox.',
               ),
@@ -2600,6 +2651,7 @@ export class CodexAdapter implements HarnessAdapter {
         model?: string;
         activePermissionProfile?: { id: string } | null;
         approvalsReviewer?: string;
+        sandbox?: { type?: string };
       };
       const result = spec.native_fork
         ? await rpc.request<ThreadResponse>('thread/fork', {
@@ -2626,6 +2678,19 @@ export class CodexAdapter implements HarnessAdapter {
         throw new Error('Codex did not activate the requested permission profile');
       if (permissions && result.approvalsReviewer !== 'user')
         throw new Error('Codex did not route approvals to Pantheon');
+      if (
+        spec.user_session &&
+        spec.permission_mode === 'plan' &&
+        (result.sandbox?.type !== 'readOnly' || result.approvalsReviewer !== 'user')
+      )
+        throw new Error('Codex did not start the plan mode session read-only');
+      if (spec.user_session) session.userReviewer = result.approvalsReviewer;
+      if (spec.user_session)
+        session.userSandbox = result.activePermissionProfile?.id
+          ? { permissions: result.activePermissionProfile.id }
+          : result.sandbox
+            ? { sandboxPolicy: result.sandbox }
+            : undefined;
       if (session.error) throw session.error;
       handle.native_session_id = result.thread.id;
       // Thread start/resume returns the server's resolved model. Never manufacture

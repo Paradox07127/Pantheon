@@ -49,6 +49,7 @@ import {
   sessionWorkspaceKind,
   sessionAdapter,
   bindSessionAdapter,
+  usesPantheonTools,
   type ControlContext,
   type Handler,
   type Handlers,
@@ -1101,15 +1102,16 @@ export function createTurnQueue(ctx: ControlContext, initial: SessionTurn, resum
         const compaction =
           turn.origin === 'reflection' ? undefined : compactionInstructions(ctx, turn.session_id);
         const input = { ...copied, input: userTurn(delivered).input };
-        const memory = beforeDelivery.runtime_review
-          ? undefined
-          : ctx.store.transaction(() =>
-              prepareMemoryDelivery(
-                ctx,
-                ctx.store.must<Session>('sessions', turn.session_id),
-                turn.id,
-              ),
-            );
+        const memory =
+          beforeDelivery.runtime_review || !usesPantheonTools(ctx, beforeDelivery)
+            ? undefined
+            : ctx.store.transaction(() =>
+                prepareMemoryDelivery(
+                  ctx,
+                  ctx.store.must<Session>('sessions', turn.session_id),
+                  turn.id,
+                ),
+              );
         const appContext = turn.origin ? undefined : takeAppContext(ctx, turn.session_id);
         const parts = appContext ? [appContext, input.input] : [input.input];
         if (memory) parts.push('[Pantheon current project memory]\n' + JSON.stringify(memory));
@@ -1338,13 +1340,10 @@ export function createTurnQueue(ctx: ControlContext, initial: SessionTurn, resum
       }
       const injection = Promise.resolve().then(async () => {
         try {
-          const memory = ctx.store.transaction(() =>
-            prepareMemoryDelivery(
-              ctx,
-              ctx.store.must<Session>('sessions', turn.session_id),
-              turn.id,
-            ),
-          );
+          const steered = ctx.store.must<Session>('sessions', turn.session_id);
+          const memory = usesPantheonTools(ctx, steered)
+            ? ctx.store.transaction(() => prepareMemoryDelivery(ctx, steered, turn.id))
+            : undefined;
           const input = await deviceTurn(ctx, turn.session_id, userTurn(turn));
           // Only a delivered steer carries the context; a queued one is sent later as its own turn.
           const found = turn.origin ? undefined : appContexts.get(ctx)?.get(turn.session_id);
@@ -1774,7 +1773,7 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
     // Only a session with memory tools hears about memory, and only one that can write about writing.
     const tools = purposeSessionTools(session, sessionWorkspaceKind(ctx, session));
     const memoryText =
-      session.resident?.kind === 'personal'
+      session.resident?.kind === 'personal' || !usesPantheonTools(ctx, session)
         ? undefined
         : !tools || tools.includes('memory.propose')
           ? MEMORY_INSTRUCTIONS

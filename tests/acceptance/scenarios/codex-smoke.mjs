@@ -299,6 +299,7 @@ export async function run({ workspace, evidenceDir }) {
       const lead = await call('plan', 'session.create', {
         project_id: projectId,
         runtime: 'codex',
+        purpose: 'lead',
         permission_mode: 'auto_edit',
         input: LEAD_INPUT,
       });

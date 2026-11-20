@@ -13,7 +13,6 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { ROUTINE_TEMPLATES } from '@pantheon/protocol/routine-catalog';
-import { ChangeOutcomeCard, changeOutcomeTitle } from '../../components/ChangeOutcomeCard';
 import { Clip } from '../../components/Clip';
 import { LoadError } from '../../components/LoadError';
 import { Skeleton } from '../../components/Skeleton';
@@ -30,7 +29,6 @@ import {
   type AgentListed,
   type AgentWake,
 } from '../../data/agents';
-import { useChangeOutcomes } from '../../data/change-outcomes';
 import { runCommand } from '../../data/commands';
 import { failureText } from '../../data/needs-you';
 import { t } from '../../i18n';
@@ -309,7 +307,6 @@ export function AgentProfilePanel({
     { key: 'wakes', body: <RecentWakes profile={profile} /> },
     { key: 'runs', body: <RoutineRuns profile={profile} /> },
     { key: 'week', body: <WeekLedger profile={profile} /> },
-    { key: 'outcomes', body: <AgentOutcomes profile={profile} /> },
   ];
   return (
     <aside
@@ -1091,53 +1088,5 @@ function WeekLedger({ profile }: { profile: AgentListed }) {
         </div>
       )}
     </>,
-  );
-}
-
-/** What creating the agent and turning on its routines did to the tasks after, newest first; none once read draws nothing. */
-function AgentOutcomes({ profile }: { profile: AgentListed }) {
-  const outcomes = useChangeOutcomes(profile.project_id);
-  const own = (outcomes.read ?? []).filter(
-    (outcome) =>
-      outcome.agent_id === profile.id &&
-      (outcome.kind === 'agent_created' || outcome.kind === 'routine_enabled'),
-  );
-  if (outcomes.unavailable || (!outcomes.error && outcomes.read && own.length === 0)) return null;
-  return section(
-    `ag-${profile.id}-outcomes`,
-    changeOutcomeTitle(),
-    outcomes.error ? (
-      <ChangeOutcomeCard outcome={null} error={outcomes.error} onRetry={outcomes.reload} />
-    ) : !outcomes.read ? (
-      <ChangeOutcomeCard outcome={null} />
-    ) : (
-      own.map((outcome) => (
-        <ChangeOutcomeCard
-          key={outcome.event_id}
-          outcome={outcome}
-          title={
-            outcome.kind === 'agent_created'
-              ? t(
-                  { id: 'sessions.agents.outcomes.created', defaultMessage: '{name} created' },
-                  { name: agentName(profile) },
-                )
-              : t(
-                  {
-                    id: 'sessions.agents.outcomes.turnedOn',
-                    defaultMessage: '{routines} turned on',
-                  },
-                  {
-                    routines: listText(
-                      ...(outcome.routine_ids ?? []).map((routineId) => {
-                        const routine = profile.routines.find((each) => each.id === routineId);
-                        return routine && routineTitle(routine.prompt);
-                      }),
-                    ),
-                  },
-                )
-          }
-        />
-      ))
-    ),
   );
 }

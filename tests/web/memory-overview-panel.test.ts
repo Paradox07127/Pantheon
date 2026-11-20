@@ -20,7 +20,6 @@ const actions = {
   onPreview: noop,
   onEntries: noop,
   onEntry: noop,
-  onLearned: noop,
   onSession: noop,
   onMaintain: noop,
   onCommit: noop,
@@ -146,7 +145,6 @@ const data = (extra: Partial<OverviewMemoryData> = {}): OverviewMemoryData => ({
     },
   ],
   drafts: { count: 3, oldest: NOW - 3_600_000 },
-  candidates: { count: 2, oldest: NOW - 27 * 60_000 },
   runtimes: { s1: 'claude', s2: 'codex', s3: 'agy' },
   titles: {},
   pending: [],
@@ -370,12 +368,11 @@ describe('overview memory panel', () => {
     expect(failed(false)).not.toContain('disabled');
   });
 
-  it('counts the drafts and experience candidates waiting, and leaves the block out when none wait', () => {
+  it('counts the drafts waiting, and leaves the block out when none wait', () => {
     const words = plain(render(data()));
-    expect(words).toContain('等你确认 记忆草稿 已等 1 小时 3 经验 已等 27 分钟 2');
-    const none = render(
-      data({ drafts: { count: 0, oldest: null }, candidates: { count: 0, oldest: null } }),
-    );
+    expect(words).toContain('等你确认 记忆草稿 已等 1 小时 3');
+    expect(words).not.toContain('经验 已等');
+    const none = render(data({ drafts: { count: 0, oldest: null } }));
     expect(none).not.toContain(zh('memory.agent.pending'));
   });
 
@@ -493,7 +490,6 @@ describe('overview memory panel', () => {
       directory: null,
       recent: null,
       drafts: { count: 0, oldest: null },
-      candidates: { count: 0, oldest: null },
       directoryError: 'directory unreadable',
       recentError: 'recent unreadable',
       pendingError: 'drafts unreadable',

@@ -97,6 +97,17 @@ const composerValue = `${byLabel('textarea', '新会话的第一条消息')}?.va
 // The trigger's name is "模型：" and its choices; its text starts with the runtime's display name.
 // Scoped to the new-session composer: the closed settings dialog keeps a model menu in the document.
 const modelText = `(document.querySelector('section[aria-label="新会话"] button[aria-label^="模型"]')?.textContent ?? '').trim().toLowerCase()`;
+/** The assistant's row in the sidebar's agents zone; its name starts with the agent's name. */
+const ASSISTANT_ROW = {
+  role: 'button',
+  name: '助理，',
+  exact: false,
+  within: { role: 'group', name: '本项目', exact: true },
+};
+// The thread is titled by the session, which keeps the agent's stored name.
+const ASSISTANT_COMPOSER = { role: 'textbox', name: '发给 Assistant', exact: true };
+// The thread's model trigger, found from the composer the thread's input sits in.
+const assistantModelText = `(() => { let el = ${byLabel('textarea', '发给 Assistant')}; while (el && !el.querySelector('button[aria-label^="模型"]')) el = el.parentElement; return (el?.querySelector('button[aria-label^="模型"]')?.textContent ?? '').trim().toLowerCase(); })()`;
 const TABLE = { role: 'table', name: '任务列表', exact: true };
 /** The task list's rows as [title, state], from their names "title，state". */
 const tableRows = `[...document.querySelectorAll('[role="table"][aria-label="任务列表"] [role="row"][aria-label]')].map((row) => row.getAttribute('aria-label').split('，'))`;
@@ -407,31 +418,48 @@ export async function run({ workspace, evidenceDir }) {
     });
 
     await step('lead', async () => {
+      const assistant = (await get('agent.list', { project_id: projectId })).find(
+        (agent) => agent.template === 'assistant',
+      );
+      if (!assistant) throw new Error('The project has no assistant');
       const before = new Set((await board()).sessions.map((row) => row.id));
-      await click(button('新会话', { within: NAV }));
-      await appear(COMPOSER);
+      await click(ASSISTANT_ROW);
+      await appear(ASSISTANT_COMPOSER);
       await waitUi(
-        `${modelText}.startsWith('fixture')`,
+        `${assistantModelText}.startsWith('fixture')`,
         'the model menu to name the fixture runtime',
       );
-      await fill(COMPOSER, script({ tool: { name: 'update_board', arguments: plan } }));
-      await press('Enter');
-      const lead = await newSession(before, 'the lead session to be created');
-      if (lead.task) throw new Error(`The lead is bound to task ${JSON.stringify(lead.task)}`);
+      const lead = await poll(async () => {
+        const added = (await board()).sessions.filter((row) => !before.has(row.id));
+        const own = added.filter((row) => row.resident?.agent_id === assistant.id);
+        if (own.length > 1) throw new Error(`${own.length} assistant sessions were created`);
+        return own[0] ?? false;
+      }, 'the assistant session to be opened');
+      if (lead.task) throw new Error(`The assistant is bound to task ${JSON.stringify(lead.task)}`);
       leadId = lead.id;
+      const known = new Set(turnsOf(await board(), leadId).map((turn) => turn.id));
+      const text = script({ tool: { name: 'update_board', arguments: plan } });
+      await fill(ASSISTANT_COMPOSER, text);
+      await press('Enter');
       const done = await poll(async () => {
         const snapshot = await board();
-        const session = snapshot.sessions.find((row) => row.id === leadId);
-        const turns = turnsOf(snapshot, leadId);
-        if (snapshot.sessions.length !== before.size + 1)
-          throw new Error(
-            `${snapshot.sessions.length - before.size} sessions were created, not one`,
-          );
-        return session?.state === 'open' && turns.length >= 1 && turns.every(ended) ? turns : false;
-      }, 'the lead to write the plan');
-      if (done.some((turn) => turn.state !== 'completed'))
-        throw new Error(`The lead's turn ended ${done.map((turn) => turn.state).join(', ')}`);
-      timings.lead = { model_menu: await read(modelText, 'the model menu text') };
+        const sent = turnsOf(snapshot, leadId).filter(
+          (turn) => !known.has(turn.id) && turn.input === text,
+        );
+        if (sent.length > 1) throw new Error(`The message started ${sent.length} turns`);
+        return sent[0] && ended(sent[0]) ? sent[0] : false;
+      }, 'the assistant to write the plan');
+      if (done.state !== 'completed') throw new Error(`The lead's turn ended ${done.state}`);
+      const snapshot = await board();
+      const added = snapshot.sessions.filter((row) => !before.has(row.id));
+      const own = added.filter((row) => row.resident?.agent_id === assistant.id);
+      if (own.length !== 1 || own[0].id !== leadId)
+        throw new Error(`${own.length} assistant sessions were created, not one`);
+      if (snapshot.sessions.find((row) => row.id === leadId)?.state !== 'open')
+        throw new Error('The assistant session is no longer open');
+      if (!snapshot.milestones.some((m) => m.owner_session_id === leadId && m.key === 'M'))
+        throw new Error('The plan is not owned by the assistant session');
+      timings.lead = { model_menu: await read(assistantModelText, 'the model menu text') };
       await shot('lead-planned');
     });
 
@@ -576,10 +604,11 @@ export async function run({ workspace, evidenceDir }) {
       );
       await shot('done-cards');
 
-      await click({ role: 'button', name: 'fixture-script', within: NAV });
+      await click(ASSISTANT_ROW);
+      // A resident's thread folds each turn its workers woke to one line that opens to its input.
       await waitUi(
-        `(() => { const text = [...document.querySelectorAll('.ss-sys')].map((el) => el.textContent).join('\\n'); return ${JSON.stringify(settled.notes)}.every((note) => text.includes(note)); })()`,
-        'the lead thread to show both merge notes',
+        `(() => { const wakes = [...document.querySelectorAll('button[aria-expanded]')].filter((b) => b.textContent.includes('Worker 报告')); for (const b of wakes) if (b.getAttribute('aria-expanded') === 'false') b.click(); const text = wakes.map((b) => b.nextElementSibling?.textContent ?? '').join('\\n'); return ${JSON.stringify(settled.notes)}.every((note) => text.includes(note)); })()`,
+        'the assistant thread to show both merge notes',
       );
       observations.lead = { notes_shown: true };
       await shot('lead-notes');

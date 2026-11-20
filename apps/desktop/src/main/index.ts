@@ -50,7 +50,6 @@ import {
   type NotificationTarget,
   type PopupMenuItem,
   type RendererCrash,
-  type RepoWorktree,
   type StaleWorkspaces,
   type WaitingSession,
 } from '@pantheon/protocol';
@@ -1072,7 +1071,7 @@ handleFrom('pantheon:fileMenu', async (from, ref: FileRef) => {
 });
 /**
  * Whether the page may reveal `target`: the daemon's data folder, a project root, a workspace or the
- * root it came from, the managed worktree folder, or a git worktree of a project.
+ * root it came from, or the managed worktree folder.
  */
 const revealable = async (target: string): Promise<boolean> => {
   const daemon = await bridge.daemon();
@@ -1085,15 +1084,11 @@ const revealable = async (target: string): Promise<boolean> => {
     workspaces.some((w) => w.path === target || w.source === target)
   )
     return true;
-  for (const [index, { id }] of projects.entries()) {
-    // Every project reports the same managed worktree folder.
-    const stale = index === 0 ? await bridge.query('workspace.stale', { project_id: id }) : null;
-    if (stale?.ok && (stale.value as StaleWorkspaces).worktree_root === target) return true;
-    const worktrees = await bridge.query('repo.worktrees', { project_id: id });
-    if (worktrees.ok && (worktrees.value as RepoWorktree[]).some((w) => w.path === target))
-      return true;
-  }
-  return false;
+  // Every project reports the same managed worktree folder.
+  const first = projects[0];
+  if (first === undefined) return false;
+  const stale = await bridge.query('workspace.stale', { project_id: first.id });
+  return stale.ok && (stale.value as StaleWorkspaces).worktree_root === target;
 };
 handle('pantheon:revealPath', async (target: unknown) => {
   if (typeof target !== 'string')

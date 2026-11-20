@@ -196,12 +196,6 @@ export function orchestrationLabel(
           : '',
         tasks: [],
       };
-    case 'propose_agent':
-      return {
-        title: t({ id: 'data.toolCalls.action.proposeAgent', defaultMessage: 'Propose agent' }),
-        detail: flat(text(i.name) ?? ''),
-        tasks: [],
-      };
     case 'milestone_accept':
       return {
         title: t({

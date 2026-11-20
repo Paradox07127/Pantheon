@@ -129,7 +129,7 @@ describe('settings index', () => {
   it('names each item once as <page>.<item>, an item of a moved page under its old page', () => {
     const all = SETTINGS_INDEX.map((r) => r.id);
     expect(new Set(all).size).toBe(all.length);
-    const moved: Record<string, string> = { routing: 'project', experience: 'general' };
+    const moved: Record<string, string> = { experience: 'general' };
     for (const r of SETTINGS_INDEX) {
       const prefix = r.id.slice(0, r.id.indexOf('.'));
       expect(moved[prefix] ?? prefix).toBe(r.page);

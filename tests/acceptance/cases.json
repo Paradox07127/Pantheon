@@ -1505,10 +1505,10 @@
         "HTTP 开项目，不设门禁、自动合并、会话默认值；起 app,等侧栏出现项目名",
         "设置 › 会话默认值：运行时已选 fixture,权限模式切到自动编辑，保存;HTTP 核对全局默认运行时",
         "设置 › 项目 › 本项目：门禁加一条 Passes,命令行 git rev-parse HEAD,超时 60 秒，保存；打开门禁通过后自动合并;HTTP 核对 argv 与 auto_merge",
-        "侧栏新会话：模型按钮以 fixture 开头，输入 lead 脚本调 update_board(任务 A、B 无依赖，里程碑 M 含 A、B),Enter;HTTP 核对恰好新增一个不带任务的会话且回合 completed",
+        "侧栏智能体区点助理，等它的会话打开：模型按钮以 fixture 开头，输入 lead 脚本调 update_board(任务 A、B 无依赖，里程碑 M 含 A、B),Enter;HTTP 核对新增的会话里恰好一个是助理的常驻会话、不带任务，这条消息的回合 completed,里程碑 M 归助理会话",
         "概览 › 任务 › 看板：恰好两张卡片 Task A、Task B",
         "对 A、B 依次：看板点卡片，抽屉里点开会话做它，把预填的标题和目标换成任务脚本(写文件、提交、report done),Enter;HTTP 核对恰好新增一个绑定该任务的会话",
-        "等完成：界面出现 role=alert、回合失败、合并被挡、工作区准备失败即判失败;HTTP 核对回合 completed、task.reported、门禁 Passes 在落回的提交上 exit 0、自动合并；看板完成列有 A、B;lead 会话里出现 A、B 的合并摘要",
+        "等完成：界面出现 role=alert、回合失败、合并被挡、工作区准备失败即判失败;HTTP 核对回合 completed、task.reported、门禁 Passes 在落回的提交上 exit 0、自动合并；看板完成列有 A、B;助理会话里出现 A、B 的合并摘要",
         "概览 › 承诺：点验收 M,对话框里两个证据都已勾选、名字是 A、B 的会话，点确定；等对话框消失、出现已验收;HTTP 核对里程碑 completed、evidence_refs 为两个 session:<id>",
         "收尾:SIGTERM 自己的进程组,8 s 不退再 SIGKILL;关 daemon,确认 daemon.json 已删、锁能重新 listen;再算 build 摘要"
       ],

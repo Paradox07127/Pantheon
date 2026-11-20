@@ -176,7 +176,7 @@
   "sessions.parts.openImageFile": "打开 {path}",
   "sessions.parts.artifactVersion": "版本 {version}",
   "sessions.parts.artifactOpen": "打开",
-  "sessions.parts.artifactPreviewLocal": "预览本地文件",
+  "sessions.parts.artifactOpenInEditor": "在编辑器打开",
   "sessions.parts.noReason": "后端没有给出原因",
   "sessions.parts.resumeSession": "续上会话",
   "sessions.parts.closeSession": "关闭会话",

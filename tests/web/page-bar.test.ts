@@ -67,7 +67,7 @@ describe('page top bar', () => {
         onRetry() {},
         days: 7,
         onDays() {},
-        section: 'iterations',
+        section: 'quality',
         onSection() {},
         onOpenSession() {},
         onOpenStory() {},
@@ -75,15 +75,7 @@ describe('page top bar', () => {
     );
     expect(bar).toContain(`<h1>${SCREEN_NAMES.insights}</h1>`);
     expect(tabs(bar)).toEqual(
-      [
-        'insights.sections.iterations',
-        'insights.sections.collab',
-        'insights.sections.workflow',
-        'board.sections.quality',
-        'board.sections.usage',
-        'insights.digest.label',
-        'insights.sections.signals',
-      ].map((id) => zh(id)),
+      ['board.sections.quality', 'board.sections.usage'].map((id) => zh(id)),
     );
     expect(bar).toMatch(
       new RegExp(`role="radiogroup"[^>]*aria-label="${zh('board.headline.range')}"`),
@@ -112,11 +104,11 @@ describe('page top bar', () => {
     expect(body).not.toContain('role="radiogroup"');
   });
 
-  it('holds the memory name and its overview, entries, graph, diagrams and learned tabs', () => {
+  it('holds the memory name and its overview, entries, graph and diagrams tabs', () => {
     const { bar, body } = split(createElement(MemoryScreen, { projectId: 'alpha' }));
     expect(bar).toContain(`<h1>${SCREEN_NAMES.memory}</h1>`);
     expect(tabs(bar)).toEqual(
-      ['overview', 'entries', 'graph', 'diagrams', 'learned'].map((tab) => zh(`memory.tab.${tab}`)),
+      ['overview', 'entries', 'graph', 'diagrams'].map((tab) => zh(`memory.tab.${tab}`)),
     );
     expect(tabs(body)).toEqual([]);
   });

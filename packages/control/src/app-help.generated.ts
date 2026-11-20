@@ -597,48 +597,6 @@ export const appHelpGroups: AppHelpGroup[] = [
     ],
   },
   {
-    group: 'repo',
-    about:
-      "Commits only paths with the user's own git identity, configuration and hooks; returns { sha }",
-    commands: [
-      {
-        type: 'repo.commit',
-        about:
-          "Commits only paths with the user's own git identity, configuration and hooks; returns { sha }.",
-        tool: 'the user does this in the app',
-      },
-      {
-        type: 'repo.discard',
-        about:
-          'Restores tracked files in the index and the worktree to HEAD and deletes untracked ones; returns { undo_id }.',
-        tool: 'the user does this in the app',
-      },
-      {
-        type: 'repo.discard_patch',
-        about:
-          'Applies patch, taken from repo.working_diff, in reverse to the worktree; returns { undo_id }.',
-        tool: 'the user does this in the app',
-      },
-      {
-        type: 'repo.discard_undo',
-        about: 'Writes back what a discard within the last 10 minutes changed; returns {}.',
-        tool: 'the user does this in the app',
-      },
-      {
-        type: 'repo.push',
-        about:
-          'Pushes the checked-out branch to its upstream, or to origin setting it as the upstream, never forced; returns {}.',
-        tool: 'the user does this in the app',
-      },
-      {
-        type: 'repo.revert',
-        about:
-          'Reverts sha in a new commit, or the whole range of the recorded session merge that ended at sha; returns { sha }.',
-        tool: 'the user does this in the app',
-      },
-    ],
-  },
-  {
     group: 'request',
     about:
       'The user only; routes a request to a resident again: steers the resident to answer it here, plan a new lane or add it to the lane, or sends it to the agent; returns {session_id, turn_id}',
@@ -831,31 +789,6 @@ export const appHelpGroups: AppHelpGroup[] = [
     ],
   },
   {
-    group: 'style',
-    about:
-      'The user only; empties the user stylesheet, returns UserStyleRead; The user only; turns the user stylesheet on or off and keeps its CSS, returns UserStyleRead; Returns UserStyleRead',
-    commands: [
-      {
-        type: 'style.clear',
-        about: 'The user only; empties the user stylesheet, returns UserStyleRead.',
-        tool: 'the user does this in the app',
-      },
-      {
-        type: 'style.enable',
-        about:
-          'The user only; turns the user stylesheet on or off and keeps its CSS, returns UserStyleRead.',
-        tool: 'the user does this in the app',
-      },
-      { type: 'style.read', about: 'Returns UserStyleRead.', tool: 'style_read' },
-      {
-        type: 'style.set',
-        about:
-          'A session credential or the user; replaces the user stylesheet and turns it on, returns UserStyleRead.',
-        tool: 'style_set',
-      },
-    ],
-  },
-  {
     group: 'task',
     about:
       "Accepts the done report of a report task in the calling lead's plan; Stops one background task of the session working on a task in the calling lead's plan",
@@ -908,29 +841,6 @@ export const appHelpGroups: AppHelpGroup[] = [
       { type: 'terminal.open', tool: 'the user does this in the app' },
       { type: 'terminal.resize', tool: 'the user does this in the app' },
       { type: 'terminal.write', tool: 'the user does this in the app' },
-    ],
-  },
-  {
-    group: 'theme',
-    about:
-      'The user only; null goes back to the default theme; The user only; deleting the applied theme goes back to the default first',
-    commands: [
-      {
-        type: 'theme.apply',
-        about: 'The user only; null goes back to the default theme.',
-        tool: 'the user does this in the app',
-      },
-      {
-        type: 'theme.delete',
-        about: 'The user only; deleting the applied theme goes back to the default first.',
-        tool: 'the user does this in the app',
-      },
-      {
-        type: 'theme.set',
-        about:
-          'A session credential or the user; saves the theme and applies it, returns ThemeSetReceipt.',
-        tool: 'theme',
-      },
     ],
   },
   {

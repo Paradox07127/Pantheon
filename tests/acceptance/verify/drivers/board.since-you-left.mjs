@@ -84,6 +84,7 @@ const plan = {
 const lead = await call('session.create', {
   project_id,
   runtime: 'fixture',
+  purpose: 'lead',
   input: `verify-brief-lead-${stamp}\nfixture-script\n${JSON.stringify([{ tool: { name: 'update_board', arguments: plan } }])}`,
 });
 check('前置：lead 回合结束', (await idle(lead.id))?.last_turn?.state === 'completed');

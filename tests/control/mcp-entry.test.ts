@@ -37,6 +37,7 @@ it('starts the Pantheon MCP server from the CLI entry the control was given', as
     project_id: f.project.id,
     runtime: adapter.name,
     input: 'Write a sentence',
+    purpose: 'lead',
   });
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(

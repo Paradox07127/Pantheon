@@ -59,7 +59,6 @@ try {
       const all = [...document.querySelectorAll('section.ps-sec, input[type=checkbox]')].filter((e) => e.getClientRects().length);
       const at = (pred) => all.findIndex(pred);
       return {
-        routing: at((e) => e.getAttribute('aria-label') === '路由表'),
         toggle: at((e) => e.getAttribute('aria-label') === ${JSON.stringify(QD)}),
         playbook: at((e) => e.getAttribute('aria-label') === '打法'),
         checked: all.find((e) => e.getAttribute('aria-label') === ${JSON.stringify(QD)})?.checked ?? null,
@@ -67,12 +66,12 @@ try {
     })()`);
   const order = await poll(async () => {
     const l = await layout();
-    return l.routing >= 0 && l.toggle >= 0 && l.playbook >= 0 && l;
+    return l.toggle >= 0 && l.playbook >= 0 && l;
   });
   result.order = order;
   check(
-    '项目页里 路由表 之后是提问期限开关，再后是 "打法" 一节',
-    order && order.routing < order.toggle && order.toggle < order.playbook,
+    '项目页里提问期限开关之后是 "打法" 一节',
+    order && order.toggle < order.playbook,
     order || (await layout()),
   );
   check('提问期限开关显示关(与 workflow.policy 一致)', order?.checked === false, order?.checked);
@@ -118,8 +117,8 @@ try {
   // The extensions sections further down belong to another page; what they do is kept apart.
   result.page_flash = gone(() => true);
   check(
-    '首次打开不闪：路由表 和 打法 画出后没有再消失',
-    gone((name) => ['路由表', '打法'].includes(name)).length === 0,
+    '首次打开不闪：打法 画出后没有再消失',
+    gone((name) => name === '打法').length === 0,
     firstStates,
   );
 

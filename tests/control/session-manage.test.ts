@@ -301,6 +301,8 @@ it('deletes a running worktree session: closes its process, removes its worktree
     runtime: f.adapter.name,
     input: 'Read the notes',
     attachments: [upload.id],
+    // A session the user opened has no managed native store to remove.
+    purpose: 'lead',
   });
   const workspace = await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(

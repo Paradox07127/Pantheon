@@ -85,7 +85,6 @@ import { BaselinePopover, ReviewBaseline } from '@/screens/projects/BaselineBloc
 import { TaskGraph } from '@/screens/projects/TaskGraph';
 import { StateGlyph } from '@/components/SessionStateIcon';
 import { InsightsScreen, InsightsView } from '@/screens/insights/InsightsScreen';
-import { OverviewTab } from '@/screens/repo/OverviewTab';
 import type { SnapshotSession } from '@/screens/board/panels-model';
 
 const noop = () => {};
@@ -436,7 +435,7 @@ describe('project setup on the pages', () => {
     expect(shown(view(planning, planned))).toBe(false);
   });
 
-  it('keeps the setup on the board and leaves it off the engineering board and the repository overview', async () => {
+  it('keeps the setup on the board and leaves it off the engineering board', async () => {
     const boardPage = mount(() =>
       find(
         BoardScreen({ projectId: 'project-a', onOpenSession: noop }),
@@ -449,12 +448,9 @@ describe('project setup on the pages', () => {
         (n) => n.type === InsightsView,
       ),
     );
-    const overview = mount(() => OverviewTab({ projectId: 'project-a', onOpenSession: noop }));
     await boardPage.flush();
     await insights.flush();
-    await overview.flush();
     expect(boardPage.value.props.setup).toMatchObject({ state: 'none', busy: false });
     expect(insights.value.props).not.toHaveProperty('setup');
-    expect(nodes(overview.value).some((n) => n.type === ProjectSetup)).toBe(false);
   });
 });

@@ -18,9 +18,7 @@ vi.mock('@/store', async (actual) => {
   };
 });
 
-const PAGES = ['board', 'insights', 'repo', 'trace', 'memory'].map((s) =>
-  zh(`app.screenName.${s}`),
-);
+const PAGES = ['board', 'insights', 'trace', 'memory'].map((s) => zh(`app.screenName.${s}`));
 
 const render = (collapsed: boolean) =>
   renderToStaticMarkup(
@@ -37,14 +35,14 @@ const render = (collapsed: boolean) =>
 afterEach(() => vi.unstubAllGlobals());
 
 describe('project page entries', () => {
-  it('lists the project board, engineering board, repository, trace and memory, in that order', () => {
+  it('lists the project board, engineering board, trace and memory, in that order', () => {
     vi.stubGlobal('navigator', { userAgent: 'Macintosh' });
     const open = render(false);
     const entries = [...open.matchAll(/class="sb-it"[^>]*>(?:<svg.*?<\/svg>)?([^<]*)<\/button>/g)];
-    expect(entries.map((m) => m[1]).slice(0, 6)).toEqual([...PAGES, zh('app.screenName.settings')]);
+    expect(entries.map((m) => m[1]).slice(0, 5)).toEqual([...PAGES, zh('app.screenName.settings')]);
     const rail = render(true);
     const icons = [...rail.matchAll(/class="ib" aria-label="([^"]*)"/g)].map((m) => m[1]);
-    expect(icons.slice(0, 5)).toEqual(PAGES);
+    expect(icons.slice(0, 4)).toEqual(PAGES);
     for (const gone of [zh('app.screenName.runtime'), zh('app.screenName.flow')]) {
       expect(open).not.toContain(`>${gone}</button>`);
       expect(rail).not.toContain(`aria-label="${gone}"`);

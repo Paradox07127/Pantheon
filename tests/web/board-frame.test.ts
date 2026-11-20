@@ -1211,6 +1211,12 @@ describe('publish bar', () => {
     expect(requirementSessionInput('project-a', undefined, 'Ship it', []).runtime).toBe('claude');
   });
 
+  it('opens the session of a requirement as a lead', () => {
+    expect(requirementSessionInput('project-a', undefined, 'Ship it', ['codex']).purpose).toBe(
+      'lead',
+    );
+  });
+
   it('creates the session on a runtime the status report offers', async () => {
     stubRuntimes(['codex']);
     const sent: unknown[] = [];

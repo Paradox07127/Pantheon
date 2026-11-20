@@ -8,7 +8,7 @@ import {
 } from '@pantheon/domain';
 import type { DiffHunk, LandingDiff, LandingDiffFile } from '@pantheon/protocol';
 import type { ControlContext } from './context.js';
-import { PATCH_BOUND, TIME_BOUND, checkedSource } from './source-git.js';
+import { PATCH_BOUND, checkedSource } from './source-git.js';
 import { runGit, type GitResult } from './git.js';
 
 // Lockfiles are not here: a lockfile change can change what gets installed.
@@ -223,7 +223,10 @@ function landingResult(range: DiffRange, listing: string, patch: string | null):
 // runGit's synchronous bounds: spawnSync's output buffer and its default time limit.
 const SYNC_BOUND = { max_buffer: 64 * 1024 * 1024, timeout_ms: 120000 };
 
-/** rangeDiff with the bounds of a synchronous runGit: output past them fails the read. */
+/**
+ * The committed change from_sha..to_sha in a project source, split into numbered hunks, read within
+ * the bounds of a synchronous runGit: output past them fails the read.
+ */
 export async function rangeDiffWithSyncBounds(
   ctx: ControlContext,
   principal: Principal,
@@ -243,31 +246,6 @@ export async function rangeDiffWithSyncBounds(
     range,
     listing.toString(),
     patch.length > PATCH_BOUND ? null : patch.toString(),
-  );
-}
-
-/** The committed change from_sha..to_sha in a project source, split into numbered hunks. */
-export async function rangeDiff(
-  ctx: ControlContext,
-  principal: Principal,
-  projectId: string,
-  range: DiffRange,
-): Promise<LandingDiff> {
-  const source = checkedSource(ctx, principal, projectId, range.source);
-  const diff = await runGit(source, [...LISTING, ...diffRange(range)], undefined, true, {
-    max_buffer: 4 * PATCH_BOUND + 1 + PATCH_BOUND,
-    timeout_ms: TIME_BOUND,
-  });
-  // Output past the bound keeps its start, so a whole listing still comes with a truncated patch.
-  const overflowed =
-    diff.exit_code !== 0 && /ERR_CHILD_PROCESS_STDIO_MAXBUFFER/.test(diff.error ?? '');
-  if (diff.exit_code !== 0 && !overflowed) failed();
-  const [listing, patch] = splitListing(diff.stdout);
-  if (listing.length > 4 * PATCH_BOUND || (overflowed && !patch)) failed();
-  return landingResult(
-    range,
-    listing.toString(),
-    overflowed || (patch && patch.length > PATCH_BOUND) ? null : (patch ?? '').toString(),
   );
 }
 

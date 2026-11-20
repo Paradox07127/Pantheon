@@ -8,20 +8,11 @@
       // The first frame is already in the stored theme; App keeps it in step afterwards.
       (function () {
         var theme = 'system';
-        var user = null;
         var accent = null;
         try {
           theme = localStorage.getItem('pantheon.theme');
-          user = JSON.parse(localStorage.getItem('pantheon.userTheme.v1') || 'null');
           accent = JSON.parse(localStorage.getItem('pantheon.accent.v1') || 'null');
         } catch (e) {}
-        if (user && user.id && user.css) {
-          var style = document.createElement('style');
-          style.id = 'pt-user-theme';
-          style.textContent = user.css;
-          document.head.append(style);
-          document.documentElement.dataset.userTheme = user.id;
-        }
         if (accent && accent.css) {
           var ink = document.createElement('style');
           ink.id = 'pt-accent';
@@ -29,10 +20,8 @@
           document.head.append(ink);
         }
         if (
-          (user && user.forced === 'dark') ||
-          (!(user && user.forced === 'light') &&
-            (theme === 'dark' ||
-              (theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)))
+          theme === 'dark' ||
+          (theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)
         )
           document.documentElement.classList.add('dark');
       })();
@@ -48,21 +37,6 @@
   </head>
   <body class="pt" spellcheck="false">
     <div id="root"></div>
-    <script>
-      // The head's stylesheets are all in by now, so the user's rules come after them; App keeps it in step.
-      (function () {
-        var css = null;
-        try {
-          css = localStorage.getItem('pantheon.userStyle.v1');
-        } catch (e) {}
-        if (css) {
-          var style = document.createElement('style');
-          style.id = 'pt-user-style';
-          style.textContent = css;
-          document.head.append(style);
-        }
-      })();
-    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -188,7 +188,7 @@ it('refuses a page that is not http or https without asking the desktop window',
   expect(requests).toEqual([]);
 });
 
-const appTools = ['app_errors', 'app_screenshot', 'app_dom', 'app_logs', 'style_read', 'style_set'];
+const appTools = ['app_errors', 'app_screenshot', 'app_dom', 'app_logs'];
 
 it('lists the app tools to an app debug session only', async () => {
   const names = async (extra: Partial<Session>) => {

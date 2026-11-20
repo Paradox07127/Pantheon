@@ -129,7 +129,7 @@ describe('sidebar layout', () => {
     const pages = nodes(mount(LIST).value)
       .filter((n) => n.type === 'button' && n.props.className === 'sb-it')
       .map((n) => text(n.props.children));
-    expect(pages).toEqual(['board', 'insights', 'repo', 'trace', 'memory', 'settings'].map(screen));
+    expect(pages).toEqual(['board', 'insights', 'trace', 'memory', 'settings'].map(screen));
   });
 
   it('draws the project row as the mark, the name and a chevron, with no counts under it', () => {
@@ -184,7 +184,7 @@ describe('sidebar layout', () => {
       .filter((n) => n.type === 'button' && n.props.className === 'ib')
       .map((n) => n.props['aria-label']);
     expect(labels).toEqual([
-      ...['board', 'insights', 'repo', 'trace', 'memory'].map(screen),
+      ...['board', 'insights', 'trace', 'memory'].map(screen),
       zh('components.sidebar.newSession'),
       allLabel,
       screen('settings'),

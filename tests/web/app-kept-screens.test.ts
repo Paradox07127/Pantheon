@@ -225,8 +225,6 @@ it('builds the palette items only while the palette is open', async () => {
   expect(ids).not.toContain('screen-runtime');
   expect(ids).not.toContain('screen-flow');
   expect(ids.indexOf('screen-insights')).toBe(ids.indexOf('screen-board') + 1);
-  expect(ids.indexOf('screen-repo')).toBe(ids.indexOf('screen-insights') + 1);
-  expect(ids.indexOf('screen-retro')).toBe(ids.indexOf('screen-repo') + 1);
 });
 
 it('asks for a chart from the palette the way the empty canvas does, with a new session', async () => {

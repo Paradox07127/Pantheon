@@ -1,22 +1,5 @@
 import { permissionRules } from './approvals.js';
 import { projectBranches, projectDefaultsRead } from './project.js';
-import {
-  repoBlame,
-  repoCommitAfter,
-  repoCommitDiff,
-  repoCompare,
-  repoFileHistory,
-  repoLog,
-  repoStatus,
-  repoTimeline,
-  repoWorktrees,
-} from './repo.js';
-import {
-  isRepoWrite,
-  prepareRepoWrite,
-  recoverDiscardBackups,
-  repoWorkingDiff,
-} from './repo-write.js';
 import { prepareStalePrune, workspaceStale } from './workspace-stale.js';
 import { assertMemoryFresh } from './memory.js';
 import {
@@ -193,8 +176,6 @@ import {
 } from './github.js';
 import { prepareRuntimeConfig } from './runtime-config.js';
 import { readAppSettings } from './app-settings.js';
-import { themeList, themeRead } from './theme.js';
-import { styleRead } from './user-style.js';
 import { appLogs } from './app-logs.js';
 import { listDevices, refreshDevices, reprobeDevice, sshHosts } from './devices.js';
 import { backendList, externalEvents, readUserConfig } from './user-config.js';
@@ -499,10 +480,9 @@ export class Control extends EventEmitter {
     if (command.type === 'app.screenshot') return this.browser.call(principal, 'app_screenshot');
     if (command.type === 'app.dom')
       return this.browser.call(principal, 'app_dom', input as { selector?: string });
-    // The log and the stylesheet are read as they are now, so these keep no receipt either.
+    // The log is read as it is now, so it keeps no receipt either.
     if (command.type === 'app.logs')
       return appLogs(this.ctx, input as ReturnType<(typeof inputSchemas)['app.logs']['parse']>);
-    if (command.type === 'style.read') return styleRead(this.ctx);
     if (command.type === 'browser.result') {
       userOnly(principal);
       return this.browser.answer(
@@ -634,10 +614,6 @@ export class Control extends EventEmitter {
         command,
         input as ReturnType<(typeof inputSchemas)['github.pr.create']['parse']>,
       ).then(apply);
-    }
-    if (isRepoWrite(command.type)) {
-      if ([key, commandKey].some((k) => this.store.receipt(k))) return apply();
-      return prepareRepoWrite(this.ctx, principal, command).then(apply);
     }
     // Their git runs outside the command's transaction.
     if (command.type === 'session.rollback' || command.type === 'workspace.prune_stale') {
@@ -1105,45 +1081,6 @@ export class Control extends EventEmitter {
   projectBranches(principal: Principal, projectId: string, root?: string) {
     return projectBranches(this.ctx, principal, projectId, root);
   }
-  repoWorktrees(principal: Principal, projectId: string) {
-    return repoWorktrees(this.ctx, principal, projectId);
-  }
-  repoStatus(principal: Principal, projectId: string, path: string) {
-    return repoStatus(this.ctx, principal, projectId, path);
-  }
-  repoLog(principal: Principal, input: ReturnType<(typeof querySchemas)['repo.log']['parse']>) {
-    return repoLog(this.ctx, principal, input);
-  }
-  repoCommitDiff(principal: Principal, projectId: string, sha: string) {
-    return repoCommitDiff(this.ctx, principal, projectId, sha);
-  }
-  repoCompare(principal: Principal, projectId: string, base: string, head: string) {
-    return repoCompare(this.ctx, principal, projectId, base, head);
-  }
-  repoCommitAfter(
-    principal: Principal,
-    input: ReturnType<(typeof querySchemas)['repo.commit_after']['parse']>,
-  ) {
-    return repoCommitAfter(this.ctx, principal, input);
-  }
-  repoTimeline(
-    principal: Principal,
-    input: ReturnType<(typeof querySchemas)['repo.timeline']['parse']>,
-  ) {
-    return repoTimeline(this.ctx, principal, input);
-  }
-  repoBlame(principal: Principal, input: ReturnType<(typeof querySchemas)['repo.blame']['parse']>) {
-    return repoBlame(this.ctx, principal, input);
-  }
-  repoFileHistory(
-    principal: Principal,
-    input: ReturnType<(typeof querySchemas)['repo.file_history']['parse']>,
-  ) {
-    return repoFileHistory(this.ctx, principal, input);
-  }
-  repoWorkingDiff(principal: Principal, projectId: string) {
-    return repoWorkingDiff(this.ctx, principal, projectId);
-  }
   workspaceStale(principal: Principal, projectId: string) {
     return workspaceStale(this.ctx, principal, projectId);
   }
@@ -1253,18 +1190,6 @@ export class Control extends EventEmitter {
     userOnly(principal);
     return backendList(this.ctx);
   }
-  themeList(principal: Principal) {
-    userOnly(principal);
-    return themeList(this.ctx);
-  }
-  themeGet(principal: Principal, themeId: string) {
-    userOnly(principal);
-    return themeRead(this.ctx, themeId);
-  }
-  styleRead(principal: Principal) {
-    userOnly(principal);
-    return styleRead(this.ctx);
-  }
   importCandidates(principal: Principal) {
     userOnly(principal);
     return importCandidates(this.ctx);
@@ -1303,7 +1228,6 @@ export class Control extends EventEmitter {
         if (project.removed_at === undefined) ensureAgents(this.ctx, project.id);
     });
     recoverWorkspaceProvisioning(this.ctx);
-    recoverDiscardBackups(this.ctx);
     await recover(this.ctx);
     // The first list after a start then finds the worktrees read or being read.
     this.prefetchWorktreeReads({ id: USER_PRINCIPAL_ID, role: 'user' }).catch((error) =>

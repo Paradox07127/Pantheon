@@ -1,0 +1,8 @@
+/* All the room the bar's controls leave, so its width changes only with the bar, not with the tabs shown. */
+.ins-tabs {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}

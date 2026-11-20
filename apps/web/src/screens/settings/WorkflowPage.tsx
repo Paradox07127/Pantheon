@@ -5,11 +5,8 @@ import { RadioGroup } from '@base-ui/react/radio-group';
 import { Pin } from 'lucide-react';
 import type { Improvement } from '@pantheon/domain';
 import type { BoardSnapshot } from '@pantheon/protocol';
-import { ChangeOutcomeCard } from '../../components/ChangeOutcomeCard';
 import { runtimeName } from '../../components/RuntimeGlyph';
-import { useBoard } from '../../data/board';
-import { useChangeOutcomes, type ChangeOutcome } from '../../data/change-outcomes';
-import { currentProject, useCurrentProject } from '../../data/current-project';
+import { useCurrentProject } from '../../data/current-project';
 import {
   clearGlobal,
   clearOverride,
@@ -130,7 +127,7 @@ function openLearned(projectId: string) {
   useSettingsView.getState().close();
   useCurrentProject.getState().choose(projectId);
   const shell = useShell.getState();
-  shell.setMemoryTab('learned');
+  shell.setMemoryTab('overview');
   shell.setScreen('memory');
 }
 
@@ -177,10 +174,6 @@ export function WorkflowPage({ project, only }: { project: Project | null; only?
   const defaults = useProjectDefaults();
   const improvements = useImprovements(project?.id ?? null);
   const runtimeStatus = useRuntimeStatus().read;
-  const stored = useCurrentProject((s) => s.projectId);
-  const current = useBoard((s) => currentProject(s.board, stored)?.id ?? null);
-  // The page every project follows shows the current project's numbers; one parameter's editor shows none.
-  const outcomes = useChangeOutcomes(only ? null : (project?.id ?? current));
   const setting = settingOf(defaults.data, 'workflow_policy');
   const autoMerge = settingOf(defaults.data, 'auto_merge');
   const global = project === null;
@@ -242,11 +235,6 @@ export function WorkflowPage({ project, only }: { project: Project | null; only?
   };
   const busy = pending !== null || source.stale;
   const changed = changedParams(improvements.read ?? []);
-  // The list is newest first, so the first of a parameter is the one that shows.
-  const outcomeOf = new Map<string, ChangeOutcome>();
-  for (const outcome of outcomes.read ?? [])
-    if (outcome.kind === 'policy_changed' && !outcomeOf.has(outcome.param!))
-      outcomeOf.set(outcome.param!, outcome);
 
   const draftOf = (key: string) => ({
     draft: drafts[key] ?? null,
@@ -369,9 +357,6 @@ export function WorkflowPage({ project, only }: { project: Project | null; only?
   const row = (key: RowKey, control: ReactNode, pin?: WorkflowParam, wide?: ReactNode) => {
     const by = pin && changed.get(pin);
     const pinned = !!pin && policy.pinned.includes(pin);
-    const outcome = outcomeOf.get(key);
-    // A failed read shows once, under the page's first row.
-    const failed = key === 'max_parallel' && outcomes.error !== null && !outcomes.unavailable;
     const pinCell = pin ? (
       pinButton({
         param: PARAM_LABEL[key],
@@ -411,18 +396,6 @@ export function WorkflowPage({ project, only }: { project: Project | null; only?
             </div>
           )}
         </div>
-        {(outcome || failed) && (
-          <ChangeOutcomeCard
-            outcome={outcome ?? null}
-            wide
-            label={t(
-              { id: 'settings.workflow.outcome', defaultMessage: 'Did it help? {param}' },
-              { param: PARAM_LABEL[key] },
-            )}
-            error={failed ? outcomes.error! : undefined}
-            onRetry={outcomes.reload}
-          />
-        )}
       </Fragment>
     );
   };

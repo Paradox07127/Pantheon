@@ -411,13 +411,12 @@ describe('memory overview first draw', () => {
       ['memory.read', directory],
       ['memory.context', context],
       ['memory.recent', { items: [] }],
-      ['memory.read:draft', directory],
     ] as const) {
       await answer(name, value);
       await h.flush();
       expect(onHold).toHaveBeenLastCalledWith(true);
     }
-    await answer('improvement.list', []);
+    await answer('memory.read:draft', directory);
     await h.flush();
     expect(onHold).toHaveBeenLastCalledWith(false);
   });
@@ -430,7 +429,6 @@ describe('memory overview first draw', () => {
     await answer('memory.context', context);
     await answer('memory.recent', { items: [] });
     await answer('memory.read:draft', { ...directory, records: [draft] });
-    await answer('improvement.list', []);
     await h.flush();
     await answer('memory.history', {
       items: [{ ...draft, state: 'draft', title: 'Keep keys', text: 'Keep keys', based_on: 's' }],
@@ -487,7 +485,6 @@ describe('memory overview first draw', () => {
     await answer('memory.context', context);
     await answer('memory.recent', { items: [] });
     await answer('memory.read:draft', { ...directory, records: [draft] });
-    await answer('improvement.list', []);
     await h.flush();
     return h;
   };
@@ -529,7 +526,6 @@ describe('memory overview first draw', () => {
     await answer('memory.context', context);
     await refuse('memory.recent', 'unavailable');
     await refuse('memory.read:draft', 'unavailable');
-    await refuse('improvement.list', 'unavailable');
     await h.flush();
     const data = view(h).data;
     expect(data.directoryError).toContain('memory.read refused');
@@ -543,12 +539,7 @@ describe('memory overview first draw', () => {
       .slice(asked)
       .map(([method, params]) => (params.state ? `${method}:${params.state}` : method));
     expect(again).toEqual(
-      expect.arrayContaining([
-        'memory.read',
-        'memory.recent',
-        'memory.read:draft',
-        'improvement.list',
-      ]),
+      expect.arrayContaining(['memory.read', 'memory.recent', 'memory.read:draft']),
     );
   });
 
@@ -576,7 +567,6 @@ describe('memory overview first draw', () => {
     await answer('memory.context', context);
     await answer('memory.recent', { items: [] });
     await answer('memory.read:draft', directory);
-    await answer('improvement.list', []);
     await first.flush();
     first.unmount();
     const onHold = vi.fn();

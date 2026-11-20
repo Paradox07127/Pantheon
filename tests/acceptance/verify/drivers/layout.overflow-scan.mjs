@@ -332,7 +332,7 @@ for (const section of sections) {
   );
   await record(`insights ${section}`, '.app-main', true);
 }
-check('every insights tab is scanned', sections.length === 7, sections);
+check('every insights tab is scanned', sections.length === 2, sections);
 
 // Settings: every page in its nav.
 await page.click({ role: 'button', name: '设置', exact: true });

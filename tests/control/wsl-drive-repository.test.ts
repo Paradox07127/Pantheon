@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'nod
 import path from 'node:path';
 import { afterAll, afterEach, expect, it, vi } from 'vitest';
 import type { Project, Workspace } from '@pantheon/domain';
+import { userGit } from '../../packages/control/dist/source-git.js';
 import { awaitWorkspaceReady, registerWorkspace } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
@@ -50,15 +51,12 @@ it.each([
 ])(
   'commits a CRLF file on a drive with LF line endings only under WSL (wsl $wsl)',
   async ({ wsl, stored }) => {
-    const { f, root, project } = await driveProject(`commit-${wsl}`);
+    const { root } = await driveProject(`commit-${wsl}`);
     writeFileSync(path.join(root, 'notes.txt'), 'first\r\nsecond\r\nthird\r\n');
     if (wsl) process.env.WSL_DISTRO_NAME = 'Fixture';
-    await f.call<Promise<unknown>>('repo.commit', {
-      project_id: project.id,
-      paths: ['notes.txt'],
-      message: 'Add the third note',
-    });
+    const committed = await userGit(root, ['commit', '--all', '-m', 'Add the third note']);
     delete process.env.WSL_DISTRO_NAME;
+    expect(committed).toMatchObject({ ok: true });
     expect(git(root, 'log', '-1', '--format=%s')).toBe('Add the third note');
     const blob = execFileSync('git', ['cat-file', 'blob', 'HEAD:notes.txt'], {
       cwd: root,

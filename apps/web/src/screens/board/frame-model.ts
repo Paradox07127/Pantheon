@@ -109,13 +109,17 @@ export function requirementSessionInput(
   attachments: readonly string[] = [],
 ) {
   const runtime = defaultRuntime(runtimes, defaults?.runtime);
-  return newSessionInput({
-    projectId,
-    runtime,
-    permissionMode: defaultPermissionMode(runtime, defaults?.permission_mode),
-    input,
-    attachments,
-  });
+  return {
+    ...newSessionInput({
+      projectId,
+      runtime,
+      permissionMode: defaultPermissionMode(runtime, defaults?.permission_mode),
+      input,
+      attachments,
+    }),
+    // Without it the session runs as the bare runtime and cannot plan on the board.
+    purpose: 'lead' as const,
+  };
 }
 
 /* Lead states */

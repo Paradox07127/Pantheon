@@ -53,12 +53,18 @@ const refusal = async (run: () => unknown) => {
 const current = (f: Fixture, id: string) => f.store.must<Session>('sessions', id);
 const head = (f: Fixture) => git(f.source, 'rev-parse', 'HEAD').trim();
 
-async function folderSession(f: Fixture, input = writeAndCommit, workspace = 'auto') {
+async function folderSession(
+  f: Fixture,
+  input = writeAndCommit,
+  workspace = 'auto',
+  purpose?: 'lead',
+) {
   const session = await f.call<Promise<Session>>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input,
     workspace,
+    ...(purpose ? { purpose } : {}),
   });
   await eventually(
     () => f.turns(session.id).every((turn) => !['queued', 'running'].includes(turn.state)),
@@ -115,11 +121,38 @@ it('gives a new folder session the lead credential a worktree session the user o
       daemon_url: 'http://127.0.0.1:1',
     }),
   });
-  const session = await folderSession(f, 'Look around');
+  const session = await folderSession(f, 'Look around', 'auto', 'lead');
   expect(credentialRole(session, 'in_place')).toBe('lead');
   const spec = f.start.mock.calls.at(-1)![0] as SessionSpec;
   expect(spec.control_instructions).toContain('You are a lead session');
   expect(spec.control_instructions).toContain('Commit your changes there');
+});
+
+it('runs a new folder session the user opened without Pantheon tools, text or memory', async () => {
+  const f = await workbenchFixture();
+  Object.assign(f.adapter, { questionTool: 'ask_human' });
+  Object.assign(f.control['ctx'], {
+    issueSessionCredential: () => ({
+      token_file: path.join(f.root, 'token'),
+      daemon_url: 'http://127.0.0.1:1',
+    }),
+  });
+  const draft = f.call<{ id: string; revision: number }>('memory.propose', {
+    project_id: f.project.id,
+    key: 'language',
+    kind: 'decision',
+    text: 'Use precise terminology',
+  });
+  f.call('memory.commit', { memory_id: draft.id }, draft.revision);
+  const send = vi.spyOn(f.adapter, 'send');
+  const session = await folderSession(f, 'Look around');
+  const workspace = f.store.must<Workspace>('workspaces', session.workspace_id!);
+  const spec = f.start.mock.calls.at(-1)![0] as SessionSpec;
+  expect(spec.pantheon_mcp).toBeUndefined();
+  expect(spec.control_instructions).toBe(
+    `You are working in the project folder at ${workspace.path}, on its current branch. Commit your changes there; Pantheon runs the gates in this folder, and the session lands once they pass on the commit you leave. Do not write files outside the project folder.`,
+  );
+  expect(send.mock.calls[0]![1].input).not.toContain('[Pantheon current project memory]');
 });
 
 it('runs the gates of a new folder session and lands it on the current branch once they pass', async () => {

@@ -1,6 +1,9 @@
 import path from 'node:path';
 import {
   hash,
+  INHERITED_ENV_DENYLIST,
+  NATIVE_ENV_ALLOWLIST,
+  type ExtensionOverrides,
   type Project,
   type ProjectBrief,
   type Session,
@@ -31,6 +34,65 @@ function title(ctx: ControlContext, session: Session): string {
     .slice(0, 160);
 }
 
+/** The daemon variables a session the user opened inherits, as the bare runtime started from a shell would. */
+export function inheritedEnvAllowlist(project: Project): string[] {
+  const denied = (name: string) =>
+    INHERITED_ENV_DENYLIST.some((entry) =>
+      entry.endsWith('*') ? name.startsWith(entry.slice(0, -1)) : name === entry,
+    );
+  // An inherited variable would override the project's value, which only the allowlist may do.
+  return Object.keys(process.env).filter(
+    (name) =>
+      !denied(name) && (NATIVE_ENV_ALLOWLIST.includes(name) || project.env?.[name] === undefined),
+  );
+}
+
+/**
+ * User-level MCP servers, skills and account connectors: a session the user opened loads them as
+ * the user's configuration does; any other session gets only those the project opened.
+ */
+export function sessionExtensions(
+  session: Session,
+  saved: ExtensionOverrides | undefined,
+  userSession: boolean,
+): NonNullable<SessionSpec['extensions']> {
+  if (userSession)
+    return {
+      mode: 'inherit',
+      overrides: {
+        disabled_mcp_servers: saved?.disabled_mcp_servers ?? [],
+        disabled_plugins: saved?.disabled_plugins ?? [],
+        disabled_skills: saved?.disabled_skills ?? [],
+        disable_hooks: saved?.disable_hooks ?? false,
+        disable_apps:
+          session.enabled_user_connectors !== undefined
+            ? !session.enabled_user_connectors.length
+            : saved?.disable_apps === true,
+        ...(session.enabled_user_connectors
+          ? { enabled_user_connectors: session.enabled_user_connectors }
+          : {}),
+      },
+    };
+  return {
+    mode: 'inherit',
+    overrides: {
+      disabled_mcp_servers: [],
+      disabled_plugins: [],
+      disabled_skills: [],
+      disable_hooks: false,
+      ...saved,
+      disable_apps:
+        session.enabled_user_connectors !== undefined
+          ? !session.enabled_user_connectors.length
+          : saved?.disable_apps === true || !saved?.enabled_user_connectors?.length,
+      enabled_user_mcp_servers: saved?.enabled_user_mcp_servers ?? [],
+      enabled_user_skills: saved?.enabled_user_skills ?? [],
+      enabled_user_connectors:
+        session.enabled_user_connectors ?? saved?.enabled_user_connectors ?? [],
+    },
+  };
+}
+
 /** Persist the native store selection before launch; legacy native IDs keep their original store. */
 export function managedSessionSpec(ctx: ControlContext, spec: SessionSpec): SessionSpec {
   const session = ctx.store.must<Session>('sessions', spec.platform_session_id);
@@ -41,10 +103,11 @@ export function managedSessionSpec(ctx: ControlContext, spec: SessionSpec): Sess
   const inPlace =
     session.workspace_id !== undefined &&
     ctx.store.get<Workspace>('workspaces', session.workspace_id)?.kind === 'in_place';
+  // A session the user opened starts in the provider home, so the CLI's own resume finds it.
   const native_state_dir = inPlace
     ? undefined
     : (session.native_state_dir ??
-      (session.native_id || session.native_fork
+      (session.native_id || session.native_fork || spec.user_session
         ? undefined
         : path.join(root, segment(session.project_id), segment(session.runtime))));
   const native_title = inPlace

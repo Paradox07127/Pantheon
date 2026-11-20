@@ -15,10 +15,6 @@
     "./routine-catalog": {
       "types": "./dist/routine-catalog.d.ts",
       "import": "./dist/routine-catalog.js"
-    },
-    "./theme": {
-      "types": "./dist/theme.d.ts",
-      "import": "./dist/theme.js"
     }
   },
   "scripts": {

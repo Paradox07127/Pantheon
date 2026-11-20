@@ -23,9 +23,3 @@
 :root[data-title-needs] .app {
   --end-w: var(--tbe-wait);
 }
-:root[data-title-debug] .app {
-  --end-w: var(--h-ctl);
-}
-:root[data-title-needs][data-title-debug] .app {
-  --end-w: calc(var(--tbe-wait) + var(--sp-2) + var(--h-ctl));
-}

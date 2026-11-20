@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import path from 'node:path';
-import { expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import type { Principal, Project, Session, Workspace } from '@pantheon/domain';
 import { sessionPrincipal, type ControlContext } from '../../packages/control/dist/context.js';
 import { inPlaceSessionSpec } from '../../packages/control/dist/in-place-session.js';
@@ -23,6 +23,10 @@ import { inPlaceSandbox } from '../../packages/control/dist/protection.js';
 import { writerTempDirectory } from '../../packages/control/dist/workspace-removal.js';
 import { awaitWorkspaceReady, eventually } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 const contextOf = (f: Awaited<ReturnType<typeof workbenchFixture>>) =>
   (f.control as unknown as { ctx: ControlContext }).ctx;
@@ -136,6 +140,35 @@ it('builds a spec for the user folder that holds a planner credential, never a l
   });
   expect(sessionPrincipal(ctx, principal('planner')).id).toBe(session.id);
   expect(refusal(() => sessionPrincipal(ctx, principal('lead'))).code).toBe('permission_denied');
+});
+
+it("runs a session the user opened in the project folder on the user's extensions and daemon environment", async () => {
+  vi.stubEnv('PLAIN_DAEMON_VARIABLE', 'kept');
+  for (const name of ['ANTHROPIC_API_KEY', 'PANTHEON_X', 'CLAUDE_CONFIG_DIR'])
+    vi.stubEnv(name, 'denied');
+  const f = await workbenchFixture();
+  const session = await f.call<Promise<Session>>('session.create', {
+    project_id: f.project.id,
+    runtime: f.adapter.name,
+    input: 'Fix the parser',
+    workspace: 'in_place',
+  });
+  const spec = await inPlaceSessionSpec(contextOf(f), session);
+  expect(spec.user_session).toBe(true);
+  expect(spec.native_state_dir).toBeUndefined();
+  expect(spec.env_allowlist).toContain('PLAIN_DAEMON_VARIABLE');
+  for (const name of ['ANTHROPIC_API_KEY', 'PANTHEON_X', 'CLAUDE_CONFIG_DIR'])
+    expect(spec.env_allowlist).not.toContain(name);
+  expect(spec.extensions).toEqual({
+    mode: 'inherit',
+    overrides: {
+      disabled_mcp_servers: [],
+      disabled_plugins: [],
+      disabled_skills: [],
+      disable_hooks: false,
+      disable_apps: false,
+    },
+  });
 });
 
 it('shares one workspace between sessions adopted from the same folder', async () => {

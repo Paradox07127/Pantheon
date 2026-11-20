@@ -128,28 +128,27 @@ const tabsInside = () => shownTabs().every((_, i) => (i + 1) * TAB_PX <= room.px
 describe('engineering board tabs in a bar too narrow for them', () => {
   it('shows every tab while they fit', async () => {
     room.px = 1000;
-    await show('usage');
-    expect(shownTabs()).toHaveLength(7);
+    await show('quality');
+    expect(shownTabs()).toEqual([zh('board.sections.quality'), zh('board.sections.usage')]);
     expect(moreTabs()).toHaveLength(0);
   });
 
   it('moves the tabs that do not fit into a menu, so no tab runs under the controls after it', async () => {
-    await resize(450);
+    await resize(150);
     expect(tabsInside()).toBe(true);
-    expect(shownTabs().length).toBeLessThan(7);
-    expect(shownTabs()).toContain(zh('board.sections.usage'));
+    expect(shownTabs()).toEqual([zh('board.sections.quality')]);
     expect(moreTabs()).toHaveLength(1);
   });
 
   it('keeps the picked tab in the bar when it comes after the ones that fit', async () => {
-    await show('digest');
+    await show('usage');
     expect(tabsInside()).toBe(true);
-    expect(shownTabs()).toContain(zh('insights.digest.label'));
+    expect(shownTabs()).toEqual([zh('board.sections.usage')]);
   });
 
   it('brings every tab back once the bar is wide again', async () => {
     await resize(1000);
-    expect(shownTabs()).toHaveLength(7);
+    expect(shownTabs()).toHaveLength(2);
     expect(moreTabs()).toHaveLength(0);
   });
 });

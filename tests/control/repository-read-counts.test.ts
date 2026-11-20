@@ -207,12 +207,6 @@ it('reads a committed range with one git diff and returns the files and hunks it
     hunks: rangeHunks,
     truncated: false,
   });
-
-  writeFiles(w.source, rangeChange);
-  runs.reset();
-  const commit = await w.control.repoCommitDiff(user, w.project.id, 'HEAD');
-  expect(gitRunsOf(runs.runs(), 'diff')).toHaveLength(1);
-  expect(commit).toMatchObject({ files: rangeFiles, hunks: rangeHunks, truncated: false });
 });
 
 it('lists change stories without blocking the daemon while it reads worktree heads', async () => {
@@ -501,15 +495,8 @@ it('checks the verification files of a task landing with one diff and one object
   expect(f.store.must<Session>('sessions', worker.id).merge).toMatchObject({
     state: 'blocked',
     reason: 'verification_changed',
-    // A patch's `--- a/tests/….test.ts` line reads as a removed test, so every changed test file counts.
-    conflicts: [
-      'checks/one.mjs',
-      'tests/a.test.ts',
-      'tests/b.test.ts',
-      'tests/c.test.ts',
-      'tests/d e.test.ts',
-      'tests/ü.test.ts',
-    ],
+    // b and ü only gain a case, so they are not changed verification files.
+    conflicts: ['checks/one.mjs', 'tests/a.test.ts', 'tests/c.test.ts', 'tests/d e.test.ts'],
   });
   const landed = runs.runs();
   expect(gitRunsOf(landed, 'diff').filter((args) => args.includes('--unified=0'))).toHaveLength(1);
@@ -619,29 +606,6 @@ it('shares one status run per repository between the list, needs-you, preflight 
   const reads = statusReads(runs.runs());
   expect(reads.length).toBe(new Set(reads).size);
   expect(reads).toHaveLength(3);
-});
-
-it('reads the project status again after a commit through repo.commit', async () => {
-  const w = await workbenchFixture();
-  git(w.source, 'config', 'user.name', 'Source User');
-  git(w.source, 'config', 'user.email', 'source@example.invalid');
-  writeFileSync(path.join(w.source, 'answer.txt'), 'committed\n');
-  const runs = counting();
-  expect(await w.control.projectHead(user, w.project.id)).toMatchObject({ uncommitted: 1 });
-  await w.control.projectHead(user, w.project.id);
-  expect(statusReads(runs.runs())).toHaveLength(1);
-  const { sha } = await w.call<Promise<{ sha: string }>>('repo.commit', {
-    project_id: w.project.id,
-    paths: ['answer.txt'],
-    message: 'Commit the answer',
-  });
-  runs.reset();
-  expect(await w.control.projectHead(user, w.project.id)).toMatchObject({
-    sha,
-    subject: 'Commit the answer',
-    uncommitted: 0,
-  });
-  expect(statusReads(runs.runs())).toHaveLength(1);
 });
 
 it('reads both repository states afresh to admit a merge after a prefetch read them', async () => {
