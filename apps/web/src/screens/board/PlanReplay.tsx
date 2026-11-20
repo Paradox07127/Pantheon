@@ -180,6 +180,17 @@ export function PlanReplay({ model, onClose }: { model: BoardModel; onClose: () 
   // The frame the playhead is on, by sequence, so pages landing before it keep it; none is the newest.
   const [at, setAt] = useState<{ lead: string; sequence: number } | null>(null);
   const [all, setAll] = useState(false);
+  const [seen, setSeen] = useState(model.leads);
+  if (seen !== model.leads) {
+    setSeen(model.leads);
+    // A plan leaves the list only by moving to a session that had none, so that new lead holds it now.
+    const fresh = leads.filter((l) => !seen?.some((s) => s.session_id === l.session_id));
+    if (!leads.some((l) => l.session_id === leadId) && fresh.length === 1) {
+      const next = fresh[0]!.session_id;
+      setLeadId(next);
+      setAt((was) => (was?.lead === leadId ? { lead: next, sequence: was.sequence } : was));
+    }
+  }
   const drag = useRef<DOMRect | null>(null);
   const eventsHead = useId();
   const now = model.now;

@@ -1,9 +1,11 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { versionOf } from '@pantheon/adapters';
 import { hash, NATIVE_ENV_ALLOWLIST } from '@pantheon/domain';
+import { worktreeSandbox } from '../../../packages/control/dist/protection.js';
 import { startNativeDaemon } from '../../acceptance/lib/daemon.mjs';
 import { waitFor } from '../../acceptance/lib/event-client.mjs';
 import { materialize } from './check.mjs';
@@ -76,7 +78,29 @@ const readCheckout = ({ workspace, checkout }) =>
  */
 async function bareRun(spec, repo, adapter, runtimeVersion) {
   const tree = path.join(spec.workspace, 'workspaces', 'bare');
-  git(repo, 'worktree', 'add', '-q', '-b', 'bare', tree);
+  // Detached as the product's worktrees are: its sandbox lets a commit write the worktree's HEAD, not a branch.
+  git(repo, 'worktree', 'add', '-q', '--detach', tree);
+  const temporary = path.join(spec.workspace, 'tmp');
+  let sandbox;
+  // A frozen task's run names the checkout and history repository that hold its hidden test and source commit.
+  if (spec.checkout) {
+    const home = spec.realHome ? os.homedir() : path.join(spec.workspace, 'home');
+    fs.mkdirSync(temporary, { mode: 0o700 });
+    sandbox = worktreeSandbox({
+      dataDir: path.join(spec.workspace, 'state'),
+      backupDir: path.join(spec.workspace, 'backups'),
+      desktopUserDataDir: path.join(home, 'Library/Application Support/Pantheon Desktop'),
+      home,
+      codexHome: path.join(home, '.codex'),
+      sourceRepo: repo,
+      workspacePath: tree,
+      worktreeId: path.basename(tree),
+      tempDir: temporary,
+      otherWorkspaces: [],
+      hiddenChecksDirs: [...new Set([spec.checkout, spec.history])],
+      taskSession: { reviewsDirs: [] },
+    });
+  }
   const events = [];
   let ended;
   const end = new Promise((resolve) => (ended = resolve));
@@ -88,6 +112,18 @@ async function bareRun(spec, repo, adapter, runtimeVersion) {
       ...(spec.task.model ? { model: spec.task.model } : {}),
       device_id: 'local',
       role: 'writer',
+      ...(sandbox
+        ? {
+            env: { TMPDIR: temporary },
+            sandbox: {
+              writable_roots: sandbox.writable_roots,
+              protected_entries: sandbox.protected_entries.map(({ path: target, deny }) => ({
+                path: target,
+                deny,
+              })),
+            },
+          }
+        : {}),
       cwd: tree,
       env_allowlist: NATIVE_ENV_ALLOWLIST,
       skills: [],
@@ -111,8 +147,9 @@ async function bareRun(spec, repo, adapter, runtimeVersion) {
   const wall = Date.now() - started;
   const completed = events.find((event) => event.kind === 'turn.completed');
   const asked = events.filter((event) => event.kind === 'permission.requested').length;
-  const merged = git(repo, 'rev-list', '--count', 'main..bare').trim() !== '0';
-  if (merged) git(repo, 'merge', '-q', '--ff-only', 'bare');
+  const head = git(tree, 'rev-parse', 'HEAD').trim();
+  const merged = git(repo, 'rev-list', '--count', `main..${head}`).trim() !== '0';
+  if (merged) git(repo, 'merge', '-q', '--ff-only', head);
   const { hidden_passed, hidden_unstable } = merged
     ? await hiddenOnMain(spec, repo)
     : { hidden_passed: null, hidden_unstable: null };
@@ -182,6 +219,9 @@ export async function runOne(spec) {
     if (!response.ok) throw new Error(`${method}: ${JSON.stringify(data)}`);
     return data;
   };
+  let over = false;
+  // Settles when the loop that answers a real lead's permission cards has stopped.
+  let approver = Promise.resolve();
   try {
     const project = await fixture.call('project.open', { name: 'Evaluation run', roots: [repo] });
     const params = { project_id: project.id };
@@ -231,7 +271,7 @@ export async function runOne(spec) {
     // A playbook change's eval receipt is checked against the sections the lead ran under.
     const playbookSha256 = hash((await fixture.call('playbook.get', params)).sections);
 
-    await fixture.call(
+    const leadSession = await fixture.call(
       'session.create',
       real
         ? {
@@ -258,6 +298,32 @@ export async function runOne(spec) {
         after = page.events.at(-1).sequence;
       }
     };
+    // Nobody sits at a real lead's permission cards: the run approves each one and counts it.
+    let leadApprovals = 0;
+    approver = (async () => {
+      const answered = new Set();
+      while (real && !over) {
+        await delay(500);
+        const pending = (await events()).filter(
+          (event) =>
+            event.kind === 'approval.requested' &&
+            event.payload.kind === 'permission' &&
+            event.payload.session_id === leadSession.id &&
+            !answered.has(event.payload.id),
+        );
+        for (const { payload } of pending) {
+          answered.add(payload.id);
+          await fixture.call(
+            'approval.respond',
+            { approval_id: payload.id, decision: 'approve_session' },
+            payload.revision,
+          );
+          leadApprovals += 1;
+        }
+      }
+    })();
+    // The finally block awaits it; until then a failed answer must not end the process.
+    approver.catch(() => {});
     const taskRow = async () =>
       (await get('session.list', params)).find((row) => row.id === taskSession);
     const taskSession = await waitFor(
@@ -344,6 +410,8 @@ export async function runOne(spec) {
       needs_you_kinds: needsYou,
       // What a person would have had to answer: the needs-you items left at settle.
       human_touches: needsYou.length,
+      // Permission requests of a real lead that the run approved in the user's place.
+      lead_approvals: leadApprovals,
       read_checkout: readCheckout(spec),
       input_tokens: sum('input_tokens'),
       cached_input_tokens: sum('cached_input_tokens'),
@@ -355,6 +423,8 @@ export async function runOne(spec) {
       policy_version: policyVersion,
     };
   } finally {
+    over = true;
+    await approver;
     await fixture.close();
   }
 }

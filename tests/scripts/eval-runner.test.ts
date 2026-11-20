@@ -3,7 +3,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { FixtureAdapter } from '@pantheon/adapters';
+import type { SessionSpec } from '@pantheon/domain';
 
 type Row = {
   task: string;
@@ -121,6 +123,59 @@ describe('a fixture eval run', () => {
       expect(count(rows, condition, (row) => row.hidden_passed === false)).toBe(1);
     }
   }, 600000);
+});
+
+describe('one bare run', () => {
+  it('cannot read the hidden tests or the frozen commits, and merges what it commits in its worktree', async () => {
+    const workspace = fresh(path.join(repoRoot, 'node_modules/.cache'));
+    const outside = fresh(path.join(repoRoot, 'node_modules/.cache'));
+    const checkout = path.join(outside, 'checkout'),
+      history = path.join(outside, 'history');
+    const hiddenTest = path.join(checkout, 'tests/eval/tasks/sample/hidden.test.ts'),
+      frozenCommit = path.join(history, 'objects/pack/frozen.pack');
+    for (const file of [hiddenTest, frozenCommit]) {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, 'hidden\n');
+    }
+    const adapters = fixtureTasks.adapters() as FixtureAdapter[];
+    const start = vi.spyOn(adapters[0]!, 'start');
+    const row = await runOne({
+      workspace,
+      createRepo: fixtureTasks.createRepo,
+      adapters,
+      leadRuntime: fixtureTasks.leadRuntime,
+      task: fixtureTasks.task('completes_correctly', path.join(workspace, 'repo')),
+      gate: fixtureTasks.gate,
+      condition: { name: 'bare', mode: 'bare' },
+      hiddenCheck: fixtureTasks.hiddenCheck,
+      settleMs: 60000,
+      quietMs: 2000,
+      checkout,
+      history,
+    });
+    expect(row).toMatchObject({ outcome: 'merged', hidden_passed: true });
+    const { sandbox, cwd } = start.mock.calls[0]![0] as SessionSpec;
+    const covers = (entry: string, file: string) => file === entry || file.startsWith(`${entry}/`);
+    const readable = (file: string) =>
+      !sandbox?.protected_entries.some(
+        (entry) => entry.deny === 'read_write' && covers(entry.path, fs.realpathSync(file)),
+      );
+    expect([hiddenTest, frozenCommit].filter(readable)).toEqual([]);
+    expect(readable(path.join(workspace, 'repo/README.md'))).toBe(true);
+    // The file a commit in the worktree updates for its HEAD.
+    const ref = (() => {
+      const git = (...args: string[]) =>
+        spawnSync('git', args, { cwd, encoding: 'utf8' }).stdout.trim();
+      return path.resolve(
+        cwd,
+        git('rev-parse', '--git-path', git('symbolic-ref', '-q', 'HEAD') || 'HEAD'),
+      );
+    })();
+    expect(sandbox?.writable_roots.some((root) => covers(root, fs.realpathSync(ref)))).toBe(true);
+    expect(
+      sandbox?.protected_entries.filter((entry) => covers(entry.path, fs.realpathSync(ref))),
+    ).toEqual([]);
+  }, 120000);
 });
 
 describe('one dispatch run', () => {

@@ -329,6 +329,32 @@ describe('plan replay', () => {
     expect(named(h.value, zhf('board.replay.plan', { title: 'Ledger lead' }))).toBeTruthy();
   });
 
+  it('follows the plan to the session that took it over and stays on the same event', async () => {
+    daemon(story);
+    const ledger = lead('lead-2', 'Ledger lead');
+    let model = board([lead('lead-1', 'Payments lead'), ledger]);
+    const h = mount(() => PlanReplay({ model, onClose: vi.fn() }));
+    await settle(h);
+    key(slider(h.value), 'ArrowLeft');
+    h.render();
+    key(slider(h.value), 'ArrowLeft');
+    h.render();
+    expect(slider(h.value).props['aria-valuenow']).toBe(3);
+    model = board([lead('lead-3', 'Payments lead, new session'), ledger]);
+    h.render();
+    await settle(h);
+    const picker = named(
+      h.value,
+      zhf('board.replay.plan', { title: 'Payments lead, new session' }),
+    );
+    expect(picker.props.value).toBe('lead-3');
+    expect(slider(h.value).props['aria-valuenow']).toBe(3);
+    expect(items(h.value)).toEqual([
+      node('Refund API', 'dispatched'),
+      node('Refund list', 'planned'),
+    ]);
+  });
+
   it('leaves on Escape', async () => {
     daemon(story);
     const onClose = vi.fn();

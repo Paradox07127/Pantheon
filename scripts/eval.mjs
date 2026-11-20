@@ -147,6 +147,7 @@ if (command === 'run') {
             ],
             realHome: real,
             checkout: repoRoot,
+            history: historyRoot,
             leadRuntime: fixtureTasks.leadRuntime,
             task: frozenTasks.planTask(task, runtime, model),
             gate: frozenTasks.gate,
