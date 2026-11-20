@@ -529,7 +529,6 @@ describe('the dock badge', () => {
           ['session.gate_failed', 'gate_failed'],
           ['session.merge_blocked', 'merge_blocked'],
           ['milestone.ready_for_acceptance', 'milestone_ready_for_acceptance'],
-          ['improvement.candidate', 'improvement_awaiting_decision'],
           ['project.over_budget', 'project_over_budget'],
         ] as const
       ).map(([kind, reason]) =>

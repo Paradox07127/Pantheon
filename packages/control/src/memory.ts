@@ -34,7 +34,6 @@ import {
   id,
   requireThat,
   type BoardPlan,
-  type Improvement,
   type MemoryContext,
   type MemoryItem,
   type MemoryJob,
@@ -51,8 +50,6 @@ import {
   type MemoryArchiveResult,
   type MemoryUndoRetractionResult,
 } from '@pantheon/protocol';
-import { experienceMatchesSession } from './improvements.js';
-import { assignArm, taskArm } from './trial-arms.js';
 import { runGit } from './git.js';
 import {
   revision,
@@ -186,48 +183,16 @@ function assertDecisionBudget(ctx: ControlContext, project: string): void {
     );
 }
 
-/** With assign, a task session without an arm of a matching trial takes one. */
-export function memoryContents(
-  ctx: ControlContext,
-  project: string,
-  session?: Session,
-  assign = false,
-) {
+export function memoryContents(ctx: ControlContext, project: string, session?: Session) {
   const eligible = current(ctx, project).filter((r) => visible(r, session));
   eligible.sort(
     (a, b) =>
       Number(b.kind === 'decision') - Number(a.kind === 'decision') || b.created_at - a.created_at,
   );
   const items = eligible.map((record) => ({ record, bytes: memoryItemBytes(ctx, record) }));
-  const experiences: { item: MemoryContext['experiences'][number]; bytes: number }[] = [];
-  const scope = taskScope(session?.task),
-    task = scope && {
-      lead_session_id: scope.lead_session_id,
-      task_id: scope.id,
-      generation: scope.generation,
-    };
-  for (const i of rows<Improvement>(ctx, 'improvements', project)) {
-    const c = i.change;
-    if (
-      (i.status !== 'trial' && i.status !== 'active') ||
-      c.type !== 'experience' ||
-      !experienceMatchesSession(ctx, c, session) ||
-      // Every other task of a trial runs without the experience, to compare on the same days.
-      (i.status === 'trial' && task && (assign ? assignArm : taskArm)(ctx, i, task) === 'old')
-    )
-      continue;
-    const item = {
-      id: i.id,
-      status: i.status,
-      procedure: c.procedure,
-      countercondition: c.countercondition,
-    };
-    experiences.push({ item, bytes: Buffer.byteLength(JSON.stringify(item)) });
-  }
   return {
     items,
-    experiences,
-    bytes: [...items, ...experiences].reduce((total, item) => total + item.bytes, 0),
+    bytes: items.reduce((total, item) => total + item.bytes, 0),
   };
 }
 
@@ -237,9 +202,8 @@ export function memoryContext(
   session?: Session,
   budget = 12000,
   strictDecisions = true,
-  assign = false,
 ): MemoryContext {
-  const contents = memoryContents(ctx, project, session, assign);
+  const contents = memoryContents(ctx, project, session);
   const items: MemoryItem[] = [];
   let bytes = 0;
   for (const { record, bytes: size } of contents.items) {
@@ -254,17 +218,10 @@ export function memoryContext(
       bytes += size;
     }
   }
-  const experiences: MemoryContext['experiences'] = [];
-  for (const { item, bytes: size } of contents.experiences)
-    if (bytes + size <= budget) {
-      experiences.push(item);
-      bytes += size;
-    }
   return {
     epoch: state(ctx, project)?.epoch ?? 0,
     signature: signature(ctx, project),
     items,
-    experiences,
     omitted: contents.items.length - items.length,
     bytes,
   };
@@ -659,31 +616,8 @@ export function prepareMemoryDelivery(
   // Purpose-bound trace diagnosis deliberately has no memory authority or tools.
   if (session.runtime_review) return;
   // Skips the task-graph scan on every turn for a project without memory.
-  if (
-    !session.memory_delivery &&
-    !state(ctx, session.project_id)?.epoch &&
-    !rows<Improvement>(ctx, 'improvements', session.project_id).some(
-      (i) => i.change.type === 'experience' && (i.status === 'trial' || i.status === 'active'),
-    )
-  )
-    return;
-  // A task session takes its trial arms once, with its first packet.
-  const packet = memoryContext(
-    ctx,
-    session.project_id,
-    session,
-    undefined,
-    undefined,
-    !session.memory_delivery,
-  );
-  if (
-    !session.memory_delivery &&
-    !packet.epoch &&
-    !packet.items.length &&
-    !packet.experiences.length
-  )
-    return;
-  // After a revocation, an empty packet must still replace the earlier experience packet.
+  if (!session.memory_delivery && !state(ctx, session.project_id)?.epoch) return;
+  const packet = memoryContext(ctx, session.project_id, session);
   const fresh = ctx.store.must<Session>('sessions', session.id);
   // The native session keeps a delivered packet in its context until it compacts.
   if (
@@ -735,7 +669,6 @@ export function finishMemoryDelivery(
             ...delivery,
             delivered_signature: packet.signature,
             delivered_epoch: packet.epoch,
-            delivered_experience_ids: packet.experiences.map((item) => item.id),
           },
         },
         s.revision,
@@ -925,8 +858,7 @@ export function tickMemory(ctx: ControlContext): void {
       }
       if (
         !records(ctx, project.id).length &&
-        !rows<BoardPlan>(ctx, 'board_plans', project.id).length &&
-        !rows<Improvement>(ctx, 'improvements', project.id).length
+        !rows<BoardPlan>(ctx, 'board_plans', project.id).length
       )
         return;
       // An archive in sweep changes the signature, so enqueue then computes it again.
@@ -962,8 +894,6 @@ export function tickMemory(ctx: ControlContext): void {
       JSON.stringify(packet.items, null, 2),
       '## Task state (accepted reports are not independent test verification)',
       JSON.stringify(snapshot.tasks, null, 2),
-      '## Applicable project-wide improvement procedures (trial is provisional)',
-      JSON.stringify(packet.experiences, null, 2),
       `Omitted memory entries: ${packet.omitted}. Use memory_search for targeted reading.`,
     ].join('\n');
     const artifact = ctx.files.put(Buffer.from(text));

@@ -4137,17 +4137,7 @@ it('gives a lane its depth and plan stop, and an estimate only while it waits fo
     null,
     leadPrincipal,
   );
-  // Each read of the routing statistics lists the retrospectives from routingStats.
-  const list = f.store.list.bind(f.store);
-  let statsReads = 0;
-  vi.spyOn(f.store, 'list').mockImplementation(((table: string) => {
-    if (table === 'retrospectives' && new Error().stack!.includes('routingStats')) statsReads++;
-    return list(table as never);
-  }) as typeof f.store.list);
-
-  const waiting = f.control.boardView(user, f.project.id, 1).lanes;
-  expect(statsReads).toBe(1);
-  expect(waiting).toEqual([
+  expect(f.control.boardView(user, f.project.id, 1).lanes).toEqual([
     {
       id: `${lead.id}:core`,
       title: 'Core',
@@ -4178,7 +4168,6 @@ it('gives a lane its depth and plan stop, and an estimate only while it waits fo
     { project_id: f.project.id, lead_session_id: lead.id, lane_id: 'docs', depth: 'just_do' },
     null,
   );
-  statsReads = 0;
   expect(f.control.boardView(user, f.project.id, 1).lanes).toEqual([
     {
       id: `${lead.id}:core`,
@@ -4197,5 +4186,4 @@ it('gives a lane its depth and plan stop, and an estimate only while it waits fo
     },
     { id: `${lead.id}:misc`, title: 'Misc' },
   ]);
-  expect(statsReads).toBe(0);
 });

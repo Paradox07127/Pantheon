@@ -472,6 +472,7 @@ it('creates the whole schema through known migrations in a memory and a file dat
     ...tables,
     'event_retention',
     'events',
+    'improvements',
     'inbox',
     'memory_search',
     'memory_search_config',

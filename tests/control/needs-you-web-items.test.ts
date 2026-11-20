@@ -4,11 +4,9 @@ import type {
   Approval,
   ApprovalQuestion,
   BoardPlan,
-  Improvement,
   Milestone,
   Principal,
   Retrospective,
-  WorkflowPolicy,
 } from '@pantheon/domain';
 import { fixture, insertSession, user } from '../helpers.js';
 
@@ -227,55 +225,28 @@ function withRetrospectives(f: Fixture) {
     });
 }
 
-const propose = (f: Fixture, change: Record<string, unknown>) =>
-  f.call<Improvement>(
-    'improvement.propose',
-    {
+it('lists and counts nothing for an improvement candidate stored earlier', async () => {
+  const f = await opened();
+  withRetrospectives(f);
+  f.store.db.prepare('INSERT INTO improvements VALUES(?,?,?)').run(
+    'stored-candidate',
+    1,
+    JSON.stringify({
+      id: 'stored-candidate',
+      revision: 1,
       project_id: f.project.id,
+      source: 'lead',
+      lead_session_id: 'lead',
       retrospective_ids: ['retrospective-1', 'retrospective-2'],
-      change,
-    },
-    null,
-    principalOf(f, 'lead'),
-  );
-
-const improvementItems = (f: Fixture) =>
-  items(f).filter((item) => item.source.table === 'improvements');
-
-it('lists an improvement that waits for the user until the user confirms it', async () => {
-  const f = await opened();
-  withRetrospectives(f);
-  const row = f.store.get<WorkflowPolicy>('workflow_policies', f.project.id);
-  f.call(
-    'workflow.policy.set',
-    { project_id: f.project.id, improvement_mode: 'confirm' },
-    row?.revision ?? null,
-  );
-  const improvement = propose(f, { type: 'policy_change', param: 'max_parallel', to: 2 });
-  expect(improvement.status).toBe('candidate');
-  expect(improvementItems(f)).toEqual([
-    expect.objectContaining({
-      source: { table: 'improvements', id: improvement.id, revision: improvement.revision },
-      project_id: f.project.id,
-      session_id: 'lead',
       status: 'candidate',
-      actions: [{ command: 'improvement.decide', allowed: true }],
+      change: { type: 'policy_change', param: 'max_parallel', from: 3, to: 2 },
+      proposed_at: f.store.now(),
     }),
-  ]);
-  f.call('improvement.decide', {
-    project_id: f.project.id,
-    improvement_id: improvement.id,
-    decision: 'confirm',
-  });
-  expect(improvementItems(f)).toEqual([]);
-});
-
-it('lists no item for the improvements auto mode tries at once', async () => {
-  const f = await opened();
-  withRetrospectives(f);
-  expect(propose(f, { type: 'policy_change', param: 'max_parallel', to: 2 }).status).toBe('trial');
-  expect(propose(f, { type: 'policy_change', param: 'handback_limit', to: 4 }).status).toBe(
-    'trial',
   );
-  expect(improvementItems(f)).toEqual([]);
+  expect(items(f).filter((item) => item.source.id === 'stored-candidate')).toEqual([]);
+  const summary = f.control
+    .projectsSummary(user)
+    .projects.find((project) => project.project_id === f.project.id);
+  expect(summary?.needs_you).toBe(0);
+  expect(summary?.waiting).toBeUndefined();
 });

@@ -53,23 +53,6 @@ it('reads the needs-you list again on a clock, so items that come due with time 
   expect(count('needs_you.list')).toBe(2);
 });
 
-it.each([
-  ['agent.proposal', 'agent_proposals'],
-  ['improvement.candidate', 'improvements'],
-  ['setting.proposal', 'setting_proposals'],
-])('leaves the %s items the daemon still lists out of the needs-you items', async (kind, table) => {
-  const permission = { kind: 'permission', source: { table: 'approvals', id: 'approval-1' } };
-  const proposal = { kind, source: { table, id: 'p-1' } };
-  answers['needs_you.list'] = { items: [permission, proposal] };
-  try {
-    const h = mount(() => useNeedsYou('project-a'));
-    await h.flush();
-    expect(h.value.items).toEqual([permission]);
-  } finally {
-    answers['needs_you.list'] = { items: [] };
-  }
-});
-
 it('reads no needs-you list on the clock while the event stream is down', async () => {
   mock.board = { ...mock.board, status: { state: 'offline', reason: 'gone' } };
   const h = mount(() => useNeedsYou('project-a'));

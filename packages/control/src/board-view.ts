@@ -27,7 +27,6 @@ import type {
   BoardTaskState,
   BoardTaskStatus,
   BoardWaiting,
-  RoutingTable,
   WorkbenchSession,
 } from '@pantheon/protocol';
 import { projectAccess, type ControlContext } from './context.js';
@@ -35,7 +34,6 @@ import { milestoneExtras, statusLineOf, taskExtras } from './board-view-task-ext
 import { taskEvidenceLevel } from './evidence-level.js';
 import { effectiveDepth, laneHeld } from './lane-stops.js';
 import { estimateLane } from './plan-estimate.js';
-import { projectRoutingTable } from './routing-table.js';
 import {
   awaitingChange,
   boardTaskId,
@@ -2596,7 +2594,6 @@ export function boardView(
           };
         });
     });
-  let routing: RoutingTable | undefined;
   return {
     since,
     now,
@@ -2646,17 +2643,7 @@ export function boardView(
                     ...(stop.approved_by ? { by: stop.approved_by } : {}),
                   },
                 }),
-          // The routing table is read once per board, and only while a lane waits.
-          ...(held
-            ? {
-                estimate: estimateLane(
-                  ctx,
-                  plan,
-                  lane.id,
-                  (routing ??= projectRoutingTable(ctx, projectId)),
-                ),
-              }
-            : {}),
+          ...(held ? { estimate: estimateLane(ctx, plan, lane.id) } : {}),
         };
       }),
     ),

@@ -92,13 +92,38 @@ it('records a task that another connection finished after a scan found nothing t
   expect(recorded()).toEqual(['merged']);
 });
 
+it('records the finished task in a tick and writes no improvement for a project with retrospectives', async () => {
+  const { f, worker, recorded } = await oneTask();
+  // Most lead wakes of this task ended without a decision.
+  f.store.insert<Retrospective>('retrospectives', {
+    id: 'earlier',
+    revision: 1,
+    project_id: f.project.id,
+    lead_session_id: 'lead',
+    task_id: 'earlier',
+    session_ids: [],
+    outcome: 'merged',
+    recorded_at: 1,
+    lead_wakes: 10,
+    lead_wakes_without_decision: 8,
+  });
+  // A closed lead is not woken by the merge.
+  const lead = f.store.must<Session>('sessions', 'lead');
+  f.store.update<Session>('sessions', { ...lead, state: 'closed' }, lead.revision);
+  f.store.update<Session>('sessions', { ...worker, state: 'closed', outcome: 'merged' }, 1);
+  await f.control.tick();
+  expect(recorded()).toEqual(['merged', 'merged']);
+  expect(f.store.db.prepare('SELECT count(*) AS n FROM improvements').get()).toEqual({ n: 0 });
+});
+
 it('scans again after the tick that scanned rolled back a change made before the scan', async () => {
   const { f, ctx, worker, recorded } = await oneTask();
   f.store.update<Session>('sessions', { ...worker, state: 'closed', outcome: 'merged' }, 1);
   const { db } = ctx.store,
     prepare = db.prepare.bind(db),
-    list = ctx.store.list.bind(ctx.store);
-  let armed = false;
+    exec = db.exec.bind(db);
+  let armed = false,
+    failed = false;
   // In the tick, the task is reopened just before the scan and the transaction then fails.
   db.prepare = (sql: string) => {
     if (sql.includes('total_changes()') && !armed) {
@@ -110,13 +135,16 @@ it('scans again after the tick that scanned rolled back a change made before the
     }
     return prepare(sql);
   };
-  ctx.store.list = ((table) => {
-    if (table === 'improvements' && armed) throw new Error('tick failed after the scan');
-    return list(table);
-  }) as typeof ctx.store.list;
+  db.exec = (sql: string) => {
+    if (sql === 'COMMIT' && armed && !failed) {
+      failed = true;
+      throw new Error('tick failed after the scan');
+    }
+    return exec(sql);
+  };
   await expect(f.control.tick()).rejects.toThrow('tick failed after the scan');
   db.prepare = prepare;
-  ctx.store.list = list;
+  db.exec = exec;
   expect(f.store.must<Session>('sessions', worker.id).outcome).toBe('merged');
   ctx.store.transaction(() => recordRetrospectives(ctx));
   expect(recorded()).toEqual(['merged']);

@@ -507,7 +507,6 @@ it.each<[CommandType, PersonalAnswerKind[], keyof typeof situations, string]>([
   ['milestone.accept', ['milestone_accept'], 'a milestone ready for acceptance', 'accepted'],
   ['approval.respond', ALL, 'any input', 'permission_denied'],
   ['external.approve', ALL, 'any input', 'permission_denied'],
-  ['improvement.decide', ALL, 'any input', 'permission_denied'],
 ])(
   'a personal principal sending %s with %j allowed, for %s, is %s',
   async (type, answers, situation, expected) => {

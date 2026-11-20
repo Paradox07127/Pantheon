@@ -3,7 +3,6 @@ import path from 'node:path';
 import { expect, it } from 'vitest';
 import type {
   BoardPlan,
-  Improvement,
   Principal,
   Project,
   ProjectRead,
@@ -664,7 +663,7 @@ it.skipIf(insideSandbox)(
       improvementSignals(ctx, f.project.id).filter((row) => row.signal === 'over_budget'),
     ).toEqual([expect.objectContaining({ cell: { domain: 'backend-logic', tier: 't1' } })]);
     await f.control.tick();
-    expect(f.store.list<Improvement>('improvements')).toEqual([]);
+    expect(f.store.db.prepare('SELECT count(*) AS n FROM improvements').get()).toEqual({ n: 0 });
   },
   60000,
 );

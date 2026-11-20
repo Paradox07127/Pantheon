@@ -63,14 +63,7 @@ describe('routine template catalog', () => {
       every_minutes: 7 * 24 * 60,
       enabled: false,
     });
-    for (const part of [
-      'project_read',
-      'lead.retrospectives',
-      'at most 3',
-      'at most 2',
-      'propose_improvement',
-      'sample size n',
-    ])
+    for (const part of ['project_read', 'lead.retrospectives', 'at most 3', 'sample size n'])
       expect(template.prompt).toContain(part);
   });
 

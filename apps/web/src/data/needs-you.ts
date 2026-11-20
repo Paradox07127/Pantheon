@@ -13,7 +13,6 @@ export interface NeedsYouItem {
       | 'sessions'
       | 'board_plans'
       | 'milestones'
-      | 'improvements'
       | 'workflow_policies'
       | 'workflow_definitions'
       | 'workflow_step_runs'
@@ -29,7 +28,6 @@ export interface NeedsYouItem {
     | 'session.merge_blocked'
     | 'milestone.ready_for_acceptance'
     | 'workflow.definition.trial'
-    | 'improvement.candidate'
     | 'board.plan.proposal'
     | 'board.lane.approval'
     | 'board.plan.reassessment'
@@ -78,7 +76,6 @@ export interface NeedsYouItem {
     | 'background_task_long'
     | 'milestone_ready_for_acceptance'
     | 'workflow_definition_trial_completed'
-    | 'improvement_awaiting_decision'
     | 'plan_proposal_awaiting_decision'
     | 'lane_plan_awaiting_approval'
     | 'plan_reassessment_ready'
@@ -765,20 +762,6 @@ export function ageText(created_at: number, now: number): string {
   );
 }
 
-/** Kinds the daemon still lists that the interface offers no decision on. */
-const UNOFFERED_KINDS: readonly unknown[] = [
-  'agent.proposal',
-  'improvement.candidate',
-  'setting.proposal',
-];
-
-/** The items the interface shows: those of every kind but the proposals it offers no decision on. */
-export function offeredNeeds(items: readonly unknown[]): NeedsYouItem[] {
-  return items.filter(
-    (item) => !UNOFFERED_KINDS.includes((item as { kind?: unknown } | null)?.kind),
-  ) as NeedsYouItem[];
-}
-
 async function readNeedsYou(
   bridge: Pick<DesktopBridge, 'query'>,
   project_id: string | null,
@@ -796,7 +779,7 @@ async function readNeedsYou(
   const items = (result.value as { items?: unknown } | null)?.items;
   if (!Array.isArray(items))
     return { ok: false, error: { code: 'bad_response', message: 'items is not a list' } };
-  return { ok: true, value: offeredNeeds(items) };
+  return { ok: true, value: items as NeedsYouItem[] };
 }
 
 /** The needs-you list of a project, or of every project when project_id is null. */

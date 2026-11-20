@@ -441,7 +441,7 @@ export function setProjectGate(
 }
 
 /** Writes one root's gate; gitRoots as for setProjectGate. */
-export function writeProjectGate(
+function writeProjectGate(
   ctx: ControlContext,
   project: Project,
   root: string,

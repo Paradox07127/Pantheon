@@ -225,7 +225,13 @@ export class DaemonBridge {
   }
 
   async command(command: Command): Promise<BridgeResult<unknown>> {
-    const result = await this.request('POST', '/v1/commands', JSON.stringify(command), 5000);
+    // A merge may first add and commit the session's files through the user's git hooks.
+    const result = await this.request(
+      'POST',
+      '/v1/commands',
+      JSON.stringify(command),
+      command.type === 'session.merge' ? 250_000 : 5000,
+    );
     return result.ok ? { ok: true, value: (result.value as { receipt: unknown }).receipt } : result;
   }
 

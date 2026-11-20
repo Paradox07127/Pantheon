@@ -1,9 +1,8 @@
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { expect, it, vi } from 'vitest';
 import type { Session } from '@pantheon/domain';
-import { appDebugSkill } from '../../packages/control/src/app-debug-skill.js';
 import { projectSetupSkill } from '../../packages/control/src/project-setup-skill.js';
 import type { ControlContext } from '../../packages/control/dist/context.js';
 import { workbenchSessionSpec } from '../../packages/control/dist/workbench-session.js';
@@ -53,44 +52,8 @@ it.each([undefined, 'lead'])(
   },
 );
 
-it('opens an app debug session whose runtime reaches the app at the port the desktop wrote for each turn', async () => {
-  const { f, session, input } = await firstInput({ purpose: 'app_debug' });
-  expect(input.indexOf(appDebugSkill)).toBeGreaterThanOrEqual(0);
-  expect(input.indexOf(appDebugSkill)).toBeLessThan(input.indexOf('A habit tracker for runners'));
-  expect(input).not.toContain(projectSetupSkill);
-  expect(f.turns(session.id)[0]!.input).toBe('A habit tracker for runners');
-  expect(session.app_debug).toBe(true);
-  const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
-  const userData = ctx.protectionPaths!.desktopUserDataDir;
-  const portFile = path.join(userData, 'DevToolsActivePort');
-  const chromeDevtools = (port: number) => [
-    {
-      name: 'chrome_devtools',
-      command: 'npx',
-      args: [
-        '--prefix',
-        os.homedir(),
-        '-y',
-        'chrome-devtools-mcp@1.13.0',
-        `--browser-url=http://127.0.0.1:${port}`,
-      ],
-      env: {},
-    },
-  ];
-  mkdirSync(userData, { recursive: true });
-  writeFileSync(portFile, '9333\n/devtools/browser/x\n');
-  const stored = () => f.store.must<Session>('sessions', session.id);
-  expect(workbenchSessionSpec(ctx, stored()).mcp_servers).toEqual(chromeDevtools(9333));
-  // A restarted app writes a new port, which the same session reaches on its next turn.
-  writeFileSync(portFile, '9444\n/devtools/browser/y\n');
-  expect(workbenchSessionSpec(ctx, stored()).mcp_servers).toEqual(chromeDevtools(9444));
-  rmSync(portFile);
-  expect(workbenchSessionSpec(ctx, stored()).mcp_servers).toEqual([]);
-});
-
 it.each([
   ['project_setup', false],
-  ['app_debug', false],
   ['lead', true],
 ])(
   'gives a session with purpose %s the lead planning instructions: %s',
@@ -118,14 +81,14 @@ it.each([
   },
 );
 
-it('rejects a purpose it does not know', async () => {
+it.each(['baseline', 'app_debug'])('rejects a purpose it does not know: %s', async (purpose) => {
   const f = await workbenchFixture();
   expect(() =>
     f.call('session.create', {
       project_id: f.project.id,
       runtime: f.adapter.name,
       input: 'Build it',
-      purpose: 'baseline',
+      purpose,
     }),
   ).toThrow();
 });

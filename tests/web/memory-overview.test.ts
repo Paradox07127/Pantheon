@@ -322,7 +322,7 @@ describe('memory overview first draw', () => {
     sessions: [],
     document_ready: false,
   };
-  const context = { bytes: 10, items: [], experiences: [], omitted: 0 };
+  const context = { bytes: 10, items: [], omitted: 0 };
 
   it('draws the profile, the memory panel and the introduction together once every first read is in', async () => {
     mock.board.board.projects.push({ id: 'payouts', name: 'Payouts', roots: [] });

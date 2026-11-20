@@ -17,7 +17,6 @@ import {
   prettifyError,
   sessionTools,
   coordinationTools,
-  appDebugTools,
   BROWSER_TEXT_LIMIT,
   type BrowserPage,
   type Principal,
@@ -41,7 +40,6 @@ type Identity = {
   story_id?: string;
   extension_runtimes?: string[];
   allowed_tool_names?: string[];
-  app_debug?: true;
 };
 
 type ToolCommand =
@@ -58,7 +56,7 @@ const descriptions: Record<ToolCommand, string> = {
   'trace.report':
     'Save one proposed experiment, targeted measurement, or no-action conclusion for this analysis. Cite finding IDs from trace_evidence. An experiment includes change, matched baseline, metric and rollback. This records a report only.',
   'memory.context':
-    "Read the current project memory: the user's decisions, notes and reports, your task's own entries and the improvement procedures that apply to you. Pantheon already adds this packet to your turn when it changes, so call it only when you need it again, for example before you accept work or when the packet said entries were omitted. Returns signature (pass it as based_on to memory_propose), the entries and the omitted count. max_bytes caps the entry payload (default 12000 bytes).",
+    "Read the current project memory: the user's decisions, notes and reports, and your task's own entries. Pantheon already adds this packet to your turn when it changes, so call it only when you need it again, for example before you accept work or when the packet said entries were omitted. Returns signature (pass it as based_on to memory_propose), the entries and the omitted count. max_bytes caps the entry payload (default 12000 bytes).",
   'memory.related':
     'Show what is connected to one current memory entry: what it depends on, what depends on it, its earlier versions, or entries sharing a tag. Use it before you replace or contradict an entry, to see what else rests on it. depth is 1 or 2, limit at most 30. A shared tag only means a shared topic, not a dependency. Read full entries with memory_get.',
   'memory.search':
@@ -77,7 +75,7 @@ const descriptions: Record<ToolCommand, string> = {
   'review.request':
     "Ask for an independent read-only review of a committed task session in your plan: session_id from project_read, runtimes naming the reviewers (a runtime other than the writer's when one is available). Use it when a change is risky and its path has no review step. Findings come back as a board update; send concrete ones to the session with message_task. A review is evidence for your decision: it never accepts or merges a task, and a failed reviewer is not a clean review. On a task whose review step failed without a fail verdict, it runs that step's review again with the step's own reviewer, not the runtimes you name, and returns the reopened run. On a task whose review step a reviewer failed by verdict, it sends the verdict and findings to the task session, runs the review again after that turn, and returns handed_back. Refused when the round limit is reached or the same reviewer is already reviewing that session.",
   'project.read':
-    "Read the project: details, brief, milestones, and every lead's board plan with each task's state and sessions. A lead also gets a lead section: workflow policy (paths, steps, slots), routing per task kind, devices, experiences in force, and recent retrospectives and runtime reviews. Call it before you plan or decide, and after a board update when you need the current state; a task session calls it to see the tasks around its own. It returns plan_version, which update_board, edit_board and propose_board need as base_version. To rewrite the plan from the repository, use sync_board instead.",
+    "Read the project: details, brief, milestones, and every lead's board plan with each task's state and sessions. A lead also gets a lead section: workflow policy (paths, steps, slots), devices, and recent retrospectives and runtime reviews. Call it before you plan or decide, and after a board update when you need the current state; a task session calls it to see the tasks around its own. It returns plan_version, which update_board, edit_board and propose_board need as base_version. To rewrite the plan from the repository, use sync_board instead.",
   'board.plan.update':
     'Write your whole board plan: headline, lanes, tasks with dependencies, milestones, risks and assumptions. Send the full plan every time; a task left out is removed. Use it for a new plan or a change to many tasks; for a few tasks use edit_board, and for a change the user must decide use propose_board. A task done when merged needs scope and acceptance; one with done_when report may have neither. Returns the plan with its new plan_version. Refused "The plan is at version N": read the plan and resend with base_version N. Refused for a source quote no user message contains: copy the user\'s words exactly.',
   'board.plan.edit':
@@ -118,8 +116,6 @@ const descriptions: Record<ToolCommand, string> = {
     "Stop the running turn of one task's session, by task id and, for a parallel task, the part, without discarding the session or its work. Use it when the turn goes off course, then send directions with message_task to the same part; or after you change the task's runtime, model or effort, so the change applies now rather than when the session is next idle. Refused when the task has no running turn.",
   'task.background.stop':
     "Stop one background command or agent of a task's session, by task id and the background_id a board update named, for example a dev server or watcher left running after the task no longer needs it. The session itself keeps running. Refused when the task has no background job with that id.",
-  'improvement.propose':
-    'Propose one change to the project workflow, resting on 2-20 records of this project that show the same problem: retrospective_ids from lead.retrospectives in project_read, or evidence items of any kind (a retrospective, a signal issue id from signal_list, a session id, or the event id of a gate run), or on a single eval_receipt {kind, path, sha256, verdict} of a paired eval run. A playbook change needs that eval_receipt. change is a policy_change (param, the tier for path, the target value), an experience (a procedure of at most 600 bytes, an optional countercondition, and the domain, tier and runtime it applies to), a gate_command (a root and its gate commands), a worktree_setup, agent_instructions (an agent id from list_agents and its whole new instructions) or a playbook (a stored lead playbook version to make current, with the runtime it belongs to or none for the default). Gate, worktree, instruction and playbook changes wait for the user to confirm them. Do not propose from a single event. Refused "No such record of this project" for an id the project does not have, and when the user pinned the parameter or turned improvements off.',
   'board.sync':
     "Use when the user asks to sync, refresh or update the board (for example 更新看板, 同步看板, 看板不对了) or says the board no longer matches the project. Returns your plan with each task's state and sessions, the recent commits of each git folder, and the rules for rewriting the plan; it changes nothing. Then send the changes the user asked for with update_board, and implement nothing. To only look at the board, use project_read.",
   'project.baseline.start':
@@ -142,14 +138,6 @@ const descriptions: Record<ToolCommand, string> = {
     "Read the page open in this session's browser panel: url, title and visible text, at most 50000 characters, noting when the text was cut. Open a page with browser_open first, or read the one the user opened. Fails when no page is open.",
   'browser.screenshot':
     "Take a PNG screenshot of the page open in this session's browser panel, with its url and title, to check layout or show the user what you see. Open a page with browser_open first, or capture the one the user opened. Fails when no page is open.",
-  'app.errors':
-    'Read the recent errors the running Pantheon desktop app recorded, as JSON objects with their messages, stacks and context. Fails when no desktop window is connected.',
-  'app.screenshot':
-    'Take a PNG screenshot of the running Pantheon desktop app window, with its url and title. Fails when no desktop window is connected.',
-  'app.dom':
-    'Read the HTML of the running Pantheon desktop app window, or of the first element the CSS selector (at most 200 characters) matches, and the named regions of the window with their rectangles. Regions are the [data-debug-region] elements. Fails when no desktop window is connected.',
-  'app.logs':
-    'Read the last lines of the Pantheon daemon log: lines (1–500, default 200) of them, only those containing grep (at most 200 characters) when given. Returns no lines while the log does not exist.',
   'agent.sessions':
     "List this project's sessions: id, title, type (resident, worker, direct or review), state, runtime, task, changed files and lines, and last activity. Optional state keeps only sessions in that state. Use it to find a session before session_read, or to see what is running before you report on progress.",
   'agent.session_read':
@@ -214,21 +202,14 @@ const baselineBound = (type: CommandType) =>
 const storyBound = (type: CommandType) => type === 'change_story.submit';
 
 const browserTool = (type: CommandType) =>
-  type === 'browser.open' ||
-  type === 'browser.read' ||
-  type === 'browser.screenshot' ||
-  type === 'app.errors' ||
-  type === 'app.screenshot' ||
-  type === 'app.dom';
+  type === 'browser.open' || type === 'browser.read' || type === 'browser.screenshot';
 // The daemon waits 30 s for the desktop window and answers before this.
 const BROWSER_WAIT_MS = 35_000;
 
 function browserContent(type: CommandType, answer: unknown) {
-  if (type === 'app.errors' || type === 'app.dom')
-    return [{ type: 'text' as const, text: JSON.stringify(answer) }];
   const page = answer as BrowserPage;
   const heading = `URL: ${page.url}\nTitle: ${page.title}`;
-  if (type === 'browser.screenshot' || type === 'app.screenshot')
+  if (type === 'browser.screenshot')
     return [
       { type: 'image' as const, data: page.png ?? '', mimeType: 'image/png' },
       { type: 'text' as const, text: heading },
@@ -279,7 +260,6 @@ const boundRevision = (type: CommandType) =>
   type === 'review.verdict' ||
   type === 'board.sync' ||
   type === 'project.baseline.start' ||
-  type === 'app.logs' ||
   browserTool(type);
 
 // Submits after which the session ends its turn; other write receipts carry ids the next call needs.
@@ -387,10 +367,8 @@ export async function createMcpServer(daemonUrl: string, token: string): Promise
     Object.entries({
       ...sessionTools[identity.principal.role as keyof typeof sessionTools],
       ...(identity.allowed_tool_names ? coordinationTools : {}),
-    }).filter(([, type]) =>
-      identity.allowed_tool_names
-        ? identity.allowed_tool_names.includes(type)
-        : identity.app_debug || !(Object.values(appDebugTools) as string[]).includes(type),
+    }).filter(
+      ([, type]) => !identity.allowed_tool_names || identity.allowed_tool_names.includes(type),
     ),
   ) as Record<string, CommandType>;
   const boundInputs: Record<string, (typeof boundFields)[number][]> = {};

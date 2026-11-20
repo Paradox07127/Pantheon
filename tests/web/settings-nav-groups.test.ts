@@ -3,12 +3,6 @@ vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
   (await import('./web-live-stores.js')).liveStores(actual as never),
 );
 
-const mock = vi.hoisted(() => ({ improvements: [] as unknown[] }));
-vi.mock('@/data/workflow-policy', async (actual) => ({
-  ...(await actual<object>()),
-  useImprovements: () => ({ read: mock.improvements, error: null, reload() {} }),
-}));
-
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { useBoard } from '@/data/board';

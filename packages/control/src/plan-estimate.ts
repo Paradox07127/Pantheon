@@ -1,5 +1,5 @@
 import type { BoardPlan, Session } from '@pantheon/domain';
-import type { BoardLaneEstimate, RoutingTable } from '@pantheon/protocol';
+import type { BoardLaneEstimate } from '@pantheon/protocol';
 import { taskSessions, taskState } from './board-plan.js';
 import type { ControlContext } from './context.js';
 import { reviewerRuntime } from './review.js';
@@ -10,12 +10,11 @@ import { workflowPolicy } from './workflow-policy.js';
 
 type Role = BoardLaneEstimate['runtimes'][number]['role'];
 
-/** The sessions, tokens and time of the lane's unfinished tasks; `table` is the project's routing table. */
+/** The sessions, tokens and time of the lane's unfinished tasks. */
 export function estimateLane(
   ctx: ControlContext,
   plan: BoardPlan,
   laneId: string,
-  table: RoutingTable,
 ): BoardLaneEstimate {
   const policy = workflowPolicy(ctx, plan.project_id),
     lead = ctx.store.must<Session>('sessions', plan.id);
@@ -25,7 +24,6 @@ export function estimateLane(
       taskState(plan, task.id, taskSessions(ctx, plan.id, task.id), lead) !== 'done',
   );
   const byPart = { tasks: 0, reviews: 0, plan_review: 0, milestone_verify: 0 },
-    history = { total: 0, tasks: 0, min_n: 0 },
     budget = { total: 0, tasks: 0 },
     wall = { total: 0, tasks: 0 };
   let unknown = 0;
@@ -42,7 +40,7 @@ export function estimateLane(
   for (const task of tasks) {
     const path = taskPath(ctx, plan.project_id, task),
       definition = taskWorkflow(ctx, plan, task.id).definition,
-      choice = taskChoice(ctx, plan, task, table);
+      choice = taskChoice(ctx, plan, task);
     const writers = path === 'direct' ? 0 : path === 'parallel' ? task.parallel!.length : 1;
     byPart.tasks += writers;
     count('writer', choice.runtime, writers);
@@ -62,23 +60,8 @@ export function estimateLane(
           path === 'direct' ? lead.runtime : choice.runtime,
         ),
       );
-    const cell = task.kind
-      ? table.cells.find(
-          (entry) => entry.domain === task.kind!.domain && entry.tier === task.kind!.tier,
-        )
-      : undefined;
-    const ran = cell?.candidates.find(
-      (candidate) =>
-        candidate.runtime === choice.runtime &&
-        candidate.model === choice.model &&
-        candidate.effort === choice.effort,
-    );
     const limit = task.kind ? policy.budget[task.kind.tier]?.[path] : undefined;
-    if (ran?.median_tokens !== undefined) {
-      history.min_n = history.tasks ? Math.min(history.min_n, ran.n) : ran.n;
-      history.total += ran.median_tokens;
-      history.tasks++;
-    } else if (limit) {
+    if (limit) {
       budget.total += limit.input_tokens;
       budget.tasks++;
     } else unknown++;
@@ -101,7 +84,7 @@ export function estimateLane(
       total: byPart.tasks + byPart.reviews + byPart.plan_review + byPart.milestone_verify,
       by_part: byPart,
     },
-    tokens: { history, budget, unknown_tasks: unknown },
+    tokens: { history: { total: 0, tasks: 0, min_n: 0 }, budget, unknown_tasks: unknown },
     ...(wall.tasks ? { wall_ms: wall } : {}),
     runtimes: [...runtimes.values()],
   };

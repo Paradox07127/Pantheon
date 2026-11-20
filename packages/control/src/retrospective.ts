@@ -3,7 +3,6 @@ import {
   type Approval,
   type BoardPlan,
   type GateFailureClass,
-  type Improvement,
   type LeadNote,
   type Principal,
   type Project,
@@ -32,7 +31,6 @@ import { taskPath } from './task-dispatch.js';
 import { RUNTIME_LOOKBACK_MS, runtimeDiagnostics } from './runtime-findings.js';
 import { TURN_ENDS } from './workbench-session.js';
 import { workflowPolicy } from './workflow-policy.js';
-import { taskArms, type TaskKey } from './trial-arms.js';
 
 type PlanTask = BoardPlan['tasks'][number];
 type Tokens = NonNullable<Retrospective['task_usage']>;
@@ -271,48 +269,26 @@ function approvalWait(ctx: ControlContext, ids: ReadonlySet<string>): number | u
   );
 }
 
-/**
- * The policy version and experiences in force at the first event of the sessions, and the task's
- * trial arms; empty without sessions.
- */
+/** The policy version in force at the first event of the sessions; empty without sessions. */
 function exposure(
   ctx: ControlContext,
   projectId: string,
   sessionIds: string[],
-  task?: TaskKey,
-): Pick<Retrospective, 'policy_version' | 'experience_ids' | 'trial_arms'> {
+): Pick<Retrospective, 'policy_version'> {
   if (!sessionIds.length) return {};
   const first = ctx.store.db
     .prepare(
-      `SELECT sequence, created_at FROM events WHERE aggregate_id IN (${sessionIds.map(() => '?').join(',')}) ORDER BY sequence LIMIT 1`,
+      `SELECT sequence FROM events WHERE aggregate_id IN (${sessionIds.map(() => '?').join(',')}) ORDER BY sequence LIMIT 1`,
     )
-    .get(...sessionIds) as { sequence: number; created_at: number } | undefined;
+    .get(...sessionIds) as { sequence: number } | undefined;
   if (!first) return {};
   const changed = ctx.store
     .kindEvents(projectId, ['workflow.policy_changed'])
     .filter((event) => event.sequence < first.sequence)
     .at(-1);
-  const ended = (row: Improvement) =>
-    (row.status === 'reverted' || row.status === 'rejected') &&
-    row.decided_at !== undefined &&
-    row.decided_at <= first.created_at;
-  const tried = ctx.store
-      .list<Improvement>('improvements')
-      .filter(
-        (row) =>
-          row.project_id === projectId &&
-          row.change.type === 'experience' &&
-          row.trial_started_at !== undefined &&
-          !ended(row),
-      ),
-    arms = task && tried.length ? taskArms(ctx, projectId, task) : {};
   return {
     policy_version:
       (changed?.payload as { policy_version?: number } | undefined)?.policy_version ?? 0,
-    experience_ids: tried
-      .filter((row) => row.trial_started_at! <= first.created_at && arms[row.id] !== 'old')
-      .map((row) => row.id),
-    ...(Object.keys(arms).length ? { trial_arms: arms } : {}),
   };
 }
 
@@ -681,11 +657,7 @@ function record(
       Object.entries(stages).filter(([, ms]) => ms !== undefined),
     ) as Retrospective['stage_ms'],
     ...(starts.length ? { started_at: Math.min(...starts) } : {}),
-    ...exposure(ctx, plan.project_id, [...ids], {
-      lead_session_id: plan.id,
-      task_id: taskId,
-      generation,
-    }),
+    ...exposure(ctx, plan.project_id, [...ids]),
   };
   try {
     const evidence = runtimeDiagnostics(

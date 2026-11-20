@@ -1,4 +1,4 @@
-/* The role table, the rows under it, then the routing table. */
+/* The role table and the rows under it. */
 .dp {
   display: flex;
   flex-direction: column;

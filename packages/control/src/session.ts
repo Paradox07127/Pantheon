@@ -46,7 +46,6 @@ import {
   personalSessionMcp,
   purposeSessionInstructions,
   purposeSessionTools,
-  sessionWorkspaceKind,
   sessionAdapter,
   bindSessionAdapter,
   usesPantheonTools,
@@ -462,6 +461,15 @@ function userTurn(turn: SessionTurn): UserTurn {
   };
 }
 
+const preparingMerges = new WeakMap<ControlContext, Set<string>>();
+
+/** Sessions whose session.merge commits their uncommitted files before the transaction admits it. */
+export function mergesPreparing(ctx: ControlContext): Set<string> {
+  let preparing = preparingMerges.get(ctx);
+  if (!preparing) preparingMerges.set(ctx, (preparing = new Set()));
+  return preparing;
+}
+
 /** Throws unless the session can take input of this kind now. */
 export function acceptInput(
   ctx: ControlContext,
@@ -474,7 +482,11 @@ export function acceptInput(
     'resource_busy',
     'Wait for the current turn or session reconciliation',
   );
-  requireThat(session.merge?.state !== 'running', 'invalid_state', 'Session is being merged');
+  requireThat(
+    session.merge?.state !== 'running' && !mergesPreparing(ctx).has(session.id),
+    'invalid_state',
+    'Session is being merged',
+  );
   requireThat(!session.stop_requested, 'invalid_state', 'Session is being discarded');
   requireThat(
     !session.rollback_pending,
@@ -1764,7 +1776,7 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
           },
         });
     // Only a session with memory tools hears about memory, and only one that can write about writing.
-    const tools = purposeSessionTools(session, sessionWorkspaceKind(ctx, session));
+    const tools = purposeSessionTools(session);
     const memoryText =
       session.resident?.kind === 'personal' || !usesPantheonTools(ctx, session)
         ? undefined

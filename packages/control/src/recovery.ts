@@ -187,8 +187,10 @@ export async function recover(ctx: ControlContext): Promise<void> {
           continue;
         }
       }
+      // A retired range story session is closed below rather than started.
+      if (s.range_story) reconcilingSessions.add(s.id);
       // Review, baseline and change-story sessions open running with only a queued first turn.
-      if (sessionRole(s) !== 'main' && !s.process_identity && !s.native_id) {
+      else if (sessionRole(s) !== 'main' && !s.process_identity && !s.native_id) {
         const turns = ctx.store
           .list<SessionTurn>('session_turns')
           .filter((turn) => turn.session_id === s.id && ['queued', 'running'].includes(turn.state));

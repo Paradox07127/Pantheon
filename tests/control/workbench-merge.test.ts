@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, it, onTestFinished, vi } from 'vitest';
 import type {
@@ -1281,3 +1281,138 @@ it.each([true, false])(
     expect(payloads(f, session.id, 'session.archived')).toHaveLength(enabled ? 1 : 0);
   },
 );
+
+/**
+ * Points HOME at a folder of the fixture, so the user's git reads only the global settings written
+ * there; ignore rules go in a file only the global core.excludesFile names.
+ */
+function gitHome(f: Fixture, files: { gitconfig?: string; ignore?: string }) {
+  const home = path.join(f.root, 'git-home'),
+    ignore = path.join(home, 'global-ignore'),
+    saved = {
+      HOME: process.env.HOME,
+      XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
+      GIT_CONFIG_GLOBAL: process.env.GIT_CONFIG_GLOBAL,
+    };
+  mkdirSync(home, { recursive: true });
+  if (files.ignore) writeFileSync(ignore, files.ignore);
+  writeFileSync(
+    path.join(home, '.gitconfig'),
+    `${files.gitconfig ?? ''}${files.ignore ? `[core]\n\texcludesFile = ${ignore}\n` : ''}`,
+  );
+  process.env.HOME = home;
+  delete process.env.XDG_CONFIG_HOME;
+  delete process.env.GIT_CONFIG_GLOBAL;
+  onTestFinished(() => {
+    for (const [key, value] of Object.entries(saved))
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+  });
+}
+
+const preCommitHook = (f: Fixture, script: string) =>
+  writeFileSync(path.join(f.source, '.git/hooks/pre-commit'), script, { mode: 0o755 });
+
+it('commits beside a file only the global ignore rules of the user ignore, then merges', async () => {
+  const f = await mergeFixture();
+  gitHome(f, { ignore: '.DS_Store\n' });
+  const { session, workspace } = await idleSession(f);
+  writeFileSync(path.join(workspace.path, 'answer.txt'), 'edited\n');
+  writeFileSync(path.join(workspace.path, '.DS_Store'), 'finder\n');
+  expect((await merge(f, session.id)).merge).toEqual({ state: 'running' });
+  expect(git(workspace.path, 'log', '-1', '--format=%s')).toBe(current(f, session.id).title);
+  await settled(f, session.id);
+  expect(current(f, session.id).outcome).toBe('merged');
+  expect(git(f.source, 'show', 'main:answer.txt')).toBe('edited');
+});
+
+it('commits the untracked files a repository setting hides from git status', async () => {
+  const f = await mergeFixture();
+  const { session, workspace } = await idleSession(f);
+  git(workspace.path, 'config', 'status.showUntrackedFiles', 'no');
+  commit(workspace.path, 'answer.txt', 'committed\n');
+  writeFileSync(path.join(workspace.path, 'untracked.txt'), 'new\n');
+  expect((await merge(f, session.id)).merge).toEqual({ state: 'running' });
+  expect(git(workspace.path, 'log', '-1', '--format=%s')).toBe(current(f, session.id).title);
+  await settled(f, session.id);
+  expect(git(f.source, 'show', 'main:untracked.txt')).toBe('new');
+});
+
+it('merges without a commit when adding the uncommitted files stages nothing', async () => {
+  const f = await mergeFixture();
+  // The user's git stores the line endings Pantheon's status reads as an edit.
+  gitHome(f, { gitconfig: '[core]\n\tautocrlf = input\n' });
+  const { session, workspace } = await idleSession(f);
+  const head = commit(workspace.path, 'other.txt', 'other\n'),
+    answer = path.join(workspace.path, 'answer.txt'),
+    earlier = new Date(Date.now() - 60_000);
+  writeFileSync(answer, 'base\r\n');
+  utimesSync(answer, earlier, earlier);
+  expect((await merge(f, session.id)).merge).toEqual({ state: 'running' });
+  expect(git(workspace.path, 'rev-parse', 'HEAD')).toBe(head);
+  await settled(f, session.id);
+  expect(current(f, session.id).outcome).toBe('merged');
+});
+
+it('refuses to commit a worktree with unresolved conflicts and leaves its index alone', async () => {
+  const f = await mergeFixture();
+  const { session, workspace, sourceHead } = await idleSession(f);
+  commit(workspace.path, 'answer.txt', 'ours\n');
+  git(workspace.path, 'checkout', '--quiet', '-b', 'side', sourceHead);
+  commit(workspace.path, 'answer.txt', 'theirs\n');
+  git(workspace.path, 'checkout', '--quiet', '-');
+  expect(() => git(workspace.path, 'merge', '--quiet', 'side')).toThrow();
+  await expect(merge(f, session.id)).rejects.toThrow(
+    expect.objectContaining({ code: 'unresolved_conflicts' }),
+  );
+  expect(git(workspace.path, 'ls-files', '--unmerged')).toContain('answer.txt');
+  expect(current(f, session.id).merge).toBeUndefined();
+});
+
+it('restores the index when the commit of the uncommitted files fails', async () => {
+  const f = await mergeFixture();
+  const { session, workspace } = await idleSession(f);
+  preCommitHook(f, '#!/bin/sh\nexit 1\n');
+  writeFileSync(path.join(workspace.path, 'answer.txt'), 'edited\n');
+  writeFileSync(path.join(workspace.path, 'untracked.txt'), 'new\n');
+  await expect(merge(f, session.id)).rejects.toThrow(
+    expect.objectContaining({ code: 'commit_failed' }),
+  );
+  expect(git(workspace.path, 'diff', '--cached', '--name-only')).toBe('');
+  expect(git(workspace.path, 'ls-files', '--others')).toBe('untracked.txt');
+  // The failed merge no longer holds the session.
+  await expect(merge(f, session.id)).rejects.toThrow(
+    expect.objectContaining({ code: 'commit_failed' }),
+  );
+});
+
+it('refuses turns and another merge while the merge commits the uncommitted files', async () => {
+  const f = await mergeFixture();
+  const { session, workspace } = await idleSession(f);
+  const started = path.join(f.root, 'commit-started'),
+    release = path.join(f.root, 'commit-release');
+  preCommitHook(
+    f,
+    `#!${process.execPath}\nconst fs = require('node:fs');\nfs.writeFileSync(${JSON.stringify(started)}, '');\nconst timer = setInterval(() => { if (fs.existsSync(${JSON.stringify(release)})) clearInterval(timer); }, 10);\n`,
+  );
+  writeFileSync(path.join(workspace.path, 'answer.txt'), 'edited\n');
+  const first = merge(f, session.id);
+  await eventually(
+    () => existsSync(started),
+    () => f.control.tick(),
+  );
+  expect(() =>
+    f.call(
+      'session.send',
+      { session_id: session.id, input: 'One more change' },
+      current(f, session.id).revision,
+    ),
+  ).toThrow(expect.objectContaining({ code: 'invalid_state', message: 'Session is being merged' }));
+  expect(() => merge(f, session.id)).toThrow(
+    expect.objectContaining({ code: 'invalid_state', message: 'Session is being merged' }),
+  );
+  writeFileSync(release, '');
+  expect((await first).merge).toEqual({ state: 'running' });
+  await settled(f, session.id);
+  expect(current(f, session.id).outcome).toBe('merged');
+});

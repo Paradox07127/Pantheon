@@ -46,7 +46,6 @@ export const tables = [
   'workflow_policies',
   'workflow_definitions',
   'workflow_step_runs',
-  'improvements',
   'visuals',
   'memory_records',
   'memory_states',

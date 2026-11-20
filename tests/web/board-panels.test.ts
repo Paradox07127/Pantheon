@@ -9,7 +9,9 @@ import { UsageStackPanel } from '../../apps/web/src/screens/board/UsageCharts.js
 import { usageStack } from '../../apps/web/src/screens/board/usage-model.js';
 import { dayText } from '@/lib/time-text';
 import {
+  milestoneSessions,
   sortTasks,
+  type SnapshotSession,
   timeTicks,
   usageSeries,
   visibleFindings,
@@ -252,6 +254,17 @@ describe('board milestones', () => {
     expect(row(html, 'user-ready')).toContain('2/5');
     expect(row(html, 'user-ready')).toContain(zh('board.milestones.awaiting'));
     expect(row(html, 'user-ready')).not.toContain(zh('board.milestones.awaitingLead'));
+  });
+
+  it('offers only sessions with a workspace to require', () => {
+    const session = (id: string, extra: Partial<SnapshotSession> = {}) =>
+      ({ id, project_id: 'project-a', ...extra }) as SnapshotSession;
+    const sessions = [
+      session('worker', { workspace_id: 'workspace-a' }),
+      session('folder'),
+      session('range-story', { range_story: { story_id: 'old-story' } }),
+    ];
+    expect(milestoneSessions(sessions, 'project-a').map((s) => s.id)).toEqual(['worker']);
   });
 });
 

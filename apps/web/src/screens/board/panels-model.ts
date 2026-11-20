@@ -192,6 +192,7 @@ export function milestoneSessions(
   return sessions.filter(
     (s) =>
       s.project_id === projectId &&
+      !!s.workspace_id &&
       !s.resident &&
       !s.baseline &&
       !s.intro &&

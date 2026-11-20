@@ -7,7 +7,6 @@ import {
   type AgentFields,
   type AgentProfile,
   type BoardPlan,
-  type Improvement,
   type MemoryRecord,
   type Principal,
   type Project,
@@ -184,7 +183,7 @@ export function openAgent(
   return ctx.store.must<Session>('sessions', session.id);
 }
 
-/** Points the reviews, step runs, retrospectives and improvements of the old lead to the new one. */
+/** Points the reviews, step runs and retrospectives of the old lead to the new one. */
 function takeOverReferences(ctx: ControlContext, from: string, to: string): void {
   for (const review of ctx.store.list<Review>('reviews'))
     if (review.requester?.lead_session_id === from)
@@ -193,8 +192,8 @@ function takeOverReferences(ctx: ControlContext, from: string, to: string): void
         { ...review, requester: { ...review.requester, lead_session_id: to } },
         review.revision,
       );
-  for (const table of ['workflow_step_runs', 'retrospectives', 'improvements'] as const)
-    for (const row of ctx.store.list<StepRun | Retrospective | Improvement>(table))
+  for (const table of ['workflow_step_runs', 'retrospectives'] as const)
+    for (const row of ctx.store.list<StepRun | Retrospective>(table))
       if (row.lead_session_id === from)
         ctx.store.update(table, { ...row, lead_session_id: to }, row.revision);
 }
@@ -374,7 +373,7 @@ function createAgent(
 }
 
 /** Changes the agent profile, and its open session as the change needs; the caller checks the revision. */
-export function updateAgent(
+function updateAgent(
   ctx: ControlContext,
   profile: AgentProfile,
   fields: Partial<Omit<AgentFields, 'contract'>> & { contract?: AgentFields['contract'] | null },

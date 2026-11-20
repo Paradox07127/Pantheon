@@ -756,7 +756,7 @@ export async function landWorkspace(
             /^-.*\b(?:expect\s*\(|(?:it|test|describe|xit|xtest|xdescribe)\s*(?:\(|\.))/m.test(
               body,
             ) ||
-            /^\+.*(?:\b(?:it|test|describe)\s*\.\s*skip\b|\.\s*only\b|\b(?:xit|xtest|xdescribe)\s*\()/m.test(
+            /^\+.*(?:\b(?:it|test|describe)\s*\.\s*skip\b|\.\s*only\b|\b(?:xit|xtest|xdescribe)\s*\(|\bpytest\.mark\.(?:skip|skipif|xfail)\b|\bunittest\.skip|\bt\.Skip\(|#\[ignore\b)/m.test(
               body,
             );
           // A named test only gains cases from pure additions.

@@ -12,13 +12,14 @@ import { useShell } from '../../apps/web/src/store.js';
 const NOW = Date.UTC(2026, 10, 1, 12);
 
 const proposal: BoardNeed = {
-  source: { table: 'improvements', id: 'improvement-1', revision: 1 },
-  kind: 'improvement.candidate',
+  source: { table: 'workflow_definitions', id: 'workflow-1', revision: 1 },
+  kind: 'workflow.definition.trial',
   project_id: 'project-a',
-  status: 'candidate',
+  status: 'waiting',
   created_at: NOW - 60_000,
-  reason: 'improvement_awaiting_decision',
-  actions: [{ command: 'improvement.decide', allowed: true }],
+  reason: 'workflow_definition_trial_completed',
+  decision: 'improvement',
+  actions: [{ command: 'workflow.definition.trial.decide', allowed: true }],
   unblocks: 0,
 } as BoardNeed;
 

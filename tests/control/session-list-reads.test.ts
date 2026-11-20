@@ -250,8 +250,13 @@ it('emits no repository change for repeated prefetches of two sessions in one un
     });
   const first = await open();
   await settled(f, first.id);
-  // A diagnosis session may run in the folder beside its writer.
-  const second = await open({ purpose: 'app_debug' });
+  // An archived writer leaves the folder to the next session and stays in the list.
+  f.call(
+    'session.archive',
+    { session_id: first.id },
+    f.store.must<Session>('sessions', first.id).revision,
+  );
+  const second = await open();
   await settled(f, second.id);
   expect(second.workspace_id).toBe(first.workspace_id);
   vi.useFakeTimers({ toFake: ['Date'] });

@@ -60,11 +60,9 @@ export interface BoardSnapshot {
 export interface BrowserRequest {
   request_id: string;
   session_id: string;
-  action: 'open' | 'read' | 'screenshot' | 'app_errors' | 'app_screenshot' | 'app_dom';
+  action: 'open' | 'read' | 'screenshot';
   /** The page to open; only for open. */
   url?: string;
-  /** The element to read; only for app_dom, absent is the whole window. */
-  selector?: string;
 }
 /** The frames of /v1/events/ws as the daemon sends them, plus 'closed' when the socket ends. */
 export type EventFrame =

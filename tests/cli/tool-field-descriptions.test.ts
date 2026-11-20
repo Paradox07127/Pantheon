@@ -56,8 +56,6 @@ async function listTools(role: 'lead' | 'worker') {
         project_id: 'project',
         expires_at: Date.now() + 60_000,
       },
-      // An app debug session also gets the app tools, so every tool of the role is listed.
-      app_debug: true,
     }),
   );
   const server = await createMcpServer('http://127.0.0.1:4321', 'session-token');

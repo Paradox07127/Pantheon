@@ -602,7 +602,6 @@ it('mounts a lead credential on a workbench session and a worker credential on a
     'status_line',
     'interrupt_task',
     'stop_background',
-    'propose_improvement',
     'sync_board',
     'rerun_baseline',
     'request_review',

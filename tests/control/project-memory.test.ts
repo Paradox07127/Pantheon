@@ -391,24 +391,6 @@ it('scopes task memory by lead, task and generation, not by the worker session d
   });
 });
 
-it('reads improvement status directly and excludes reverted experience immediately', async () => {
-  const f = await workbenchFixture();
-  const r = f.store.insert('improvements', {
-    id: 'experience',
-    revision: 1,
-    project_id: f.project.id,
-    retrospective_ids: [],
-    status: 'trial',
-    change: { type: 'experience', procedure: 'Check observable outcomes' },
-    proposed_at: Date.now(),
-  } as any);
-  expect(f.call<any>('memory.context', { project_id: f.project.id }).experiences[0].status).toBe(
-    'trial',
-  );
-  f.store.update('improvements', { ...r, status: 'reverted' }, r.revision);
-  expect(f.call<any>('memory.context', { project_id: f.project.id }).experiences).toEqual([]);
-});
-
 it('rolls back an interrupted commit and reclaims an abandoned maintenance lease after restart', async () => {
   const f = await workbenchFixture();
   const r = f.call<any>('memory.propose', {
@@ -641,40 +623,43 @@ it('never replaces a decision by confirming a report with the same key and does 
   expect(f.call<any>('memory.get', { memory_id: a.id }).text).toBe('Use SQLite');
 });
 
-it('delivers an empty replacement packet when the last improvement experience is revoked', async () => {
+it('leaves an adopted project improvement out of a new session memory packet and first turn', async () => {
   const f = await workbenchFixture({ delay: 10 });
   const send = vi.spyOn(f.adapter, 'send');
-  f.store.insert('improvements', {
-    id: 'learned-procedure',
-    revision: 1,
+  const draft = f.call<any>('memory.propose', {
     project_id: f.project.id,
-    retrospective_ids: [],
-    status: 'active',
-    change: { type: 'experience', procedure: 'Distinct revoked procedure' },
-    proposed_at: Date.now(),
-  } as any);
+    key: 'language',
+    kind: 'decision',
+    text: 'Use precise terminology',
+  });
+  f.call('memory.commit', { memory_id: draft.id }, draft.revision);
+  f.store.db.prepare('INSERT INTO improvements VALUES(?,?,?)').run(
+    'adopted-procedure',
+    1,
+    JSON.stringify({
+      id: 'adopted-procedure',
+      revision: 1,
+      project_id: f.project.id,
+      retrospective_ids: [],
+      status: 'active',
+      change: { type: 'experience', procedure: 'Distinct adopted procedure' },
+      proposed_at: Date.now(),
+    }),
+  );
+  const packet = f.call<any>('memory.context', { project_id: f.project.id });
+  expect(JSON.stringify(packet)).not.toContain('Distinct adopted procedure');
+  expect(packet).not.toHaveProperty('experiences');
   const session = await f.create(undefined, user, 'lead');
   await eventually(
-    () =>
-      f.store.must<any>('sessions', session.id).state === 'open' && send.mock.calls.length === 1,
+    () => send.mock.calls.length > 0,
     () => f.control.tick(),
   );
-  expect(send.mock.calls[0]![1].input).toContain('Distinct revoked procedure');
-  const experience = f.store.must<any>('improvements', 'learned-procedure');
-  f.store.update('improvements', { ...experience, status: 'reverted' }, experience.revision);
-  f.call(
-    'session.send',
-    { session_id: session.id, input: 'Continue after the change' },
-    f.store.must<any>('sessions', session.id).revision,
-  );
-  await eventually(
-    () => send.mock.calls.length === 2,
-    () => f.control.tick(),
-  );
-  const next = send.mock.calls[1]![1].input;
-  expect(next).toContain('[Pantheon current project memory]');
-  expect(next).toContain('"experiences":[]');
-  expect(next).not.toContain('Distinct revoked procedure');
+  const input = send.mock.calls[0]![1].input as string;
+  expect(input).toContain('Use precise terminology');
+  expect(input).not.toContain('Distinct adopted procedure');
+  const system = f.start.mock.calls.find(([spec]) => spec.platform_session_id === session.id)![0]
+    .control_instructions!;
+  expect(system).not.toContain('Distinct adopted procedure');
 });
 
 it('exposes delivery capability, stale packages and the records delivered for a turn', async () => {

@@ -100,7 +100,7 @@ export function projectUsageRead(
         const row = rowOf(
           opened.purpose === 'baseline'
             ? 'baseline'
-            : opened.purpose === 'change_story'
+            : opened.purpose === 'change_story' || opened.purpose === 'range_story'
               ? 'story'
               : sessionRole(opened),
         );

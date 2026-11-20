@@ -2,10 +2,8 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it } from 'vitest';
-import { FixtureAdapter } from '@pantheon/adapters';
 import {
   id,
-  type Improvement,
   type Principal,
   type Project,
   type ProjectRead,
@@ -23,31 +21,8 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup();
 });
 
-const leaderboards = {
-  fetched_at: '2026-11-09T08:00:00.000Z',
-  sources: [{ source: 'terminal-bench', ok: true, fetched_at: '2026-11-09T08:00:02.000Z' }],
-  rows: [
-    {
-      source: 'terminal-bench',
-      board_name: 'GPT Fixture / Codex / high',
-      score: 70,
-      unit: 'accuracy_pct',
-      alias: { runtime: 'codex', model: 'gpt-fixture', effort: 'high' },
-    },
-    {
-      source: 'terminal-bench',
-      board_name: 'Claude Fixture / Claude Code / high',
-      score: 30,
-      unit: 'accuracy_pct',
-      alias: { runtime: 'claude', model: 'claude-fixture', effort: 'high' },
-    },
-  ],
-};
-
-async function setup(options: { leaderboards?: boolean } = {}) {
+async function setup() {
   const configDir = mkdtempSync(path.join(os.tmpdir(), 'pantheon-lead-read-'));
-  if (options.leaderboards)
-    writeFileSync(path.join(configDir, 'leaderboards.json'), JSON.stringify(leaderboards));
   const f = await fixture({
     managedWorkspaces: true,
     controlOptions: {
@@ -94,20 +69,6 @@ const principalOf = (f: Fixture, session: Session, role: 'lead' | 'worker'): Pri
 
 const read = (f: Fixture, principal: Principal = user) =>
   f.call<ProjectRead>('project.read', { project_id: f.project.id }, null, principal);
-
-function improvement(f: Fixture, fields: Partial<Improvement>): Improvement {
-  return f.store.insert<Improvement>('improvements', {
-    id: id(),
-    revision: 1,
-    project_id: f.project.id,
-    source: 'lead',
-    retrospective_ids: ['retrospective-a', 'retrospective-b'],
-    status: 'active',
-    change: { type: 'experience', procedure: 'Run the build before the tests' },
-    proposed_at: 1,
-    ...fields,
-  });
-}
 
 function retrospective(f: Fixture, fields: Partial<Retrospective>): Retrospective {
   return f.store.insert<Retrospective>('retrospectives', {
@@ -163,80 +124,6 @@ it('leaves the lead section out for a task session and for the user', async () =
   expect(read(f, principalOf(f, leadSession, 'lead'))).toHaveProperty('lead');
   expect(read(f, principalOf(f, worker, 'worker'))).not.toHaveProperty('lead');
   expect(read(f)).not.toHaveProperty('lead');
-});
-
-it('lists the routing cells that have a first choice with only their picks', async () => {
-  const f = await setup({ leaderboards: true });
-  for (const name of ['codex', 'claude']) {
-    const adapter = new FixtureAdapter();
-    adapter.name = name;
-    f.control.adapters.set(name, adapter);
-  }
-  const lead = principalOf(f, sessionOf(f), 'lead');
-  const cells = f.control.routingTable(user, f.project.id).cells;
-  const routing = read(f, lead).lead!.routing;
-  expect(routing.length).toBeGreaterThan(0);
-  expect(routing).toEqual(
-    cells
-      .filter((cell) => cell.first)
-      .map(({ domain, tier, first, alternate }) => ({
-        domain,
-        tier,
-        first,
-        ...(alternate ? { alternate } : {}),
-      })),
-  );
-  expect(routing.find((cell) => cell.domain === 'backend-logic' && cell.tier === 't1')).toEqual({
-    domain: 'backend-logic',
-    tier: 't1',
-    first: { runtime: 'codex', model: 'gpt-fixture', effort: 'high' },
-    alternate: { runtime: 'claude', model: 'claude-fixture', effort: 'high' },
-  });
-});
-
-it('lists no routing cell when no cell has a first choice', async () => {
-  const f = await setup();
-  expect(read(f, principalOf(f, sessionOf(f), 'lead')).lead!.routing).toEqual([]);
-});
-
-it('lists only the experiences on trial or in force, newest first', async () => {
-  const f = await setup();
-  const lead = principalOf(f, sessionOf(f), 'lead');
-  const older = improvement(f, {
-    status: 'active',
-    proposed_at: 10,
-    change: {
-      type: 'experience',
-      domain: 'backend-logic',
-      tier: 't2',
-      runtime: 'codex',
-      procedure: 'Build the protocol package before the control tests',
-      countercondition: 'The change does not touch the protocol',
-    },
-  });
-  const newer = improvement(f, { status: 'trial', proposed_at: 20 });
-  improvement(f, { status: 'candidate', proposed_at: 30 });
-  improvement(f, { status: 'rejected', proposed_at: 40 });
-  improvement(f, { status: 'reverted', proposed_at: 50 });
-  improvement(f, {
-    status: 'active',
-    proposed_at: 60,
-    change: { type: 'policy_change', param: 'max_parallel', from: 3, to: 2 },
-  });
-  improvement(f, { project_id: 'other-project', status: 'active', proposed_at: 70 });
-
-  expect(read(f, lead).lead!.experiences).toEqual([
-    { id: newer.id, status: 'trial', procedure: 'Run the build before the tests' },
-    {
-      id: older.id,
-      status: 'active',
-      procedure: 'Build the protocol package before the control tests',
-      countercondition: 'The change does not touch the protocol',
-      domain: 'backend-logic',
-      tier: 't2',
-      runtime: 'codex',
-    },
-  ]);
 });
 
 it("lists at most ten of the lead's own retrospectives, newest first, with their outcome facts", async () => {

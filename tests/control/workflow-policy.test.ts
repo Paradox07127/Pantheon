@@ -1,7 +1,7 @@
 import { afterEach, expect, it } from 'vitest';
 import { DomainError, type Principal, type WorkflowPolicy } from '@pantheon/domain';
 import type { ControlContext } from '../../packages/control/dist/context.js';
-import { changedPolicy, workflowPolicy } from '../../packages/control/dist/workflow-policy.js';
+import { workflowPolicy } from '../../packages/control/dist/workflow-policy.js';
 import { fixture, user } from '../helpers.js';
 
 type Fixture = Awaited<ReturnType<typeof fixture>>;
@@ -176,7 +176,7 @@ it('refuses a budget that is not a positive integer and keeps the stored policy'
   expect(f.store.get('workflow_policies', f.project.id)).toBeUndefined();
 });
 
-it('stores the review loop as a tier path and a budget cell, and refuses an unknown path in an improvement', async () => {
+it('stores the review loop as a tier path and a budget cell', async () => {
   const f = await opened();
   const cell = { input_tokens: 2000000, wall_ms: 600000 };
   set(f, { path: { t2: 'review_loop' }, budget: { t2: { review_loop: cell } } });
@@ -184,15 +184,6 @@ it('stores the review loop as a tier path and a budget cell, and refuses an unkn
     path: { t2: 'review_loop' },
     budget: { t2: { review_loop: cell } },
   });
-  expect(changedPolicy(policyOf(f), { param: 'path', tier: 't3', to: 'review_loop' }).path).toEqual(
-    { t1: 'direct', t2: 'review_loop', t3: 'review_loop' },
-  );
-  expect(
-    refused(() => changedPolicy(policyOf(f), { param: 'path', tier: 't3', to: 'pairing' })),
-  ).toBe('invalid_input');
-  expect(
-    refused(() => changedPolicy(policyOf(f), { param: 'budget', to: { t3: { pairing: cell } } })),
-  ).toBe('invalid_input');
 });
 
 it('reads the default budget for a policy stored without one', async () => {
@@ -279,7 +270,7 @@ it('resets a changed policy to the defaults exposed by the query at the current 
   });
 });
 
-it('stores disabled hand-backs and keeps one refused for user and improvement changes', async () => {
+it('stores disabled hand-backs and refuses a limit of one', async () => {
   const f = await opened();
   expect(set(f, { handback_limit: 0 }).handback_limit).toBe(0);
   expect(policyOf(f).handback_limit).toBe(0);
@@ -288,7 +279,4 @@ it('stores disabled hand-backs and keeps one refused for user and improvement ch
     policy: { handback_limit: 0 },
   });
   expect(() => set(f, { handback_limit: 1 })).toThrow();
-  expect(refused(() => changedPolicy(policyOf(f), { param: 'handback_limit', to: 1 }))).toBe(
-    'invalid_input',
-  );
 });

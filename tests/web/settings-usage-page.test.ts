@@ -92,7 +92,7 @@ async function type(h: HookHost<any>, input: () => { props: any }, value: string
 
 beforeEach(() => {
   project = { id: `alpha-${++made}`, revision: 1, name: 'Alpha app', roots: ['/work/alpha'] };
-  bridge.answers = { 'workflow.policy': policy(), 'improvement.list': [] };
+  bridge.answers = { 'workflow.policy': policy() };
   bridge.commandAnswers = [];
   bridge.commands = [];
   vi.stubGlobal('window', { pantheon: bridge, addEventListener() {}, removeEventListener() {} });

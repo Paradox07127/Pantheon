@@ -1,7 +1,6 @@
 import { expect, it } from 'vitest';
 import type { Session } from '@pantheon/domain';
 import { coordinationTools, sessionTools } from '@pantheon/protocol';
-import { appDebugSkill, appDiagnoseSkill } from '../../packages/control/src/app-debug-skill.js';
 import { baselineSkill } from '../../packages/control/src/baseline-skill.js';
 import type { ControlContext } from '../../packages/control/src/context.js';
 import { purposeSessionInstructions } from '../../packages/control/src/context.js';
@@ -45,8 +44,6 @@ const injected: Record<string, string> = {
   reviewer: purpose({ review_id: 'review-1' }),
   memory: MEMORY_INSTRUCTIONS,
   'memory without writing': MEMORY_READ_INSTRUCTIONS,
-  'app debug': appDebugSkill,
-  'app diagnosis': appDiagnoseSkill,
   'project setup': projectSetupSkill,
 };
 

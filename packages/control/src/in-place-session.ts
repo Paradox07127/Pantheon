@@ -115,7 +115,7 @@ export async function inPlaceSessionSpec(
     ? sessionMcp(ctx, session, credentialRole(session, workspace.kind))
     : undefined;
   // A new folder session without a task leads like a worktree session the user opened.
-  const planningLead = pantheonMcp && session.in_place && !session.task && !session.app_debug;
+  const planningLead = pantheonMcp && session.in_place && !session.task;
   return managedSessionSpec(ctx, {
     platform_session_id: session.id,
     project_id: project.id,

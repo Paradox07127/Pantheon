@@ -808,7 +808,7 @@ process.stdout.write(out.toString('latin1').replaceAll(local, device));
       const f = await running(spec);
       const entries = spec.sandbox!.protected_entries;
       expect(f.options.tools).toEqual({ type: 'preset', preset: 'claude_code' });
-      expect(f.options.systemPrompt).toBeUndefined();
+      expect(f.options.systemPrompt).toEqual({ type: 'preset', preset: 'claude_code' });
       expect(f.options.sandbox).toMatchObject({
         enabled: true,
         failIfUnavailable: true,
@@ -1298,39 +1298,6 @@ describe('Claude workbench permission modes', () => {
     expect(f.requestPermission.mock.calls.map(([tool]) => tool)).toEqual(['mcp__x__tool']);
   });
 
-  it.each(['auto_edit', 'plan'] as const)(
-    'allows the read tools of the chrome_devtools server Pantheon passes in without asking in %s mode',
-    async (mode) => {
-      const f = modeOptions(mode);
-      const devtools = (tool: string, source: string) =>
-        f.options.canUseTool!(tool, {}, {
-          signal: new AbortController().signal,
-          toolUseID: tool,
-          requestId: tool,
-          mcpServer: { name: 'chrome_devtools', source },
-        } as Parameters<NonNullable<typeof f.options.canUseTool>>[2]);
-      expect(await devtools('mcp__chrome_devtools__take_screenshot', 'dynamic')).toEqual({
-        behavior: 'allow',
-        updatedInput: {},
-      });
-      expect(f.requestPermission).not.toHaveBeenCalled();
-      const script = await devtools('mcp__chrome_devtools__evaluate_script', 'dynamic');
-      const configured = await devtools('mcp__chrome_devtools__take_screenshot', 'user');
-      if (mode === 'plan') {
-        expect(script).toEqual({ behavior: 'deny', message: PLAN_DENIAL });
-        expect(configured).toEqual({ behavior: 'deny', message: PLAN_DENIAL });
-        expect(f.requestPermission).not.toHaveBeenCalled();
-      } else {
-        expect(script).toEqual(asked);
-        expect(configured).toEqual(asked);
-        expect(f.requestPermission.mock.calls.map(([tool]) => tool)).toEqual([
-          'mcp__chrome_devtools__evaluate_script',
-          'mcp__chrome_devtools__take_screenshot',
-        ]);
-      }
-    },
-  );
-
   it('denies changes in plan mode and asks before leaving it', async () => {
     const f = modeOptions('plan');
     expect(await f.call('Read', { file_path: 'file' })).toMatchObject({ behavior: 'allow' });
@@ -1487,6 +1454,13 @@ describe('Claude workbench permission modes', () => {
       expect(await f.hook('AskUserQuestion', { questions: [] })).toEqual(hookAsks);
     },
   );
+
+  it('keeps the Claude Code system prompt of a user session without control instructions', () => {
+    expect(modeOptions('ask', true).options.systemPrompt).toEqual({
+      type: 'preset',
+      preset: 'claude_code',
+    });
+  });
 
   it('asks before the shell commands and edits a user session in auto_edit mode sends to Pantheon', async () => {
     const f = modeOptions('auto_edit', true);

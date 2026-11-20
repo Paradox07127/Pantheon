@@ -1,6 +1,5 @@
 import type {
   BoardPlan,
-  Improvement,
   MemoryRecord,
   Project,
   StepRun,
@@ -10,7 +9,7 @@ import { projectAccess, type ControlContext } from './context.js';
 import { taskGeneration } from './board-plan.js';
 import { alive } from './memory-access.js';
 import { projectBudgetUse, workflowPolicy } from './workflow-policy.js';
-import { NEXT_STEP, action, type NeedsYouDraft, type NeedsYouScope } from './needs-you.js';
+import { action, type NeedsYouDraft, type NeedsYouScope } from './needs-you.js';
 
 /** The step run waits for the user's decision: an approval step, or a step that ended with no verdict. */
 export function awaitsDecision(run: StepRun, plan: BoardPlan | undefined): boolean {
@@ -89,39 +88,6 @@ export function definitionTrialItems(ctx: ControlContext, scope: NeedsYouScope):
         ),
         decision,
       })),
-    });
-  }
-  return items;
-}
-
-/** Improvement candidates. */
-export function improvementItems(ctx: ControlContext, scope: NeedsYouScope): NeedsYouDraft[] {
-  const { principal, projectId, removed } = scope;
-  const items: NeedsYouDraft[] = [];
-  // A candidate waits for the user: auto mode starts each trial as it proposes the improvement.
-  for (const improvement of ctx.store.list<Improvement>('improvements')) {
-    if (
-      improvement.status !== 'candidate' ||
-      removed.has(improvement.project_id) ||
-      (projectId && improvement.project_id !== projectId)
-    )
-      continue;
-    items.push({
-      source: { table: 'improvements', id: improvement.id, revision: improvement.revision },
-      kind: 'improvement.candidate',
-      project_id: improvement.project_id,
-      ...(improvement.lead_session_id ? { session_id: improvement.lead_session_id } : {}),
-      status: improvement.status,
-      created_at: improvement.proposed_at,
-      reason: 'improvement_awaiting_decision',
-      decision: 'improvement',
-      primary: 'improvement.decide',
-      actions: [
-        action('improvement.decide', () =>
-          projectAccess(ctx, principal, improvement.project_id, 'improvement.decide'),
-        ),
-      ],
-      next_step: NEXT_STEP.improvement_awaiting_decision,
     });
   }
   return items;

@@ -16,8 +16,6 @@ const KINDS = new Set<string>([
   'session.gate_run_completed',
   'session.gate_run_failed',
   'retrospective.recorded',
-  'improvement.proposed',
-  'improvement.status_changed',
   'trace.evidence_read',
   'session.runtime_reported',
   'session.runtime_report_shared',

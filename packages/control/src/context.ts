@@ -5,6 +5,7 @@ import {
   credentialRole,
   requireThat,
   type AgentProfile,
+  type AgentToolGroup,
   type Principal,
   type RuntimeModel,
   type Entity,
@@ -17,13 +18,11 @@ import {
   type Workspace,
 } from '@pantheon/domain';
 import {
-  appDebugTools,
   sessionTools,
   coordinationTools,
   leadToolEffects,
   leadToolGroups,
   type CommandType,
-  type LeadToolGroup,
   type Command,
   type DeviceStatus,
   type RuntimeStatus,
@@ -76,7 +75,6 @@ export interface ControlContext {
   /** Closes the session tools relay of a session whose runtime runs on a device, by session id. */
   readonly toolRelays: Map<string, () => void>;
   readonly localCommand: NonNullable<ControlOptions['localCommand']>;
-  readonly evalRunner?: ControlOptions['evalRunner'];
   readonly externalSources?: ControlOptions['externalSources'];
   readonly turnSummarizer?: ControlOptions['turnSummarizer'];
   readonly failpoint: (name: string) => void;
@@ -282,17 +280,10 @@ export function actsAsUser(p: Principal) {
   );
 }
 
-const appDebugActions: string[] = Object.values(appDebugTools);
-
 /** The only tools of a purpose-bound session; undefined for every other session. */
-export function purposeSessionTools(
-  session: Session,
-  workspaceKind?: Workspace['kind'],
-): string[] | undefined {
+export function purposeSessionTools(session: Session): string[] | undefined {
+  if (session.range_story) return [];
   if (session.runtime_review) return ['trace.evidence', 'trace.report'];
-  // Diagnosing the running app in the user's project folder only reads the app and its stylesheet.
-  if (session.app_debug && workspaceKind === 'in_place')
-    return [...appDebugActions, 'project.read'];
   if (session.intro)
     return [
       'memory.context',
@@ -330,7 +321,7 @@ export function purposeSessionTools(
 }
 
 /** Tool groups whose commands serve resident sessions only. */
-const RESIDENT_GROUPS: readonly LeadToolGroup[] = [
+const RESIDENT_GROUPS: readonly AgentToolGroup[] = [
   'always_on',
   'app',
   'sessions',
@@ -353,7 +344,7 @@ const PLAN_WRITES = [
  * another lead's every group but the resident ones; undefined for every other session.
  */
 export function leadSessionTools(ctx: ControlContext, session: Session): string[] | undefined {
-  const groups: readonly LeadToolGroup[] | undefined = session.resident
+  const groups: readonly AgentToolGroup[] | undefined = session.resident
     ? residentProfile(ctx.store, session.resident).tools
     : credentialRole(session, sessionWorkspaceKind(ctx, session)) === 'lead'
       ? Object.values(leadToolGroups).filter((group) => !RESIDENT_GROUPS.includes(group))
@@ -364,7 +355,6 @@ export function leadSessionTools(ctx: ControlContext, session: Session): string[
     ...Object.entries(sessionTools.lead)
       .filter(([name]) => groups.includes(leadToolGroups[name as keyof typeof leadToolGroups]))
       .map(([, action]): string => action)
-      .filter((action) => session.app_debug || !appDebugActions.includes(action))
       .filter((action) => !readOnly || !PLAN_WRITES.includes(action)),
     sessionTools.lead.guide,
   ];
@@ -434,15 +424,12 @@ export function sessionAction(ctx: ControlContext, principal: Principal, action:
     'Runtime reflection can read project facts only',
   );
   const tools = sessionTools[principal.role as keyof typeof sessionTools];
-  const purposeTools =
-    purposeSessionTools(session, sessionWorkspaceKind(ctx, session)) ??
-    leadSessionTools(ctx, session);
+  const purposeTools = purposeSessionTools(session) ?? leadSessionTools(ctx, session);
   const permitted = purposeTools ? { ...tools, ...coordinationTools } : tools;
   requireThat(
     permitted &&
       (Object.values(permitted) as string[]).includes(action) &&
-      (!purposeTools || purposeTools.includes(action)) &&
-      (session.app_debug || !appDebugActions.includes(action)),
+      (!purposeTools || purposeTools.includes(action)),
     'permission_denied',
     'Action outside session role',
   );
@@ -454,7 +441,6 @@ export function usesPantheonTools(ctx: ControlContext, session: Session): boolea
     session.task ||
     session.resident ||
     session.lead ||
-    session.app_debug ||
     session.project_setup ||
     // An adopted folder session keeps its planner credential.
     credentialRole(session, sessionWorkspaceKind(ctx, session)) !== 'lead' ||

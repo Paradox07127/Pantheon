@@ -40,15 +40,6 @@ const context = (extra: Partial<MemoryContext> = {}): MemoryContext => ({
     item('report', 'Refund state table'),
     item('note', 'Staging first'),
   ],
-  experiences: [
-    {
-      id: 'e1',
-      status: 'active',
-      procedure: 'Read the middleware first',
-      countercondition: 'scripts',
-    },
-    { id: 'e2', status: 'trial', procedure: 'Add a transition test' },
-  ],
   omitted: 2,
   bytes: 8412,
   ...extra,
@@ -167,7 +158,6 @@ describe('overview memory panel', () => {
         '决定 2',
         '报告 1',
         '笔记 1',
-        '经验 2 生效 1 试用 1',
         '放不下省略 2',
         zh('memory.agent.viewAll'),
       ],
@@ -594,9 +584,6 @@ describe('overview memory panel', () => {
       decision: 2,
       report: 1,
       note: 1,
-      experiences: 2,
-      active: 1,
-      trial: 1,
       omitted: 2,
     });
     const improvement = (status: Improvement['status'], proposed_at: number, type = 'experience') =>
@@ -614,7 +601,7 @@ describe('overview memory panel', () => {
 });
 
 describe('what agents get now dialog', () => {
-  it('groups decisions, reports, notes and experiences, leaving the left-out count to the head', () => {
+  it('groups decisions, reports and notes, leaving the left-out count to the head', () => {
     const html = renderToStaticMarkup(createElement(AgentContextBody, { context: context() }));
     const words = plain(html);
     expect(words).toContain(
@@ -623,8 +610,6 @@ describe('what agents get now dialog', () => {
     expect(words).toContain('报告 1 Refund state table');
     expect(words).not.toContain('放不下');
     expect(words).toContain('笔记 1 Staging first');
-    expect(words).toContain('经验 2 Read the middleware first 生效 不适用：scripts');
-    expect(words).toContain('Add a transition test 试用中');
   });
 
   it('shows no reports section when only other kinds were left out', () => {

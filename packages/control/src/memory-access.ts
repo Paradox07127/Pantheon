@@ -4,7 +4,6 @@ import {
   hash,
   requireThat,
   type BoardPlan,
-  type Improvement,
   type MemoryItem,
   type MemoryRecord,
   type MemoryState,
@@ -17,7 +16,7 @@ import { taskGeneration, taskSessions, taskState } from './board-plan.js';
 
 export function rows<T>(
   ctx: ControlContext,
-  table: 'memory_records' | 'memory_jobs' | 'board_plans' | 'improvements',
+  table: 'memory_records' | 'memory_jobs' | 'board_plans',
   project: string,
 ): T[] {
   return ctx.store
@@ -51,9 +50,8 @@ export function sources(ctx: ControlContext, project: string) {
         done_when: task.done_when ?? 'merged',
       }));
     }),
-    experiences: rows<Improvement>(ctx, 'improvements', project)
-      .filter((i) => i.change.type === 'experience')
-      .map((i) => ({ id: i.id, revision: i.revision, status: i.status, change: i.change })),
+    // Kept so the source signatures of stored reports stay valid.
+    experiences: [],
   };
 }
 export function taskCurrent(

@@ -262,6 +262,7 @@ describe('merge bar blocked', () => {
   it.each([
     [{ commit_count: 0, blocked_reason: 'no_changes' }, 'noChanges'],
     [{ worktree_clean: false, blocked_reason: 'uncommitted_changes' }, 'uncommitted'],
+    [{ worktree_clean: false, blocked_reason: 'unresolved_conflicts' }, 'unresolved'],
     [{ target_branch: null, blocked_reason: 'source_detached' }, 'sourceDetached'],
   ])('turns the merge button off with the reason: %#', (extra, reason) => {
     mock.preflight = preflight({ ...extra, can_merge: false });

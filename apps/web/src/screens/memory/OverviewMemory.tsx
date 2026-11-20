@@ -42,13 +42,7 @@ import { sessionTitle } from '../../data/transcript';
 import { t } from '../../i18n';
 import { dayText } from '../../lib/time-text';
 import { useShell } from '../../store';
-import {
-  AgentContextDialog,
-  experiencesText,
-  KIND_LABEL,
-  numberText,
-  versionText,
-} from './AgentContextDialog';
+import { AgentContextDialog, KIND_LABEL, numberText, versionText } from './AgentContextDialog';
 import { keyVersions } from './memory-versions';
 import { NewMemoryDialog, saveMemory } from './NewMemoryDialog';
 import { kindText, PendingCard } from './PendingCard';
@@ -236,12 +230,11 @@ function Usage({
   const percent = limit ? Math.round((context.bytes / limit) * 100) : 0;
   const used = numberText(context.bytes),
     budget = numberText(limit);
-  const stat = (label: string, value: number, extra?: ReactNode) => (
+  const stat = (label: string, value: number) => (
     <div>
       <span className="cap">{label}</span>
       <span className="acx-line">
         <span className="acx-stat">{value}</span>
-        {extra}
       </span>
     </div>
   );
@@ -277,24 +270,6 @@ function Usage({
         {stat(KIND_LABEL.decision, counts.decision)}
         {stat(KIND_LABEL.report, counts.report)}
         {stat(KIND_LABEL.note, counts.note)}
-        {stat(
-          experiencesText(),
-          counts.experiences,
-          <>
-            <span className="acx-delta">
-              {t(
-                { id: 'memory.agent.active', defaultMessage: '{count} active' },
-                { count: counts.active },
-              )}
-            </span>
-            <span className="acx-delta">
-              {t(
-                { id: 'memory.agent.trial', defaultMessage: '{count} on trial' },
-                { count: counts.trial },
-              )}
-            </span>
-          </>,
-        )}
         {stat(t({ id: 'memory.agent.omitted', defaultMessage: 'Left out' }), counts.omitted)}
       </div>
     </>

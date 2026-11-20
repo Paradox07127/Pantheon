@@ -214,10 +214,13 @@ it('aborts a failed rebase that left no conflicted files instead of leaving the 
   git(workspace.path, 'commit', '--quiet', '-m', 'Remove notes.txt');
   const ours = commit(workspace.path, 'session.txt', 'session\n');
   const theirs = commit(f.source, 'source.txt', 'source\n');
-  // An untracked file the status does not show stops the rebase at the first commit, with no conflict.
-  git(f.source, 'config', 'status.showUntrackedFiles', 'no');
+  await f.call<Session>(
+    'session.merge',
+    { session_id: session.id },
+    current(f, session.id).revision,
+  );
+  // An untracked file written after the merge was admitted stops the rebase at the first commit, with no conflict.
   writeFileSync(path.join(workspace.path, 'notes.txt'), 'kept by the user\n');
-  f.call<Session>('session.merge', { session_id: session.id }, current(f, session.id).revision);
   await eventually(
     () => current(f, session.id).merge?.state === 'blocked',
     () => f.control.tick(),

@@ -924,6 +924,12 @@ const BLOCKED: Record<string, string> = {
       defaultMessage: 'The worktree has uncommitted changes',
     });
   },
+  get unresolved_conflicts() {
+    return t({
+      id: 'sessions.panel.blocked.unresolved',
+      defaultMessage: 'The worktree has unresolved conflicts',
+    });
+  },
   get source_dirty() {
     return t({
       id: 'sessions.panel.blocked.sourceDirty',

@@ -22,7 +22,6 @@ import { tickTaskTracking } from './task-tracking.js';
 import { tickPersonalAttention } from './personal-agent.js';
 import { readDispatchOpenings } from './task-dispatch.js';
 import { forgetRetrospectiveScan, recordRetrospectives } from './retrospective.js';
-import { evaluateTrials, proposeFromSignals } from './improvements.js';
 
 export async function tick(ctx: ControlContext): Promise<void> {
   if (ctx.busy || ctx.closing) return;
@@ -46,8 +45,6 @@ export async function tick(ctx: ControlContext): Promise<void> {
         tickTaskTracking(ctx);
         tickPersonalAttention(ctx);
         recordRetrospectives(ctx);
-        proposeFromSignals(ctx);
-        evaluateTrials(ctx);
       });
     } catch (error) {
       forgetRetrospectiveScan(ctx);

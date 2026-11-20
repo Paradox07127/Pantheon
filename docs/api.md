@@ -284,10 +284,6 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
-| `app.dom` | `selector?`: string | app_dom (planner), app_dom (lead), app_dom (worker) |
-| `app.errors` | — | app_errors (planner), app_errors (lead), app_errors (worker) |
-| `app.logs` | `lines?`: integer<br>`grep?`: string | app_logs (planner), app_logs (lead), app_logs (worker) |
-| `app.screenshot` | — | app_screenshot (planner), app_screenshot (lead), app_screenshot (worker) |
 | `app.settings.set` | `auto_git_init?`: boolean<br>`auto_archive_merged?`: boolean<br>`session_recap?`: boolean<br>`brief_prose?`: boolean<br>`attention_delivery?`: object<br>`quiet_hours?`: object \| null<br>`baseline_rounds?`: integer<br>`baseline_visuals?`: boolean<br>`personal_answers?`: ("question" \| "plan_change" \| "milestone_accept")[] |  |
 
 ### approval
@@ -319,7 +315,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 |---|---|---|
 | `browser.open` | `url`: string | browser_open (planner), browser_open (lead), browser_open (worker) |
 | `browser.read` | — | browser_read (planner), browser_read (lead), browser_read (worker) |
-| `browser.result` | `request_id`: string<br>`page?`: object<br>`errors?`: object[]<br>`dom?`: object<br>`error?`: object |  |
+| `browser.result` | `request_id`: string<br>`page?`: object<br>`error?`: object |  |
 | `browser.screenshot` | — | browser_screenshot (planner), browser_screenshot (lead), browser_screenshot (worker) |
 
 ### change_story
@@ -336,12 +332,6 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 |---|---|---|
 | `device.remove` | `id`: string |  |
 | `device.save` | `id`: string<br>`ssh`: string<br>`name?`: string<br>`note?`: string<br>`labels?`: string[]<br>`resources?`: object<br>`max_sessions?`: integer |  |
-
-### eval
-
-| type | input | MCP 工具 |
-|---|---|---|
-| `eval.request.run` | `project_id`: string<br>`improvement_id`: string |  |
 
 ### external
 
@@ -363,13 +353,6 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `goal.reorder` | `project_id`: string<br>`goal_ids`: string[] |  |
 | `goal.restore` | `goal_id`: string |  |
 | `goal.set` | `project_id`: string<br>`goal_id?`: string<br>`text`: string |  |
-
-### improvement
-
-| type | input | MCP 工具 |
-|---|---|---|
-| `improvement.decide` | `project_id`: string<br>`improvement_id`: string<br>`decision`: "reject"<br>`reject_reason?`: "duplicate" \| "not_useful"<br>`reject_note?`: string<br>或<br>`project_id`: string<br>`improvement_id`: string<br>`decision`: "confirm" \| "revert" \| "pin" |  |
-| `improvement.propose` | `project_id`: string<br>`retrospective_ids?`: string[]<br>`evidence?`: (object \| object)[]<br>`change`: object \| object \| object \| object \| object \| object | propose_improvement (lead) |
 
 ### lead
 
@@ -586,12 +569,6 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `review.request` | `session_id`: string<br>`runtimes`: string[] | request_review (lead) |
 | `review.verdict` | `verdict`: "pass" \| "fail"<br>`summary`: string | review_verdict (reviewer) |
 
-### routing
-
-| type | input | MCP 工具 |
-|---|---|---|
-| `routing.set` | `project_id`: string<br>`domain`: "review" \| "frontend-ui" \| "script-infra" \| "backend-logic" \| "docs-chore"<br>`tier`: "t1" \| "t2" \| "t3"<br>`slot`: "first" \| "alternate"<br>`choice`: object \| null |  |
-
 ### runtime
 
 | type | input | MCP 工具 |
@@ -611,7 +588,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `session.comment.delete` | `comment_id`: string |  |
 | `session.comment.resolve` | `comment_id`: string<br>`state`: "sent" \| "kept" |  |
 | `session.compact` | `session_id`: string<br>`instructions?`: string |  |
-| `session.create` | `project_id`: string<br>`workspace?`: "worktree" \| "in_place" \| "auto"<br>`from?`: object \| object<br>`runtime?`: string<br>`backend?`: string<br>`model?`: string<br>`effort?`: "none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max" \| "ultra"<br>`permission_mode?`: "ask" \| "auto_edit" \| "plan" \| "auto" \| "full_access"<br>`fast?`: boolean<br>`ultracode?`: boolean<br>`input`: string<br>`refs?`: (object \| object)[]<br>`attachments?`: string[]<br>`skills?`: object[]<br>`task_id?`: string<br>`device_id?`: string<br>`purpose?`: "project_setup" \| "app_debug" \| "lead" |  |
+| `session.create` | `project_id`: string<br>`workspace?`: "worktree" \| "in_place" \| "auto"<br>`from?`: object \| object<br>`runtime?`: string<br>`backend?`: string<br>`model?`: string<br>`effort?`: "none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max" \| "ultra"<br>`permission_mode?`: "ask" \| "auto_edit" \| "plan" \| "auto" \| "full_access"<br>`fast?`: boolean<br>`ultracode?`: boolean<br>`input`: string<br>`refs?`: (object \| object)[]<br>`attachments?`: string[]<br>`skills?`: object[]<br>`task_id?`: string<br>`device_id?`: string<br>`purpose?`: "project_setup" \| "lead" |  |
 | `session.delete` | `session_id`: string |  |
 | `session.discard` | `session_id`: string |  |
 | `session.fork` | `session_id`: string<br>`runtime?`: string<br>`model?`: string<br>`effort?`: "none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max" \| "ultra"<br>`before_turn_id?`: string<br>`before_span_id?`: string<br>`input`: string<br>`refs?`: (object \| object)[]<br>`attachments?`: string[]<br>`skills?`: object[] |  |
@@ -722,8 +699,6 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `board.history` | `project_id`: string |
 | `board.plan.replay` | `lead_session_id`: string<br>`after?`: integer<br>`before?`: integer<br>`limit?`: integer |
 | `board.view` | `project_id`: string<br>`days`: "1" \| "3" \| "7" \| "14" \| "30" \| "all"<br>`until?`: string |
-| `change.outcome` | `project_id`: string<br>`event_id`: string |
-| `change.outcomes` | `project_id`: string |
 | `change_story.diff` | `story_id`: string |
 | `change_story.list` | `project_id`: string |
 | `connections.status` | `refresh?`: string |
@@ -737,10 +712,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `github.items` | `project_id`: string<br>`kind`: "pr" \| "issue" |
 | `github.pr.detail` | `project_id`: string<br>`number`: integer |
 | `import.candidates` | — |
-| `improvement.list` | `project_id`: string<br>`status?`: "candidate" \| "trial" \| "active" \| "reverted" \| "rejected" |
-| `improvement.sessions` | `project_id`: string<br>`improvement_id`: string |
 | `improvement.signals` | `project_id`: string |
-| `learned.list` | `project_id`: string |
 | `mcp.app.resource` | `session_id`: string<br>`server`: string<br>`uri`: string |
 | `mcp.status` | `project_id`: string<br>`runtime`: string<br>或<br>`session_id`: string |
 | `memory.document` | `project_id`: string |
@@ -773,7 +745,6 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `project.usage.read` | `project_id`: string |
 | `projects.summary` | — |
 | `retrospective.list` | `project_id`: string<br>`task_id?`: string |
-| `routing.table` | `project_id`: string |
 | `runtime.models` | `project_id`: string<br>`runtime`: string |
 | `runtime.status` | `refresh?`: string |
 | `session.activity` | `session_id`: string |

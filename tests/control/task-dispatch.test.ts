@@ -1361,106 +1361,81 @@ it('pauses dispatch and direct claims while running task sessions continue', asy
   expect(startTasks(f, lead.id, ['direct'])).toMatchObject({ claimed: 'direct' });
 });
 
-it('reads the routing statistics no more often when more tasks queue', async () => {
-  const f = await workbenchFixture();
-  const kind = { domain: 'backend-logic', tier: 't1' } as const;
-  const lead = await leadWithPlan(f, [
-    reportTask('one', { kind }),
-    reportTask('two', { kind }),
-    reportTask('three', { kind }),
-  ]);
-  f.call(
-    'workflow.policy.set',
-    { project_id: f.project.id, dispatch_paused: true },
-    f.store.must('workflow_policies', f.project.id).revision,
-  );
-  const list = f.store.list.bind(f.store);
-  let statsReads = 0;
-  vi.spyOn(f.store, 'list').mockImplementation(((table: string) => {
-    if (table === 'retrospectives' && new Error().stack!.includes('routingStats')) statsReads++;
-    return list(table as never);
-  }) as typeof f.store.list);
-  const paused = () =>
-    f.control
-      .boardView(user, f.project.id, 1)
-      .tasks.filter((row) => row.dispatch_wait === 'paused');
-  startTasks(f, lead.id, ['one']);
-  // The first read after a plan change also fills what later reads reuse.
-  paused();
-  statsReads = 0;
-  expect(paused()).toHaveLength(1);
-  const readsForOne = statsReads;
-  startTasks(f, lead.id, ['two', 'three']);
-  statsReads = 0;
-  expect(paused()).toHaveLength(3);
-  expect(statsReads).toBe(readsForOne);
-});
-
 it.each(
   (['records', 'writer', 'user'] as const).flatMap((source) =>
     ['dispatch', 'composer'].map((entry) => ({ source, entry })),
   ),
-)('routes the $entry task using the $source choice', async ({ source, entry }) => {
-  const f = await workbenchFixture({ delay: 10 });
-  for (const name of ['claude', 'codex']) {
-    const adapter = new FixtureAdapter(10);
-    adapter.name = name;
-    f.control.adapters.set(name, adapter);
-  }
-  const kind = { domain: 'backend-logic', tier: 't2' } as const;
-  f.store.insert('retrospectives', {
-    id: 'routing-history',
-    revision: 1,
-    project_id: f.project.id,
-    lead_session_id: 'earlier-lead',
-    task_id: 'earlier-task',
-    session_ids: [],
-    outcome: 'merged',
-    recorded_at: f.store.now(),
-    runtime: 'codex',
-    model: 'gpt-fixture',
-    measured_kind: kind,
-    gate_passed_on_attempt: 1,
-  });
-  const selected = { runtime: 'claude', model: 'claude-fixture', effort: 'low' } as const;
-  if (source === 'writer')
-    f.call(
-      'project.sessionDefaults.set',
-      {
-        project_id: f.project.id,
-        runtime: 'fixture',
-        permission_mode: 'ask',
-        writer: selected,
-      },
-      f.project.revision,
-    );
-  if (source === 'user')
-    f.call(
-      'routing.set',
-      { project_id: f.project.id, ...kind, slot: 'first', choice: selected },
-      f.project.revision,
-    );
-  const lead = await leadWithPlan(f, [reportTask('explain-export', { kind })]);
-  if (entry === 'dispatch') {
-    startTasks(f, lead.id, ['explain-export']);
-    await f.control.tick();
-  } else
-    await f.call('session.create', {
+)(
+  'opens the $entry task on the writer default whatever routing $source the store holds',
+  async ({ source, entry }) => {
+    const f = await workbenchFixture({ delay: 10 });
+    for (const name of ['claude', 'codex']) {
+      const adapter = new FixtureAdapter(10);
+      adapter.name = name;
+      f.control.adapters.set(name, adapter);
+    }
+    const kind = { domain: 'backend-logic', tier: 't2' } as const;
+    f.store.insert('retrospectives', {
+      id: 'routing-history',
+      revision: 1,
       project_id: f.project.id,
-      task_id: `${lead.id}:explain-export`,
-      input: 'Explain the export',
+      lead_session_id: 'earlier-lead',
+      task_id: 'earlier-task',
+      session_ids: [],
+      outcome: 'merged',
+      recorded_at: f.store.now(),
+      runtime: 'codex',
+      model: 'gpt-fixture',
+      measured_kind: kind,
+      gate_passed_on_attempt: 1,
     });
-  const [writer] = sessionsOf(f, lead.id, 'explain-export');
-  expect(writer).toMatchObject(
-    source === 'records'
-      ? { runtime: 'codex', requested_model: 'gpt-fixture' }
-      : {
-          runtime: selected.runtime,
-          requested_model: selected.model,
-          requested_effort: selected.effort,
+    const selected = { runtime: 'claude', model: 'claude-fixture', effort: 'low' } as const;
+    if (source === 'writer')
+      f.call(
+        'project.sessionDefaults.set',
+        {
+          project_id: f.project.id,
+          runtime: 'fixture',
+          permission_mode: 'ask',
+          writer: selected,
         },
-  );
-});
+        f.project.revision,
+      );
+    // A routing choice an earlier Pantheon stored on the project.
+    if (source === 'user') {
+      const project = f.store.must<Project>('projects', f.project.id);
+      f.store.update<Project>(
+        'projects',
+        {
+          ...project,
+          routing_overrides: { [kind.domain]: { [kind.tier]: { first: selected } } },
+        } as Project,
+        project.revision,
+      );
+    }
+    const lead = await leadWithPlan(f, [reportTask('explain-export', { kind })]);
+    if (entry === 'dispatch') {
+      startTasks(f, lead.id, ['explain-export']);
+      await f.control.tick();
+    } else
+      await f.call('session.create', {
+        project_id: f.project.id,
+        task_id: `${lead.id}:explain-export`,
+        input: 'Explain the export',
+      });
+    const [writer] = sessionsOf(f, lead.id, 'explain-export');
+    if (source === 'writer')
+      expect(writer).toMatchObject({
+        runtime: selected.runtime,
+        requested_model: selected.model,
+        requested_effort: selected.effort,
+      });
+    else {
+      expect(writer!.runtime).toBe(f.adapter.name);
+      expect(writer!.requested_model).toBeUndefined();
+    }
+  },
+);
 
 it.each(['admission', 'quota'] as const)(
   'uses the writer fallback at the existing %s check',
@@ -1627,7 +1602,6 @@ it.each(['absent', 'reviewer', 'fallback'] as const)(
       measured_kind: { domain: 'review', tier: 't2' },
       gate_passed_on_attempt: 1,
     });
-    expect(f.control.routingTable(user, f.project.id).cells[0]?.first?.runtime).toBe('claude');
     if (source !== 'absent')
       f.call(
         'project.sessionDefaults.set',

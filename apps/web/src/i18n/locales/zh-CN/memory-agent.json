@@ -1,6 +1,4 @@
 {
-  "memory.agent.active": "生效 {count}",
-  "memory.agent.activeChip": "生效",
   "memory.agent.budgetOf": "/ {limit} 字节",
   "memory.agent.bytes": "字节",
   "memory.agent.change.archived": "已归档",
@@ -14,7 +12,6 @@
   "memory.agent.change.stale": "依据失效",
   "memory.agent.change.superseded": "被替代",
   "memory.agent.close": "关闭",
-  "memory.agent.counter": "不适用：{text}",
   "memory.agent.decisions": "决定",
   "memory.agent.delivered": "已送达",
   "memory.agent.deliveredOf": "{delivered} / {total} 已送达",
@@ -24,7 +21,6 @@
   "memory.agent.documentFailed": "{count, plural, other {试了 # 次没生成：{error}}}",
   "memory.agent.documentReady": "已更新",
   "memory.agent.drafts": "记忆草稿",
-  "memory.agent.experiences": "经验",
   "memory.agent.history": "看历史",
   "memory.agent.meter": "已用 {used} 字节，预算 {limit} 字节，占 {percent}%",
   "memory.agent.nextTurn": "等下一轮",
@@ -42,8 +38,6 @@
   "memory.agent.session": "会话 {id}",
   "memory.agent.shorten": "去缩短决定",
   "memory.agent.title": "agent 现在拿到什么",
-  "memory.agent.trial": "试用 {count}",
-  "memory.agent.trialChip": "试用中",
   "memory.agent.version": "记忆版本",
   "memory.agent.viewAll": "看完整内容"
 }

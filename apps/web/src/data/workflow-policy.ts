@@ -1,27 +1,18 @@
 import type {
   FlowPath,
-  Improvement,
   Retrospective,
   TaskBudget,
   TaskKind,
   WorkflowParam,
   WorkflowPolicy,
 } from '@pantheon/domain';
-import type { ImprovementListItem, WorkflowPolicyView } from '@pantheon/protocol';
+import type { WorkflowPolicyView } from '@pantheon/protocol';
 import { t } from '../i18n';
-import { listText } from '../lib/list-text';
 import { useBoard } from './board';
 import { sendProjectCommand, useProjectQuery, type MutationResult } from './project-read';
 import { useQuery, useRefetchTick } from './workbench-sessions';
 
-export type {
-  Improvement,
-  ImprovementListItem,
-  Retrospective,
-  WorkflowParam,
-  WorkflowPolicy,
-  WorkflowPolicyView,
-};
+export type { Retrospective, WorkflowParam, WorkflowPolicy, WorkflowPolicyView };
 
 /** The fields of workflow.policy.set besides project_id; an absent field stays as it is. */
 export interface PolicyPatch {
@@ -65,36 +56,11 @@ export const isPolicy = (value: unknown): value is WorkflowPolicy =>
   isObject(value.path) &&
   Array.isArray(value.pinned);
 
-const isImprovements = (value: unknown): boolean =>
-  Array.isArray(value) &&
-  value.every(
-    (i) =>
-      isObject(i) &&
-      typeof i.id === 'string' &&
-      isObject(i.change) &&
-      (i.trial === undefined ||
-        (isObject(i.trial) &&
-          typeof i.trial.tasks_seen === 'number' &&
-          typeof i.trial.tasks_required === 'number' &&
-          typeof i.trial.baseline_tasks === 'number' &&
-          Array.isArray(i.trial.metrics))),
-  );
-
 /** GET /v1/workflow.policy; the defaults at version 0 until the project stores its own. */
 export const useWorkflowPolicy = (project_id: string | null) =>
   useProjectQuery<WorkflowPolicyView>('workflow.policy', project_id, isPolicy, undefined, {
     events: true,
   });
-
-/** GET /v1/improvement.list: the project's improvements of every status, newest first. */
-export const useImprovements = (project_id: string | null) =>
-  useProjectQuery<ImprovementListItem[]>(
-    'improvement.list',
-    project_id,
-    isImprovements,
-    undefined,
-    { events: true },
-  );
 
 /** A plan task of a project, by the task id its plan gives it. */
 export interface TaskRef {
@@ -330,55 +296,3 @@ export const tierText = (tier: TaskKind['tier']) => tier.toUpperCase();
 
 export const kindText = (domain: TaskKind['domain'], tier: TaskKind['tier']) =>
   `${DOMAIN_LABEL[domain]} ${tierText(tier)}`;
-
-function valueText(param: WorkflowParam, value: unknown): string {
-  if (value === undefined || value === null)
-    return t({ id: 'data.workflowPolicy.noLimit', defaultMessage: 'No limit' });
-  if (param === 'path' && typeof value === 'string' && value in PATH_LABEL)
-    return PATH_LABEL[value as FlowPath];
-  if (param === 'acceptance_wake' && (value === 'each_merge' || value === 'milestone'))
-    return WAKE_LABEL[value];
-  return typeof value === 'object' ? JSON.stringify(value) : String(value);
-}
-
-/** What an improvement asks for: the procedure of an experience, or the parameter change. */
-export function changeText(change: Improvement['change']): string {
-  if (change.type === 'experience') return change.procedure;
-  if (change.type === 'gate_command')
-    return t(
-      {
-        id: 'data.workflowPolicy.change.gate',
-        defaultMessage: 'Change the gate commands of {root}',
-      },
-      { root: change.root },
-    );
-  if (change.type === 'worktree_setup')
-    return t({
-      id: 'data.workflowPolicy.change.worktree',
-      defaultMessage: 'Change the worktree setup',
-    });
-  if (change.type !== 'policy_change') return String(change.to);
-  const what = change.tier
-    ? `${PARAM_LABEL.path} ${tierText(change.tier)}`
-    : PARAM_LABEL[change.param];
-  return t(
-    { id: 'data.workflowPolicy.change', defaultMessage: '{what} from {from} to {to}' },
-    { what, from: valueText(change.param, change.from), to: valueText(change.param, change.to) },
-  );
-}
-
-/** Which tasks an improvement applies to. */
-export function scopeText(change: Improvement['change']): string {
-  if (change.type === 'gate_command') return change.root;
-  if (change.type !== 'experience')
-    return change.type === 'policy_change' && change.tier
-      ? tierText(change.tier)
-      : t({ id: 'data.workflowPolicy.wholeProject', defaultMessage: 'Whole project' });
-  return (
-    listText(
-      change.domain && DOMAIN_LABEL[change.domain],
-      change.tier && tierText(change.tier),
-      change.runtime,
-    ) || t({ id: 'data.workflowPolicy.allTasks', defaultMessage: 'All tasks' })
-  );
-}

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
-import { ChevronDown, Route } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import type { RuntimeChoice } from '@pantheon/domain';
 import type { BoardSnapshot, EffortLevel, WorkbenchSession } from '@pantheon/protocol';
 import { Menu, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../components/Menu';
@@ -40,7 +40,7 @@ type Defaults = {
   effort: EffortLevel | null;
   /** Tasks and reviews also run on this runtime, model and effort; only with a model. */
   single_model: boolean;
-  /** null runs task sessions on the routing table. */
+  /** null runs task sessions on the lead's model. */
   writer: RuntimeChoice | null;
   /** null reviews on a runtime other than the writer's. */
   reviewer: RuntimeChoice | null;
@@ -80,7 +80,6 @@ const choiceKey = (choice: RuntimeChoice) => `${choice.runtime}\n${choice.model 
 function RoleModel({
   label,
   none,
-  routed = false,
   value,
   runtimes,
   models,
@@ -89,8 +88,6 @@ function RoleModel({
   label: string;
   /** The entry that sends no choice. */
   none: string;
-  /** Marks `none` as the routing table. */
-  routed?: boolean;
   value: RuntimeChoice | null;
   runtimes: readonly string[];
   models: Readonly<Record<string, ModelsState>>;
@@ -119,10 +116,7 @@ function RoleModel({
               <span className="mono dp-cut">{shown}</span>
             </>
           ) : (
-            <>
-              {routed && <Route aria-hidden="true" />}
-              <span className="dp-cut">{none}</span>
-            </>
+            <span className="dp-cut">{none}</span>
           )}
           <ChevronDown aria-hidden="true" />
         </button>
@@ -137,9 +131,7 @@ function RoleModel({
           );
         }}
       >
-        <MenuRadioItem value="" icon={routed ? <Route /> : undefined}>
-          {none}
-        </MenuRadioItem>
+        <MenuRadioItem value="">{none}</MenuRadioItem>
         <MenuSeparator />
         {options.map((o) => (
           <MenuRadioItem
@@ -251,10 +243,6 @@ export function SessionDefaults({ project }: { project: Project | null }) {
   const lead = t({ id: 'settings.defaults.lead', defaultMessage: 'Lead' });
   const writer = t({ id: 'settings.defaults.writer', defaultMessage: 'Writing code' });
   const reviewer = t({ id: 'settings.defaults.reviewer', defaultMessage: 'Outside review' });
-  const routingTable = t({
-    id: 'settings.defaults.routingTable',
-    defaultMessage: 'The routing table in project settings',
-  });
   const roleModel = (role: string) =>
     t({ id: 'settings.defaults.roleModel', defaultMessage: "{role}'s model" }, { role });
   const fallback = (role: Role, name: string) => (
@@ -284,13 +272,12 @@ export function SessionDefaults({ project }: { project: Project | null }) {
           label={roleModel(name)}
           none={
             role === 'writer'
-              ? routingTable
+              ? t({ id: 'settings.defaults.leadModel', defaultMessage: "The lead's model" })
               : t({
                   id: 'settings.defaults.otherRuntime',
                   defaultMessage: "A runtime other than the writer's",
                 })
           }
-          routed={role === 'writer'}
           value={current[role]}
           runtimes={usable}
           models={models}

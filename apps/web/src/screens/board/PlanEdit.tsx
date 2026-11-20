@@ -260,7 +260,7 @@ export function pathField(
   );
 }
 
-/** The runtime, model and effort a task's session opens with; null leaves it to the routing table. */
+/** The runtime, model and effort a task's session opens with; null leaves it to the project's defaults. */
 export interface Route {
   runtime: string | null;
   model: string | null;

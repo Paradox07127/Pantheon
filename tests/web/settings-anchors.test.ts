@@ -45,7 +45,6 @@ const inventory = (runtime: string): ExtensionInventory => ({
 vi.mock('@/data/workflow-policy', async (actual) => ({
   ...(await actual<object>()),
   useWorkflowPolicy: () => ({ read: policy, error: null, reload() {} }),
-  useImprovements: () => ({ read: [], error: null, reload() {} }),
 }));
 vi.mock('@/data/project-defaults', async (actual) => ({
   ...(await actual<object>()),

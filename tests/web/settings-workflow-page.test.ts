@@ -80,7 +80,7 @@ async function type(h: HookHost<any>, input: () => ReactElement<any>, value: str
 
 beforeEach(() => {
   stored = new Map();
-  bridge.answers = { 'workflow.policy': policy(), 'improvement.list': [] };
+  bridge.answers = { 'workflow.policy': policy() };
   bridge.commands = [];
   vi.stubGlobal('window', { pantheon: bridge, addEventListener() {}, removeEventListener() {} });
   vi.stubGlobal('localStorage', {

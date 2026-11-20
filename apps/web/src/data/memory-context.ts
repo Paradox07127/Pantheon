@@ -134,9 +134,6 @@ export function contextCounts(context: MemoryContext) {
     decision: of('decision'),
     report: of('report'),
     note: of('note'),
-    experiences: context.experiences.length,
-    active: context.experiences.filter((e) => e.status === 'active').length,
-    trial: context.experiences.filter((e) => e.status === 'trial').length,
     omitted: context.omitted,
   };
 }

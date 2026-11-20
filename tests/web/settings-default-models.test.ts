@@ -81,7 +81,7 @@ const roleModel = (role: string) =>
   format({ id: 'settings.defaults.roleModel', defaultMessage: '' }, { role });
 const WRITER_MODEL = roleModel(WRITER);
 const REVIEWER_MODEL = roleModel(zh('settings.defaults.reviewer'));
-const ROUTING = zh('settings.defaults.routingTable');
+const LEAD_MODEL = zh('settings.defaults.leadModel');
 const ROLES = zh('settings.defaults.roles');
 const PERMISSION = zh('settings.defaults.permissionMode');
 async function mount<T>(body: () => T) {
@@ -285,13 +285,13 @@ describe('default models page', () => {
     expect(alerts(table)).toEqual([]);
   });
 
-  it("offers the writer and the reviewer a model or the routing table, and the lead's model while the switch is on", async () => {
+  it("offers the writer the lead's model or another model, and only the lead's model while the switch is on", async () => {
     const off = await mount(() => SessionDefaults({ project: saved as never }));
     expect([WRITER_MODEL, REVIEWER_MODEL].map((label) => text(chosen(open(off, label))))).toEqual([
-      ROUTING,
+      LEAD_MODEL,
       zh('settings.defaults.otherRuntime'),
     ]);
-    expect(items(open(off, WRITER_MODEL))).toEqual([ROUTING, 'claude-opus', 'claude-sonnet']);
+    expect(items(open(off, WRITER_MODEL))).toEqual([LEAD_MODEL, 'claude-opus', 'claude-sonnet']);
     const on = await mount(() =>
       SessionDefaults({
         project: {
@@ -302,8 +302,8 @@ describe('default models page', () => {
     );
     const chips = [WRITER_MODEL, REVIEWER_MODEL].map((label) => open(on, label));
     expect(chips.map((n) => [text(n), n.props.disabled])).toEqual([
-      [zh('settings.defaults.leadModel'), true],
-      [zh('settings.defaults.leadModel'), true],
+      [LEAD_MODEL, true],
+      [LEAD_MODEL, true],
     ]);
   });
 
@@ -320,7 +320,7 @@ describe('default models page', () => {
     ]);
   });
 
-  it('drops the writer model when the routing table is chosen again', async () => {
+  it("drops the writer model when the lead's model is chosen again", async () => {
     const project = {
       ...kept,
       session_defaults: {
@@ -330,7 +330,7 @@ describe('default models page', () => {
     };
     const h = await mount(() => SessionDefaults({ project: project as never }));
     expect(text(chosen(open(h, WRITER_MODEL)))).toBe('claude-opus');
-    pick(open(h, WRITER_MODEL), ROUTING!);
+    pick(open(h, WRITER_MODEL), LEAD_MODEL!);
     await h.flush();
     expect(bridge.commands.map((c) => c.input)).toEqual([
       { ...kept.session_defaults, project_id: 'alpha' },

@@ -25,7 +25,6 @@ import {
   type SessionComment,
   type SessionHandle,
   type HarnessAdapter,
-  type Improvement,
   type Project,
   type ExtensionInventory,
   type ProcessIdentity,
@@ -55,7 +54,6 @@ import {
   sessionAction,
   purposeSessionTools,
   leadSessionTools,
-  sessionWorkspaceKind,
   userOnly,
   revision,
   type ControlContext,
@@ -71,16 +69,12 @@ import { snapshot, snapshotAccess } from './snapshot.js';
 import { projectRead } from './project-facts.js';
 import { projectUsageRead } from './usage-report.js';
 import { retrospectiveList } from './retrospective.js';
-import { routingTable } from './routing-table.js';
 import {
   checkWorkflowSkills,
   workflowDefinitionList,
   workflowDefinitionView,
 } from './workflow-engine.js';
 import { inheritedPolicy, workflowPolicy } from './workflow-policy.js';
-import { improvementList, improvementSessions } from './improvements.js';
-import { learnedList } from './learned-inbox.js';
-import { changeOutcome, changeOutcomes } from './change-outcomes.js';
 import { improvementSignals } from './improvement-signals.js';
 import { taskTrace } from './task-trace.js';
 import { taskThread } from './task-thread.js';
@@ -174,7 +168,6 @@ import {
 } from './github.js';
 import { prepareRuntimeConfig } from './runtime-config.js';
 import { readAppSettings } from './app-settings.js';
-import { appLogs } from './app-logs.js';
 import { listDevices, refreshDevices, reprobeDevice, sshHosts } from './devices.js';
 import { backendList, externalEvents, readUserConfig } from './user-config.js';
 import { onDevice, pullRemoteWorkspace } from './remote-workspace.js';
@@ -295,8 +288,6 @@ export interface ControlOptions {
   externalSources?: ExternalSource[];
   /** Runs local connection and GitHub commands; absent means execFile. */
   localCommand?: LocalCommand;
-  /** Runs scripts/eval.mjs with args in the checkout cwd and resolves with its exit code; absent means a detached node process. */
-  evalRunner?: (cwd: string, args: string[]) => Promise<number>;
   /** Writes each session's recap after its turns and requests; absent means sessions get none. */
   turnSummarizer?: TurnSummarizer;
   /** How commands and git reach a device's SSH target; absent means SSH itself. */
@@ -410,7 +401,6 @@ export class Control extends EventEmitter {
       toolRelays: new Map(),
       externalSources: options.externalSources ?? [githubSource()],
       localCommand: options.localCommand ?? localCommand,
-      evalRunner: options.evalRunner,
       turnSummarizer: options.turnSummarizer,
       failpoint,
       busy: false,
@@ -474,13 +464,6 @@ export class Control extends EventEmitter {
       return this.browser.call(principal, 'open', { url: (input as { url: string }).url });
     if (command.type === 'browser.read' || command.type === 'browser.screenshot')
       return this.browser.call(principal, command.type === 'browser.read' ? 'read' : 'screenshot');
-    if (command.type === 'app.errors') return this.browser.call(principal, 'app_errors');
-    if (command.type === 'app.screenshot') return this.browser.call(principal, 'app_screenshot');
-    if (command.type === 'app.dom')
-      return this.browser.call(principal, 'app_dom', input as { selector?: string });
-    // The log is read as it is now, so it keeps no receipt either.
-    if (command.type === 'app.logs')
-      return appLogs(this.ctx, input as ReturnType<(typeof inputSchemas)['app.logs']['parse']>);
     if (command.type === 'browser.result') {
       userOnly(principal);
       return this.browser.answer(
@@ -789,9 +772,6 @@ export class Control extends EventEmitter {
   retrospectiveList(principal: Principal, projectId: string, taskId?: string) {
     return retrospectiveList(this.ctx, principal, projectId, taskId);
   }
-  routingTable(principal: Principal, projectId: string) {
-    return routingTable(this.ctx, principal, projectId);
-  }
   workflowPolicy(principal: Principal, projectId: string): WorkflowPolicyView {
     projectAccess(this.ctx, principal, projectId, 'workflow.policy');
     this.ctx.store.must<Project>('projects', projectId);
@@ -808,21 +788,6 @@ export class Control extends EventEmitter {
     projectAccess(this.ctx, principal, projectId, 'workflow.definition.list');
     this.ctx.store.must<Project>('projects', projectId);
     return workflowDefinitionList(this.ctx, projectId);
-  }
-  improvementList(principal: Principal, projectId: string, status?: Improvement['status']) {
-    return improvementList(this.ctx, principal, projectId, status);
-  }
-  improvementSessions(principal: Principal, projectId: string, improvementId: string) {
-    return improvementSessions(this.ctx, principal, projectId, improvementId);
-  }
-  learnedList(principal: Principal, projectId: string) {
-    return learnedList(this.ctx, principal, projectId);
-  }
-  changeOutcome(principal: Principal, projectId: string, eventId: string) {
-    return changeOutcome(this.ctx, principal, projectId, eventId);
-  }
-  changeOutcomes(principal: Principal, projectId: string) {
-    return changeOutcomes(this.ctx, principal, projectId);
   }
   improvementSignals(principal: Principal, projectId: string) {
     projectAccess(this.ctx, principal, projectId, 'improvement.signals');
@@ -990,10 +955,7 @@ export class Control extends EventEmitter {
       baseline_id: session.baseline?.baseline_id,
       story_id: session.change_story?.story_id,
       ...(session.baseline ? { extension_runtimes: inventoryRuntimes(this.ctx) } : {}),
-      allowed_tool_names:
-        purposeSessionTools(session, sessionWorkspaceKind(this.ctx, session)) ??
-        leadSessionTools(this.ctx, session),
-      ...(session.app_debug ? { app_debug: true as const } : {}),
+      allowed_tool_names: purposeSessionTools(session) ?? leadSessionTools(this.ctx, session),
     };
   }
   needsYou(principal: Principal, projectId?: string): { items: NeedsYouItem[] } {

@@ -17,7 +17,7 @@ vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
   (await import('./web-live-stores.js')).liveStores(actual as never),
 );
 import { useBoard } from '@/data/board';
-import { changeText, PATH_LABEL } from '@/data/workflow-policy';
+import { PATH_LABEL } from '@/data/workflow-policy';
 import { ProjectSettingsScreen } from '@/screens/settings/ProjectSettingsScreen';
 import { SETTINGS_PAGES, useSettingsView } from '@/screens/settings/view';
 import { WorkflowPage } from '@/screens/settings/WorkflowPage';
@@ -140,7 +140,6 @@ describe('workflow page', () => {
 
   it('shows the queried parallel limit and steps it with workflow.policy.set', async () => {
     bridge.answers['workflow.policy'] = policy();
-    bridge.answers['improvement.list'] = [];
     const h = await page();
     const row = labelled(tree(h), param('maxParallel'));
     expect(find(row, (n) => n.type === 'input').props.value).toBe('3');
@@ -156,7 +155,6 @@ describe('workflow page', () => {
 
   it('writes a policy the daemon has not stored yet without an expected revision', async () => {
     bridge.answers['workflow.policy'] = policy({ revision: 0, policy_version: 0 });
-    bridge.answers['improvement.list'] = [];
     const h = await page();
     await click(h, labelled(tree(h), '并发上限 减一'));
     expect(bridge.commands[0]).toMatchObject({
@@ -167,7 +165,6 @@ describe('workflow page', () => {
 
   it('turns a step off at the bounds the daemon accepts', async () => {
     bridge.answers['workflow.policy'] = policy({ max_parallel: 4 });
-    bridge.answers['improvement.list'] = [];
     const h = await page();
     const off = (label: string) => labelled(tree(h), label).props.disabled;
     expect(off('并发上限 加一')).toBe(true);
@@ -179,7 +176,6 @@ describe('workflow page', () => {
 
   it('pins and unpins a parameter', async () => {
     bridge.answers['workflow.policy'] = policy({ pinned: ['acceptance_wake'] });
-    bridge.answers['improvement.list'] = [];
     const h = await page();
     expect(labelled(tree(h), '钉住验收时机').props['aria-pressed']).toBe(true);
     await click(h, labelled(tree(h), '钉住验收时机'));
@@ -192,7 +188,6 @@ describe('workflow page', () => {
 
   it('sets the concurrency of each runtime and pauses dispatch', async () => {
     bridge.answers['workflow.policy'] = policy({ runtime_parallel: { claude: 8 } });
-    bridge.answers['improvement.list'] = [];
     bridge.answers['runtime.status'] = ['claude', 'codex'].map((runtime) => ({
       runtime,
       enabled: true,
@@ -224,7 +219,6 @@ describe('workflow page', () => {
     bridge.answers['workflow.policy'] = policy({
       budget: { t1: { direct: { input_tokens: 400000, wall_ms: 90000 } } },
     });
-    bridge.answers['improvement.list'] = [];
     const h = await page();
     const input = (label: string) => labelled(labelled(tree(h), param('budget')), label);
     const type = async (label: string, value: string) => {
@@ -262,21 +256,8 @@ describe('workflow page', () => {
     });
   });
 
-  it('names the review loop in an improvement that changes a tier to it', () => {
-    expect(
-      changeText({
-        type: 'policy_change',
-        param: 'path',
-        tier: 't2',
-        from: 'dispatch',
-        to: 'review_loop',
-      }),
-    ).toContain(path('reviewLoop'));
-  });
-
   it('offers each tier the three flow paths and sets the review loop', async () => {
     bridge.answers['workflow.policy'] = policy();
-    bridge.answers['improvement.list'] = [];
     const h = await page();
     for (const tier of ['T1', 'T2', 'T3'])
       expect(
@@ -291,7 +272,6 @@ describe('workflow page', () => {
 
   it('gives the review loop its own budget columns', async () => {
     bridge.answers['workflow.policy'] = policy();
-    bridge.answers['improvement.list'] = [];
     const h = await page();
     const table = () => labelled(tree(h), param('budget'));
     const input = (label: string) => labelled(table(), label);
@@ -314,7 +294,6 @@ describe('workflow page', () => {
 
   it('shows a failed command where it was given', async () => {
     bridge.answers['workflow.policy'] = policy();
-    bridge.answers['improvement.list'] = [];
     bridge.commandAnswer = {
       ok: false,
       error: { code: 'invalid_input', message: 'max_parallel must be from 1 to 4' },

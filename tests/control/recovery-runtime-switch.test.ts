@@ -80,8 +80,8 @@ function gateFails(f: Fixture, sessionId: string, output: string) {
 
 /**
  * A task session on runtime first whose failed gate was handed back three times, with its fourth
- * failure waiting for the tick; the routing cell of its task names runtime second as the alternate
- * unless alternate is false.
+ * failure waiting for the tick; the project's writer fallback is runtime second unless alternate is
+ * false.
  */
 async function handBacksUsedUp(options: {
   recovery_switch?: 'auto' | 'off';
@@ -112,19 +112,15 @@ async function handBacksUsedUp(options: {
       : exportTask,
   );
   if (options.alternate !== false) {
-    const { domain, tier } = planOf(f, lead.id).tasks[0]!.kind!,
-      project = f.store.must<Project>('projects', f.project.id);
+    const project = f.store.must<Project>('projects', f.project.id);
     f.store.update<Project>(
       'projects',
       {
         ...project,
-        routing_overrides: {
-          [domain]: {
-            [tier]: {
-              first: { runtime: first.name, model: 'fixture' },
-              alternate: { runtime: second.name, model: 'second-model' },
-            },
-          },
+        session_defaults: {
+          runtime: f.adapter.name,
+          permission_mode: 'ask',
+          fallbacks: { writer: { runtime: second.name, model: 'second-model' } },
         },
       },
       project.revision,

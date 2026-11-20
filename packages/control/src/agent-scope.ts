@@ -89,11 +89,11 @@ export const AGENT_SCOPE: readonly AgentScopeRow[] = [
     never_personal: ['approval.respond', 'agent.create', 'external.approve', 'workflow.policy.set'],
   },
   {
-    capability: '记忆和学到的改动',
+    capability: '记忆',
     project_level: '可以提议',
     personal_level: '不能',
     personal_actions: [],
-    never_personal: ['memory.propose', 'improvement.decide'],
+    never_personal: ['memory.propose'],
   },
   {
     capability: '什么时候醒',

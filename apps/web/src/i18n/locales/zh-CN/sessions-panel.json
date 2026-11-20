@@ -117,6 +117,7 @@
   "sessions.panel.review.reviewer": "审查方",
   "sessions.panel.blocked.noChanges": "没有新提交",
   "sessions.panel.blocked.uncommitted": "worktree 有未提交改动",
+  "sessions.panel.blocked.unresolved": "worktree 有未解决的冲突",
   "sessions.panel.blocked.sourceDirty": "源目录有未提交改动",
   "sessions.panel.blocked.sourceDetached": "源仓库处于 detached HEAD",
   "sessions.panel.blocked.busy": "正在运行或合并",

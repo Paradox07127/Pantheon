@@ -116,7 +116,7 @@ it.each([
   },
 );
 
-it('sums tokens from history with its task count, else from the budget, and counts the rest as unknown', async () => {
+it('sums tokens from the budget and counts the rest as unknown, whatever history the store holds', async () => {
   const f = await workbenchFixture();
   dispatchEveryTier(f);
   const kind = backend('t2');
@@ -143,9 +143,9 @@ it('sums tokens from history with its task count, else from the budget, and coun
     task('risky', { domain: 'frontend-ui', tier: 't3' }),
   ]);
   expect(estimate.tokens).toEqual({
-    history: { total: 4000, tasks: 2, min_n: 2 },
+    history: { total: 0, tasks: 0, min_n: 0 },
     budget: { total: 1120000, tasks: 1 },
-    unknown_tasks: 1,
+    unknown_tasks: 3,
   });
   expect(estimate.wall_ms).toEqual({ total: 255000, tasks: 1 });
 });

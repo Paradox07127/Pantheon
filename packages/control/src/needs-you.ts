@@ -24,7 +24,6 @@ import { sessionItems } from './needs-you-sessions.js';
 import { milestoneItems, planItems } from './needs-you-plans.js';
 import {
   definitionTrialItems,
-  improvementItems,
   memoryBudgetItems,
   projectBudgetItems,
   stepRunItems,
@@ -61,7 +60,6 @@ export const NEXT_STEP: Record<
   | 'task_upstream_stuck'
   | 'lead_permission'
   | 'milestone_ready_for_acceptance'
-  | 'improvement_awaiting_decision'
   | 'plan_proposal_awaiting_decision'
   | 'lane_plan_awaiting_approval'
   | 'plan_reassessment_ready',
@@ -99,8 +97,6 @@ export const NEXT_STEP: Record<
     "This is the lead's own permission request; its turn waits for the answer and gets no task session reports meanwhile. The lead goes on once the user allows or denies it.",
   milestone_ready_for_acceptance:
     "The milestone's tasks are all done; the user checks its acceptance criteria and accepts it, or tells the lead what is still missing.",
-  improvement_awaiting_decision:
-    'The improvement proposal awaits the user; the user confirms it to start a trial, or rejects it.',
   plan_proposal_awaiting_decision:
     'The plan proposal awaits the user; the user accepts it, changes its ops before accepting, or rejects it.',
   lane_plan_awaiting_approval:
@@ -370,7 +366,6 @@ export function needsYou(
       ...milestoneItems(ctx, scope, planOf),
       ...stepRunItems(ctx, scope, planOf),
       ...definitionTrialItems(ctx, scope),
-      ...improvementItems(ctx, scope),
       ...projectBudgetItems(ctx, scope),
       ...memoryBudgetItems(ctx, scope),
     );

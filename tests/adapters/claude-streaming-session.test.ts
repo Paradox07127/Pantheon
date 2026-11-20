@@ -1003,6 +1003,25 @@ describe('Claude streaming session', () => {
     expect(usage?.cost_usd).toBeCloseTo(0.2);
   });
 
+  it('reports the first turn after a user session is released against the total before it', async () => {
+    const f = fakeClaude();
+    const spec = { ...sessionSpec(), user_session: true as const };
+    const events: AgentEvent[] = [];
+    const handle = await f.adapter.start(spec, (event) => events.push(event));
+    await turn(f, handle, events, 'before-release', [init, result(0.3, 3, 2)]);
+    await f.adapter.close(handle, Date.now() + 1000);
+    const resumedEvents: AgentEvent[] = [];
+    const resumed = await f.adapter.resume(spec, 'native-streaming', (event) =>
+      resumedEvents.push(event),
+    );
+    cleanup.push(() => f.adapter.close(resumed, Date.now() + 1000));
+    const usage = (
+      await turn(f, resumed, resumedEvents, 'after-release', [init, result(0.5, 10, 6)])
+    ).find((event) => event.kind === 'usage.updated');
+    expect(usage).toMatchObject({ cost_source: 'estimated', input_tokens: 7, output_tokens: 4 });
+    expect(usage?.cost_usd).toBeCloseTo(0.2);
+  });
+
   async function resumedFromSavedCost(saved: string) {
     const f = fakeClaude();
     const first = sessionSpec();

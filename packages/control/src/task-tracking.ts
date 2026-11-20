@@ -26,7 +26,6 @@ import {
   type Handlers,
 } from './context.js';
 import { autoMerge, sessionDefaults } from './user-config.js';
-import { projectRoutingTable } from './routing-table.js';
 import { gateCommands } from './landing.js';
 import { relayingQuestion } from './approvals.js';
 import { charterMode } from './charter.js';
@@ -1065,22 +1064,15 @@ export function tickTaskTracking(ctx: ControlContext): void {
               ctx.store.must<Project>('projects', plan.project_id),
             ),
             task = plan.tasks.find((each) => each.id === taskId),
-            kind = task?.kind,
-            // A project with its own writer does not route, as dispatch does not.
-            routed =
-              !defaults?.writer && kind
-                ? projectRoutingTable(ctx, plan.project_id).cells.find(
-                    (cell) => cell.domain === kind.domain && cell.tier === kind.tier,
-                  )?.alternate
-                : undefined,
             fallback = defaults?.fallbacks?.writer;
           // A runtime the plan names for the task is the lead's choice; Pantheon does not move it.
-          alternate = task?.runtime
-            ? undefined
-            : [routed, fallback].find(
-                (choice) =>
-                  choice && choice.runtime !== session.runtime && admitted(ctx, choice.runtime),
-              );
+          alternate =
+            !task?.runtime &&
+            fallback &&
+            fallback.runtime !== session.runtime &&
+            admitted(ctx, fallback.runtime)
+              ? fallback
+              : undefined;
         }
         if (alternate) {
           const latest = ctx.store.must<BoardPlan>('board_plans', plan.id);

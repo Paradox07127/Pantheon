@@ -1,28 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import { DomainError, requireThat, type Principal } from '@pantheon/domain';
-import type {
-  AppDom,
-  AppErrors,
-  BrowserPage,
-  BrowserRequest,
-  inputSchemas,
-} from '@pantheon/protocol';
+import type { BrowserPage, BrowserRequest, inputSchemas } from '@pantheon/protocol';
 
 /** How long a browser tool call waits for the desktop window's answer. */
 export const BROWSER_ANSWER_MS = 30_000;
 
 type BrowserHost = (request: BrowserRequest) => void;
 type BrowserResult = ReturnType<(typeof inputSchemas)['browser.result']['parse']>;
-type BrowserAnswer = BrowserPage | AppErrors | AppDom;
-
-/** The field of browser.result that answers each action. */
-const answerField = (action: BrowserRequest['action']) =>
-  action === 'app_errors' ? 'errors' : action === 'app_dom' ? 'dom' : 'page';
 
 interface Pending {
   host: BrowserHost;
-  action: BrowserRequest['action'];
-  resolve: (answer: BrowserAnswer) => void;
+  resolve: (answer: BrowserPage) => void;
   reject: (error: DomainError) => void;
   timer: ReturnType<typeof setTimeout>;
 }
@@ -52,13 +40,13 @@ export class BrowserRelay {
   call(
     principal: Principal,
     action: BrowserRequest['action'],
-    target: Pick<BrowserRequest, 'url' | 'selector'> = {},
-  ): Promise<BrowserAnswer> {
+    target: Pick<BrowserRequest, 'url'> = {},
+  ): Promise<BrowserPage> {
     requireThat(principal.session_id, 'permission_denied', 'Browser tools need a session');
     const host = this.hosts.at(-1);
     requireThat(host, 'browser_unavailable', 'browser unavailable: no desktop window is connected');
     const request_id = randomUUID();
-    return new Promise<BrowserAnswer>((resolve, reject) => {
+    return new Promise<BrowserPage>((resolve, reject) => {
       const timer = setTimeout(
         () =>
           this.settle(request_id)?.reject(
@@ -69,7 +57,7 @@ export class BrowserRelay {
           ),
         BROWSER_ANSWER_MS,
       );
-      this.pending.set(request_id, { host, action, resolve, reject, timer });
+      this.pending.set(request_id, { host, resolve, reject, timer });
       host({ request_id, session_id: principal.session_id!, action, ...target });
     });
   }
@@ -77,16 +65,9 @@ export class BrowserRelay {
   answer(result: BrowserResult): { request_id: string } {
     const call = this.settle(result.request_id);
     requireThat(call, 'not_found', `No browser request ${result.request_id} is waiting`);
-    const answer = result[answerField(call.action)];
     if (result.error) call.reject(new DomainError(result.error.code, result.error.message));
-    else if (answer === undefined)
-      call.reject(
-        new DomainError(
-          'browser_invalid_answer',
-          `The desktop window answered ${call.action} without ${answerField(call.action)}`,
-        ),
-      );
-    else call.resolve(answer);
+    // browser.result carries exactly one of page and error.
+    else call.resolve(result.page!);
     return { request_id: result.request_id };
   }
 

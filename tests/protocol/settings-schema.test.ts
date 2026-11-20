@@ -26,18 +26,3 @@ it('accepts whole token targets and clears and rejects negative or fractional ta
       false,
     );
 });
-
-it('rejects routing cells with an unknown domain or tier', () => {
-  const schema = inputSchemas['routing.set'];
-  const base = {
-    project_id: 'project',
-    domain: 'backend-logic',
-    tier: 't2',
-    slot: 'first',
-    choice: { runtime: 'claude', model: 'claude-fixture' },
-  };
-  expect(schema.safeParse(base).success).toBe(true);
-  expect(schema.safeParse({ ...base, domain: 'unknown' }).success).toBe(false);
-  expect(schema.safeParse({ ...base, tier: 'unknown' }).success).toBe(false);
-  expect(schema.safeParse({ ...base, slot: 'alternate', choice: null }).success).toBe(true);
-});

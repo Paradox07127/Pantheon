@@ -4,7 +4,6 @@ import { expect, it, vi } from 'vitest';
 import type {
   Approval,
   BoardPlan,
-  Improvement,
   Principal,
   Project,
   Retrospective,
@@ -545,7 +544,7 @@ it('rewrites the failed record when the task fails again in the same generation'
   expect(row!.session_ids).toEqual(expect.arrayContaining([discarded.id, worker.id]));
 });
 
-it('records the dispatch path, and the policy version and experiences in force when the task session opened', async () => {
+it('records the dispatch path, and the policy version in force when the task session opened', async () => {
   const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a'), task('b')]);
   const setPolicy = (handback_limit: number) =>
@@ -555,34 +554,6 @@ it('records the dispatch path, and the policy version and experiences in force w
       f.store.get<WorkflowPolicy>('workflow_policies', f.project.id)?.revision ?? null,
     );
   setPolicy(4);
-  const now = f.store.now();
-  const improvement = (id: string, status: Improvement['status'], fields: Partial<Improvement>) =>
-    f.store.insert<Improvement>('improvements', {
-      id,
-      revision: 1,
-      project_id: f.project.id,
-      source: 'lead',
-      retrospective_ids: ['earlier-1', 'earlier-2'],
-      status,
-      change: { type: 'experience', procedure: `Follow the advice ${id}` },
-      proposed_at: now - 3 * MINUTE,
-      ...fields,
-    });
-  improvement('in-trial', 'trial', { trial_started_at: now - MINUTE });
-  improvement('kept', 'active', { trial_started_at: now - 2 * MINUTE, decided_at: now - MINUTE });
-  improvement('reverted-later', 'reverted', {
-    trial_started_at: now - MINUTE,
-    decided_at: now + 10 * MINUTE,
-  });
-  improvement('reverted-before', 'reverted', {
-    trial_started_at: now - 2 * MINUTE,
-    decided_at: now - MINUTE,
-  });
-  improvement('proposed', 'candidate', {});
-  improvement('policy-in-trial', 'trial', {
-    trial_started_at: now - MINUTE,
-    change: { type: 'policy_change', param: 'max_parallel', from: 3, to: 2 },
-  });
   await startTask(f, lead.id, 'a');
   setPolicy(5);
 
@@ -593,7 +564,6 @@ it('records the dispatch path, and the policy version and experiences in force w
     policy_version: 1,
     started_at: expect.any(Number),
   });
-  expect([...row.experience_ids!].sort()).toEqual(['in-trial', 'kept', 'reverted-later']);
 });
 
 const setBudget = (f: Fixture, cell: { input_tokens: number; wall_ms: number }) =>

@@ -29,8 +29,6 @@ it('defines a strict input schema for each unimplemented command and the queries
     'board.history',
     'board.plan.replay',
     'board.view',
-    'change.outcome',
-    'change.outcomes',
     'change_story.diff',
     'change_story.list',
     'connections.status',
@@ -44,10 +42,7 @@ it('defines a strict input schema for each unimplemented command and the queries
     'github.items',
     'github.pr.detail',
     'import.candidates',
-    'improvement.list',
-    'improvement.sessions',
     'improvement.signals',
-    'learned.list',
     'mcp.app.resource',
     'mcp.status',
     'memory.document',
@@ -80,7 +75,6 @@ it('defines a strict input schema for each unimplemented command and the queries
     'project.usage.read',
     'projects.summary',
     'retrospective.list',
-    'routing.table',
     'runtime.models',
     'runtime.status',
     'session.activity',
@@ -170,14 +164,6 @@ it('accepts the device a new session runs on', () => {
       device_id: 'build-box',
     }),
   ).toMatchObject({ device_id: 'build-box' });
-});
-
-it('opens an app debug session without a CDP port and refuses one', () => {
-  const create = { project_id: 'project', runtime: 'claude', input: 'Fix the error' };
-  const parse = (extra: Record<string, unknown>) =>
-    inputSchemas['session.create'].safeParse({ ...create, ...extra }).success;
-  expect(parse({ purpose: 'app_debug' })).toBe(true);
-  expect(parse({ purpose: 'app_debug', cdp_port: 9333 })).toBe(false);
 });
 
 it('defines strict session pin, archive, unarchive and delete commands', () => {
@@ -497,24 +483,4 @@ it('accepts a free-text question without options and at most four options per qu
   );
   const options = Array.from({ length: 5 }, (_, i) => ({ label: `Option ${i}`, description: '' }));
   expect(approvalQuestions.safeParse([{ ...question, options }]).success).toBe(false);
-});
-
-it('accepts a gate command and a worktree setup change in an improvement proposal', () => {
-  const schema = inputSchemas['improvement.propose'];
-  const proposal = (change: Record<string, unknown>) =>
-    schema.safeParse({ project_id: 'project', retrospective_ids: ['r1', 'r2'], change }).success;
-  const gate = {
-    type: 'gate_command',
-    root: '/repo',
-    to: [{ name: 'test', argv: ['pnpm', 'test'] }],
-  };
-  expect(proposal(gate)).toBe(true);
-  expect(
-    proposal({
-      type: 'worktree_setup',
-      to: { copy_paths: ['.env'], command: { argv: ['pnpm', 'install'] } },
-    }),
-  ).toBe(true);
-  const { root: _, ...withoutRoot } = gate;
-  expect(proposal(withoutRoot)).toBe(false);
 });

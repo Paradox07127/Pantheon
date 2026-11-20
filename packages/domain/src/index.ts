@@ -15,7 +15,6 @@ import type {
 import type {
   CharterMode,
   CharterPower,
-  Improvement,
   ImprovementSignal,
   WorkflowDefinition,
   WorkflowPolicy,
@@ -298,14 +297,11 @@ export interface RuntimeChoice {
   model?: string;
   effort?: EffortLevel;
 }
-export interface RoutingChoice extends RuntimeChoice {
-  model: string;
-}
 export interface SessionDefaults extends RuntimeChoice {
   permission_mode: PermissionMode;
   /** Task and review sessions also run on this runtime, model and effort; absent is off. */
   single_model?: boolean;
-  /** Absent follows task routing. */
+  /** Absent runs task sessions on the lead's runtime, model and effort. */
   writer?: RuntimeChoice;
   /** Absent follows reviewer selection. */
   reviewer?: RuntimeChoice;
@@ -330,12 +326,6 @@ export interface Project extends Entity {
   env?: Record<string, string>;
   /** What a new session starts on; absent follows the global value, else the composer's own default. */
   session_defaults?: SessionDefaults;
-  routing_overrides?: Partial<
-    Record<
-      TaskKind['domain'],
-      Partial<Record<TaskKind['tier'], { first?: RoutingChoice; alternate?: RoutingChoice }>>
-    >
-  >;
   /** Token targets by runtime; a runtime without one follows the global target. */
   usage_targets?: Record<string, number>;
   /** Merges a session after each turn that completes normally; absent follows the global value, else off. */
@@ -427,7 +417,6 @@ export interface NeedsYouItem {
       | 'sessions'
       | 'board_plans'
       | 'milestones'
-      | 'improvements'
       | 'workflow_policies'
       | 'workflow_definitions'
       | 'workflow_step_runs'
@@ -443,7 +432,6 @@ export interface NeedsYouItem {
     | 'session.merge_blocked'
     | 'milestone.ready_for_acceptance'
     | 'workflow.definition.trial'
-    | 'improvement.candidate'
     | 'board.plan.proposal'
     | 'board.lane.approval'
     | 'board.plan.reassessment'
@@ -454,8 +442,8 @@ export interface NeedsYouItem {
     | 'memory.decision_budget';
   project_id: string;
   /**
-   * The approval's session, or the lead of a plan, milestone or improvement item; absent on session
-   * items, whose source is the session, and on improvements the daemon proposed.
+   * The approval's session, or the lead of a plan or milestone item; absent on session items,
+   * whose source is the session.
    */
   session_id?: string;
   /** The plan task, `<lead session id>:<task id>`, of a task item. */
@@ -495,7 +483,6 @@ export interface NeedsYouItem {
     | 'background_task_long'
     | 'milestone_ready_for_acceptance'
     | 'workflow_definition_trial_completed'
-    | 'improvement_awaiting_decision'
     | 'plan_proposal_awaiting_decision'
     | 'lane_plan_awaiting_approval'
     | 'plan_reassessment_ready'
@@ -694,12 +681,8 @@ export interface Session extends Entity {
     turn_id: string;
     delivered_signature?: string;
     delivered_epoch?: number;
-    /** Experience ids in the latest acknowledged packet, after applying its byte budget. */
-    delivered_experience_ids?: string[];
   };
   forked_from?: { session_id: string; before_turn_id?: string; before_span_id?: string };
-  /** A session debugging the running app; while the desktop has written its CDP port file, its runtime reaches the renderer through chrome-devtools-mcp. */
-  app_debug?: true;
   /** A session starting a project from an empty folder with the setup guide. */
   project_setup?: true;
   /** A session opened to lead on the board; a direct session without it gets no Pantheon tools. */
@@ -708,6 +691,8 @@ export interface Session extends Entity {
   native_fork?: { session_id: string; after: string };
   baseline?: import('./planning.js').BaselineTag;
   change_story?: import('./change-story.js').StoryTag;
+  /** Retired; only present on rows an older version stored. */
+  range_story?: unknown;
   intro?: true;
   /** Managed durable native history location; absent on legacy native sessions. */
   native_state_dir?: string;
@@ -1935,10 +1920,6 @@ export interface Retrospective extends Entity {
   started_at?: number;
   /** The policy version in force when the task started. */
   policy_version?: number;
-  /** The experiences in force when the task started, by id. */
-  experience_ids?: string[];
-  /** The arm the task took of each experience trial, by improvement id: old ran without it. */
-  trial_arms?: Record<string, 'old' | 'new'>;
   /**
    * What the row records: a task of a lead's plan, or a session the user opened that landed its
    * work, whose lead_session_id is the session's own id and task_id 'session'. Absent means plan_task.
@@ -1959,7 +1940,6 @@ export interface ProjectRead {
   /** What a lead plans with; present only when a lead session reads. */
   lead?: LeadGuidance;
 }
-type RoutingPick = { runtime: string; model: string; effort?: EffortLevel };
 export interface LeadGuidance {
   workflow: Pick<
     WorkflowPolicy,
@@ -1981,18 +1961,6 @@ export interface LeadGuidance {
       { id: string; title: string; kind: WorkflowStep['kind']['type'] }[]
     >;
   };
-  /** Each routing cell with a first choice. */
-  routing: {
-    domain: TaskKind['domain'];
-    tier: TaskKind['tier'];
-    first: RoutingPick;
-    alternate?: RoutingPick;
-  }[];
-  /** The project's experiences on trial or in force, at most 20, newest first. */
-  experiences: ({ id: string; status: 'trial' | 'active' } & Omit<
-    Extract<Improvement['change'], { type: 'experience' }>,
-    'type'
-  >)[];
   runtime: import('./trace.js').RuntimeDiagnostics;
   runtime_reviews?: { session_id: string; summary: string; change: string; outcome?: string }[];
   /** The latest 10 retrospectives of the reading lead's plan, newest first. */

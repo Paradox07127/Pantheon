@@ -113,7 +113,6 @@ beforeEach(() => {
     'project.defaults': defaults(),
     'workflow.policy': (params: { project_id: string }) =>
       policy({ project_id: params.project_id, revision: 9 }),
-    'improvement.list': [],
   };
   bridge.commands = [];
   vi.stubGlobal('window', {

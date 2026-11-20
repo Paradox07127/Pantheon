@@ -19,11 +19,9 @@ import { taskDispatchHandlers } from './task-dispatch.js';
 import { taskStatusLineHandlers } from './task-status-line.js';
 import { leadInboxHandlers } from './lead-inbox.js';
 import { workflowEngineHandlers } from './workflow-engine.js';
-import { routingHandlers } from './routing-table.js';
 import { workflowPolicyHandlers } from './workflow-policy.js';
 import { playbookHandlers } from './playbooks.js';
 import { milestoneCheckHandlers } from './milestone-checks.js';
-import { improvementHandlers, improvementPreparers } from './improvements.js';
 import { inPlaceSessionHandlers } from './in-place-session.js';
 import { visualHandlers } from './visual.js';
 import { appSettingsHandlers } from './app-settings.js';
@@ -63,9 +61,7 @@ export const handlers: Handlers = {
   ...workflowPolicyHandlers,
   ...playbookHandlers,
   ...milestoneCheckHandlers,
-  ...routingHandlers,
   ...workflowEngineHandlers,
-  ...improvementHandlers,
   ...inPlaceSessionHandlers,
   ...appSettingsHandlers,
   ...deviceHandlers,
@@ -94,5 +90,4 @@ export const preparers: Preparers = {
   ...agentPreparers,
   ...agentPromptPreparers,
   ...signalPreparers,
-  ...improvementPreparers,
 };

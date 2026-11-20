@@ -73,13 +73,6 @@ export interface MemoryContext {
   epoch: number;
   signature: string;
   items: MemoryItem[];
-  /** Eligible improvement procedures; status is read from improvements, never copied into memory. */
-  experiences: {
-    id: string;
-    status: 'trial' | 'active';
-    procedure: string;
-    countercondition?: string;
-  }[];
   omitted: number;
   bytes: number;
 }

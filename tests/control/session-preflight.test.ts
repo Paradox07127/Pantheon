@@ -87,7 +87,7 @@ it('blocks a session with no new commits', async () => {
   });
 });
 
-it('lets a session the user opened merge its uncommitted worktree changes and counts only committed changes', async () => {
+it('lets a session the user opened merge its uncommitted worktree changes and counts the files its merge commits', async () => {
   const f = await workbenchFixture();
   const { session, workspace } = await idleSession(f);
   commit(workspace.path, 'answer.txt', 'committed\n');
@@ -95,12 +95,33 @@ it('lets a session the user opened merge its uncommitted worktree changes and co
   const preflight = await f.control.sessionPreflight(user, session.id);
   expect(preflight).toMatchObject({
     commit_count: 1,
-    files_changed: 1,
+    files_changed: 2,
     worktree_clean: false,
     source_clean: true,
     can_merge: true,
   });
   expect(preflight).not.toHaveProperty('blocked_reason');
+});
+
+it('reports unknown conflicts and a stale gate for the commit a merge makes of the uncommitted files', async () => {
+  const f = await workbenchFixture();
+  const { session, workspace } = await idleSession(f);
+  await setGate(f);
+  const head = commit(workspace.path, 'answer.txt', 'committed\n');
+  gateChecked(f, session, head, [
+    { exit_code: 0, timed_out: false },
+    { exit_code: 0, timed_out: false },
+  ]);
+  writeFileSync(path.join(workspace.path, 'answer.txt'), 'uncommitted\n');
+  writeFileSync(path.join(workspace.path, 'untracked.txt'), 'uncommitted\n');
+  expect(await f.control.sessionPreflight(user, session.id)).toMatchObject({
+    commit_count: 1,
+    files_changed: 2,
+    worktree_clean: false,
+    conflicts: { state: 'unknown' },
+    gate: { configured_total: 2, last: 'stale' },
+    can_merge: true,
+  });
 });
 
 it('blocks edited tracked files in the source folder but not untracked ones', async () => {

@@ -5,13 +5,11 @@ export type {
   MemoryUndoRetractionResult,
   MemorySessionTurnsResult,
 } from './memory.js';
-export type { ChangeOutcome, ChangeOutcomeWindow } from './change-outcomes.js';
 import { z } from 'zod';
 import { changeStoryInputSchemas, type LandingDiff } from './change-story.js';
 import { planReplayQuerySchema } from './plan-replay.js';
 import type { PendingReplan, ReplanHistoryTrigger } from './replan-history.js';
 import type { ProjectWaiting } from './project-waiting.js';
-import { evalReceiptSchema } from './eval-receipt.js';
 import { alwaysOnInputSchemas, alwaysOnToolEffects, alwaysOnTools } from './always-on-tools.js';
 import { agentWakeInputSchemas, agentWakeQuerySchemas } from './agent-wakes.js';
 export type { AgentRoutineRow, AgentWake, WakeOutcome } from './agent-wakes.js';
@@ -52,7 +50,6 @@ import type {
   FlowPath,
   Improvement,
   LaneDepth,
-  LearnedGrade,
   McpServerStatus,
   NeedsYouItem,
   TaskRungName,
@@ -207,16 +204,15 @@ export * from './change-story.js';
 export * from './plan-replay.js';
 export * from './replan-history.js';
 export * from './project-waiting.js';
-export * from './learned.js';
 export * from './agent-chapters.js';
 
 // Lives here, not in domain: the web bundle imports protocol at run time, and domain imports node:crypto.
 export function sessionRole(
-  session: Pick<Session, 'review_id' | 'baseline' | 'change_story'>,
+  session: Pick<Session, 'review_id' | 'baseline' | 'change_story' | 'range_story'>,
 ): SessionRole {
   if (session.review_id) return 'reviewer';
   if (session.baseline) return 'baseline';
-  if (session.change_story) return 'story';
+  if (session.change_story || session.range_story) return 'story';
   return 'main';
 }
 
@@ -275,13 +271,6 @@ const browserTools = {
   browser_read: 'browser.read',
   browser_screenshot: 'browser.screenshot',
 } as const;
-/** The tools that read the running app; only app_debug sessions get them. */
-export const appDebugTools = {
-  app_errors: 'app.errors',
-  app_screenshot: 'app.screenshot',
-  app_dom: 'app.dom',
-  app_logs: 'app.logs',
-} as const;
 export const sessionTools = {
   reviewer: { ...memoryTools, review_finding: 'review.finding', ...reviewerTools },
   planner: {
@@ -289,7 +278,6 @@ export const sessionTools = {
     project_read: 'project.read',
     draw: 'visual.draw',
     ...browserTools,
-    ...appDebugTools,
   },
   lead: {
     ...memoryTools,
@@ -310,14 +298,12 @@ export const sessionTools = {
     status_line: 'task.status_line',
     interrupt_task: 'task.interrupt',
     stop_background: 'task.background.stop',
-    propose_improvement: 'improvement.propose',
     sync_board: 'board.sync',
     rerun_baseline: 'project.baseline.start',
     request_review: 'review.request',
     merge_task: 'session.merge',
     draw: 'visual.draw',
     ...browserTools,
-    ...appDebugTools,
     ...alwaysOnTools,
     ...appTools,
     ...agentTools,
@@ -332,7 +318,6 @@ export const sessionTools = {
     status_line: 'task.status_line',
     draw: 'visual.draw',
     ...browserTools,
-    ...appDebugTools,
     ...workflowTools,
   },
 } as const;
@@ -361,7 +346,6 @@ export const leadToolEffects = {
   status_line: 'write',
   interrupt_task: 'write',
   stop_background: 'write',
-  propose_improvement: 'write',
   sync_board: 'read',
   rerun_baseline: 'costly',
   request_review: 'write',
@@ -370,10 +354,6 @@ export const leadToolEffects = {
   browser_open: 'write',
   browser_read: 'read',
   browser_screenshot: 'read',
-  app_errors: 'read',
-  app_screenshot: 'read',
-  app_dom: 'read',
-  app_logs: 'read',
   ...alwaysOnToolEffects,
   ...appToolEffects,
   ...agentToolEffects,
@@ -382,12 +362,10 @@ export const leadToolEffects = {
   guide: 'read',
 } as const satisfies Record<keyof typeof sessionTools.lead, 'read' | 'write' | 'costly'>;
 
-/** A group of lead tools: an agent profile's group, or the app_debug tools only app debug sessions get. */
-export type LeadToolGroup = AgentToolGroup | 'app_debug';
-const inGroup = <T extends object>(tools: T, group: LeadToolGroup) =>
+const inGroup = <T extends object>(tools: T, group: AgentToolGroup) =>
   Object.fromEntries(Object.keys(tools).map((name) => [name, group])) as Record<
     keyof T,
-    LeadToolGroup
+    AgentToolGroup
   >;
 /**
  * The group of each lead tool; a resident gets the tools of its profile's groups. Every lead gets
@@ -395,11 +373,10 @@ const inGroup = <T extends object>(tools: T, group: LeadToolGroup) =>
  */
 export const leadToolGroups: Record<
   Exclude<keyof typeof sessionTools.lead, 'guide'>,
-  LeadToolGroup
+  AgentToolGroup
 > = {
   ...inGroup(memoryTools, 'memory'),
   ...inGroup(browserTools, 'browser'),
-  ...inGroup(appDebugTools, 'app_debug'),
   ...inGroup(alwaysOnTools, 'always_on'),
   ...appToolGroups,
   ...agentToolGroups,
@@ -414,7 +391,6 @@ export const leadToolGroups: Record<
   read_note: 'board',
   ask_user: 'board',
   answer_worker_question: 'board',
-  propose_improvement: 'board',
   sync_board: 'board',
   rerun_baseline: 'board',
   draw: 'board',
@@ -517,29 +493,6 @@ const browserPage = z.strictObject({
 });
 /** What a browser tool returns about the session's browser panel page. */
 export type BrowserPage = z.infer<typeof browserPage>;
-/** The most characters of HTML an app_dom answer carries. */
-export const APP_DOM_LIMIT = 100_000;
-const appErrors = z.array(z.record(z.string(), z.json())).max(200);
-/** The recent errors the app window recorded, as it records them. */
-export type AppErrors = z.infer<typeof appErrors>;
-const appDom = z.strictObject({
-  html: z.string().max(APP_DOM_LIMIT),
-  regions: z
-    .array(
-      z.strictObject({
-        name: z.string().max(200),
-        rect: z.strictObject({
-          x: z.number(),
-          y: z.number(),
-          width: z.number(),
-          height: z.number(),
-        }),
-      }),
-    )
-    .max(500),
-});
-/** The HTML of the app window or of one selector in it, and the window's named regions. */
-export type AppDom = z.infer<typeof appDom>;
 const milestoneInput = {
   title: str,
   required_sessions: strings.min(1),
@@ -684,7 +637,7 @@ const planTask = z
     runtime: str
       .optional()
       .describe(
-        "The runtime of the task's session; absent means the project's writer default when one is set, else lead.routing's choice for its kind.",
+        "The runtime of the task's session; absent means the project's writer default when one is set, else its default runtime.",
       ),
     model: str
       .optional()
@@ -705,12 +658,10 @@ const planTask = z
       .positive()
       .optional()
       .describe('Tokens, shown on the board; not enforced.'),
-    /** Why the runtime, model or effort differs from the routing table's first choice. */
+    /** Why the runtime, model or effort differs from the project's defaults. */
     route_reason: boardText
       .optional()
-      .describe(
-        "One sentence on why runtime, model or effort differ from lead.routing's first choice.",
-      ),
+      .describe("One sentence on why runtime, model or effort differ from the project's defaults."),
     /** The device id the task's session runs on; absent means this machine. */
     device: str
       .optional()
@@ -1462,89 +1413,6 @@ export const userConfigSchema = z
   );
 export type BackendProfile = z.infer<typeof backendProfileSchema>;
 export type UserConfig = z.infer<typeof userConfigSchema>;
-const improvementChange = z.discriminatedUnion('type', [
-  z.strictObject({
-    type: z.literal('policy_change').describe('policy_change: change one workflow parameter.'),
-    param: workflowParam.describe('The workflow parameter, as lead.workflow names it.'),
-    /** The tier whose path changes; absent for a parameter that is not per tier. */
-    tier: z
-      .enum(taskTiers)
-      .optional()
-      .describe('For path: the tier whose path changes; absent for other parameters.'),
-    to: z.unknown().describe('The value the parameter should take.'),
-  }),
-  z.strictObject({
-    type: z.literal('experience').describe('experience: a procedure to try in this project.'),
-    /** Absent applies to every domain. */
-    domain: z
-      .enum(taskDomains)
-      .optional()
-      .describe('The task domain it applies to; absent for every domain.'),
-    /** Absent applies to every tier. */
-    tier: z.enum(taskTiers).optional().describe('The tier it applies to; absent for every tier.'),
-    /** Absent applies to every runtime. */
-    runtime: str.optional().describe('The runtime it applies to; absent for every runtime.'),
-    procedure: z
-      .string()
-      .min(1)
-      .refine((text) => new TextEncoder().encode(text).length <= 600, 'At most 600 bytes')
-      .describe('What to do, at most 600 bytes, written so a session can follow it.'),
-    countercondition: boardText
-      .optional()
-      .describe('Optional: when the procedure does not apply, under 400 characters.'),
-  }),
-  z.strictObject({
-    type: z
-      .literal('gate_command')
-      .describe(
-        "gate_command: replace one root's gate commands; it waits for the user to confirm.",
-      ),
-    root: str.describe('The project root whose gate commands change.'),
-    to: z.array(gateCommand).describe('The gate commands the root should run.'),
-  }),
-  z.strictObject({
-    type: z
-      .literal('worktree_setup')
-      .describe(
-        "worktree_setup: replace the project's worktree setup; it waits for the user to confirm.",
-      ),
-    to: z
-      .strictObject({
-        copy_paths: z
-          .array(worktreePath)
-          .describe('Paths relative to a root, copied into each new worktree.'),
-        command: gateCommand
-          .omit({ name: true })
-          .optional()
-          .describe('Optional: the command to run in each new worktree after the copy.'),
-      })
-      .describe('The paths to copy into a new worktree and the command to run there.'),
-  }),
-  z.strictObject({
-    type: z
-      .literal('agent_instructions')
-      .describe(
-        "agent_instructions: replace one agent's instructions; it waits for the user to confirm.",
-      ),
-    agent_id: str.describe('The id from list_agents of the agent whose instructions change.'),
-    to: z
-      .string()
-      .min(1)
-      .max(20000)
-      .describe('The whole new instructions of the agent, up to 20000 characters.'),
-  }),
-  z.strictObject({
-    type: z
-      .literal('playbook')
-      .describe(
-        'playbook: make a stored version of the lead playbook current; it waits for the user to confirm.',
-      ),
-    runtime: str
-      .optional()
-      .describe("The runtime whose playbook changes; absent for the project's default playbook."),
-    to: z.number().int().positive().describe('The stored playbook version to make current.'),
-  }),
-]);
 const triggerEvent = str
   .optional()
   .describe(
@@ -2354,53 +2222,16 @@ export const inputSchemas = {
   'browser.read': z.strictObject({}),
   /** A session credential; returns the url, title and a PNG of the session's browser panel page. */
   'browser.screenshot': z.strictObject({}),
-  /**
-   * The user only; the desktop window's answer to the browser request named by request_id:
-   * page for open, read, screenshot and app_screenshot, errors for app_errors, dom for app_dom.
-   */
+  /** The user only; the desktop window's answer to the browser request named by request_id. */
   'browser.result': z
     .strictObject({
       request_id: str,
       page: browserPage.optional(),
-      errors: appErrors.optional(),
-      dom: appDom.optional(),
       error: z.strictObject({ code: str, message: z.string().max(65536) }).optional(),
     })
-    .refine(
-      (answer) =>
-        [answer.page, answer.errors, answer.dom, answer.error].filter((part) => part !== undefined)
-          .length === 1,
-      { message: 'Give one of page, errors, dom or error' },
-    ),
-  /** A session credential; returns AppErrors, the recent errors of the desktop window. */
-  'app.errors': z.strictObject({}),
-  /** A session credential; returns a BrowserPage with a PNG of the desktop window. */
-  'app.screenshot': z.strictObject({}),
-  /** A session credential; returns AppDom for the whole window or the first element selector matches. */
-  'app.dom': z.strictObject({
-    selector: z
-      .string()
-      .min(1)
-      .max(200)
-      .optional()
-      .describe('A CSS selector; the first match is read. Absent reads the whole window.'),
-  }),
-  /** Returns AppLogs, the last lines of the daemon log, only those containing grep when given. */
-  'app.logs': z.strictObject({
-    lines: z
-      .number()
-      .int()
-      .min(1)
-      .max(500)
-      .default(200)
-      .describe('How many of the last log lines to read, 1-500; default 200.'),
-    grep: z
-      .string()
-      .min(1)
-      .max(200)
-      .optional()
-      .describe('Keep only the lines that contain this text.'),
-  }),
+    .refine((answer) => (answer.page === undefined) !== (answer.error === undefined), {
+      message: 'Give one of page or error',
+    }),
   'project.read': z.strictObject({ project_id: str }),
   'board.plan.update': boardPlanInputSchema.refine(
     (plan) =>
@@ -2572,14 +2403,6 @@ export const inputSchemas = {
   }),
   /** Removes the project's own workflow policy values, so it follows the global ones; the user only. */
   'workflow.policy.reset': z.strictObject({ project_id: str }),
-  /** Sets one user routing choice; null returns the slot to the records. */
-  'routing.set': z.strictObject({
-    project_id: str,
-    domain: z.enum(taskDomains),
-    tier: z.enum(taskTiers),
-    slot: z.enum(['first', 'alternate']),
-    choice: runtimeChoice.extend({ model: str }).nullable(),
-  }),
   /** Changes the given workflow policy parameters of a project; the user only. */
   'workflow.policy.set': z.strictObject({
     project_id: str,
@@ -2618,7 +2441,7 @@ export const inputSchemas = {
       .enum(['off', 'auto'])
       .optional()
       .describe(
-        "auto moves a task session whose hand-backs of one problem ran out to the routing cell's alternate runtime, or else the writer fallback, for one more hand-back; off leaves it to the lead.",
+        'auto moves a task session whose hand-backs of one problem ran out to the writer fallback runtime for one more hand-back; off leaves it to the lead.',
       ),
     eval_runner: z
       .enum(['off', 'on'])
@@ -2638,56 +2461,6 @@ export const inputSchemas = {
       .optional(),
     pinned: z.array(workflowParam).max(7).optional(),
   }),
-  /** A lead's proposal to change the workflow, resting on the retrospectives or other records it names; give at least one of the two lists. */
-  'improvement.propose': z.strictObject({
-    project_id: str,
-    retrospective_ids: z
-      .array(str)
-      .min(2)
-      .max(20)
-      .optional()
-      .describe('2-20 ids of the retrospectives the change rests on.'),
-    evidence: z
-      .array(
-        z.union([
-          z.strictObject({
-            kind: z
-              .enum(['retrospective', 'signal_issue', 'session', 'gate_run'])
-              .describe('What the id names.'),
-            id: str.describe('The id of that record in this project.'),
-          }),
-          evalReceiptSchema,
-        ]),
-      )
-      .min(1)
-      .max(20)
-      .refine(
-        (entries) => entries.length >= 2 || entries[0]?.kind === 'eval_receipt',
-        'Give at least 2 records, or one eval_receipt',
-      )
-      .optional()
-      .describe(
-        '2-20 records of any kind the change rests on, or a single eval_receipt. A playbook change needs an eval_receipt {kind, path, sha256, verdict}.',
-      ),
-    change: improvementChange.describe('The one change to the workflow you propose.'),
-  }),
-  /** The user's decision on an improvement. */
-  'improvement.decide': z.discriminatedUnion('decision', [
-    z.strictObject({
-      project_id: str,
-      improvement_id: str,
-      decision: z.literal('reject'),
-      reject_reason: z.enum(['duplicate', 'not_useful']).optional(),
-      reject_note: z.string().trim().max(200).optional(),
-    }),
-    z.strictObject({
-      project_id: str,
-      improvement_id: str,
-      decision: z.enum(['confirm', 'revert', 'pin']),
-    }),
-  ]),
-  /** The user only, and only while the project's eval_runner is on: starts the eval_request of a waiting playbook change, whose receipt is added to its evidence when the run ends; returns the improvement. */
-  'eval.request.run': z.strictObject({ project_id: str, improvement_id: str }),
   /** Sets the one line of what the calling session does now in its running turn, shown on its board row with its time. Plan task and lead sessions only; a new text waits 15 s after the last one. */
   'task.status_line': z.strictObject({
     text: z
@@ -3039,10 +2812,9 @@ export const inputSchemas = {
       device_id: str.optional(),
       /**
        * project_setup: the first message starts with the guide for a project built from nothing.
-       * app_debug: the first message starts with the guide for debugging an error the running app reported.
        * lead: the session plans on the board with the Pantheon tools; without a purpose or task it runs as the bare runtime.
        */
-      purpose: z.enum(['project_setup', 'app_debug', 'lead']).optional(),
+      purpose: z.enum(['project_setup', 'lead']).optional(),
     })
     .refine(validSessionWorkspace, { message: 'An in-place session cannot have a start point' }),
   /** Opens a new worktree session with the source's files and a text handoff. */
@@ -3458,25 +3230,11 @@ export const querySchemas = {
     days: z.enum(['7', '30', '90', 'all']).default('30'),
   }),
   'retrospective.list': z.strictObject({ project_id: str, task_id: str.optional() }),
-  'routing.table': z.strictObject({ project_id: str }),
   'workflow.policy': z.strictObject({ project_id: str }),
   'workflow.definition': z.strictObject({ project_id: str, id: str.optional() }),
   'workflow.definition.list': z.strictObject({ project_id: str }),
-  /** Newest first, at most 100. */
-  'improvement.list': z.strictObject({
-    project_id: str,
-    status: z.enum(['candidate', 'trial', 'active', 'reverted', 'rejected']).optional(),
-  }),
-  /** ImprovementSession[]: scope-matching sessions and acknowledged instruction delivery. */
-  'improvement.sessions': z.strictObject({ project_id: str, improvement_id: str }),
   /** The signals the project's retrospectives show, with the change each suggests. */
   'improvement.signals': z.strictObject({ project_id: str }),
-  /** LearnedItem[]: every learned change of the project, newest first. */
-  'learned.list': z.strictObject({ project_id: str }),
-  /** ChangeOutcome of one workflow setting change, agent creation or routine enable, by event id. */
-  'change.outcome': z.strictObject({ project_id: str, event_id: str }),
-  /** ChangeOutcome[] of the project's measurable changes, newest first, at most 20. */
-  'change.outcomes': z.strictObject({ project_id: str }),
   'task.trace': z.strictObject({ project_id: str, lead_session_id: str, task_id: str }),
   /** TaskThreadEntry[] of the task in event order. */
   'task.thread': z.strictObject({ project_id: str, lead_session_id: str, task_id: str }),
@@ -3522,33 +3280,6 @@ export const querySchemas = {
   }),
 } as const;
 export type QueryMethod = keyof typeof querySchemas;
-export interface ImprovementListItem extends Omit<Improvement, 'trial_evaluation'> {
-  grade: LearnedGrade;
-  /** Absent until the trial starts. Counts and values use the evaluator's task sample. */
-  trial?: {
-    tasks_seen: number;
-    tasks_required: number;
-    baseline_tasks: number;
-    status_reason?: 'no_baseline';
-    /** Absent while the trial runs and when the user ended it. */
-    verdict?: NonNullable<Improvement['trial_evaluation']>['verdict'];
-    /** Absent for a trial ended before the design was recorded. */
-    design?: NonNullable<Improvement['trial_evaluation']>['design'];
-    metrics: {
-      name: string;
-      unit: string;
-      /** Absent when no baseline sample or measurement exists. */
-      baseline?: number;
-      /** Absent when the trial sample or measurement is missing. */
-      trial?: number;
-    }[];
-  };
-}
-export interface ImprovementSession {
-  session_id: string;
-  title?: string;
-  delivered: boolean;
-}
 /** GET /v1/app.settings; the user's own settings across projects. */
 export interface AppSettings {
   auto_git_init: boolean;
@@ -3565,10 +3296,6 @@ export interface AppSettings {
   baseline_visuals: boolean;
   /** The decisions the personal agent may answer for the user; empty unless the user turned one on. */
   personal_answers: PersonalAnswerKind[];
-}
-/** The app.logs receipt; empty while the daemon log does not exist. */
-export interface AppLogs {
-  lines: string[];
 }
 /** GET /v1/device.list; this machine (id `local`) or a configured device, with what its last probe found. */
 export interface DeviceStatus {
@@ -3849,7 +3576,6 @@ export interface WorkbenchSession {
   remote_pull?: NonNullable<Session['remote_pull']>;
   runtime_review?: true;
   forked_from?: { session_id: string; before_turn_id?: string; before_span_id?: string };
-  app_debug?: true;
   /** ISO time of the session.opened event. */
   created_at: string;
   /** Empty for a baseline session without a title, which baseline_started_at names. */
@@ -5243,47 +4969,6 @@ export interface ProjectDefaultsRead {
 /** GET /v1/workflow.policy includes the settings a new project starts with. */
 export interface WorkflowPolicyView extends WorkflowPolicy {
   defaults: Omit<WorkflowPolicy, 'id' | 'revision' | 'project_id' | 'policy_version'>;
-}
-/** One (runtime, model, effort) candidate of a routing cell. */
-export interface RoutingCandidate {
-  runtime: string;
-  /** The full model id. */
-  model: string;
-  /** Absent when the runs or the board alias named none. */
-  effort?: EffortLevel;
-  /** Posterior mean of passing the gate on the first run, 0 to 1. */
-  p: number;
-  /** Local tasks in the cell that ran the gate. */
-  n: number;
-  /** Of those, the tasks whose first gate run passed. */
-  s: number;
-  /** Observed first-run success rate, 0 to 1; null without local runs. */
-  success_rate: number | null;
-  /** Median input plus output tokens of the task sessions; absent without local usage. */
-  median_tokens?: number;
-  /** The leaderboard row behind the prior; absent when the domain's board does not list the candidate. */
-  board?: { source: string; board_name: string; score: number };
-}
-/**
- * One (domain, tier) cell of the routing table; a cell without candidates is not returned, except
- * that a project on one model gets every cell, its first choice the project's defaults.
- */
-export interface RoutingCell {
-  domain: TaskKind['domain'];
-  tier: TaskKind['tier'];
-  /** Absent only when the cell has no candidates and the project is not on one model. */
-  first?: { runtime: string; model: string; effort?: EffortLevel };
-  /** Absent when no candidate on another runtime than the first exists. */
-  alternate?: { runtime: string; model: string; effort?: EffortLevel };
-  first_source?: 'user' | 'records';
-  alternate_source?: 'user' | 'records';
-  candidates: RoutingCandidate[];
-  /** The leaderboard of the prior, with the ISO time it was fetched; null without one for the domain. */
-  prior: { source: string; fetched_at: string } | null;
-}
-/** GET /v1/routing.table; local gate history and public leaderboards merged per task kind. */
-export interface RoutingTable {
-  cells: RoutingCell[];
 }
 export const command = (
   actor: string,

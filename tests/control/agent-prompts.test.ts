@@ -107,7 +107,7 @@ it('lists to the ideas resident only the guides of its template and groups', asy
 it('gives the assistant the kind, domain and tier rule in its dispatch module and the worker_brief guide', async () => {
   const f = await workbenchFixture();
   const { session, prompt } = await resident(f, 'assistant');
-  expect(prompt).toContain('and its kind, domain and tier, following lead.routing');
+  expect(prompt).toContain('and its kind, domain and tier, following lead.workflow.path');
   expect(prompt).toContain('worker_brief — ');
   const brief = await guide<{ text: string }>(f, session.id, 'worker_brief');
   expect(brief.text).toContain('Give each task its kind, a domain and a tier');

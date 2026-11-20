@@ -102,22 +102,6 @@ const READ_ONLY_TOOLS = new Set([
   'KillShell',
 ]);
 
-/** Tools of the chrome_devtools server Pantheon passes in that only read the renderer. */
-const DEVTOOLS_READ_TOOLS = new Set(
-  [
-    'list_pages',
-    'select_page',
-    'take_screenshot',
-    'take_snapshot',
-    'list_console_messages',
-    'get_console_message',
-    'list_network_requests',
-    'get_network_request',
-    'get_css_styles',
-    'wait_for',
-  ].map((name) => `mcp__chrome_devtools__${name}`),
-);
-
 const READ_ONLY_DENIAL =
   'Your plan has unfinished tasks, so this lead turn is read-only: read files, run git log, git status or git diff, act through the Pantheon tools, and leave changes to the task sessions.';
 const READ_ONLY_PROGRAMS = new Set([
@@ -679,12 +663,6 @@ export function buildClaudeOptions(
       if (settled) return settled;
       const readOnlyCommand =
         tool === 'Bash' && typeof input.command === 'string' && readOnlyBash(input.command, spec);
-      if (
-        options.mcpServer?.source === 'dynamic' &&
-        options.mcpServer.name === 'chrome_devtools' &&
-        DEVTOOLS_READ_TOOLS.has(tool)
-      )
-        return { behavior: 'allow', updatedInput: input };
       const mode = permissionMode();
       // Allowed rules stay dormant until the session leaves plan mode.
       if (
@@ -726,12 +704,12 @@ export function buildClaudeOptions(
     ...(spec.runtime_analysis
       ? { systemPrompt: spec.control_instructions }
       : spec.sandbox && spec.role !== 'planner'
-        ? spec.role === 'writer' && spec.control_instructions
+        ? spec.role === 'writer'
           ? {
               systemPrompt: {
                 type: 'preset',
                 preset: 'claude_code',
-                append: spec.control_instructions,
+                ...(spec.control_instructions ? { append: spec.control_instructions } : {}),
               },
             }
           : {}
@@ -1641,6 +1619,11 @@ export class ClaudeAdapter implements HarnessAdapter {
   generatesTitles = true;
   report: CapabilityReport;
   private sessions = new WeakMap<SessionHandle, ClaudeSession>();
+  /** Query totals of user sessions, which have no native folder to save them in, by native session. */
+  private readonly userCostBaselines = new Map<
+    string,
+    NonNullable<ClaudeSession['costBaseline']>
+  >();
   private readonly extraArgs: Record<string, string | null>;
   private readonly artifacts: boolean;
   constructor(
@@ -2451,6 +2434,8 @@ export class ClaudeAdapter implements HarnessAdapter {
       } catch {
         // Without a readable baseline the first resumed result reports an unknown cost.
       }
+    else if (!spec.native_fork && spec.user_session)
+      session.costBaseline = this.userCostBaselines.get(native_session_id);
     session.prepared = await this.prepareQuery(session, handle);
     this.sessions.set(handle, session);
     return handle;
@@ -2813,6 +2798,8 @@ export class ClaudeAdapter implements HarnessAdapter {
             error instanceof Error ? error.message : String(error),
           );
         }
+      else if (spec.user_session)
+        this.userCostBaselines.set(handle.native_session_id, session.costBaseline);
       const tokens = { ...totals };
       for (const key of keys) tokens[key] -= since?.[key] ?? 0;
       return { models, carried, cost, tokens, tokensCarried };

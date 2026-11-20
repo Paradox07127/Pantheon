@@ -585,13 +585,14 @@ function noteBlock(ctx: ControlContext, plan: BoardPlan, note: LeadNote, text: s
       `What happened: ${text}`,
       'How to handle: do not plan the same work; when a request of the user matches it, name that plan to them instead.',
     ];
-  else
+  else if (kind === 'signal')
     lines = [
       startTag(own),
       ...(note.signal === 'digest'
         ? [text, SIGNAL_HANDLING.digest]
         : [`What happened: ${text}`, SIGNAL_HANDLING.interrupt]),
     ];
+  else lines = [startTag(own), `What happened: ${text}`];
   return [...lines, '</note>'].join('\n');
 }
 

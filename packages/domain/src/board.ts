@@ -207,7 +207,7 @@ export interface BoardPlan extends Entity {
     task_type?: 'feature' | 'fix' | 'research' | 'infra' | 'docs';
     /** Tokens; stored for display without enforcing the budget. */
     token_budget?: number;
-    /** Why the runtime, model or effort differs from the routing table's first choice; absent when it does not. */
+    /** Why the runtime, model or effort differs from the project's defaults; absent when it does not. */
     route_reason?: string;
     /** The device id the task's session runs on; absent means this machine. */
     device?: string;

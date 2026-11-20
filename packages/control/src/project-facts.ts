@@ -4,7 +4,6 @@ import {
   hash,
   requireThat,
   type BoardPlan,
-  type Improvement,
   type LeadGuidance,
   type LeadNote,
   type Project,
@@ -27,7 +26,6 @@ import {
   type Handlers,
 } from './context.js';
 import { personalAnswer, personalCalled } from './personal-scope.js';
-import { projectRoutingTable } from './routing-table.js';
 import { runtimeReviewHistory } from './runtime-review.js';
 import { RUNTIME_LOOKBACK_MS, runtimeDiagnostics } from './runtime-findings.js';
 import { improvementSignals } from './improvement-signals.js';
@@ -288,8 +286,6 @@ function recentRuntimeOrUnavailable(
 
 function leadGuidance(ctx: ControlContext, projectId: string, leadSessionId: string): LeadGuidance {
   const policy = workflowPolicy(ctx, projectId);
-  // The lead holds no routing.table tool; it reads the table the user sees.
-  const table = projectRoutingTable(ctx, projectId);
   const config = readUserConfig(ctx.userConfigDir),
     loads =
       Object.keys(config.devices ?? {}).length || config.local_device
@@ -328,26 +324,6 @@ function leadGuidance(ctx: ControlContext, projectId: string, leadSessionId: str
         ]),
       ) as LeadGuidance['workflow']['steps'],
     },
-    routing: table.cells.flatMap(({ domain, tier, first, alternate }) =>
-      first ? [{ domain, tier, first, ...(alternate ? { alternate } : {}) }] : [],
-    ),
-    experiences: ctx.store
-      .list<Improvement>('improvements')
-      .filter(
-        (row) =>
-          row.project_id === projectId &&
-          (row.status === 'trial' || row.status === 'active') &&
-          row.change.type === 'experience',
-      )
-      .sort((a, b) => b.proposed_at - a.proposed_at)
-      .slice(0, 20)
-      .map((row) => {
-        const { type: _, ...change } = row.change as Extract<
-          Improvement['change'],
-          { type: 'experience' }
-        >;
-        return { id: row.id, status: row.status as 'trial' | 'active', ...change };
-      }),
     retrospectives: ctx.store
       .list<Retrospective>('retrospectives')
       .filter((row) => row.project_id === projectId && row.lead_session_id === leadSessionId)

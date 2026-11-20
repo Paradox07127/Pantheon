@@ -158,7 +158,7 @@ it('lets a lead claim a direct task itself, without a task session, and write in
   expect((await delivered(f, send, lead)).read_only ?? false).toBe(false);
 });
 
-it('gives a lead the task memory and experience of the direct task it works on', async () => {
+it('gives a lead the task memory of the direct task it works on', async () => {
   const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   start(f, lead.id, ['a']);
@@ -171,23 +171,12 @@ it('gives a lead the task memory and experience of the direct task it works on',
     task: scope,
   });
   f.call('memory.commit', { memory_id: draft.id }, draft.revision);
-  f.store.insert('improvements', {
-    id: 'experience',
-    revision: 1,
-    project_id: f.project.id,
-    retrospective_ids: [],
-    status: 'active',
-    change: { type: 'experience', domain: simple.domain, procedure: 'Trace each code path' },
-    proposed_at: f.store.now(),
-  } as never);
   const p = sessionOf(f, lead.id, 'lead');
   const packet = f.call<{
     signature: string;
     items: { key: string }[];
-    experiences: { id: string }[];
   }>('memory.context', { project_id: f.project.id }, null, p);
   expect(packet.items.map((item) => item.key)).toEqual(['own-rule']);
-  expect(packet.experiences.map((item) => item.id)).toEqual(['experience']);
   const note = f.call<{ task?: unknown }>(
     'memory.propose',
     {

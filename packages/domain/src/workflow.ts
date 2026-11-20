@@ -314,8 +314,3 @@ export interface EvalReceipt {
   sha256: string;
   verdict: string;
 }
-/** How a learned change takes effect: at once, on trial, or only when the user confirms it. */
-export type LearnedGrade = 'auto' | 'trial' | 'confirm';
-export function learnedGrade(change: Improvement['change']): LearnedGrade {
-  return change.type === 'policy_change' || change.type === 'experience' ? 'trial' : 'confirm';
-}

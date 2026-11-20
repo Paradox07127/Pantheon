@@ -295,7 +295,7 @@ it.each(['start', 'resume'] as const)(
     const params = threadParams(f.frames);
     expect(params.approvalPolicy).toBe('on-request');
     expect(params.developerInstructions).toMatch(
-      /Work in the worktree\.\n\nPlan mode is on: read and plan only, then call ExitPlanMode with the plan\.$/,
+      /Work in the worktree\.\n\nPlan mode is on: read and plan only, do not change files, and write the plan in your reply\.$/,
     );
     expect(filesystem(params)).toEqual({
       ':root': 'read',
@@ -2569,6 +2569,106 @@ describe('Codex sessions the user opened directly', () => {
     expect(params.approvalsReviewer).toBe(reviewer);
     expect(params.sandbox).toBe(sandbox);
     expect(params.config).toMatchObject(config);
+  });
+
+  it('gives plan mode instructions that name no Claude tool', async () => {
+    const f = await opened({ ...userSpec(), permission_mode: 'plan' });
+    const instructions = threadParams(f.frames).developerInstructions;
+    expect(instructions).toMatch(/^Plan mode is on/);
+    expect(instructions).not.toContain('ExitPlanMode');
+  });
+
+  it('leaves the account apps to the user Codex config', async () => {
+    const server = fakeServer();
+    server.intercept.mockImplementation((frame) => {
+      if (frame.method !== 'config/read') return false;
+      server.send({
+        id: frame.id,
+        result: {
+          config: {
+            apps: {
+              _default: { approvals_reviewer: 'auto_review' },
+              drive: { tools: { read: { approval_mode: 'approve' } } },
+              mail: { enabled: false },
+            },
+          },
+        },
+      });
+      return true;
+    });
+    const adapter = new CodexAdapter('fake-codex');
+    const handle = await adapter.start(userSpec(), () => {});
+    cleanup.push(() => adapter.close(handle, Date.now() + 1000));
+    expect(threadParams(server.frames)).not.toHaveProperty('config.apps');
+  });
+
+  it('keeps a plugin enabled whose details cannot be read', async () => {
+    const server = fakeServer();
+    server.intercept.mockImplementation((frame) => {
+      if (frame.method === 'plugin/installed')
+        server.send({
+          id: frame.id,
+          result: {
+            marketplaces: [{ name: 'market', plugins: [{ name: 'gone', enabled: true }] }],
+          },
+        });
+      else if (frame.method === 'plugin/read')
+        server.send({ id: frame.id, error: { code: -32600, message: 'Plugin not found' } });
+      else return false;
+      return true;
+    });
+    const adapter = new CodexAdapter('fake-codex');
+    const events: AgentEvent[] = [];
+    const handle = await adapter.start(userSpec(), (event) => events.push(event));
+    cleanup.push(() => adapter.close(handle, Date.now() + 1000));
+    expect(threadParams(server.frames).config).not.toHaveProperty('plugins');
+    expect(events.find((event) => event.kind === 'extensions.applied')).toMatchObject({
+      disabled: { plugins: [] },
+    });
+  });
+
+  it('routes the approvals of a read-only turn in full access mode to the user and then back', async () => {
+    const server = fakeServer();
+    server.intercept.mockImplementation((frame) => {
+      if (frame.method !== 'thread/start') return false;
+      server.send({
+        id: frame.id,
+        result: {
+          thread: { id: 'sandbox-thread' },
+          approvalsReviewer: 'auto_review',
+          sandbox: { type: 'dangerFullAccess' },
+        },
+      });
+      return true;
+    });
+    const adapter = new CodexAdapter('fake-codex');
+    const events: AgentEvent[] = [];
+    const handle = await adapter.start({ ...userSpec(), permission_mode: 'full_access' }, (event) =>
+      events.push(event),
+    );
+    cleanup.push(() => adapter.close(handle, Date.now() + 1000));
+    const turn = async (turn_id: string, read_only?: true) => {
+      const done = events.filter((event) => event.kind === 'turn.completed').length;
+      await adapter.send(handle, { turn_id, input: 'look', ...(read_only ? { read_only } : {}) });
+      const params = turnStarts(server.frames).at(-1)!;
+      completed(server.send);
+      await vi.waitFor(() =>
+        expect(events.filter((event) => event.kind === 'turn.completed')).toHaveLength(done + 1),
+      );
+      return params;
+    };
+    const first = await turn('first-turn');
+    expect(first.sandboxPolicy).toEqual({ type: 'dangerFullAccess' });
+    expect(first).not.toHaveProperty('approvalsReviewer');
+    expect(await turn('read-only-turn', true)).toMatchObject({
+      sandboxPolicy: { type: 'readOnly', networkAccess: false },
+      approvalsReviewer: 'user',
+    });
+    expect(await turn('next-turn')).toMatchObject({
+      sandboxPolicy: { type: 'dangerFullAccess' },
+      approvalsReviewer: 'auto_review',
+    });
+    expect(await turn('last-turn')).not.toHaveProperty('approvalsReviewer');
   });
 
   it('does not start a plan mode session the server left writable', async () => {

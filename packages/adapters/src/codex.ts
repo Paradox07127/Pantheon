@@ -4,7 +4,6 @@ import path from 'node:path';
 import {
   id,
   DomainError,
-  PLAN_MODE_INSTRUCTION,
   SessionStartError,
   closeUserExtensions,
   type HarnessAdapter,
@@ -106,6 +105,8 @@ Do the work of the role described in the developer instructions.
 Keep replies short.
 Do not change files.
 `;
+const CODEX_PLAN_MODE_INSTRUCTION =
+  'Plan mode is on: read and plan only, do not change files, and write the plan in your reply.';
 // Frames whose body no reader uses; the log keeps only their type.
 const TYPE_ONLY_FRAMES = new Set([
   'rawResponseItem/completed',
@@ -1138,18 +1139,17 @@ async function startNativeTurn(
       wanted !== (session.profileSent ?? session.profiles?.writer) ? wanted : undefined;
     if (profile !== undefined) session.profileSent = profile;
     // A turn/start sandbox stays in force for later turns, so the turn after a read-only one restores it.
-    const userSandbox =
-      session.spec.user_session && session.spec.permission_mode !== 'full_access'
-        ? current.readOnly
-          ? // The user's auto reviewer would approve an escalation past the read-only sandbox.
-            { sandboxPolicy: { type: 'readOnly', networkAccess: false }, approvalsReviewer: 'user' }
-          : session.readOnlySent
-            ? {
-                ...session.userSandbox,
-                ...(session.userReviewer ? { approvalsReviewer: session.userReviewer } : {}),
-              }
-            : undefined
-        : undefined;
+    const userSandbox = session.spec.user_session
+      ? current.readOnly
+        ? // The user's auto reviewer would approve an escalation past the read-only sandbox.
+          { sandboxPolicy: { type: 'readOnly', networkAccess: false }, approvalsReviewer: 'user' }
+        : session.readOnlySent
+          ? {
+              ...(session.spec.permission_mode !== 'full_access' ? session.userSandbox : {}),
+              ...(session.userReviewer ? { approvalsReviewer: session.userReviewer } : {}),
+            }
+          : undefined
+      : undefined;
     if (session.spec.user_session) session.readOnlySent = current.readOnly;
     const started = await session.rpc.request<{ turn: { id: string } }>('turn/start', {
       threadId,
@@ -2342,7 +2342,11 @@ export class CodexAdapter implements HarnessAdapter {
       const mode = spec.extensions?.mode;
       const extensions =
         mode || spec.sandbox || spec.pantheon_mcp || spec.mcp_servers.length
-          ? await readExtensions(rpc, spec.cwd, !!spec.sandbox && mode !== 'none')
+          ? await readExtensions(
+              rpc,
+              spec.cwd,
+              !!spec.sandbox && mode !== 'none' && !spec.user_session,
+            )
           : undefined;
       const inherited = spec.extensions?.mode === 'inherit' ? spec.extensions.overrides : undefined;
       const overrides =
@@ -2525,7 +2529,7 @@ export class CodexAdapter implements HarnessAdapter {
           : { default_tools_approval_mode: 'prompt', approvals_reviewer: 'user' };
         // An entry here replaces the user's, whose enabled key defaults to true, so each one names it.
         const policies = extensions!.app_policies;
-        if (!disabled!.apps)
+        if (!disabled!.apps && (!spec.user_session || openedApps))
           config.apps = {
             _default: {
               ...appPolicy,
@@ -2603,7 +2607,7 @@ export class CodexAdapter implements HarnessAdapter {
           ...((spec.role === 'writer' || spec.runtime_analysis) && spec.control_instructions
             ? [spec.control_instructions]
             : []),
-          ...(spec.permission_mode === 'plan' ? [PLAN_MODE_INSTRUCTION] : []),
+          ...(spec.permission_mode === 'plan' ? [CODEX_PLAN_MODE_INSTRUCTION] : []),
         ]
           .filter(Boolean)
           .join('\n\n');

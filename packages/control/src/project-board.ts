@@ -38,7 +38,6 @@ import { history } from './project-facts.js';
 import { INBOX_HEADER, appendNote, noteOtherPlan, opText, refuteText } from './lead-inbox.js';
 import { recordPlanDecisions } from './plan-decisions.js';
 import { reviewPlan } from './review.js';
-import { projectRoutingTable } from './routing-table.js';
 import {
   placedTaskSessions,
   revokeLeadTurnWrites,
@@ -399,8 +398,8 @@ function withScopeKind(task: PlanTask): PlanTask {
 
 /**
  * Refuses a lead's task that names a runtime the daemon cannot open it on, names another device
- * unknown or without device_reason, needs labels or uses resources its device lacks, or leaves the routing
- * table's first choice or the workflow policy's path without saying why, listing every problem in
+ * unknown or without device_reason, needs labels or uses resources its device lacks, or leaves the
+ * project's writer or the workflow policy's path without saying why, listing every problem in
  * one refusal; a task is checked only when it is new or the write changes the fields a check reads.
  * writtenTiers holds the tier the lead wrote, or undefined for no kind, for tasks it wrote a kind of.
  */
@@ -414,8 +413,7 @@ function refuseUnexplained(
 ): void {
   const policy = workflowPolicy(ctx, input.project_id),
     defaults = sessionDefaults(ctx, ctx.store.must<Project>('projects', input.project_id));
-  let table: ReturnType<typeof projectRoutingTable> | undefined,
-    devices: ReturnType<typeof listDevices> | undefined;
+  let devices: ReturnType<typeof listDevices> | undefined;
   const problems: string[] = [];
   const check = (ok: unknown, problem: string) => {
     if (!ok) problems.push(problem);
@@ -490,22 +488,18 @@ function refuseUnexplained(
         `tasks: task ${task.id} names ${off.map((field) => `${field} ${task[field]}`).join(', ')}, but the project runs tasks on its default runtime ${defaults.runtime}, model ${defaults.model} and effort ${defaults.effort ?? 'unset'} only; write route_reason to say why`,
       );
     }
+    const writer = defaults?.writer;
     if (
+      writer &&
       task.kind &&
       routed.length &&
       !task.route_reason &&
       changed(['runtime', 'model', 'effort', 'kind', 'route_reason'])
-    ) {
-      const { domain, tier } = task.kind;
-      table ??= projectRoutingTable(ctx, input.project_id);
-      const first =
-        defaults?.writer ??
-        table.cells.find((cell) => cell.domain === domain && cell.tier === tier)?.first;
+    )
       check(
-        !first || routed.every((field) => task[field] === first[field]),
-        `tasks: task ${task.id} differs from the routing table's first choice for ${domain} ${tier} (runtime ${first?.runtime}, model ${first?.model}, effort ${first?.effort ?? 'unset'}); write route_reason to say why`,
+        routed.every((field) => task[field] === writer[field]),
+        `tasks: task ${task.id} differs from the project's writer (runtime ${writer.runtime}, model ${writer.model}, effort ${writer.effort ?? 'unset'}); write route_reason to say why`,
       );
-    }
     if (task.kind && task.path && !task.flow_reason && changed(['path', 'kind', 'flow_reason'])) {
       const given = policy.path[task.kind.tier],
         written = writtenTiers.get(task.id);

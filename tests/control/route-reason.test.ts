@@ -18,21 +18,6 @@ type Fixture = Awaited<ReturnType<typeof fixture>>;
 
 const codex = { runtime: 'codex', model: 'gpt-fixture', effort: 'high' } as const;
 
-/** A terminal-bench board whose only aliased row makes codex the first choice of every backend-logic cell. */
-const leaderboards = {
-  fetched_at: '2026-11-09T08:00:00.000Z',
-  sources: [{ source: 'terminal-bench', fetched_at: '2026-11-09T08:00:00.000Z' }],
-  rows: [
-    {
-      source: 'terminal-bench',
-      board_name: 'GPT Fixture / Codex / high',
-      score: 70,
-      unit: 'accuracy_pct',
-      alias: codex,
-    },
-  ],
-};
-
 function failure(fn: () => unknown): { code?: string; message?: string } {
   try {
     fn();
@@ -42,17 +27,14 @@ function failure(fn: () => unknown): { code?: string; message?: string } {
   throw new Error('Expected the command to fail');
 }
 
-async function setup(withLeaderboards = true) {
+async function setup() {
   const configDir = mkdtempSync(path.join(os.tmpdir(), 'pantheon-route-reason-'));
-  const giveLeaderboards = () =>
-    writeFileSync(path.join(configDir, 'leaderboards.json'), JSON.stringify(leaderboards));
-  if (withLeaderboards) giveLeaderboards();
   const f = await fixture({
     adapter: new FixtureAdapter(100),
     managedWorkspaces: true,
     controlOptions: { userConfigDir: configDir },
   });
-  // The routing table only picks a registered runtime.
+  // A task may name only a registered runtime.
   const codexAdapter = new FixtureAdapter(100);
   codexAdapter.name = codex.runtime;
   f.control.adapters.set(codexAdapter.name, codexAdapter);
@@ -60,7 +42,7 @@ async function setup(withLeaderboards = true) {
     await f.close();
     rmSync(configDir, { recursive: true, force: true });
   });
-  return { f, lead: leadOf(f), giveLeaderboards };
+  return { f, lead: leadOf(f) };
 }
 
 const REQUEST = 'Ship the export API and a download button this week.';
@@ -158,8 +140,22 @@ it('rates a task t3 when its goal names a risk', async () => {
   expect(taskOf(f, lead)?.kind?.tier).toBe('t3');
 });
 
-it('refuses a lead write that leaves the first choice without route_reason and takes one with it', async () => {
+/** Gives the project codex as the runtime, model and effort of its task sessions. */
+function codexWriter(f: Fixture) {
+  const project = f.store.must<Project>('projects', f.project.id);
+  f.store.update<Project>(
+    'projects',
+    {
+      ...project,
+      session_defaults: { runtime: f.adapter.name, permission_mode: 'ask', writer: codex },
+    },
+    project.revision,
+  );
+}
+
+it("refuses a lead write that leaves the project's writer without route_reason and takes one with it", async () => {
   const { f, lead } = await setup();
+  codexWriter(f);
   const error = failure(() =>
     write(f, lead, [task({ kind: { domain: 'backend-logic', tier: 't2' }, model: 'other-model' })]),
   );
@@ -179,17 +175,30 @@ it('refuses a lead write that leaves the first choice without route_reason and t
   expect(taskOf(f, lead)?.model).toBe('other-model');
 });
 
-it('asks no route_reason for a cell the routing table has no data for', async () => {
+it('takes a task on another runtime without route_reason when the project stores a routing choice and has no writer', async () => {
   const { f, lead } = await setup();
-  write(f, lead, [task({ kind: { domain: 'review', tier: 't2' }, model: 'other-model' })]);
-  expect(taskOf(f, lead)?.model).toBe('other-model');
+  const claudeAdapter = new FixtureAdapter(100);
+  claudeAdapter.name = 'claude';
+  f.control.adapters.set(claudeAdapter.name, claudeAdapter);
+  const project = f.store.must<Project>('projects', f.project.id);
+  // A routing choice an earlier Pantheon stored on the project.
+  f.store.update<Project>(
+    'projects',
+    {
+      ...project,
+      routing_overrides: { 'backend-logic': { t2: { first: codex } } },
+    } as Project,
+    project.revision,
+  );
+  write(f, lead, [task({ kind: { domain: 'backend-logic', tier: 't2' }, runtime: 'claude' })]);
+  expect(taskOf(f, lead)?.runtime).toBe('claude');
 });
 
 it('does not check again a task the write leaves as it was', async () => {
-  const { f, lead, giveLeaderboards } = await setup(false);
+  const { f, lead } = await setup();
   const old = task({ kind: { domain: 'backend-logic', tier: 't2' }, model: 'other-model' });
   write(f, lead, [old]);
-  giveLeaderboards();
+  codexWriter(f);
   write(f, lead, [old], 'Export ships next week');
   expect(planOf(f, lead)?.headline).toBe('Export ships next week');
 });
@@ -370,8 +379,8 @@ function withDevices(f: Fixture) {
       labels: ['cuda'],
       os: 'linux',
       resources: { gpu: 1 },
-      // Codex is the routing table's first choice for the tasks these tests write.
-      runtimes: { [codex.runtime]: { binary: '/bin/codex', version: '1', logged_in: true } },
+      // The lead's runtime, which the tasks these tests write open on.
+      runtimes: { [f.adapter.name]: { binary: '/bin/fixture', version: '1', logged_in: true } },
     }),
   );
   ctx.devices!.set(
@@ -472,6 +481,7 @@ it('checks the device for the runtime the task opens on, which the writer choice
 
 it('asks route_reason again when the write drops the reason', async () => {
   const { f, lead } = await setup();
+  codexWriter(f);
   const other = { kind: { domain: 'backend-logic', tier: 't2' }, model: 'other-model' };
   write(f, lead, [task({ ...other, route_reason: 'The user asked for this model' })]);
   const dropped = failure(() => write(f, lead, [task(other)]));

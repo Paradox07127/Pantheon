@@ -3,7 +3,7 @@ import type { BoardModel, BoardSnapshot, BoardTaskRung, CommandType } from '@pan
 import type { GlyphName } from '../../components/SessionStateIcon';
 import { agentName, shownAgents, templateName } from '../../data/agents';
 import { shortId } from '../../data/format';
-import { needReasonText, offeredNeeds, reasonText } from '../../data/needs-you';
+import { needReasonText, reasonText } from '../../data/needs-you';
 import { proposalTitle } from '../../data/plan-edit';
 import { ASSISTANT, choiceKey, type RequestChoice } from '../../data/request-target';
 import { t } from '../../i18n';
@@ -14,9 +14,8 @@ export type BoardLead = NonNullable<BoardModel['leads']>[number];
 export type BoardNeed = NonNullable<BoardModel['needs']>[number];
 /** A needs-you item from the board, or from the needs-you list, which counts no unblocked tasks. */
 export type NeedItem = Omit<BoardNeed, 'unblocks'> & { unblocks?: number };
-/** The needs the board lists that the interface offers. */
-export const boardNeeds = (model: Pick<BoardModel, 'needs'>): BoardNeed[] =>
-  offeredNeeds(model.needs ?? []) as BoardNeed[];
+/** The needs the board lists. */
+export const boardNeeds = (model: Pick<BoardModel, 'needs'>): BoardNeed[] => model.needs ?? [];
 export type SessionDefaults = BoardSnapshot['projects'][number]['session_defaults'];
 
 /* Requirement box */

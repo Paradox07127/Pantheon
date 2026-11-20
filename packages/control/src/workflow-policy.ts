@@ -238,41 +238,12 @@ export function projectOverBudget(ctx: ControlContext, projectId: string): boole
   return projectBudgetUse(ctx, projectId)?.reached_at !== undefined;
 }
 
-/** One parameter to change; tier names the one path tier to change and fits no other parameter. */
-export interface PolicyChange {
-  param: WorkflowParam;
-  tier?: TaskKind['tier'];
-  to: unknown;
-}
-/** Who changed the policy: the user directly, or an improvement by id. */
-export type PolicyChangeBy = 'user' | { improvement_id: string };
-
-/** The value a change addresses: the tier's path when it names a tier, else the whole parameter. */
-export function policyValue(policy: WorkflowPolicy, change: Omit<PolicyChange, 'to'>): unknown {
-  return change.tier ? policy.path[change.tier] : policy[change.param];
-}
-
-/** The policy with the change applied and checked; throws invalid_input when it does not fit. */
-export function changedPolicy(policy: WorkflowPolicy, change: PolicyChange): WorkflowPolicy {
-  requireThat(
-    !change.tier || change.param === 'path',
-    'invalid_input',
-    'Only a path change names a tier',
-  );
-  const next: WorkflowPolicy = change.tier
-    ? { ...policy, path: { ...policy.path, [change.tier]: change.to } }
-    : { ...policy, [change.param]: change.to };
-  checkPolicy(next);
-  return next;
-}
-
 function writePolicy(
   ctx: ControlContext,
   current: WorkflowPolicy,
   next: WorkflowPolicy,
   overridden: InheritedParam[],
   changed: (keyof PolicySettings)[],
-  by: PolicyChangeBy,
   commandId?: string,
 ): WorkflowPolicy {
   const old = ctx.store.get<WorkflowPolicy>('workflow_policies', current.project_id);
@@ -295,48 +266,12 @@ function writePolicy(
         param,
         from: current[param],
         to: next[param],
-        ...(by === 'user' ? { by } : { by: 'improvement', improvement_id: by.improvement_id }),
+        by: 'user',
         policy_version: stored.policy_version,
       },
       commandId,
     );
   return stored;
-}
-
-/** Writes one parameter change as a new policy version and returns the value it replaced. */
-export function applyPolicyChange(
-  ctx: ControlContext,
-  projectId: string,
-  change: PolicyChange,
-  by: PolicyChangeBy,
-  commandId?: string,
-): unknown {
-  const current = workflowPolicy(ctx, projectId);
-  writePolicy(
-    ctx,
-    current,
-    changedPolicy(current, change),
-    [...new Set([...ownParams(ctx, projectId), change.param])],
-    [change.param],
-    by,
-    commandId,
-  );
-  return policyValue(current, change);
-}
-
-/** Adds the parameter to the pinned list unless it is there already. */
-export function pinParam(
-  ctx: ControlContext,
-  projectId: string,
-  param: WorkflowParam,
-  by: PolicyChangeBy,
-  commandId?: string,
-): void {
-  const current = workflowPolicy(ctx, projectId);
-  if (current.pinned.includes(param)) return;
-  const next = { ...current, pinned: [...current.pinned, param] };
-  const overridden = [...new Set([...ownParams(ctx, projectId), 'pinned' as const])];
-  writePolicy(ctx, current, next, overridden, ['pinned'], by, commandId);
 }
 
 /** Drops the project's own settings and budget, or only the named setting, so it follows the global values. */
@@ -363,7 +298,7 @@ export function clearPolicyOverrides(
   const overridden = param ? own.filter((p) => p !== param) : [];
   const changed = changedParams(current, next, own, overridden);
   if (!changed.length) return current;
-  return writePolicy(ctx, current, next, overridden, changed, 'user', commandId);
+  return writePolicy(ctx, current, next, overridden, changed, commandId);
 }
 
 /** Records each setting the global values changed, for the projects that follow them. */
@@ -475,6 +410,6 @@ export const workflowPolicyHandlers: Handlers = {
     checkPolicy(next);
     const changed = changedParams(current, next, own, overridden);
     if (!changed.length) return current;
-    return writePolicy(ctx, current, next, overridden, changed, 'user', c.command_id);
+    return writePolicy(ctx, current, next, overridden, changed, c.command_id);
   },
 };

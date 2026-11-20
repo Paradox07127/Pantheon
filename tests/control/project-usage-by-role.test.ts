@@ -146,6 +146,34 @@ it('groups project sessions by role and sums their tokens, tool calls and turn t
   }
 });
 
+it('counts stored range story sessions, kept or deleted, as story', async () => {
+  const f = await usageFixture();
+  try {
+    const kept = f.session('range-story', f.project.id, {
+      range_story: { story_id: 'old-story' },
+    });
+    f.turn('range-story-1', kept, { input_tokens: 30, output_tokens: 3 });
+    f.store.event('session.opened', { id: 'deleted-range-story', revision: 1 }, f.project.id, {
+      purpose: 'range_story',
+    });
+    expect(f.control.projectUsageRead(user, f.project.id)).toEqual<RoleUsage[]>([
+      {
+        role: 'story',
+        sessions: 2,
+        turns: 1,
+        tool_calls: 0,
+        input_tokens: 30,
+        cached_input_tokens: null,
+        output_tokens: 3,
+        turn_ms: 0,
+        turns_without_usage: 0,
+      },
+    ]);
+  } finally {
+    await f.close();
+  }
+});
+
 it.each([
   {
     name: 'keeps the usage of a deleted session in the report',

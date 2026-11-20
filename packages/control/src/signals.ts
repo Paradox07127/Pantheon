@@ -598,14 +598,7 @@ const traceSeen = new WeakMap<
 >();
 
 const sessionKind = (session: Session) =>
-  session.resident?.kind ??
-  (session.task
-    ? 'task'
-    : session.review_id
-      ? 'review'
-      : session.app_debug
-        ? 'app_debug'
-        : 'session');
+  session.resident?.kind ?? (session.task ? 'task' : session.review_id ? 'review' : 'session');
 
 /** Who a finding's lane belongs to: the agent profile of its session, else the session's kind. */
 function findingOwner(ctx: ControlContext, finding: RuntimeFinding) {

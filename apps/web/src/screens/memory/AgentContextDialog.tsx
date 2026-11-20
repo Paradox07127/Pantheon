@@ -19,9 +19,6 @@ export const KIND_LABEL = {
   },
 };
 
-export const experiencesText = () =>
-  t({ id: 'memory.agent.experiences', defaultMessage: 'Experience' });
-
 export const versionText = () =>
   t({ id: 'memory.agent.version', defaultMessage: 'Memory version' });
 
@@ -46,35 +43,6 @@ export function AgentContextBody({ context }: { context: MemoryContext }) {
           ))}
         </section>
       ))}
-      {context.experiences.length > 0 && (
-        <section className="acx-grp" aria-label={experiencesText()}>
-          <div className="acx-gh">
-            <span className="cap">{experiencesText()}</span>
-            <span className="mono mu acx-num acx-sm">{context.experiences.length}</span>
-          </div>
-          {context.experiences.map((e) => (
-            <div key={e.id} className="acx-it">
-              <span className="acx-xh">
-                <span className="acx-b acx-grow">{e.procedure}</span>
-                <span className="chip">
-                  <span className="acx-dot" data-tone={e.status === 'active' ? 'ok' : 'trial'} />
-                  {e.status === 'active'
-                    ? t({ id: 'memory.agent.activeChip', defaultMessage: 'Active' })
-                    : t({ id: 'memory.agent.trialChip', defaultMessage: 'On trial' })}
-                </span>
-              </span>
-              {e.countercondition && (
-                <span className="mu acx-sm">
-                  {t(
-                    { id: 'memory.agent.counter', defaultMessage: 'Not for: {text}' },
-                    { text: e.countercondition },
-                  )}
-                </span>
-              )}
-            </div>
-          ))}
-        </section>
-      )}
     </div>
   );
 }

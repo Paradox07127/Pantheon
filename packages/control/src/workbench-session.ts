@@ -78,7 +78,6 @@ import {
   type SessionGatesHistory,
   type WorkbenchSession,
 } from '@pantheon/protocol';
-import { defaultDesktopUserDataDirectory } from '@pantheon/protocol/paths';
 import {
   gitFolderAsync,
   inside,
@@ -100,6 +99,7 @@ import {
   checkpointRef,
   forkCheckpoint,
   gitWorkspace,
+  globalExcludes,
   restorableTurns,
 } from './checkpoint.js';
 import { buildHandoff } from './handoff.js';
@@ -141,12 +141,12 @@ import { inheritedEnvAllowlist, managedSessionSpec, sessionExtensions } from './
 import { projectFacts } from './project-facts.js';
 import { runTimes, sessionRun } from './run-state.js';
 import { sessionTasks } from './session-tasks.js';
-import { appDebugSkill, appDiagnoseSkill } from './app-debug-skill.js';
 import { projectSetupSkill } from './project-setup-skill.js';
 import { worktreeSandbox } from './protection.js';
 import { ownWorkspaceOnly } from './workspace-files.js';
 import { failWorkbenchTurns, workspaceReady } from './provisioning.js';
 import {
+  mergesPreparing,
   nativeTurnActive,
   personalAgentFolder,
   queuedTurn,
@@ -246,22 +246,6 @@ export function workerInstructions(
   ].join('\n\n');
 }
 
-/** The renderer's CDP port the desktop app wrote on its last start, read anew for each turn. */
-function appCdpPort(ctx: ControlContext): number | undefined {
-  const file = path.join(
-    ctx.protectionPaths?.desktopUserDataDir ?? defaultDesktopUserDataDirectory(),
-    'DevToolsActivePort',
-  );
-  let line = '';
-  try {
-    line = readFileSync(file, 'utf8').split('\n')[0]!.trim();
-  } catch {
-    // No file means the app runs without a debugging port.
-  }
-  const port = /^\d+$/.test(line) ? Number(line) : 0;
-  return port >= 1024 && port <= 65535 ? port : undefined;
-}
-
 export function workbenchSessionSpec(ctx: ControlContext, session: Session): SessionSpec {
   const workspace = ctx.store.must<Workspace>('workspaces', session.workspace_id!),
     project = ctx.store.must<Project>('projects', session.project_id);
@@ -303,9 +287,8 @@ export function workbenchSessionSpec(ctx: ControlContext, session: Session): Ses
     ctx.store.list<SessionTurn>('session_turns').find((turn) => turn.session_id === session.id)
       ?.origin === undefined;
   const saved = project.extension_overrides?.[session.runtime];
-  const cdpPort = session.app_debug ? appCdpPort(ctx) : undefined;
   // A purpose session follows its own guide, which has it change the worktree without a plan.
-  const planningLead = pantheonMcp && !session.task && !session.app_debug && !session.project_setup;
+  const planningLead = pantheonMcp && !session.task && !session.project_setup;
   return managedSessionSpec(ctx, {
     ...(autoTitle ? { auto_title: true } : {}),
     platform_session_id: session.id,
@@ -352,23 +335,7 @@ export function workbenchSessionSpec(ctx: ControlContext, session: Session): Ses
     cwd: workspace.path,
     env_allowlist: pantheonTools ? NATIVE_ENV_ALLOWLIST : inheritedEnvAllowlist(project),
     skills: [],
-    mcp_servers: cdpPort
-      ? [
-          {
-            name: 'chrome_devtools',
-            command: 'npx',
-            // In the project folder npm obeys its devEngines and refuses another Node version.
-            args: [
-              '--prefix',
-              os.homedir(),
-              '-y',
-              'chrome-devtools-mcp@1.13.0',
-              `--browser-url=http://127.0.0.1:${cdpPort}`,
-            ],
-            env: {},
-          },
-        ]
-      : [],
+    mcp_servers: [],
     pantheon_mcp: pantheonMcp,
     extensions: sessionExtensions(session, saved, !pantheonTools),
     device_id: session.device_id ?? 'local',
@@ -593,12 +560,23 @@ function changesOf(
 
 const BRANCH_STATUS = ['status', '--porcelain=v2', '--branch', '-z'];
 
+/**
+ * A session worktree's status arguments: the user's global excludes apply, as they do to the add
+ * that commits its files, and no repository setting hides untracked files.
+ */
+const worktreeStatusArgs = async () => [
+  ...(await globalExcludes()),
+  ...BRANCH_STATUS,
+  '--untracked-files=normal',
+];
+
 function branchStatus(result: GitResult) {
   if (result.exit_code !== 0) return null;
   const records = result.stdout.toString().split('\0');
   let branch: string | null = null,
     head = '',
     uncommitted = 0,
+    unmerged = 0,
     ahead_upstream: number | undefined;
   for (let index = 0; index < records.length; index++) {
     const record = records[index]!;
@@ -609,10 +587,17 @@ function branchStatus(result: GitResult) {
     else if (record.startsWith('# branch.ab ')) ahead_upstream = Number(record.split(' ')[2]);
     else if (record && !record.startsWith('# ')) {
       uncommitted++;
+      if (record.startsWith('u ')) unmerged++;
       if (record.startsWith('2 ')) index++;
     }
   }
-  return { branch, head, uncommitted, ...(ahead_upstream !== undefined ? { ahead_upstream } : {}) };
+  return {
+    branch,
+    head,
+    uncommitted,
+    unmerged,
+    ...(ahead_upstream !== undefined ? { ahead_upstream } : {}),
+  };
 }
 
 type SessionGitFacts = Pick<WorkbenchSession, 'branch' | 'ahead' | 'behind'> & {
@@ -1240,7 +1225,7 @@ async function prefetchListedGit(ctx: ControlContext, p: Principal, listed: List
     else if (next.read === 'facts') {
       cached.facts = sessionGitFacts(
         // A read from before the session's last activity may not show what that activity did.
-        await readStatus(workspace.path, BRANCH_STATUS, workspace.id, cached.activity),
+        await readStatus(workspace.path, await worktreeStatusArgs(), workspace.id, cached.activity),
         workspace.source_branch
           ? await runGit(
               workspace.path,
@@ -1485,7 +1470,6 @@ export function sessionList(
       ...(session.snoozed_at ? { snoozed_at: session.snoozed_at } : {}),
       ...(session.backend_id ? { backend_id: session.backend_id } : {}),
       ...(session.forked_from ? { forked_from: session.forked_from } : {}),
-      ...(session.app_debug ? { app_debug: session.app_debug } : {}),
       ...(session.resident ? { resident: session.resident } : {}),
     };
     const plan = session.task ? planOf(session.task.lead_session_id) : undefined;
@@ -1943,7 +1927,7 @@ function refuseAdopted(ctx: ControlContext, session: Session, message: string): 
 
 /**
  * The session writing in the project's first folder, adopted or opened there, until it has an
- * outcome, closes or is archived; a diagnosis of the running app only reads it.
+ * outcome, closes or is archived.
  */
 export function folderWriter(ctx: ControlContext, project: Project): Session | undefined {
   return ctx.store.list<Session>('sessions').find((session) => {
@@ -1952,8 +1936,7 @@ export function folderWriter(ctx: ControlContext, project: Project): Session | u
       !session.workspace_id ||
       session.outcome ||
       session.state === 'closed' ||
-      session.archived_at ||
-      session.app_debug
+      session.archived_at
     )
       return false;
     const workspace = ctx.store.get<Workspace>('workspaces', session.workspace_id);
@@ -2933,7 +2916,7 @@ export async function sessionPreflight(
     source = workspace.source ?? workspace.path,
     base = sessionBase(started, workspace);
   const [worktreeStatus, sourceStatus] = await Promise.all([
-    readStatus(workspace.path, BRANCH_STATUS, workspace.id),
+    worktreeStatusArgs().then((args) => readStatus(workspace.path, args, workspace.id)),
     readStatus(source, SOURCE_STATUS, workspace.id),
   ]);
   const worktree = worktreeStateOf(worktreeStatus);
@@ -2941,16 +2924,26 @@ export async function sessionPreflight(
   const sourceState = sourceStateOf(sourceStatus);
   requireThat(sourceState, 'workspace_read_failed', 'Source repository status could not be read');
   const { branch: targetBranch, clean: sourceClean } = sourceState;
-  const [commits, files, merge] = await Promise.all([
+  // The merge commits these files first, so the commit it merges and gates is not made yet.
+  const committing = !worktree.clean && commitsOnMerge(ctx, started);
+  const [commits, files, edited, untracked, merge] = await Promise.all([
     runGit(workspace.path, ['rev-list', '--count', `${base}..${worktree.head}`], undefined, true),
     runGit(workspace.path, ['diff', '--name-only', '-z', base!, worktree.head], undefined, true),
+    committing
+      ? runGit(workspace.path, ['diff', '--name-only', '-z', 'HEAD', '--'], undefined, true)
+      : undefined,
+    committing
+      ? globalExcludes().then((excludes) =>
+          runGit(workspace.path, [...excludes, ...UNTRACKED], undefined, true),
+        )
+      : undefined,
     // A session in the project folder lands on the branch it works on, so nothing can conflict.
-    targetBranch !== null && !started.in_place
+    targetBranch !== null && !started.in_place && !committing
       ? mergePreview(source, `refs/heads/${targetBranch}`, worktree.head)
       : undefined,
   ]);
   requireThat(
-    commits.exit_code === 0 && files.exit_code === 0,
+    [commits, files, edited, untracked].every((read) => !read || read.exit_code === 0),
     'workspace_read_failed',
     'Worktree changes could not be read',
   );
@@ -2993,7 +2986,11 @@ export async function sessionPreflight(
     target_branch: targetBranch,
     source_root: source,
     commit_count: Number(commits.stdout.toString().trim()),
-    files_changed: files.stdout.toString().split('\0').filter(Boolean).length,
+    files_changed: new Set(
+      [files, edited, untracked].flatMap((read) =>
+        read ? read.stdout.toString().split('\0').filter(Boolean) : [],
+      ),
+    ).size,
     worktree_clean: worktree.clean,
     source_clean: sourceClean,
     conflicts,
@@ -3001,7 +2998,9 @@ export async function sessionPreflight(
       configured_total: commands?.length ?? 0,
       last: !payload
         ? 'none'
-        : payload.commit !== worktree.head || payload.check_spec_hash !== hash(commands)
+        : committing ||
+            payload.commit !== worktree.head ||
+            payload.check_spec_hash !== hash(commands)
           ? 'stale'
           : payload.results.some(gateFailed)
             ? 'failed'
@@ -3489,15 +3488,18 @@ function releaseRetiredClaim(
   ctx.store.event('task.released', next, next.project_id, { task_id: direct.id });
 }
 
-type WorktreeState = { clean: boolean; head: string };
+type WorktreeState = { clean: boolean; head: string; unmerged: boolean };
 type SourceState = { branch: string | null; clean: boolean };
 
-/** Whether the worktree has no uncommitted or untracked files, and its HEAD; null when Git cannot read them. */
+/**
+ * Whether the worktree has no uncommitted or untracked files, its HEAD, and whether its index has
+ * unresolved conflicts; null when Git cannot read them.
+ */
 function worktreeStateOf(status: GitResult): WorktreeState | null {
   const current = branchStatus(status);
   // A branch without commits has no HEAD commit.
   if (!current || current.head === '(initial)') return null;
-  return { clean: current.uncommitted === 0, head: current.head };
+  return { clean: current.uncommitted === 0, head: current.head, unmerged: current.unmerged > 0 };
 }
 
 const HEAD_COMMIT = ['rev-parse', '--verify', 'HEAD^{commit}'],
@@ -3530,7 +3532,9 @@ export async function readMergeStates(
   const source = workspace.source ?? workspace.path;
   // Admission reads both afresh; later display reads share these runs.
   const [worktree, sourceState, conditions] = await Promise.all([
-    readStatus(workspace.path, BRANCH_STATUS, workspace.id, Infinity).then(worktreeStateOf),
+    worktreeStatusArgs()
+      .then((args) => readStatus(workspace.path, args, workspace.id, Infinity))
+      .then(worktreeStateOf),
     readStatus(source, SOURCE_STATUS, workspace.id, Infinity).then(sourceStateOf),
     readMergeConditions(ctx, sessionId),
   ]);
@@ -3626,7 +3630,9 @@ export function prefetchMergeReads(
       const source = workspace.source ?? workspace.path;
       return [
         refreshMergeState(worktreeMergeReads, workspace.id, async () =>
-          worktreeStateOf(await readStatus(workspace.path, BRANCH_STATUS, workspace.id)),
+          worktreeStateOf(
+            await readStatus(workspace.path, await worktreeStatusArgs(), workspace.id),
+          ),
         ),
         refreshMergeState(sourceMergeReads, source, async () =>
           sourceStateOf(await readStatus(source, SOURCE_STATUS, workspace.id)),
@@ -3660,6 +3666,11 @@ const UNCOMMITTED = {
   message: 'Commit or remove the uncommitted and untracked files first',
 };
 
+const UNRESOLVED = {
+  code: 'unresolved_conflicts',
+  message: 'Resolve the conflicted files in the worktree first',
+};
+
 /** The first admission block; a repository state read does not know blocks as unknown. */
 function mergeBlockedReason(
   ctx: ControlContext,
@@ -3683,6 +3694,8 @@ function mergeBlockedReason(
     return { code: 'invalid_state', message: 'Worktree is not ready' };
   const worktree = read.worktree(workspace);
   if (!worktree) return MERGE_STATE_UNKNOWN;
+  // Committing them would record the files with their conflict markers as resolved.
+  if (worktree.unmerged && (session.in_place || commitsOnMerge(ctx, session))) return UNRESOLVED;
   if (session.in_place) return landBlockedReason(ctx, session, workspace, worktree);
   const { clean, head } = worktree;
   // Pantheon commits for a session the user opened when the user merges it; other session agents commit their own work.
@@ -3876,7 +3889,9 @@ function prepareGateRun(ctx: ControlContext, p: Principal, c: Command): Promise<
   // Before the conditions are read, each conditional command step counts.
   const { input, session, workspace } = gateRunRequest(ctx, p, c, new Map());
   const read: Promise<GateRunHead> = input.only_failed
-    ? runGit(workspace.path, BRANCH_STATUS, undefined, true).then(worktreeStateOf)
+    ? worktreeStatusArgs()
+        .then((args) => runGit(workspace.path, args, undefined, true))
+        .then(worktreeStateOf)
     : runGit(workspace.path, HEAD_COMMIT, undefined, true).then((result) => {
         const head = headOf(result);
         return head === null ? null : { head };
@@ -4086,35 +4101,84 @@ function mergeRequest(ctx: ControlContext, p: Principal, c: Command): MergeReque
 /** Refuses at once what the store refuses, then reads the repository states outside the transaction. */
 function prepareMerge(ctx: ControlContext, p: Principal, c: Command): Promise<Handler> {
   const { session } = mergeRequest(ctx, p, c);
+  requireThat(!mergesPreparing(ctx).has(session.id), 'invalid_state', 'Session is being merged');
   const blocked = mergeBlockedReason(ctx, session, unreadMergeReads);
   if (blocked && blocked !== MERGE_STATE_UNKNOWN)
     throw new DomainError(blocked.code, blocked.message);
   const workspace = ctx.store.must<Workspace>('workspaces', session.workspace_id!);
-  if (session.in_place) return prepareLand(ctx, session, workspace);
+  if (session.in_place) return prepareLand(ctx, c, session, workspace);
   return readMergeStates(ctx, session.id, workspace).then(async (reads) => {
     if (commitsOnMerge(ctx, session) && !reads.worktree(workspace)?.clean) {
       requireMergeReady(ctx, ctx.store.must<Session>('sessions', session.id), reads);
       // The merge's gates then check the new commit.
-      const worktree = await commitUncommitted(session, workspace);
+      const worktree = await commitHolding(ctx, c, session, workspace);
       reads = { ...reads, worktree: () => worktree };
     }
     return (ctx, p, c) => mergeRequest(ctx, p, c).admit(reads);
   });
 }
 
-/** Commits the workspace's uncommitted and untracked files under the session title; its state after. */
-async function commitUncommitted(session: Session, workspace: Workspace): Promise<WorktreeState> {
-  for (const args of [
-    ['add', '--all'],
-    ['commit', '--quiet', '-m', session.title || 'Pantheon session'],
-  ]) {
-    const result = await userGit(workspace.path, args);
-    requireThat(result.ok, 'commit_failed', result.output || `git ${args[0]} failed`);
+/**
+ * Commits the session's uncommitted files while it takes no turn or other merge, if the command's
+ * revision is still the session's.
+ */
+async function commitHolding(
+  ctx: ControlContext,
+  c: Command,
+  session: Session,
+  workspace: Workspace,
+): Promise<WorktreeState> {
+  const preparing = mergesPreparing(ctx);
+  revision(ctx, c, ctx.store.must<Session>('sessions', session.id));
+  requireThat(!preparing.has(session.id), 'invalid_state', 'Session is being merged');
+  preparing.add(session.id);
+  try {
+    return await commitUncommitted(session, workspace);
+  } finally {
+    preparing.delete(session.id);
   }
-  forgetWorktreeReads(workspace.id);
-  const state = worktreeStateOf(await runGit(workspace.path, BRANCH_STATUS, undefined, true));
-  requireThat(state, 'workspace_read_failed', 'Worktree status could not be read');
-  return state;
+}
+
+/**
+ * Commits the workspace's uncommitted and untracked files under the session title, unless adding
+ * them stages nothing; its state after. A failed commit puts the index back as it was.
+ */
+async function commitUncommitted(session: Session, workspace: Workspace): Promise<WorktreeState> {
+  try {
+    const tree = await runGit(workspace.path, ['write-tree'], undefined, true);
+    requireThat(
+      tree.exit_code === 0,
+      'commit_failed',
+      tree.stderr.toString() || 'git write-tree failed',
+    );
+    const added = await userGit(workspace.path, ['add', '--all']);
+    requireThat(added.ok, 'commit_failed', added.output || 'git add failed');
+    const staged = await runGit(
+      workspace.path,
+      ['diff', '--cached', '--quiet', ...DIFF_OPTIONS, 'HEAD', '--'],
+      undefined,
+      true,
+    );
+    if (staged.exit_code !== 0) {
+      const committed = await userGit(workspace.path, [
+        'commit',
+        '--quiet',
+        '-m',
+        session.title || 'Pantheon session',
+      ]);
+      if (!committed.ok) {
+        await runGit(workspace.path, ['read-tree', tree.stdout.toString().trim()], undefined, true);
+        throw new DomainError('commit_failed', committed.output || 'git commit failed');
+      }
+    }
+    const state = worktreeStateOf(
+      await runGit(workspace.path, await worktreeStatusArgs(), undefined, true),
+    );
+    requireThat(state, 'workspace_read_failed', 'Worktree status could not be read');
+    return state;
+  } finally {
+    forgetWorktreeReads(workspace.id);
+  }
 }
 
 /**
@@ -4124,6 +4188,7 @@ async function commitUncommitted(session: Session, workspace: Workspace): Promis
  */
 async function prepareLand(
   ctx: ControlContext,
+  c: Command,
   session: Session,
   workspace: Workspace,
 ): Promise<Handler> {
@@ -4131,7 +4196,7 @@ async function prepareLand(
   requireMergeReady(ctx, ctx.store.must<Session>('sessions', session.id), reads);
   let worktree = reads.worktree(workspace)!;
   const committed = !worktree.clean;
-  if (committed) worktree = await commitUncommitted(session, workspace);
+  if (committed) worktree = await commitHolding(ctx, c, session, workspace);
   const base = session.in_place!.base_sha!,
     numstat = await runGit(
       workspace.path,
@@ -4681,10 +4746,7 @@ function checkWorktreeSession(
     'invalid_input',
     'A session in the project folder runs on this machine and only for a report task',
   );
-  const holder =
-    input.workspace === 'in_place' && input.purpose !== 'app_debug'
-      ? folderWriter(ctx, project)
-      : undefined;
+  const holder = input.workspace === 'in_place' ? folderWriter(ctx, project) : undefined;
   requireThat(
     !holder,
     'resource_busy',
@@ -4798,8 +4860,6 @@ export function openWorktreeSession(
       workspace.revision,
     );
   const workflow = board && taskWorkflow(ctx, board.plan, board.task.id);
-  // Diagnosing the running app in the user's own folder must leave that folder as it is.
-  const diagnosis = input.purpose === 'app_debug' && input.workspace === 'in_place';
   const session = insert<Session>(
     ctx,
     'sessions',
@@ -4828,14 +4888,13 @@ export function openWorktreeSession(
       state: 'running',
       turn_count: 1,
       workspace_id: workspace.id,
-      ...(input.workspace === 'in_place' && !diagnosis && !board
+      ...(input.workspace === 'in_place' && !board
         ? { in_place: folderHead ? { base_sha: folderHead } : {} }
         : {}),
       ...(worktreeReason ? { worktree_reason: worktreeReason } : {}),
-      permission_mode: diagnosis ? 'plan' : input.permission_mode,
+      permission_mode: input.permission_mode,
       ...(input.fast ? { fast: true as const } : {}),
       ...(input.ultracode ? { ultracode: true as const } : {}),
-      ...(input.purpose === 'app_debug' ? { app_debug: true as const } : {}),
       ...(input.purpose === 'project_setup' ? { project_setup: true as const } : {}),
       ...(input.purpose === 'lead' ? { lead: true as const } : {}),
       title: derivedTitle(
@@ -4863,16 +4922,9 @@ export function openWorktreeSession(
   const turn = queuedTurn(session, input.input, 'send', {
     ...extras,
     // The guide goes ahead of the user's words but stays out of the thread.
-    ...(input.purpose && input.purpose !== 'lead'
+    ...(input.purpose === 'project_setup'
       ? {
-          reference_context: [
-            diagnosis
-              ? appDiagnoseSkill
-              : input.purpose === 'app_debug'
-                ? appDebugSkill
-                : projectSetupSkill,
-            extras.reference_context,
-          ]
+          reference_context: [projectSetupSkill, extras.reference_context]
             .filter((part) => part !== undefined)
             .join('\n\n'),
         }
