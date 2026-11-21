@@ -1,6 +1,6 @@
 import { afterEach, expect, it } from 'vitest';
 import { FixtureAdapter } from '@pantheon/adapters';
-import { id } from '@pantheon/domain';
+import { hash, id } from '@pantheon/domain';
 import type {
   BoardPlan,
   LeadNote,
@@ -426,14 +426,93 @@ it('lets only the user lock and unlock task order and refuses reordering through
   ).toBe(true);
 });
 
-it('takes a named workflow off a task with null, so the default one applies again', async () => {
+it('accepts a workflow id on a written task or a task patch and stores none', async () => {
+  const { f } = await setup();
+  const lead = leadOf(f);
+  f.call(
+    'board.plan.update',
+    {
+      project_id: f.project.id,
+      base_version: 0,
+      headline: 'Export ships this week',
+      lanes: [{ id: 'core', title: 'Core' }],
+      tasks: TASKS.map((task) => ({ ...task, workflow_id: 'something' })),
+      milestones: [],
+      risks: [],
+      assumptions: [],
+    },
+    null,
+    lead,
+  );
+  expect(planOf(f, lead).tasks.every((task) => !Object.hasOwn(task, 'workflow_id'))).toBe(true);
+  edit(f, lead, lead, [{ type: 'set_task', task_id: 'api', patch: { workflow_id: 'something' } }]);
+  expect(planOf(f, lead).tasks.find((task) => task.id === 'api')).not.toHaveProperty('workflow_id');
+  edit(f, lead, lead, [{ type: 'set_task', task_id: 'api', patch: { workflow_id: null } }]);
+  expect(planOf(f, lead).tasks.find((task) => task.id === 'api')).not.toHaveProperty('workflow_id');
+});
+
+/** A stored plan whose `api` task carries a workflow id and a contract hash that counted it. */
+async function storedWithWorkflowId() {
   const { f } = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
-  const workflow = (id: string | null) =>
-    edit(f, user, lead, [{ type: 'set_task', task_id: 'api', patch: { workflow_id: id } }]);
-  workflow(f.project.id);
-  expect(planOf(f, lead).tasks.find((task) => task.id === 'api')?.workflow_id).toBe(f.project.id);
-  workflow(null);
-  expect(planOf(f, lead).tasks.find((task) => task.id === 'api')).not.toHaveProperty('workflow_id');
+  const plan = planOf(f, lead);
+  const api = plan.tasks.find((task) => task.id === 'api')!;
+  const contract = hash({
+    goal: api.goal,
+    ...(api.brief ? { brief: api.brief } : {}),
+    scope: api.scope,
+    acceptance: api.acceptance,
+    workflow_id: 'release',
+    parallel: api.parallel,
+    done_when: api.done_when ?? 'merged',
+  });
+  f.store.update<BoardPlan>(
+    'board_plans',
+    {
+      ...plan,
+      tasks: plan.tasks.map((task) =>
+        task.id === 'api' ? ({ ...task, workflow_id: 'release' } as typeof task) : task,
+      ),
+      generations: { ...plan.generations, api: { generation: 3, contract } },
+    },
+    plan.revision,
+  );
+  return { f, lead };
+}
+
+function rewritePlan(f: Fixture, lead: Principal, tasks: typeof TASKS) {
+  f.call(
+    'board.plan.update',
+    {
+      project_id: f.project.id,
+      base_version: planOf(f, lead).plan_version,
+      headline: 'Export ships this week',
+      lanes: [{ id: 'core', title: 'Core' }],
+      tasks,
+      milestones: [],
+      risks: [],
+      assumptions: [],
+    },
+    null,
+    lead,
+  );
+}
+
+it('keeps the generation of a stored task with a workflow id when the plan is rewritten unchanged', async () => {
+  const { f, lead } = await storedWithWorkflowId();
+  rewritePlan(f, lead, TASKS);
+  expect(planOf(f, lead).generations!.api!.generation).toBe(3);
+  rewritePlan(f, lead, TASKS);
+  expect(planOf(f, lead).generations!.api!.generation).toBe(3);
+});
+
+it('starts the next generation of a stored task with a workflow id when its goal changes', async () => {
+  const { f, lead } = await storedWithWorkflowId();
+  rewritePlan(
+    f,
+    lead,
+    TASKS.map((task) => (task.id === 'api' ? { ...task, goal: 'Serve compressed exports' } : task)),
+  );
+  expect(planOf(f, lead).generations!.api!.generation).toBe(4);
 });

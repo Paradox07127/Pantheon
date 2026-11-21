@@ -35,7 +35,6 @@ export const DEFAULT_WORKFLOW_POLICY: PolicySettings & {
   runtime_quota_threshold: number;
   charter: Record<Exclude<CharterPower, 'plan_change' | 'start_external'>, CharterMode>;
 } = {
-  improvement_mode: 'auto',
   plan_changes: 'auto',
   // plan_change and start_external follow plan_changes and the project's external events.
   charter: {
@@ -58,7 +57,6 @@ export const DEFAULT_WORKFLOW_POLICY: PolicySettings & {
   gate_runner: 'daemon',
   milestone_verify: 'off',
   recovery_switch: 'off',
-  eval_runner: 'off',
   // The largest of the simple-task baselines on each path; tiers without a baseline have none.
   budget: {
     t1: {
@@ -78,12 +76,15 @@ const INHERITED = [
 ] as InheritedParam[];
 const SETTINGS: (keyof PolicySettings)[] = [...INHERITED, 'project_budget'];
 
-/** The settings the stored policy sets itself; one stored before global values sets each it holds. */
+/**
+ * The settings the stored policy sets itself; one stored before global values sets each it holds.
+ * A setting no longer in use is left out.
+ */
 export function ownPolicySettings(stored: WorkflowPolicy | undefined): Partial<PolicySettings> {
   if (!stored) return {};
   return Object.fromEntries(
     (stored.overridden ?? INHERITED)
-      .filter((param) => stored[param] !== undefined)
+      .filter((param) => INHERITED.includes(param) && stored[param] !== undefined)
       .map((param) => [param, stored[param]]),
   );
 }
@@ -139,7 +140,7 @@ function changedParams(
 function checkPolicy(policy: WorkflowPolicy): void {
   const between = (value: number, low: number, high: number) =>
     Number.isInteger(value) && value >= low && value <= high;
-  // An improvement's value arrives untyped, so the shapes the input schema enforces are checked here too.
+  // Stored settings and global values reach here without the input schema, so its shapes are checked too.
   requireThat(
     Object.entries(policy.path).every(
       ([tier, way]) =>

@@ -109,7 +109,7 @@ You can compact the context of an idle session (Claude Code and Codex only).
 The turn menu has "Fork from here", "Roll back" (files only, conversation only, or both) and "Rewrite and resend".
 Pantheon keeps a checkpoint before each turn, so a roll back can restore the files.
 
-The session view has panels: changes, checks, plan, files and browser.
+The session view has panels: changes, checks, plan and browser.
 A session can draw charts, graphs, Mermaid diagrams, tables and sandboxed pages in the conversation. "Pin to the canvas" puts one on the "Canvas" view of the project board.
 The desktop app also shows a terminal under the conversation.
 On macOS, voice input uses the built-in speech engine.
@@ -163,7 +163,6 @@ Each project has two resident agents. The sidebar lists them under "Agents". Cli
 - An agent's contract (the `contract` field of the `agent.update` command) limits when it reaches you: during its quiet hours, or once its input tokens of the week reach the limit, Pantheon does not wake it. During quiet hours its messages that are not urgent do not notify you.
 - "Automations" in the sidebar lists the routines of the agents of the project. It shows once the project has an agent that is not archived. The table has "Agent", "Routine", "Schedule", "Next run" and "Last run". "Run now" runs a routine at once, and "Pause" and "Resume" turn it off and on. Open a row to see its recent runs with the result: "Nothing", "Acted", "Told you" or "Asked you". "Make a task" turns a finished run into a task for the "Assistant", and "Open" opens the session that it got. "Add a routine" opens the profile of the "Assistant" with a blank routine in its form; nothing is saved until you press "Save".
 - An agent's profile also shows what it did. "Contract" sets the "Weekly budget", the "Quiet hours" and the "Loudest" level ("Feed", "Notify" or "Ask") of its messages, and shows what it "Spent this week". "Recent wakes" lists each wake with its cause and result; open one to see its session. "Routine runs" shows each routine with its next run and "Run now". "This week" counts the wakes, the tasks started and merged, the input tokens and the prompts approved for you.
-- A lead can propose a change it learned to a gate or to the worktree setup. The change waits in "Needs you" until you decide. The item shows the gate or the setup "Now" and "Proposed". A confirmed change takes effect without a trial.
 
 ## Project board
 
@@ -171,7 +170,7 @@ The "Project board" shows the work of a project. It has two pages: "Overview" an
 
 - Write a requirement in the bar at the bottom of "Tasks". By default Pantheon sends it to the "Assistant". In the "Send to" menu you can choose another agent, the lead of a plan or a session. "New lead" starts a lead session with the requirement. The lead writes a plan of tasks and milestones.
 - A receipt shows the steps: received, queued, planning and creating tasks. When an agent such as the "Assistant" ends its turn, the receipt says what it did: "Answered here", "New plan", "Added to" a lane, or "Asked you". "Route differently" sends the request again: "Answer here", "New plan", "Add to a plan" or "Send to" another agent.
-- "Since you left" counts what happened since you last clicked "Mark as read": "Waiting on you", "Milestones moved", "Merged", "Failed", "New assumptions" and "Agent proposals". It can also show a short summary paragraph.
+- "Since you left" counts what happened since you last clicked "Mark as read": "Waiting on you", "Milestones moved", "Merged", "Failed" and "New assumptions". It can also show a short summary paragraph.
 - Each task runs in its own task session and worktree, and merges through the gate.
 - "Goals" lists the goals of the project, at most 7. "Add goal" adds one. A goal's menu has "Rename", "Move up", "Move down" and "Archive"; "Undo" brings back an archived goal. Each goal shows the milestones the lead put under it and their progress. After you change the goals, "Have the lead sync the plan" asks the lead to update the plan.
 - The current milestone card shows the merged and planned tasks, the acceptance criteria and "Accept".
@@ -181,7 +180,6 @@ The "Project board" shows the work of a project. It has two pages: "Overview" an
 - A task that went wrong shows who acts next and why: "Pantheon retries" with the count, "Moved to" another runtime, "Lead has it" or "Waits for you".
 - "Needs you" lists the items that need your action, such as approvals.
 - When the lead asks several questions at once, one card "N decisions for" the plan holds them, and "Answer all" sends your choices together. A question that can be undone may show "Recommended answer takes effect in" a time: when the time passes, the lead's recommended answer applies. "Keep open" stops that. To turn it on, set the hours on the project's page in "Settings" > "Projects".
-- When you ask the "Assistant" to change a setting, it can propose the change as a "Setting change" card that shows your words, the old value and the new one. Click "Apply" or "Decline".
 - "Pause" in the bar of the board, next to the plan version, stops a plan: running task sessions go on, no new one starts, and the bar says "Lead is reassessing". The lead writes "Reassessment from lead" ("Done", "Blocked" and "Would change"), and a "Plan paused" card shows it in "Needs you". "Resume" (in the bar or on the card) continues the plan.
 - A milestone card can show a button with the number of its re-plan conditions. It lists when the lead re-plans: a task is handed back several times, a task spends a share of its budget, a task stalls, or an assumption turns out false. When one is met, the button says "Re-plan condition met" with the wait until the lead changes the plan, and the list has "Open lead session".
 - "Timeline" with the range "All" has a "Re-plans" list: for each re-plan, the conditions met and the tasks "Added", "Removed" and "Changed". "Since you left" counts re-plans and met conditions too.
@@ -192,17 +190,11 @@ The "Project board" shows the work of a project. It has two pages: "Overview" an
 - The flow chart shows the tasks and their dependencies. To add a dependency, drag a connection.
 - Each lane of a plan has a depth: "Just do it", "Plan first" or "Spec first". When a lead adds a lane with a top-tier task, its tasks wait for you to approve its plan. "Needs you" shows the lane with an estimate of the sessions, tokens and time. Approve it, or set the lane to "Just do it". "Plan first" and "Spec first" hold the tasks of a lane that have not started.
 - The task drawer shows the route, the changes, the checks and the dependencies of a task. You can change the runtime, model and effort, or stop, restart or delete the task.
-- "Workflow step" in the task drawer shows the verdict of the newest workflow step: its summary, the commands and files it checked, and the verdict of each reviewer. A reviewer that gives no verdict fails a blocking review step. A failed step before the merge goes back to the lead. When a step ends without a verdict, click "Count as passed" or "Count as failed".
+- "Workflow step" in the task drawer shows the newest review step: its title, its state and the verdict of each reviewer. A review that fails or ends without a verdict goes back to the lead.
 
 ## Engineering board
 
-The "Engineering board" has three tabs:
-
-| Tab             | Content                                                                          |
-| --------------- | -------------------------------------------------------------------------------- |
-| "Iterations"    | The iterations of the project.                                                   |
-| "Collaboration" | Messages between leads and task sessions, sub-agents and model changes.          |
-| "Workflow"      | Named workflows. You can edit, copy and set the default. Edits start as a trial. |
+The "Engineering board" has two tabs: "Quality" and "Usage".
 
 ## Trace
 
@@ -214,15 +206,13 @@ You can replay a turn and see the file changes of one step.
 
 ## Memory
 
-"Memory" keeps project decisions, reports and notes. It has five tabs: "Overview", "Entries", "Graph", "Diagrams" and "Learned".
+"Memory" keeps project decisions, reports and notes. It has three tabs: "Overview", "Entries" and "Diagrams".
 
 - Agents propose drafts. A draft has no effect until you confirm it.
 - You confirm, archive and restore entries.
 - Pantheon sends the current memory to a session before each message.
 - The details of an entry show when a session last read it ("Last read"). An entry with file references that a session proposed shows the commit it was checked at ("Checked at").
 - A note of an agent that no session read in 90 days expires: "Expired: not read in 90 days". Decisions, reports, handoff notes, imported entries and your own entries do not expire this way.
-- "Learned" shows the learned lessons and their trial results.
-- "Learned" lists every change that agents proposed, in groups: "Needs you", "On trial", "In force" and "Reverted". Open a change to read its evidence and use its actions: "Confirm" or "Reject" for a change that waits for you ("Reject" asks for a reason), "Revert" for a change on trial or in force, and "Pin" or "Keep" where the change offers them. Each change shows how it takes effect: "Applied at once", "On trial first" or "Waits for you". Policy and experience changes go on trial. Gate, worktree setup, agent instructions and playbook changes wait for you.
 
 [Project memory](memory.md) (in Chinese) describes storage, budgets and limits.
 
@@ -249,17 +239,14 @@ You can replay a turn and see the file changes of one step.
 | "Permissions"           | Always-allowed rules of the project.                                             |
 | "External requests"     | Sources of external requests and when they need your approval.                   |
 | "Workflow"              | Workflow parameters, task budget and project budget.                             |
-| "Default model"         | Model for each role and the routing table.                                       |
+| "Default model"         | Model for each role.                                                             |
 | "Usage"                 | Budget, quota threshold and token targets.                                       |
 | "Extensions"            | MCP servers, skills, plugins and hooks that the project opens.                   |
 | "Project"               | Project settings, including "Automatic git init".                                |
 
-- **Themes.** Choose a built-in theme: "Travertine", "Dusk", "Lapis" or "Terracotta". You can also ask a session to make a theme. The session calls the `theme.set` tool, and Pantheon applies the theme. You can delete a theme.
 - **Shortcuts.** Search by name or by keys. Click "Record keys" to change a shortcut. "Restore all defaults" resets all shortcuts.
 - **Notifications.** Each kind of decision, and merges, has "Now", "Brief only" or "Never". During quiet hours, "Now" works as "Brief only". A question that has waited over 4 hours always notifies you.
-- **Playbook.** The page of a project in "Settings" > "Projects" has "Playbook", the text that a lead reads before it plans. It has three sections: "Before you plan", "Routing" and "Replies". Choose "Default" or a runtime in "Playbook for". "Save as new version" stores your edit, the version list loads an older one, and "Reset to built-in" brings back the built-in text.
 - **Question default.** The page of a project in "Settings" > "Projects" has "Apply the lead's recommended answer to reversible questions after N hours". It is off until you turn it on, and it applies to the current project only.
-- **Did it help?** After you change a workflow setting, create an agent or turn on a routine, a "Did it help?" card compares the tasks of the project before and after: "First gate run passed" and "Tokens per accepted task". It says "Better", "Worse" or "Not enough evidence", and it needs 10 tasks after the change. It counts only changes you made in the project. It shows under the setting and in the agent's profile.
 - **Environment.** "Check environment" on the "Gates" page prepares a fresh worktree the way a task session gets one, then runs the gate commands in it. The baseline confirmation card has the same check for the commands that the baseline proposes. When one of them fails, the baseline agent fixes it once.
 - **Devices.** Click "Add device" and enter a host name from `~/.ssh/config`. Pantheon checks the system, the runtime versions and the sign-in state over SSH. You can set labels, resources and the session limit of each device, and probe it again.
 
@@ -277,15 +264,26 @@ You can replay a turn and see the file changes of one step.
 
 In a checkout, run the CLI with `pnpm cli`. The CLI reads `daemon.json` and the token from the data directory.
 
-| Command                                               | Result                                   |
-| ----------------------------------------------------- | ---------------------------------------- |
-| `pnpm cli health`                                     | Service name, protocol version, version. |
-| `pnpm cli capabilities`                               | Capability report of each adapter.       |
-| `pnpm cli board --project PROJECT_ID`                 | Board snapshot.                          |
-| `pnpm cli events --after 0 --project PROJECT_ID`      | Stored events after a cursor.            |
-| `pnpm cli command --file /absolute/path/command.json` | Runs one command envelope.               |
-| `pnpm cli mcp`                                        | MCP tool server for a native session.    |
-| `pnpm cli mcp --personal`                             | MCP tool server for your own agent.      |
+| Command                                                             | Result                                                                      |
+| ------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `pnpm cli health`                                                   | Service name, protocol version, version.                                    |
+| `pnpm cli capabilities`                                             | Capability report of each adapter.                                          |
+| `pnpm cli board --project PROJECT_ID`                               | Board snapshot.                                                             |
+| `pnpm cli events --after 0 --project PROJECT_ID`                    | Stored events after a cursor.                                               |
+| `pnpm cli command --file /absolute/path/command.json`               | Runs one command envelope.                                                  |
+| `pnpm cli mcp`                                                      | MCP tool server for a native session.                                       |
+| `pnpm cli mcp --personal`                                           | MCP tool server for your own agent.                                         |
+| `pnpm cli review --base REF [HEAD]` or `pnpm cli review BASE..HEAD` | Reviews the commits from the merge base of the two refs up to the head ref. |
+| `pnpm cli land [BRANCH]`                                            | Lands a branch through the project gate.                                    |
+
+`pnpm cli review` reviews only committed content; without a head it reviews the branch of the current directory. Add `--runtime NAME` once per reviewing runtime. It waits for the result and prints the open findings and each reviewer's verdict. It exits 0 when every reviewer passes, 1 on a blocking finding or a fail verdict, 2 when the review failed, is incomplete or was refused or the daemon could not be read, and 64 on a usage error. Ctrl-C stops the wait; the review goes on.
+
+`pnpm cli land` lands the branch (by default the branch of the current directory) onto the branch checked out in the project directory. The project directory needs a gate. `--message TEXT` lands the commits as one commit. It exits 0 when the branch landed or had no changes, and 1 when the landing is blocked or refused.
+
+```sh
+pnpm cli review --base main
+pnpm cli land my-feature --message "Add the export button"
+```
 
 Each command accepts `--data-dir DIR`. The [API reference](api.md) describes the command envelope and the queries.
 

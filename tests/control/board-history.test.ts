@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { BoardPlan, Milestone, Session, SessionTurn, StepRun } from '@pantheon/domain';
+import type { BoardPlan, Milestone, Session, SessionTurn } from '@pantheon/domain';
 import { settle, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
@@ -97,53 +97,6 @@ it('counts gate attempts toward the generation the session worked on when each g
   expect(historyTask(f, `${lead.id}:exports`)).toHaveProperty('gate_passed_on_attempt', 1);
 });
 
-it('does not count the turn a workflow prompt step queues on the task session as a handback', async () => {
-  const f = await workbenchFixture();
-  const lead = await leadWithPlan(f, ['exports']);
-  const worker = taskWorker(f, lead.id, 'exports');
-  const turn: SessionTurn = {
-    id: 'changelog-turn',
-    revision: 1,
-    project_id: f.project.id,
-    session_id: worker.id,
-    input: 'Update the changelog',
-    kind: 'send',
-    delivery: 'pending',
-    state: 'queued',
-    origin: 'tracker',
-  };
-  f.store.event('turn.queued', turn, f.project.id, turn);
-  const run = f.store.insert<StepRun>('workflow_step_runs', {
-    id: 'changelog-step',
-    revision: 1,
-    project_id: f.project.id,
-    lead_session_id: lead.id,
-    task_id: 'exports',
-    generation: 1,
-    definition_version: 1,
-    slot: 'before_merge',
-    step: {
-      id: 'changelog',
-      title: 'Changelog',
-      kind: { type: 'prompt', target: 'task', prompt: 'Update the changelog' },
-    },
-    state: 'running',
-    created_at: f.store.now(),
-    session_id: worker.id,
-    turn_id: turn.id,
-  });
-  f.store.event('workflow.step_changed', run, f.project.id, {
-    state: 'running',
-    task_id: 'exports',
-    slot: run.slot,
-    step_id: run.step.id,
-  });
-  const history = f.control.boardHistory(user, f.project.id);
-  expect(history.tasks[0]).toMatchObject({ handbacks: 0 });
-  expect(history.tasks[0]).not.toHaveProperty('handback_reasons');
-  expect(history.days.reduce((sum, day) => sum + day.handbacks, 0)).toBe(0);
-});
-
 it('gives a revised milestone no reached time until it is accepted again', async () => {
   const f = await workbenchFixture();
   const merged = await f.create('Merge the export');
@@ -213,45 +166,6 @@ it('counts the parts of one parallel dispatch as one attempt', async () => {
     session_ids: [one.id, two.id],
   });
   expect(historyTask(f, `${lead.id}:exports`)).toMatchObject({ attempts: 1 });
-});
-
-it('keeps the reason of a rejected approval inside a parallel step that then fails', async () => {
-  const f = await workbenchFixture();
-  const lead = await leadWithPlan(f, ['exports']);
-  const approval = { id: 'sign-off', title: 'Sign off', kind: { type: 'approval' as const } };
-  const run = (id: string, step: StepRun['step'], state: StepRun['state']) => {
-    const row = f.store.insert<StepRun>('workflow_step_runs', {
-      id,
-      revision: 1,
-      project_id: f.project.id,
-      lead_session_id: lead.id,
-      task_id: 'exports',
-      generation: 1,
-      definition_version: 1,
-      slot: 'before_merge',
-      step,
-      state,
-      created_at: f.store.now(),
-    });
-    f.store.event('workflow.step_changed', row, f.project.id, {
-      state,
-      task_id: 'exports',
-      slot: row.slot,
-      step_id: step.id,
-    });
-  };
-  run('sign-off-run', approval, 'rejected');
-  run(
-    'checks-run',
-    { id: 'checks', title: 'Checks', kind: { type: 'parallel', steps: [approval] } },
-    'failed',
-  );
-  f.store.event('task.handed_back', lead, f.project.id, { task_id: 'exports' });
-  expect(historyTask(f, `${lead.id}:exports`).handback_reasons).toEqual({
-    gate: 0,
-    review: 1,
-    other: 0,
-  });
 });
 
 it('completes a task when its last unmerged part is discarded', async () => {

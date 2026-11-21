@@ -191,8 +191,6 @@ export type NeedActionKey =
   | 'memory'
   | 'stop_background'
   | 'board'
-  | 'keep'
-  | 'revert'
   | 'resume'
   | 'open';
 
@@ -227,14 +225,6 @@ export function outOfScopeFiles(session: SnapshotSession | undefined): string[] 
     ? (session.merge.conflicts ?? [])
     : null;
 }
-
-/** A workflow step whose turn ended without the verdict it asks for, which the user counts as passed or failed. */
-export const noVerdict = (item: Pick<NeedItem, 'kind' | 'status'>): boolean =>
-  item.kind === 'workflow.approval' && item.status === 'inconclusive';
-
-/** The row's kind label for a step that ended without a verdict; null for every other item. */
-export const noVerdictKind = (item: Pick<NeedItem, 'kind' | 'status'>): string | null =>
-  noVerdict(item) ? t({ id: 'board.needs.kind.noVerdict', defaultMessage: 'No verdict' }) : null;
 
 /**
  * The inline buttons of one needs-you item, in the order they show; lead is the lead of the
@@ -293,15 +283,6 @@ function itemActions(
         reason: null,
       },
     ];
-  if (item.kind === 'workflow.definition.trial')
-    return (['keep', 'revert'] as const).map((key) => ({
-      key,
-      label:
-        key === 'keep'
-          ? t({ id: 'board.needs.actions.keepTrial', defaultMessage: 'Keep' })
-          : t({ id: 'board.needs.actions.revertTrial', defaultMessage: 'Revert' }),
-      reason: offReason(item, 'workflow.definition.trial.decide'),
-    }));
   // Accepting here takes the lead's own ops; changing them first is done on the board.
   if (item.kind === 'board.plan.proposal') {
     const reason = offReason(item, 'board.plan.proposal.resolve');
@@ -346,27 +327,6 @@ function itemActions(
           }
         : open,
     ];
-  if (item.kind === 'workflow.approval') {
-    const reason = offReason(item, 'workflow.step.decide');
-    const counted = noVerdict(item);
-    return [
-      {
-        key: 'approve',
-        label: counted
-          ? t({ id: 'board.needs.actions.countPassed', defaultMessage: 'Count as passed' })
-          : t({ id: 'board.needs.actions.approveStep', defaultMessage: 'Approve' }),
-        reason,
-      },
-      {
-        key: 'reject',
-        label: counted
-          ? t({ id: 'board.needs.actions.countFailed', defaultMessage: 'Count as failed' })
-          : t({ id: 'board.needs.actions.rejectStep', defaultMessage: 'Reject' }),
-        reason,
-      },
-      open,
-    ];
-  }
   if (item.kind === 'external.approval')
     return [
       {
@@ -583,13 +543,6 @@ export function needCommand(
     };
   if (key === 'sync')
     return { type: 'board.sync', input: { project_id: item.project_id }, revision: null };
-  // The daemon checks no revision on a step decision; a second one is refused as no longer waiting.
-  if (item.kind === 'workflow.approval' && (key === 'approve' || key === 'reject'))
-    return {
-      type: 'workflow.step.decide',
-      input: { step_run_id: item.source.id, decision: key },
-      revision: null,
-    };
   if (item.kind === 'board.plan.proposal' && (key === 'approve' || key === 'reject'))
     return {
       type: 'board.plan.proposal.resolve',
@@ -652,12 +605,6 @@ export function needCommand(
       type: 'approval.respond',
       input: { approval_id: item.source.id, decision: 'approve', answers: extra.answers ?? {} },
       revision: item.source.revision,
-    };
-  if (key === 'keep' || key === 'revert')
-    return {
-      type: 'workflow.definition.trial.decide',
-      input: { project_id: item.project_id, id: item.source.id, decision: key },
-      revision: null,
     };
   return null;
 }
@@ -758,7 +705,6 @@ export function needWhat(item: NeedItem, session?: SnapshotSession): string {
   const blocked = item.kind === 'session.merge_blocked' ? session?.merge?.reason : undefined;
   if (blocked) return reasonDetail(reasonText(item.reason), reasonText(blocked));
   if (item.background) return reasonDetail(reasonText(item.reason), item.background.description);
-  if (item.step_title) return reasonDetail(reasonText(item.reason), item.step_title);
   if (item.memory_notes)
     return t(
       {

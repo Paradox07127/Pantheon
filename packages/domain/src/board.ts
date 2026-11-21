@@ -218,7 +218,6 @@ export interface BoardPlan extends Entity {
     uses?: Record<string, number>;
     /** The flow path the task takes; absent means the one the workflow policy gives its tier. */
     path?: FlowPath;
-    workflow_id?: string;
     /** Work split by the lead for the parallel path; each part gets its own session and worktree. */
     parallel?: { title: string; goal: string; scope: string[]; acceptance: string[] }[];
     /** Why the task takes a different flow path from the one its kind is given; absent when it does not. */
@@ -230,8 +229,6 @@ export interface BoardPlan extends Entity {
   }[];
   /** Rises only when the plan's content changes; an edit names the version it was based on. */
   plan_version: number;
-  /** The stored playbook the lead's process started with; no runtime is the project default, version 0 the built-in text. */
-  playbook?: { runtime?: string; version: number };
   /** Edits that touch a task with an unfinished session, waiting for the lead to apply or reject them. */
   pending_edits: PendingPlanEdit[];
   /** Lead proposals waiting for the user, with resolved records retained like user edits. */
@@ -359,8 +356,6 @@ export type PlanEditOp =
         /** null takes the task's model or effort away. */
         model?: string | null;
         effort?: EffortLevel | null;
-        /** null takes the task's named workflow away. */
-        workflow_id?: string | null;
         task_type?: BoardPlan['tasks'][number]['task_type'] | null;
         token_budget?: number | null;
       };
@@ -566,7 +561,6 @@ export interface BoardPlanView {
       | 'upstream'
       | 'scope'
       | 'plan_review'
-      | 'step'
       | 'retry'
       | 'budget'
       | 'capacity'

@@ -67,7 +67,6 @@ const HELD = new Set<BoardTask['dispatch_wait']>([
   'device_offline',
   'device_capacity',
   'device_resource',
-  'step',
 ]);
 
 const toneVar = (task: BoardTask) =>

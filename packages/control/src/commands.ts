@@ -3,6 +3,8 @@ import { memoryHandlers, memoryPreparers } from './memory.js';
 import { projectIntroPreparers } from './project-intro.js';
 import { baselineHandlers, baselinePreparers } from './baseline.js';
 import { environmentCheckHandlers } from './environment-check.js';
+import { branchLandingPreparers } from './branch-landing.js';
+import { conductorPreparers } from './conductor.js';
 import { changeStoryHandlers } from './change-story.js';
 import type { Handlers, Preparers } from './context.js';
 import { projectFactHandlers } from './project-facts.js';
@@ -13,14 +15,12 @@ import { projectHandlers, projectPreparers } from './project.js';
 import { prepareResolve, sessionHandlers } from './session.js';
 import { workbenchSessionHandlers } from './workbench-session.js';
 import { approvalHandlers } from './approvals.js';
-import { prepareReviewRequest, reviewHandlers } from './review.js';
+import { prepareRangeReview, prepareReviewRequest, reviewHandlers } from './review.js';
 import { prepareBoardSync, prepareTaskReport, taskTrackingHandlers } from './task-tracking.js';
 import { taskDispatchHandlers } from './task-dispatch.js';
 import { taskStatusLineHandlers } from './task-status-line.js';
 import { leadInboxHandlers } from './lead-inbox.js';
-import { workflowEngineHandlers } from './workflow-engine.js';
 import { workflowPolicyHandlers } from './workflow-policy.js';
-import { playbookHandlers } from './playbooks.js';
 import { milestoneCheckHandlers } from './milestone-checks.js';
 import { inPlaceSessionHandlers } from './in-place-session.js';
 import { visualHandlers } from './visual.js';
@@ -59,9 +59,7 @@ export const handlers: Handlers = {
   ...taskStatusLineHandlers,
   ...leadInboxHandlers,
   ...workflowPolicyHandlers,
-  ...playbookHandlers,
   ...milestoneCheckHandlers,
-  ...workflowEngineHandlers,
   ...inPlaceSessionHandlers,
   ...appSettingsHandlers,
   ...deviceHandlers,
@@ -82,9 +80,12 @@ export const preparers: Preparers = {
   ...projectPreparers,
   ...baselinePreparers,
   ...projectIntroPreparers,
+  ...branchLandingPreparers,
+  ...conductorPreparers,
   'task.report': prepareTaskReport,
   'board.sync': prepareBoardSync,
   'review.request': prepareReviewRequest,
+  'review.range': prepareRangeReview,
   'session.resolve': prepareResolve,
   ...agentAppToolPreparers,
   ...agentPreparers,

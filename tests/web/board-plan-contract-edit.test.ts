@@ -271,6 +271,22 @@ describe('the contract fields of a plan task', () => {
     expect(send.mock.calls).toEqual([[{ goal: 'Add backoff' }, 3]]);
   });
 
+  it('sends no workflow when it saves a task whose plan still names one', async () => {
+    const named = { ...contract(), workflow_id: 'wf-old' };
+    expect(contractPatch(named, contract({ goal: 'Add backoff' }))).toEqual({
+      goal: 'Add backoff',
+    });
+    projectRead.current = read({ workflow_id: 'wf-old' });
+    const h = fields();
+    label(h.value, zh('board.plan.field.goal')).onChange({ target: { value: 'Add backoff' } });
+    h.render();
+    save(h).onClick();
+    await h.flush();
+    const [, input] = runCommand.mock.calls[0]!;
+    expect(input.ops).toEqual([{ type: 'set_task', task_id: 'a', patch: { goal: 'Add backoff' } }]);
+    expect(accepted(input.ops)).toBe(true);
+  });
+
   it('keeps the button off and marks the empty list while a merged task lacks scope', () => {
     const h = fields();
     label(h.value, zhf('board.plan.contract.scopeRemove', { n: 1 })).onClick();

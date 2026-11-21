@@ -2,7 +2,6 @@ export * from './planning.js';
 export * from './board.js';
 export * from './workflow.js';
 import type {
-  BoardPlan,
   BoardPlanView,
   FlowPath,
   GateFailureClass,
@@ -12,14 +11,7 @@ import type {
   ProjectBrief,
   TaskKind,
 } from './board.js';
-import type {
-  CharterMode,
-  CharterPower,
-  ImprovementSignal,
-  WorkflowDefinition,
-  WorkflowPolicy,
-  WorkflowStep,
-} from './workflow.js';
+import type { CharterMode, CharterPower, WorkflowPolicy } from './workflow.js';
 export type * from './change-story.js';
 export type * from './trace.js';
 export type * from './task-thread.js';
@@ -52,7 +44,8 @@ export class DomainError extends Error {
 export function requireThat(condition: unknown, code: string, message: string): asserts condition {
   if (!condition) throw new DomainError(code, message);
 }
-export type Role = 'user' | 'planner' | 'writer' | 'reviewer' | 'lead' | 'worker' | 'personal';
+export type Role =
+  'user' | 'planner' | 'writer' | 'reviewer' | 'lead' | 'worker' | 'personal' | 'conductor';
 export interface Principal {
   id: string;
   role: Role;
@@ -418,8 +411,6 @@ export interface NeedsYouItem {
       | 'board_plans'
       | 'milestones'
       | 'workflow_policies'
-      | 'workflow_definitions'
-      | 'workflow_step_runs'
       | 'memory_records';
     id: string;
     revision: number;
@@ -431,13 +422,11 @@ export interface NeedsYouItem {
     | 'session.gate_failed'
     | 'session.merge_blocked'
     | 'milestone.ready_for_acceptance'
-    | 'workflow.definition.trial'
     | 'board.plan.proposal'
     | 'board.lane.approval'
     | 'board.plan.reassessment'
     | 'project.over_budget'
     | 'lead.question'
-    | 'workflow.approval'
     | 'external.approval'
     | 'memory.decision_budget';
   project_id: string;
@@ -480,9 +469,10 @@ export interface NeedsYouItem {
     | 'lead_turn_stalled'
     | 'lead_wake_limited'
     | 'usage_limit_waiting'
+    | 'usage_limit_reached'
+    | 'session_turn_stalled'
     | 'background_task_long'
     | 'milestone_ready_for_acceptance'
-    | 'workflow_definition_trial_completed'
     | 'plan_proposal_awaiting_decision'
     | 'lane_plan_awaiting_approval'
     | 'plan_reassessment_ready'
@@ -498,7 +488,6 @@ export interface NeedsYouItem {
     | 'question'
     | 'milestone_accept'
     | 'repeated_failure'
-    | 'agent_proposal'
     | 'permission'
     | 'budget'
     | 'improvement'
@@ -517,7 +506,6 @@ export interface NeedsYouItem {
   task_title?: string;
   /** The title of the lane a `board.lane.approval` item holds; no other item has it. */
   lane_title?: string;
-  step_title?: string;
   question?: LeadQuestion;
   /** The headline of the plan a `lead.question` item belongs to; session_id is its lead. */
   plan_title?: string;
@@ -586,6 +574,29 @@ export interface LandingItem {
     /** Set on a failed result. */
     failure_class?: GateFailureClass;
   }[];
+}
+/** One landing of a branch that no Pantheon session owns. */
+export interface Landing extends Entity {
+  project_id: string;
+  /** The project root whose repository holds the branch. */
+  root: string;
+  /** The ref the user named. */
+  branch: string;
+  /** The branch checked out in root when the landing was requested; the landing fast-forwards it. */
+  target_branch: string;
+  workspace_id: string;
+  /** When present, the branch's commits land as one commit with this message. */
+  message?: string;
+  state: 'queued' | 'running' | 'landed' | 'no_changes' | 'blocked';
+  reason?: string;
+  conflicts?: string[];
+  conflict_commits?: string[];
+  gate_results?: LandingItem['gate_results'];
+  landing?: NonNullable<Session['merge']>['landing'];
+  from_sha?: string;
+  to_sha?: string;
+  started_at?: number;
+  finished_at?: number;
 }
 export interface Workspace extends Entity {
   provisioning?: {
@@ -687,6 +698,10 @@ export interface Session extends Entity {
   project_setup?: true;
   /** A session opened to lead on the board; a direct session without it gets no Pantheon tools. */
   lead?: true;
+  /** A native session with only the four conductor tools. */
+  conductor?: true;
+  /** The conductor session that started this one; it gets no Pantheon tools. */
+  spawned_by?: { session_id: string };
   /** Native history fork applied before the next input; after is a runtime message or turn id. */
   native_fork?: { session_id: string; after: string };
   baseline?: import('./planning.js').BaselineTag;
@@ -706,8 +721,6 @@ export interface Session extends Entity {
   requested_effort?: EffortLevel;
   reported_model?: string;
   profile_version?: number;
-  /** The playbook a planning lead's runtime process last started with. */
-  playbook?: BoardPlan['playbook'];
   account_ref?: string;
   device_id?: string;
   /** The device's changes of the last turn are not yet back in the local worktree. */
@@ -805,8 +818,6 @@ export interface Session extends Entity {
     id: string;
     /** The task generation the session works on; absent means the first. */
     generation?: number;
-    definition_version?: number;
-    workflow_id?: string;
     parallel_index?: number;
     /** The device resources the task used when the session opened, which it holds until it ends. */
     uses?: Record<string, number>;
@@ -832,8 +843,6 @@ export interface Session extends Entity {
   direct_task?: {
     id: string;
     generation: number;
-    definition_version?: number;
-    workflow_id?: string;
     reported_head?: string;
     reported_at?: number;
   };
@@ -973,11 +982,13 @@ export function credentialRole(
     | 'task'
     | 'resident'
     | 'in_place'
+    | 'conductor'
   >,
   workspaceKind?: Workspace['kind'],
 ): Role {
   if (session.review_id) return 'reviewer';
   if (session.resident) return 'lead';
+  if (session.conductor) return 'conductor';
   if (
     session.baseline ||
     session.change_story ||
@@ -1105,6 +1116,8 @@ export interface ReviewFinding {
   reason?: 'quote_not_in_artifact' | 'incomplete_finding';
   artifact_error?: 'artifact_unavailable';
   blocking: boolean;
+  /** Set on a range review's finding whose location is not `path:line`; such a finding never blocks. */
+  unlocated?: true;
   resolution?: {
     outcome: 'adopted' | 'dismissed';
     note?: string;
@@ -1129,10 +1142,14 @@ export interface Review extends Entity {
     /** The milestone row whose verification started this review; its result goes to that verification. */
     milestone_id?: string;
   };
+  /** The session told when this review ends. */
+  notify_session_id?: string;
   /** On a plan review, the high-risk task generations it reviews. */
   plan?: { tasks: { task_id: string; generation: number }[] };
   /** Frozen committed range supplied to every reviewer. */
   range?: { source: string; from_sha: string; to_sha: string };
+  /** The refs the user named for a range review; absent on every other review. */
+  refs?: { base: string; head: string };
   /** Artifact-store SHA-256 of the full reviewer input, when supplied. */
   input_hash?: string;
   round: number;
@@ -1944,7 +1961,6 @@ export interface LeadGuidance {
   workflow: Pick<
     WorkflowPolicy,
     | 'policy_version'
-    | 'improvement_mode'
     | 'path'
     | 'acceptance_wake'
     | 'max_parallel'
@@ -1955,11 +1971,6 @@ export interface LeadGuidance {
   > & {
     /** What the lead may do on its own, must ask the user for, or may not do, by power. */
     charter: Record<CharterPower, CharterMode>;
-    /** The custom steps of the project's latest workflow definition, by slot. */
-    steps: Record<
-      keyof WorkflowDefinition['slots'],
-      { id: string; title: string; kind: WorkflowStep['kind']['type'] }[]
-    >;
   };
   runtime: import('./trace.js').RuntimeDiagnostics;
   runtime_reviews?: { session_id: string; summary: string; change: string; outcome?: string }[];
@@ -1974,8 +1985,6 @@ export interface LeadGuidance {
     | 'gate_passed_on_attempt'
     | 'turn_failure_codes'
   > & { handbacks: number; runtime_finding_count?: number })[];
-  /** The signals the project's retrospectives show, at most 10, without their suggestions. */
-  signals: { signal: ImprovementSignal; cell?: TaskKind; retrospective_ids: string[] }[];
   /**
    * This machine (id `local`) and the configured devices; runtimes: the ones logged in; sessions:
    * the task sessions holding a place on it. Absent while no device and no local_device is configured.

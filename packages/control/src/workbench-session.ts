@@ -2,14 +2,7 @@ import { workflowPolicy } from './workflow-policy.js';
 import { onDevice } from './remote-workspace.js';
 import { deviceHasLabel } from './devices.js';
 import { githubReference } from './github.js';
-import {
-  readMergeConditions,
-  recordWorkflowGates,
-  startSlot,
-  taskWorkflow,
-  waitBeforeMerge,
-  type ConditionAnswers,
-} from './workflow-engine.js';
+import { openMergeReview, mergeWaitsForReview } from './merge-review.js';
 import {
   closeSync,
   constants,
@@ -127,6 +120,7 @@ import { runGit, type GitResult } from './git.js';
 import { mergePreview } from './merge-preview.js';
 import { repositoryInsights } from './repository-insights.js';
 import {
+  afterSourceLandings,
   AGENT_CONFIGURATION,
   checkGates,
   gateArgv,
@@ -171,8 +165,8 @@ import {
   workspaceReadAccess,
 } from './workspace.js';
 import { writerTempDirectory } from './workspace-removal.js';
-import { leadInstructions, PLATFORM_CORE } from './agent-prompts.js';
-import { startedLeadPlaybook } from './playbooks.js';
+import { LEAD_PLAYBOOK, leadInstructions, PLATFORM_CORE } from './agent-prompts.js';
+import { CONDUCTOR_INSTRUCTIONS } from './conductor.js';
 import { chartered, charterMode } from './charter.js';
 
 // One turn runs at most six hours; adapters time it with setTimeout, which fires at once above 2^31 - 1 ms.
@@ -288,7 +282,7 @@ export function workbenchSessionSpec(ctx: ControlContext, session: Session): Ses
       ?.origin === undefined;
   const saved = project.extension_overrides?.[session.runtime];
   // A purpose session follows its own guide, which has it change the worktree without a plan.
-  const planningLead = pantheonMcp && !session.task && !session.project_setup;
+  const planningLead = pantheonMcp && !session.task && !session.project_setup && !session.conductor;
   return managedSessionSpec(ctx, {
     ...(autoTitle ? { auto_title: true } : {}),
     platform_session_id: session.id,
@@ -310,7 +304,11 @@ export function workbenchSessionSpec(ctx: ControlContext, session: Session): Ses
           ]
         : []),
       // A planning lead asks with ask_user, which LEAD_INSTRUCTIONS names; workerInstructions tells a task session.
-      ...(questionTool && pantheonTools && !planningLead && !(pantheonMcp && session.task)
+      ...(questionTool &&
+      pantheonTools &&
+      !planningLead &&
+      !(pantheonMcp && session.task) &&
+      !session.conductor
         ? [
             `When the user must decide or answer something, ask with the ${questionTool} tool instead of asking in plain text. Give 2 to 4 short options with the one you recommend first; the user can also type an answer of their own.`,
           ]
@@ -319,8 +317,10 @@ export function workbenchSessionSpec(ctx: ControlContext, session: Session): Ses
       ...(pantheonMcp && session.task
         ? [workerInstructions(ctx, session.task, questionTool)]
         : planningLead
-          ? [leadInstructions(startedLeadPlaybook(ctx, session))]
-          : []),
+          ? [leadInstructions(LEAD_PLAYBOOK)]
+          : pantheonMcp && session.conductor
+            ? [CONDUCTOR_INSTRUCTIONS]
+            : []),
     ].join('\n\n'),
     workspace: { id: workspace.id, path: workspace.path },
     ...(sandbox
@@ -2442,12 +2442,7 @@ function gateOperationActive(session: Session): boolean {
 }
 
 /** The session's landing owner; recovery reaps gate processes recorded under its key. */
-function sessionOwner(
-  ctx: ControlContext,
-  session: Session,
-  conditions: ConditionAnswers,
-  gateRunId?: string,
-): LandingOwner {
+function sessionOwner(ctx: ControlContext, session: Session, gateRunId?: string): LandingOwner {
   return {
     key: `session-${session.id}`,
     session_id: session.id,
@@ -2466,7 +2461,6 @@ function sessionOwner(
       const current = ctx.store.must<Session>('sessions', session.id);
       if (gateRunId && (current.gate_run?.id !== gateRunId || current.gate_run.state !== 'running'))
         return;
-      recordWorkflowGates(ctx, current, kind, payload, conditions);
       ctx.store.event(
         `session.${kind}`,
         ctx.store.must<Session>('sessions', session.id),
@@ -3037,9 +3031,6 @@ export function sessionToolActivity(
   };
 }
 
-/** The newest merge of each source repository; the next one starts after it. */
-const sourceMerges = new WeakMap<ControlContext, Map<string, Promise<void>>>();
-
 /** Runs a queued merge off the dispatch loop; its job stays pending until a result commits. */
 export function mergeSession(ctx: ControlContext, sessionId: string, jobId: string): void {
   let running = merges.get(ctx);
@@ -3063,22 +3054,9 @@ export function mergeSession(ctx: ControlContext, sessionId: string, jobId: stri
     return;
   }
   running.add(jobId);
-  const source = workspace.source ?? workspace.path;
-  let queue = sourceMerges.get(ctx);
-  if (!queue) sourceMerges.set(ctx, (queue = new Map()));
-  // Two landings that read the same source HEAD would race its ref update.
-  const completion: Promise<void> = (queue.get(source) ?? Promise.resolve())
-    .catch(() => {})
-    .then(() => completeMerge(ctx, sessionId, jobId))
-    .finally(() => {
-      running.delete(jobId);
-      if (queue.get(source) === completion) queue.delete(source);
-      ctx.completions.delete(completion);
-      if (!ctx.closing) ctx.changed();
-    });
-  queue.set(source, completion);
-  ctx.completions.add(completion);
-  void completion.catch(() => {});
+  void afterSourceLandings(ctx, workspace.source ?? workspace.path, () =>
+    completeMerge(ctx, sessionId, jobId).finally(() => running.delete(jobId)),
+  );
 }
 
 /** Records the lead's landed direct task; the lead stays open, its worktree at the landed commit. */
@@ -3264,17 +3242,10 @@ async function completeMerge(ctx: ControlContext, sessionId: string, jobId: stri
     });
     return;
   }
-  const conditions = await readMergeConditions(ctx, session.id);
   const gateNow = () =>
-    gateCommands(
-      ctx,
-      ctx.store.must<Project>('projects', session.project_id),
-      workspace,
-      bound(),
-      conditions,
-    );
+    gateCommands(ctx, ctx.store.must<Project>('projects', session.project_id), workspace, bound());
   const commands = gateNow(),
-    sessionGate = sessionOwner(ctx, session, conditions),
+    sessionGate = sessionOwner(ctx, session),
     owner: LandingOwner = direct
       ? {
           ...sessionGate,
@@ -3322,7 +3293,7 @@ async function completeMerge(ctx: ControlContext, sessionId: string, jobId: stri
             progress: { saved, save: saveProgress },
             beforeLand: () =>
               ctx.store.transaction(() => {
-                if (!waitBeforeMerge(ctx, bound(), conditions)) return true;
+                if (!mergeWaitsForReview(ctx, bound())) return true;
                 // Read after the wait, which may bring the snoozed session back.
                 const current = bound();
                 const next = ctx.store.update(
@@ -3513,33 +3484,23 @@ function sourceStateOf(status: GitResult): SourceState | null {
   return current && { branch: current.branch, clean: current.uncommitted === 0 };
 }
 
-/**
- * Reads of the repository states a merge admits on, undefined when the state is not known, and
- * the answers its steps' conditions start on.
- */
+/** Reads of the repository states a merge admits on, undefined when the state is not known. */
 interface MergeReads {
   worktree: (workspace: Workspace) => WorktreeState | undefined;
   source: (workspace: Workspace) => SourceState | undefined;
-  conditions: ConditionAnswers;
 }
 
-/** Reads both repository states a merge of the session's workspace admits on, and its conditions, at once and asynchronously. */
-export async function readMergeStates(
-  ctx: ControlContext,
-  sessionId: string,
-  workspace: Workspace,
-): Promise<MergeReads> {
+/** Reads both repository states a merge of the workspace admits on, at once and asynchronously. */
+export async function readMergeStates(workspace: Workspace): Promise<MergeReads> {
   const source = workspace.source ?? workspace.path;
   // Admission reads both afresh; later display reads share these runs.
-  const [worktree, sourceState, conditions] = await Promise.all([
+  const [worktree, sourceState] = await Promise.all([
     worktreeStatusArgs()
       .then((args) => readStatus(workspace.path, args, workspace.id, Infinity))
       .then(worktreeStateOf),
     readStatus(source, SOURCE_STATUS, workspace.id, Infinity).then(sourceStateOf),
-    readMergeConditions(ctx, sessionId),
   ]);
   return {
-    conditions,
     worktree: () => {
       requireThat(worktree, 'workspace_read_failed', 'Worktree status could not be read');
       return worktree;
@@ -3559,7 +3520,6 @@ export async function readMergeStates(
 const unreadMergeReads: MergeReads = {
   worktree: () => undefined,
   source: () => undefined,
-  conditions: new Map(),
 };
 
 const MERGE_READ_MS = 2000;
@@ -3576,7 +3536,6 @@ const worktreeMergeReads = new Map<string, MergeStateRead<WorktreeState>>(),
   sourceMergeReads = new Map<string, MergeStateRead<SourceState>>();
 
 const cachedMergeReads: MergeReads = {
-  conditions: new Map(),
   worktree: (workspace) => worktreeMergeReads.get(workspace.id)?.state ?? undefined,
   source: (workspace) =>
     sourceMergeReads.get(workspace.source ?? workspace.path)?.state ?? undefined,
@@ -3801,7 +3760,7 @@ export function admitMerge(
       session.task?.lead_session_id ?? session.id,
     );
     const task = plan?.tasks.find((t) => t.id === binding.id);
-    if (plan && task) startSlot(ctx, plan, task, 'before_merge', session.id, reads.conditions);
+    if (plan && task) openMergeReview(ctx, plan, task, session.id);
   }
   const next = ctx.store.update(
     'sessions',
@@ -3830,13 +3789,8 @@ export function admitMerge(
   return next;
 }
 
-/** session.gates.run's checks before git; conditions decide the before-merge command steps. */
-function gateRunRequest(
-  ctx: ControlContext,
-  p: Principal,
-  c: Command,
-  conditions: ConditionAnswers,
-) {
+/** session.gates.run's checks before git. */
+function gateRunRequest(ctx: ControlContext, p: Principal, c: Command) {
   requireThat(p.role === 'user', 'permission_denied', 'Only user can run the session gates');
   const cause = c.command_id,
     input = inputSchemas['session.gates.run'].parse(c.input),
@@ -3857,7 +3811,6 @@ function gateRunRequest(
     ctx.store.must<Project>('projects', session.project_id),
     workspace,
     session,
-    conditions,
   );
   requireThat(configured?.length, 'invalid_state', 'No gate or acceptance commands are configured');
   const inWorktree = workflowPolicy(ctx, session.project_id).gate_runner === 'session';
@@ -3886,8 +3839,7 @@ type GateRunHead = { head: string; clean?: boolean } | null;
 
 /** Reads HEAD outside the transaction; a retry reads it with the status that tells it is clean. */
 function prepareGateRun(ctx: ControlContext, p: Principal, c: Command): Promise<Handler> {
-  // Before the conditions are read, each conditional command step counts.
-  const { input, session, workspace } = gateRunRequest(ctx, p, c, new Map());
+  const { input, workspace } = gateRunRequest(ctx, p, c);
   const read: Promise<GateRunHead> = input.only_failed
     ? worktreeStatusArgs()
         .then((args) => runGit(workspace.path, args, undefined, true))
@@ -3896,11 +3848,7 @@ function prepareGateRun(ctx: ControlContext, p: Principal, c: Command): Promise<
         const head = headOf(result);
         return head === null ? null : { head };
       });
-  return Promise.all([read, readMergeConditions(ctx, session.id)]).then(
-    ([worktree, conditions]) =>
-      (ctx, p, c) =>
-        runSessionGates(ctx, p, c, worktree, conditions),
-  );
+  return read.then((worktree) => (ctx, p, c) => runSessionGates(ctx, p, c, worktree));
 }
 
 function runSessionGates(
@@ -3908,14 +3856,8 @@ function runSessionGates(
   p: Principal,
   c: Command,
   worktree: GateRunHead,
-  conditions: ConditionAnswers,
 ): Session {
-  const { cause, input, session, workspace, configured, running } = gateRunRequest(
-    ctx,
-    p,
-    c,
-    conditions,
-  );
+  const { cause, input, session, workspace, configured, running } = gateRunRequest(ctx, p, c);
   requireThat(worktree, 'workspace_read_failed', 'Worktree HEAD could not be read');
   let commands = configured;
   let previous: NonNullable<LandingItem['gate_results']> = [];
@@ -3973,7 +3915,7 @@ function runSessionGates(
       committed()
         ? checkGates(
             ctx,
-            sessionOwner(ctx, next, conditions, runId),
+            sessionOwner(ctx, next, runId),
             workspace,
             workspace.source ?? workspace.path,
             commands,
@@ -4040,7 +3982,7 @@ function retryMergeAfterGates(
   const found = blocked();
   if (!found) return;
   const workspace = ctx.store.must<Workspace>('workspaces', found.session.workspace_id!);
-  const work: Promise<void> = readMergeStates(ctx, sessionId, workspace)
+  const work: Promise<void> = readMergeStates(workspace)
     .then((reads) => {
       if (ctx.closing) return;
       try {
@@ -4107,7 +4049,7 @@ function prepareMerge(ctx: ControlContext, p: Principal, c: Command): Promise<Ha
     throw new DomainError(blocked.code, blocked.message);
   const workspace = ctx.store.must<Workspace>('workspaces', session.workspace_id!);
   if (session.in_place) return prepareLand(ctx, c, session, workspace);
-  return readMergeStates(ctx, session.id, workspace).then(async (reads) => {
+  return readMergeStates(workspace).then(async (reads) => {
     if (commitsOnMerge(ctx, session) && !reads.worktree(workspace)?.clean) {
       requireMergeReady(ctx, ctx.store.must<Session>('sessions', session.id), reads);
       // The merge's gates then check the new commit.
@@ -4192,7 +4134,7 @@ async function prepareLand(
   session: Session,
   workspace: Workspace,
 ): Promise<Handler> {
-  const reads = await readMergeStates(ctx, session.id, workspace);
+  const reads = await readMergeStates(workspace);
   requireMergeReady(ctx, ctx.store.must<Session>('sessions', session.id), reads);
   let worktree = reads.worktree(workspace)!;
   const committed = !worktree.clean;
@@ -4345,12 +4287,11 @@ function leadTaskMerge(
  */
 export function autoMergeAfterTurn(ctx: ControlContext, sessionId: string, turnId: string): void {
   if (ctx.closing) return;
-  // Before the conditions are read, each conditional command step counts.
-  const candidate = autoMergeCandidate(ctx, sessionId, turnId, new Map());
+  const candidate = autoMergeCandidate(ctx, sessionId, turnId);
   if (!candidate) return;
   let reading = autoMergeReads.get(ctx);
   if (!reading) autoMergeReads.set(ctx, (reading = new Set()));
-  const work: Promise<void> = readMergeStates(ctx, sessionId, candidate.workspace)
+  const work: Promise<void> = readMergeStates(candidate.workspace)
     .then((reads) => {
       if (ctx.closing) return;
       mergeAfterTurn(ctx, sessionId, turnId, reads);
@@ -4378,7 +4319,6 @@ function autoMergeCandidate(
   ctx: ControlContext,
   sessionId: string,
   turnId: string,
-  conditions: ConditionAnswers,
 ): { session: Session; workspace: Workspace; reportedHead?: string } | undefined {
   const session = ctx.store.must<Session>('sessions', sessionId),
     plan = ctx.store.get<BoardPlan>('board_plans', session.id),
@@ -4397,13 +4337,6 @@ function autoMergeCandidate(
     session.state !== 'open' ||
     session.stop_pending ||
     session.merge?.state === 'running' ||
-    // The steps before the merge resume the merge a prompt step's turn held, or hold it for the user.
-    ctx.store
-      .list<StepRun>('workflow_step_runs')
-      .some(
-        (run) =>
-          run.turn_id === turnId && run.slot === 'before_merge' && run.step.kind.type === 'prompt',
-      ) ||
     // A lead's worktree holds the plan; its task sessions merge the planned work.
     (plan && !reported)
   )
@@ -4415,11 +4348,7 @@ function autoMergeCandidate(
   }
   const project = ctx.store.must<Project>('projects', session.project_id),
     workspace = ctx.store.must<Workspace>('workspaces', session.workspace_id);
-  if (
-    !autoMerge(ctx, project) ||
-    !gateCommands(ctx, project, workspace, session, conditions)?.length
-  )
-    return;
+  if (!autoMerge(ctx, project) || !gateCommands(ctx, project, workspace, session)?.length) return;
   return { session, workspace, ...(reported ? { reportedHead: direct!.reported_head! } : {}) };
 }
 
@@ -4432,7 +4361,7 @@ function mergeAfterTurn(
 ): void {
   try {
     ctx.store.transaction(() => {
-      const candidate = autoMergeCandidate(ctx, sessionId, turnId, reads.conditions);
+      const candidate = autoMergeCandidate(ctx, sessionId, turnId);
       if (!candidate) return;
       const { session, workspace, reportedHead } = candidate;
       // Commits after the report may belong to the lead's next task, so it reports again first.
@@ -4859,7 +4788,6 @@ export function openWorktreeSession(
       },
       workspace.revision,
     );
-  const workflow = board && taskWorkflow(ctx, board.plan, board.task.id);
   const session = insert<Session>(
     ctx,
     'sessions',
@@ -4897,6 +4825,7 @@ export function openWorktreeSession(
       ...(input.ultracode ? { ultracode: true as const } : {}),
       ...(input.purpose === 'project_setup' ? { project_setup: true as const } : {}),
       ...(input.purpose === 'lead' ? { lead: true as const } : {}),
+      ...(input.purpose === 'conductor' ? { conductor: true as const } : {}),
       title: derivedTitle(
         board?.task.title ??
           (input.input.split('\n').find((line) => line.trim() !== '') ?? '').trim(),
@@ -4907,8 +4836,6 @@ export function openWorktreeSession(
               lead_session_id: board.plan.id,
               id: board.task.id,
               generation: taskGeneration(board.plan, board.task.id),
-              definition_version: workflow!.definition_version,
-              ...(workflow!.id !== project.id ? { workflow_id: workflow!.id } : {}),
               ...(board.task.uses ? { uses: board.task.uses } : {}),
             },
           }

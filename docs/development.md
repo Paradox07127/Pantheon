@@ -228,7 +228,6 @@ A `codex` or `claude` run uses the real home folder and a real model. Its worksp
 | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `node scripts/linux-test.mjs [command]`     | Copies the checkout (with uncommitted and untracked files, without ignored files) into a privileged Docker container with git, bubblewrap, socat and nc. The container uses the Node version from `devEngines.runtime` in the root `package.json`. It installs the dependencies and runs the command (default `pnpm test`). |
 | `node scripts/benchmark-session-search.mjs` | After `pnpm build`, measures session search. It fails if one query takes more than 100 ms.                                                                                                                                                                                                                                  |
-| `node scripts/refresh-leaderboards.mjs`     | Reads public leaderboards and writes `~/.pantheon/leaderboards.json` (`--out` sets another file). The routing table uses it as a prior.                                                                                                                                                                                     |
 
 ## API reference
 

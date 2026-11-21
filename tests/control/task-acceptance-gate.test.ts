@@ -168,60 +168,31 @@ it.skipIf(insideSandbox)(
   },
 );
 
-it.skipIf(insideSandbox)(
-  'runs the project gate, then the task acceptance, then the before-merge command steps',
-  async () => {
-    const f = await mergeFixture();
-    setAcceptance(f, ['true']);
-    const { session, workspace } = await taskSession(f);
-    f.call('workflow.definition.set', {
+it.skipIf(insideSandbox)('runs the project gate, then the task acceptance', async () => {
+  const f = await mergeFixture();
+  setAcceptance(f, ['true']);
+  const { session, workspace } = await taskSession(f);
+  await f.call<Project>(
+    'project.gate.set',
+    {
       project_id: f.project.id,
-      definition: {
-        slots: {
-          before_dispatch: [],
-          before_merge: [
-            {
-              id: 'lint',
-              title: 'Lint the answer',
-              kind: { type: 'command', command: 'test -s answer.txt', timeout_seconds: 30 },
-            },
-          ],
-          after_merge: [],
-        },
-        plan_review: { tiers: ['t3'] },
-        review: { max_rounds: 3 },
-      },
-      base_version: 0,
-    });
-    const bound = current(f, session.id);
-    f.store.update<Session>(
-      'sessions',
-      { ...bound, task: { ...bound.task!, definition_version: 1 } },
-      bound.revision,
-    );
-    await f.call<Project>(
-      'project.gate.set',
-      {
-        project_id: f.project.id,
-        root: f.source,
-        commands: [{ name: 'Passes', argv: [process.execPath, '-e', 'process.exit(0)'] }],
-      },
-      project(f).revision,
-    );
-    commit(workspace.path, 'answer.txt', 'gated\n');
-    merge(f, session.id);
-    await eventually(
-      () => removed(f, workspace.id),
-      () => f.control.tick(),
-      10000,
-    );
-    expect(payloads(f, session.id, 'session.gate_checked')[0]!.results).toMatchObject([
-      { name: 'Passes', exit_code: 0 },
-      { name: 'true', exit_code: 0 },
-      { name: 'lint: Lint the answer', exit_code: 0 },
-    ]);
-  },
-);
+      root: f.source,
+      commands: [{ name: 'Passes', argv: [process.execPath, '-e', 'process.exit(0)'] }],
+    },
+    project(f).revision,
+  );
+  commit(workspace.path, 'answer.txt', 'gated\n');
+  merge(f, session.id);
+  await eventually(
+    () => removed(f, workspace.id),
+    () => f.control.tick(),
+    10000,
+  );
+  expect(payloads(f, session.id, 'session.gate_checked')[0]!.results).toMatchObject([
+    { name: 'Passes', exit_code: 0 },
+    { name: 'true', exit_code: 0 },
+  ]);
+});
 
 it.skipIf(insideSandbox)('runs the task acceptance on what the project gate built', async () => {
   const f = await mergeFixture();

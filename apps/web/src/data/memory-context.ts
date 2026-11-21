@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Improvement, MemoryContext, MemoryDirectory, MemoryRecord } from '@pantheon/domain';
+import type { MemoryContext, MemoryDirectory, MemoryRecord } from '@pantheon/domain';
 import { command, USER_PRINCIPAL_ID, type BridgeResult } from '@pantheon/protocol';
 import { useBoard } from './board';
 import { useMemoryQuery } from './memory';
@@ -116,17 +116,6 @@ export const useMemoryRecent = (projectId: string, limit = 5) =>
 /** The project's memory drafts, oldest included; the directory reads at most 50 per page. */
 export const useMemoryDrafts = (projectId: string) =>
   useMemoryQuery<MemoryDirectory>('memory.read', projectId, { state: 'draft', limit: 50 });
-
-/** Experience candidates that wait for the user to decide. */
-export function waitingSince(improvements: readonly Improvement[]): Waiting {
-  const waiting = improvements.filter(
-    (i) => i.status === 'candidate' && i.change.type === 'experience',
-  );
-  return {
-    count: waiting.length,
-    oldest: waiting.length ? Math.min(...waiting.map((i) => i.proposed_at)) : null,
-  };
-}
 
 export function contextCounts(context: MemoryContext) {
   const of = (kind: string) => context.items.filter((i) => i.kind === kind).length;

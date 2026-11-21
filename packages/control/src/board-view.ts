@@ -1,5 +1,5 @@
 import { requireThat } from '@pantheon/domain';
-import { taskWorkflow, waitingStep } from './workflow-engine.js';
+import { waitingStep } from './merge-review.js';
 import type {
   LandingItem,
   AgentEvent,
@@ -240,7 +240,6 @@ const QUEUED_TEXT: Record<DispatchWait, string> = {
   upstream: 'Queued: waiting for dependencies',
   scope: 'Queued: waiting for the scope to free up',
   plan_review: 'Queued: waiting for plan review',
-  step: 'Queued: waiting for workflow step',
   retry: 'Queued: waiting to retry',
   budget: 'Queued: project over budget',
   capacity: 'Queued: waiting for a free slot',
@@ -1535,16 +1534,11 @@ export function boardView(
     );
     if (ready !== undefined) readySessions.set(session.id, ready);
   }
+  // Startup retires the runs of other step kinds, so the runs not retired are reviews.
   const stepRuns = ctx.store
     .list<StepRun>('workflow_step_runs')
     .filter((run) => run.project_id === projectId && run.state !== 'retired')
     .sort((a, b) => a.created_at - b.created_at);
-  // A verdict counts only while it belongs to the run's current turn.
-  const verdictOf = (run: StepRun) => {
-    if (!run.verdict || run.verdict.turn_id !== run.turn_id) return {};
-    const { session_id: _, ...verdict } = run.verdict;
-    return { verdict };
-  };
   const reviewersOf = (reviewId: string) => {
     const review = ctx.store.get<Review>('reviews', reviewId);
     return (review?.session_ids ?? []).map((id, index) => {
@@ -1669,15 +1663,6 @@ export function boardView(
         id: boardTaskId(plan.id, task.id),
         owner_session_id: plan.id,
         order,
-        workflow_id: taskWorkflow(
-          ctx,
-          plan,
-          task.id,
-          bound
-            .filter((row) => row.id !== plan.id)
-            .map((row) => stored.get(row.id)!)
-            .filter((session) => session.outcome !== 'discarded'),
-        ).id,
         ...(plan.order_lock?.includes(task.id) ? { order_locked: true as const } : {}),
         ...(task.parallel
           ? {
@@ -1763,18 +1748,13 @@ export function boardView(
                 id: run.id,
                 slot: run.slot,
                 step_id: run.step.id,
-                workflow_id: run.workflow_id ?? projectId,
                 title: run.step.title,
                 kind: run.step.kind.type,
-                ...(run.step.kind.type === 'prompt' && run.step.kind.expects === 'verdict'
-                  ? { expects: 'verdict' as const }
-                  : {}),
                 state: run.state as Exclude<StepRun['state'], 'retired'>,
                 ...(run.reason === undefined ? {} : { reason: run.reason }),
                 ...(run.session_id === undefined ? {} : { session_id: run.session_id }),
                 created_at: run.created_at,
                 ...(run.finished_at === undefined ? {} : { finished_at: run.finished_at }),
-                ...verdictOf(run),
                 ...(run.review_id ? { reviewers: reviewersOf(run.review_id) } : {}),
               })),
             }

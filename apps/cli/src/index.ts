@@ -5,9 +5,12 @@ import { defaultDataDirectory } from '@pantheon/protocol/paths';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { createMcpServer } from './mcp.js';
 import { createPersonalMcpServer } from './personal-tools.js';
+import { land, landUsage } from './land.js';
+import { review, reviewUsage } from './review.js';
 
-const usage =
-  'Usage: pnpm cli mcp [--personal]|health|command (--file FILE|--json JSON)|<query method> [--project ID] [--after N] [--param KEY=VALUE]... [--data-dir DIR]';
+const usage = `Usage: pnpm cli mcp [--personal]|health|command (--file FILE|--json JSON)|<query method> [--project ID] [--after N] [--param KEY=VALUE]... [--data-dir DIR]
+       pnpm cli ${reviewUsage} [--data-dir DIR]
+       pnpm cli ${landUsage} [--data-dir DIR]`;
 let parsed;
 try {
   parsed = parseArgs({
@@ -21,6 +24,9 @@ try {
       project: { type: 'string' },
       after: { type: 'string' },
       param: { type: 'string', multiple: true },
+      base: { type: 'string' },
+      runtime: { type: 'string', multiple: true },
+      message: { type: 'string' },
     },
   });
 } catch (error) {
@@ -38,6 +44,13 @@ if (!positionals[0]) {
   console.error(usage);
   process.exit(64);
 }
+const connect = () => {
+  const manifest = JSON.parse(readFileSync(path.join(directory, 'daemon.json'), 'utf8')) as {
+    url: string;
+    token_file: string;
+  };
+  return { url: manifest.url, token: readFileSync(manifest.token_file, 'utf8').trim() };
+};
 try {
   if (positionals[0] === 'mcp') {
     const variable = values.personal
@@ -55,12 +68,13 @@ try {
       ? await createPersonalMcpServer(url, token, path.basename(tokenFile))
       : await createMcpServer(url, token);
     await server.connect(new StdioServerTransport());
+  } else if (positionals[0] === 'review') {
+    process.exitCode = await review(connect, positionals.slice(1), values);
+  } else if (positionals[0] === 'land') {
+    process.exitCode = await land(connect, positionals.slice(1), values);
   } else {
-    const manifest = JSON.parse(readFileSync(path.join(directory, 'daemon.json'), 'utf8')) as {
-      url: string;
-      token_file: string;
-    };
-    const token = readFileSync(manifest.token_file, 'utf8').trim(),
+    const manifest = connect(),
+      token = manifest.token,
       method = positionals[0];
     const route =
       method === 'health' ? '/health' : method === 'command' ? '/v1/commands' : `/v1/${method}`;

@@ -68,8 +68,6 @@ describe('refetch trigger', () => {
     'session.discard_failed',
     'workflow.step_created',
     'workflow.step_changed',
-    'workflow.definition_trial_completed',
-    'workflow.definition_trial_decided',
     'milestone.created',
     'milestone.revised',
     'milestone.removed',
@@ -79,6 +77,7 @@ describe('refetch trigger', () => {
     'board.plan_paused',
     'board.plan_resumed',
     'board.plan_reassessed',
+    'session.turn_stalled',
   ])('refreshes attention after %s', (kind) => {
     expect(touchesNeedsYou(kind)).toBe(true);
   });
@@ -149,6 +148,14 @@ describe('reason text', () => {
         git_required: 'gitRequired',
         protocol_mismatch: 'protocolMismatch',
         not_implemented: 'notImplemented',
+      },
+    ],
+    [
+      'turns a usage limit and a stalled turn of a session into Chinese reasons',
+      {
+        usage_limit_reached: 'usageLimitReached',
+        usage_limit: 'usageLimitReached',
+        session_turn_stalled: 'sessionTurnStalled',
       },
     ],
   ])('%s', (_, ids) => {

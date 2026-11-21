@@ -3,7 +3,6 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { BoardModel } from '@pantheon/protocol';
 import { activityLine, taskBadges } from '@/screens/board/activity';
-import { TaskDrawer } from '@/screens/board/TaskDrawer';
 import { TaskList } from '@/screens/board/TaskList';
 import { zh } from './i18n-setup.js';
 
@@ -95,45 +94,5 @@ describe('device waits', () => {
     const html = list(waits.map(([task]) => task));
     for (const [, text] of waits) expect(html).toContain(text);
     expect(html).not.toContain('排队中');
-  });
-});
-
-describe('waiting for a workflow step', () => {
-  const step: Task = {
-    ...queued('signed', 'step'),
-    waiting_step: { id: 'signoff', title: 'Release sign-off', kind: 'approval' },
-  };
-
-  it('names the step on the flow node and in the progress table', () => {
-    expect(activityLine(step, NOW)).toContain('Release sign-off');
-    expect(activityLine({ ...step, activity: undefined }, NOW)).toContain('Release sign-off');
-    expect(
-      taskBadges(step)
-        .map((b) => b.label)
-        .join(),
-    ).toContain('Release sign-off');
-  });
-
-  it('names the step in the task list and the task drawer', () => {
-    expect(list([step])).toContain('Release sign-off');
-    const drawer = renderToStaticMarkup(
-      createElement(TaskDrawer, {
-        model: {
-          since: NOW - 86_400_000,
-          now: NOW,
-          lanes: [],
-          edges: [],
-          merges: [],
-          milestones: [],
-          tasks: [step],
-          leads: [],
-        } as unknown as BoardModel,
-        taskId: step.id,
-        onSelect() {},
-        onOpenSession() {},
-        onOpenStory() {},
-      }),
-    );
-    expect(drawer).toContain('Release sign-off');
   });
 });

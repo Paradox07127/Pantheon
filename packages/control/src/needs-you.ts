@@ -22,12 +22,7 @@ import { usageLimitWaiting } from './continuation.js';
 import { pendingApprovalItems, settledApprovalItems } from './needs-you-approvals.js';
 import { sessionItems } from './needs-you-sessions.js';
 import { milestoneItems, planItems } from './needs-you-plans.js';
-import {
-  definitionTrialItems,
-  memoryBudgetItems,
-  projectBudgetItems,
-  stepRunItems,
-} from './needs-you-workflow.js';
+import { memoryBudgetItems, projectBudgetItems } from './needs-you-workflow.js';
 import { taskRung, taskRungFacts } from './task-rung.js';
 
 /** A running merge with no progress event for this long is stuck; each gate command has a timeout. */
@@ -50,6 +45,8 @@ export type SessionAttention =
   | 'lead_turn_looping'
   | 'lead_turn_stalled'
   | 'usage_limit_waiting'
+  | 'usage_limit_reached'
+  | 'session_turn_stalled'
   | 'background_task_long';
 
 export const NEXT_STEP: Record<
@@ -79,6 +76,9 @@ export const NEXT_STEP: Record<
     'Board updates woke the lead too often in a short time, so Pantheon stopped waking it; the updates stay in its inbox and waking resumes in a few minutes. The user checks whether the lead is spinning and, if needed, sends it a message to correct course.',
   usage_limit_waiting:
     'The session used up its subscription limit; Pantheon has it go on once the limit resets and opens no new turn until then. The user waits for the reset, or moves it to another runtime.',
+  usage_limit_reached:
+    'Continue the session after the limit resets, or fork it to another runtime.',
+  session_turn_stalled: 'Open the session to see where it stopped.',
   task_dispatch_failed:
     "Pantheon retries with backoff; the lead can change the task's runtime, and the user can check why this runtime is unavailable.",
   task_upstream_stuck:
@@ -364,8 +364,6 @@ export function needsYou(
       ...sessionItems(ctx, scope, sessions, plans, planOf),
       ...planItems(ctx, scope, plans, sessions),
       ...milestoneItems(ctx, scope, planOf),
-      ...stepRunItems(ctx, scope, planOf),
-      ...definitionTrialItems(ctx, scope),
       ...projectBudgetItems(ctx, scope),
       ...memoryBudgetItems(ctx, scope),
     );

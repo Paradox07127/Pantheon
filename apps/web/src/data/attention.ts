@@ -52,9 +52,7 @@ const PRIMARY_KEYS: Readonly<Record<string, readonly NeedActionKey[]>> = {
   'session.background.stop': ['stop_background'],
   'board.sync': ['sync'],
   'board.plan.proposal.resolve': ['approve'],
-  'workflow.step.decide': ['approve'],
   'external.approve': ['approve'],
-  'workflow.definition.trial.decide': ['keep'],
   'workflow.policy.set': ['budget'],
 };
 

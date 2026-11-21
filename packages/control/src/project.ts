@@ -6,6 +6,7 @@ import {
   id,
   requireThat,
   DomainError,
+  type Landing,
   type Project,
   type Session,
   type SessionDefaults,
@@ -505,6 +506,20 @@ function checkEnvironmentRoots(ctx: ControlContext, project: Project, roots: str
     'root_in_use',
     `Merge or discard the work of these sessions before removing their folders: ${held.join(', ')}`,
   );
+  const landing = ctx.store
+    .list<Landing>('landings')
+    .filter(
+      (row) =>
+        row.project_id === project.id &&
+        (row.state === 'queued' || row.state === 'running') &&
+        !roots.includes(row.root),
+    )
+    .map((row) => `${row.id} (${row.root})`);
+  requireThat(
+    !landing.length,
+    'root_in_use',
+    `Wait for these landings to end before removing their folders: ${landing.join(', ')}`,
+  );
   disjointFromOthers(ctx, roots, project.id);
 }
 
@@ -749,7 +764,13 @@ export const projectHandlers: Handlers = {
         .some((session) => session.project_id === project_id && liveSession(ctx, session)) &&
         !ctx.store
           .list<ProjectBaseline>('project_baselines')
-          .some((baseline) => baseline.project_id === project_id && baseline.state === 'running'),
+          .some((baseline) => baseline.project_id === project_id && baseline.state === 'running') &&
+        !ctx.store
+          .list<Landing>('landings')
+          .some(
+            (row) =>
+              row.project_id === project_id && (row.state === 'queued' || row.state === 'running'),
+          ),
       'resource_busy',
       'Project has active work',
     );

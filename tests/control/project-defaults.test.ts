@@ -2,19 +2,15 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it } from 'vitest';
-import type {
-  AgentEvent,
-  Approval,
-  Project,
-  Retrospective,
-  Session,
-  WorkflowPolicy,
-} from '@pantheon/domain';
+import type { AgentEvent, Approval, Project, Session, WorkflowPolicy } from '@pantheon/domain';
 import type { ProjectDefaultsRead } from '@pantheon/protocol';
 import type { ControlContext } from '../../packages/control/dist/context.js';
 import { requestApproval } from '../../packages/control/dist/approvals.js';
-import { improvementSignals } from '../../packages/control/dist/improvement-signals.js';
-import { sessionDefaults, usageTargets } from '../../packages/control/dist/user-config.js';
+import {
+  autoMerge,
+  sessionDefaults,
+  usageTargets,
+} from '../../packages/control/dist/user-config.js';
 import { fixture, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
@@ -43,10 +39,7 @@ async function defaultsFixture() {
   const current = () => f.store.must<Project>('projects', f.project.id);
   const policy = () => f.control.workflowPolicy(user, f.project.id);
   const storedPolicy = () => f.store.get<WorkflowPolicy>('workflow_policies', f.project.id);
-  const mergePolicy = () =>
-    f.control
-      .workflowDefinition(user, f.project.id)
-      .fixed_steps.find((step) => step.id === 'merge')!.policy.auto_merge;
+  const mergePolicy = () => autoMerge(ctx, current());
   const externalMode = () => f.control.externalRead(user, f.project.id).mode;
   const setGlobal = (key: string, value: unknown) =>
     f.call<ProjectDefaultsRead>('project.defaults.set', { key, value });
@@ -232,32 +225,27 @@ it('clears one workflow setting of a project and keeps its other own settings', 
   ).toThrowError(expect.objectContaining({ code: 'invalid_input' }));
 });
 
-it('records a change of the global workflow settings and reads the hand-back limit a task started under from it', async () => {
+it('reads global workflow settings that still hold improvement_mode without it', async () => {
   const f = await defaultsFixture();
-  const retro = (id: string, started_at: number) =>
-    f.store.insert<Retrospective>('retrospectives', {
-      id,
-      revision: 1,
-      project_id: f.project.id,
-      lead_session_id: 'lead',
-      task_id: id,
-      session_ids: [],
-      outcome: 'merged',
-      recorded_at: started_at + 1,
-      started_at,
-      policy_version: 0,
-      handbacks: Array.from({ length: 3 }, () => ({ reason: 'gate_failed' })),
-    });
-  const before = f.store.now() - 1000;
+  f.setGlobal('workflow_policy', { max_parallel: 2, improvement_mode: 'confirm' });
+  expect(f.policy()).toMatchObject({ max_parallel: 2 });
+  expect(f.policy()).not.toHaveProperty('improvement_mode');
+  expect(f.policy().defaults).not.toHaveProperty('improvement_mode');
+  const read = f.control.projectDefaults(user);
+  expect(read.settings.find((entry) => entry.key === 'workflow_policy')).toMatchObject({
+    global: { max_parallel: 2 },
+  });
+  expect(read.settings.find((entry) => entry.key === 'workflow_policy')).not.toHaveProperty(
+    'global.improvement_mode',
+  );
+});
+
+it('records a change of the global workflow settings', async () => {
+  const f = await defaultsFixture();
   f.setGlobal('workflow_policy', { handback_limit: 5 });
   expect(f.store.kindEvents('', ['workflow.policy_changed']).map((e) => e.payload)).toEqual([
     { param: 'handback_limit', from: 3, to: 5, by: 'global' },
   ]);
-  retro('started-before', before);
-  retro('started-after', f.store.now() + 1000);
-  expect(
-    improvementSignals(f.ctx, f.project.id).filter((s) => s.signal === 'handback_loop'),
-  ).toEqual([{ signal: 'handback_loop', retrospective_ids: ['started-before'] }]);
 });
 
 it('refuses global values that are invalid alone or under a project value, and non-user callers', async () => {
@@ -349,7 +337,6 @@ it('keeps a policy stored before global values as the project value, and absent 
       revision: 1,
       project_id: other.id,
       policy_version: 1,
-      improvement_mode: 'auto',
       plan_changes: 'auto',
       path: { t1: 'direct', t2: 'dispatch', t3: 'dispatch' },
       acceptance_wake: 'each_merge',
@@ -366,9 +353,7 @@ it('keeps a policy stored before global values as the project value, and absent 
     max_parallel: 3,
     gate_runner: 'session',
   });
-  expect(
-    f.control.workflowDefinition(user, other.id).fixed_steps.find((s) => s.id === 'merge'),
-  ).toMatchObject({ policy: { auto_merge: true } });
+  expect(autoMerge(f.ctx, f.store.must<Project>('projects', other.id))).toBe(true);
   const listed = f.control
     .projectDefaults(user)
     .settings.find((entry) => entry.key === 'workflow_policy')!.overrides;

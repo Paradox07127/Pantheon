@@ -89,7 +89,6 @@ it('gives a lead the current workflow policy and the new value after the user ch
   const lead = principalOf(f, sessionOf(f), 'lead');
   expect(read(f, lead).lead?.workflow).toEqual({
     policy_version: 0,
-    improvement_mode: 'auto',
     path: { t1: 'direct', t2: 'dispatch', t3: 'dispatch' },
     acceptance_wake: 'each_merge',
     max_parallel: 3,
@@ -105,7 +104,6 @@ it('gives a lead the current workflow policy and the new value after the user ch
       merge_out_of_scope: 'on',
       start_external: 'off',
     },
-    steps: { before_dispatch: [], before_merge: [], after_merge: [] },
   });
   f.call<WorkflowPolicy>('workflow.policy.set', { project_id: f.project.id, max_parallel: 2 });
   expect(read(f, lead).lead?.workflow).toMatchObject({ policy_version: 1, max_parallel: 2 });
@@ -175,6 +173,15 @@ it("lists at most ten of the lead's own retrospectives, newest first, with their
     outcome: 'merged',
     handbacks: 0,
   });
+});
+
+it('gives a lead its retrospectives and no signals computed from them', async () => {
+  const f = await setup();
+  const leadSession = sessionOf(f);
+  retrospective(f, { id: 'retrospective-1', lead_session_id: leadSession.id });
+  const guidance = read(f, principalOf(f, leadSession, 'lead')).lead!;
+  expect(guidance.retrospectives.map((row) => row.id)).toEqual(['retrospective-1']);
+  expect(guidance).not.toHaveProperty('signals');
 });
 
 it('keeps fixed task session and hand-back counts out of the lead instructions', async () => {

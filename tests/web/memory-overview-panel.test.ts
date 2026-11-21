@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { Improvement, MemoryContext, MemoryDirectory, MemoryItem } from '@pantheon/domain';
+import type { MemoryContext, MemoryDirectory, MemoryItem } from '@pantheon/domain';
 import { find, named, nodes, text } from './web-hook-host.js';
 vi.mock('@/data/board', () => ({
   useBoard: Object.assign((selector: any) => selector({ events: [] }), { getState: () => ({}) }),
@@ -9,7 +9,7 @@ vi.mock('@/data/board', () => ({
 vi.mock('@/store', () => ({ useShell: Object.assign(() => null, { getState: () => ({}) }) }));
 import { OverviewMemoryView, type OverviewMemoryData } from '@/screens/memory/OverviewMemory';
 import { AgentContextBody, AgentContextDialog } from '@/screens/memory/AgentContextDialog';
-import { contextCounts, waitingSince } from '@/data/memory-context';
+import { contextCounts } from '@/data/memory-context';
 import { PendingCard } from '@/screens/memory/PendingCard';
 import { zh } from './i18n-setup.js';
 
@@ -579,24 +579,13 @@ describe('overview memory panel', () => {
     expect(opened).toEqual(['d2']);
   });
 
-  it('turns waiting items and the oldest-first summary into counts', () => {
+  it('turns the context items into counts', () => {
     expect(contextCounts(context())).toEqual({
       decision: 2,
       report: 1,
       note: 1,
       omitted: 2,
     });
-    const improvement = (status: Improvement['status'], proposed_at: number, type = 'experience') =>
-      ({ status, proposed_at, change: { type } }) as Improvement;
-    expect(
-      waitingSince([
-        improvement('candidate', 500),
-        improvement('candidate', 300),
-        improvement('trial', 100),
-        improvement('candidate', 200, 'policy_change'),
-      ]),
-    ).toEqual({ count: 2, oldest: 300 });
-    expect(waitingSince([])).toEqual({ count: 0, oldest: null });
   });
 });
 

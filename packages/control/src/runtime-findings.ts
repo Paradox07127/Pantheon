@@ -471,8 +471,7 @@ export function runtimeDiagnostics(
       if (inScope(id, text(p.turn_id))) background.set(id, event);
     } else if (event.kind === 'workflow.step_changed') {
       const key = pairKey('step', id);
-      if (p.state !== 'waiting' && p.state !== 'inconclusive' && p.state !== 'running')
-        end(key, event);
+      if (p.state !== 'running') end(key, event);
       else {
         const step = ctx.store.get<StepRun>('workflow_step_runs', id);
         if (
@@ -484,7 +483,7 @@ export function runtimeDiagnostics(
           continue;
         begin(key, event, {
           ...base,
-          layer: step.step.kind.type === 'approval' ? 'human' : 'harness',
+          layer: 'harness',
           kind: 'workflow_step',
           lane_key: step.session_id ?? step.lead_session_id,
           task_id: step.task_id,
@@ -558,9 +557,7 @@ export function runtimeDiagnostics(
             : session?.merge?.state === 'running';
         })()) ||
       (kind === 'workflow_step' &&
-        ['waiting', 'inconclusive', 'running'].includes(
-          ctx.store.get<StepRun>('workflow_step_runs', event.aggregate_id)?.state ?? '',
-        )) ||
+        ctx.store.get<StepRun>('workflow_step_runs', event.aggregate_id)?.state === 'running') ||
       (kind === 'dispatch_queue' &&
         !!task_id &&
         Object.hasOwn(

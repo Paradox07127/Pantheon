@@ -1,6 +1,6 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
-import { BookOpen, Clock, Ellipsis, FlaskConical, Gauge, Pause, Pencil } from 'lucide-react';
+import { BookOpen, Clock, Ellipsis, Gauge, Pause, Pencil } from 'lucide-react';
 import type { ApprovalQuestion } from '@pantheon/domain';
 import type { BoardTaskRung } from '@pantheon/protocol';
 import { blocksText, decisionText, primaryAction } from '../data/attention';
@@ -22,8 +22,6 @@ import {
   needCommand,
   needSession,
   needWhat,
-  noVerdict,
-  noVerdictKind,
   outOfScopeFiles,
   stripActions,
   type NeedAction,
@@ -100,7 +98,6 @@ export interface RequestCardProps {
 // The waiting dot stays with approvals and questions; every other kind has its mark from elsewhere.
 // The proposal kinds the interface does not offer have none.
 const MARK: Partial<Record<NeedItem['kind'], ReactNode>> = {
-  'workflow.approval': <span className="ss-dot waiting" aria-hidden="true" />,
   'external.approval': <span className="ss-dot waiting" aria-hidden="true" />,
   'board.lane.approval': <span className="ss-dot waiting" aria-hidden="true" />,
   permission: <span className="ss-dot waiting" aria-hidden="true" />,
@@ -112,7 +109,6 @@ const MARK: Partial<Record<NeedItem['kind'], ReactNode>> = {
   'milestone.ready_for_acceptance': <StateIcon state="awaiting_acceptance" />,
   'board.plan.proposal': <Pencil className="ic-sm" aria-hidden="true" />,
   'board.plan.reassessment': <Pause className="ic-sm" aria-hidden="true" />,
-  'workflow.definition.trial': <FlaskConical className="ic-sm" aria-hidden="true" />,
   'project.over_budget': <Gauge className="ic-sm" aria-hidden="true" />,
   'memory.decision_budget': <BookOpen className="ic-sm" aria-hidden="true" />,
 };
@@ -123,7 +119,6 @@ const PRIMARY: ReadonlySet<NeedActionKey> = new Set([
   'accept',
   'merge',
   'merge_out_of_scope',
-  'keep',
   'resume',
 ]);
 
@@ -224,8 +219,6 @@ export function RequestCard({
     if (
       !failure &&
       (command.type === 'approval.respond' ||
-        command.type === 'workflow.step.decide' ||
-        command.type === 'workflow.definition.trial.decide' ||
         command.type === 'lead.question.answer' ||
         command.type === 'board.plan.resume')
     )
@@ -522,14 +515,9 @@ export function RequestCard({
   const kind =
     item.kind === 'board.plan.reassessment'
       ? t({ id: 'components.requestCard.planPaused', defaultMessage: 'Plan paused' })
-      : (noVerdictKind(item) ?? decisionText(item.decision) ?? reasonText(item.reason));
-  // Beside its kind label a step without a verdict needs only its title, a paused plan its name.
-  const rowWhat =
-    noVerdict(item) && item.step_title
-      ? item.step_title
-      : item.kind === 'board.plan.reassessment'
-        ? kind
-        : what;
+      : (decisionText(item.decision) ?? reasonText(item.reason));
+  // Beside its kind label a paused plan needs only its name.
+  const rowWhat = item.kind === 'board.plan.reassessment' ? kind : what;
   const blocks = blocksText(item.blocks ?? item.unblocks);
   const more = t(
     { id: 'components.requestCard.more', defaultMessage: 'More actions: {name}' },

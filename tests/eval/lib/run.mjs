@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { versionOf } from '@pantheon/adapters';
-import { hash, NATIVE_ENV_ALLOWLIST } from '@pantheon/domain';
+import { NATIVE_ENV_ALLOWLIST } from '@pantheon/domain';
 import { worktreeSandbox } from '../../../packages/control/dist/protection.js';
 import { startNativeDaemon } from '../../acceptance/lib/daemon.mjs';
 import { waitFor } from '../../acceptance/lib/event-client.mjs';
@@ -183,8 +183,6 @@ async function bareRun(spec, repo, adapter, runtimeVersion) {
     output_tokens: usage ? (usage.output_tokens ?? 0) : null,
     cost_usd: usage?.cost_usd ?? null,
     wall_ms: wall,
-    playbook_version: null,
-    playbook_sha256: null,
     policy_version: null,
   };
 }
@@ -193,7 +191,7 @@ async function bareRun(spec, repo, adapter, runtimeVersion) {
  * One run: a fresh repository, then either a bare session (see bareRun) or a fresh daemon whose
  * lead, scripted or real, plans the task and dispatches it; then the hidden check on what
  * reached main. A scripted lead writes oneTaskPlan; a real lead on the task's runtime is sent the
- * goal as a user message, under the condition's playbook and policy.
+ * goal as a user message, under the condition's policy.
  * The repository is `<workspace>/repo`.
  */
 export async function runOne(spec) {
@@ -243,21 +241,6 @@ export async function runOne(spec) {
       { project_id: project.id, runtime: leadRuntime, permission_mode: 'auto_edit' },
       await revision(),
     );
-    await fixture.call('workflow.definition.set', {
-      project_id: project.id,
-      definition: {
-        slots: { before_dispatch: [], before_merge: spec.condition.before_merge, after_merge: [] },
-      },
-      base_version: 0,
-    });
-    if (spec.condition.playbook) {
-      const shipped = await fixture.call('playbook.get', params);
-      await fixture.call('playbook.set', {
-        ...params,
-        base_version: 0,
-        sections: { ...shipped.sections, ...spec.condition.playbook.sections },
-      });
-    }
     if (spec.condition.policy) {
       const current = await get('workflow.policy', params);
       // Revision 0 is the defaults of a project that stores no policy yet.
@@ -268,8 +251,6 @@ export async function runOne(spec) {
       );
     }
     const policyVersion = (await get('workflow.policy', params)).policy_version;
-    // A playbook change's eval receipt is checked against the sections the lead ran under.
-    const playbookSha256 = hash((await fixture.call('playbook.get', params)).sections);
 
     const leadSession = await fixture.call(
       'session.create',
@@ -368,7 +349,7 @@ export async function runOne(spec) {
     const needsYou = (await get('needs_you.list', params)).items.map((item) => item.kind);
     const of = (kind) => all.filter((event) => event.kind === kind);
     const ofTask = (kind) => of(kind).filter((event) => event.aggregate_id === taskSession);
-    // The session holds a block no event announces (an approval step); the next turn clears it,
+    // The session holds a block no event announces (a review step); the next turn clears it,
     // so an earlier block is read from the events.
     const { merge, waiting } = await taskRow();
     const blocked =
@@ -426,8 +407,6 @@ export async function runOne(spec) {
       output_tokens: sum('output_tokens'),
       cost_usd: costs.length ? costs.reduce((total, cost) => total + cost, 0) : null,
       wall_ms: changed - started,
-      playbook_version: spec.condition.playbook?.version ?? null,
-      playbook_sha256: playbookSha256,
       policy_version: policyVersion,
     };
   } finally {

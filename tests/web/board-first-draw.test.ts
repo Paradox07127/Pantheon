@@ -11,15 +11,15 @@ import { useShell } from '../../apps/web/src/store.js';
 
 const NOW = Date.UTC(2026, 10, 1, 12);
 
-const proposal: BoardNeed = {
-  source: { table: 'workflow_definitions', id: 'workflow-1', revision: 1 },
-  kind: 'workflow.definition.trial',
+const overBudget: BoardNeed = {
+  source: { table: 'workflow_policies', id: 'project-a', revision: 1 },
+  kind: 'project.over_budget',
   project_id: 'project-a',
   status: 'waiting',
   created_at: NOW - 60_000,
-  reason: 'workflow_definition_trial_completed',
-  decision: 'improvement',
-  actions: [{ command: 'workflow.definition.trial.decide', allowed: true }],
+  reason: 'project_over_budget',
+  decision: 'budget',
+  actions: [{ command: 'workflow.policy.set', allowed: true }],
   unblocks: 0,
 } as BoardNeed;
 
@@ -63,7 +63,7 @@ const board = (): BoardModel =>
     merges: [],
     findings: [],
     risks: [],
-    needs: [proposal],
+    needs: [overBudget],
   }) as unknown as BoardModel;
 
 const hosts: HookHost<any>[] = [];
@@ -208,7 +208,7 @@ describe('board first draw', () => {
         },
       ],
       needs: [
-        proposal,
+        overBudget,
         approval,
         {
           ...approval,

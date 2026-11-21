@@ -9,6 +9,8 @@ it.each(['--help', '-h'])('prints usage and exits 0 for %s', (flag) => {
   const result = cli(flag);
   expect(result.status).toBe(0);
   expect(result.stdout).toMatch(/^Usage: pnpm cli /);
+  expect(result.stdout).toContain('pnpm cli review [--base REF] [RANGE] [--runtime NAME]...');
+  expect(result.stdout).toContain('pnpm cli land [BRANCH] [--message TEXT]');
   expect(result.stderr).toBe('');
 });
 

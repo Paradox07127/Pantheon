@@ -7,9 +7,8 @@ import { charterMode } from './charter.js';
 import { usageResetAt } from './continuation.js';
 import { blockedReport } from './lead-inbox.js';
 import { continuationLimit, latestEvent, latestExecuted } from './needs-you.js';
-import { awaitsDecision } from './needs-you-workflow.js';
 import { handBackAllowed, mergeProblem, type HandBackCheck } from './task-tracking.js';
-import { taskWorkflow } from './workflow-engine.js';
+import { REVIEW_MAX_ROUNDS } from './merge-review.js';
 import { projectBudgetUse, projectOverBudget, workflowPolicy } from './workflow-policy.js';
 
 /** What a task's rung is computed from; times are epoch milliseconds. */
@@ -123,14 +122,6 @@ export function taskRungFacts(
   }
   const limit = continuationLimit(ctx, session.id);
   if (limit) facts.user.push({ reason: 'continuation_limit_reached', at: limit.created_at });
-  const step = ctx.store
-    .list<StepRun>('workflow_step_runs')
-    .find((run) => run.session_id === session.id && awaitsDecision(run, plan));
-  if (step)
-    facts.user.push({
-      reason: 'workflow_approval',
-      at: latestEvent(ctx, step.id, 'workflow.step_changed')?.created_at ?? step.created_at,
-    });
   const lead = alerts.includes('looping')
     ? 'looping'
     : alerts.includes('stalled')
@@ -176,7 +167,7 @@ export function taskRungFacts(
       at,
       used: ctx.store.list<Review>('reviews').filter((review) => review.session_id === session.id)
         .length,
-      limit: taskWorkflow(ctx, plan, taskId, sessions).definition.review.max_rounds,
+      limit: REVIEW_MAX_ROUNDS,
     };
   // A tracker turn of no step run is a hand-back.
   else if (!run && handedBack.length) {

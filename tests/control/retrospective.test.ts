@@ -398,19 +398,6 @@ it('records a task the lead removed from its plan as removed', async () => {
   ]);
 });
 
-it('lists the retrospectives of one task at the retrospective.list query', async () => {
-  const f = await workbenchFixture();
-  const lead = await leadWithPlan(f, [task('a'), task('b'), task('c')]);
-  writePlan(f, lead.id, [task('c')]);
-  await f.control.tick();
-
-  expect(f.control.retrospectiveList(user, f.project.id)).toHaveLength(2);
-  expect(f.control.retrospectiveList(user, f.project.id, 'a')).toEqual([
-    expect.objectContaining({ task_id: 'a', outcome: 'removed' }),
-  ]);
-  expect(() => f.control.retrospectiveList(sessionOf(f, lead.id, 'lead'), f.project.id)).toThrow();
-});
-
 it.skipIf(insideSandbox)(
   'replaces the failed record of a stopped task once the task is started again and merges',
   async () => {

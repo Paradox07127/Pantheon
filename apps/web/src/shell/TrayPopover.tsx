@@ -245,15 +245,7 @@ export function TrayPopover() {
     if (!isRequest(item)) {
       const approval = item.reason !== 'lead_question';
       const label = approval
-        ? item.step_title
-          ? t(
-              {
-                id: 'trayPopover.waiting.step',
-                defaultMessage: '{step} waits for your approval',
-              },
-              { step: item.step_title },
-            )
-          : needReasonText(item)
+        ? needReasonText(item)
         : t(
             { id: 'trayPopover.waiting.asked', defaultMessage: '{name} asked a question' },
             { name: nameOf(item.project_id, item.session_id) },

@@ -53,6 +53,16 @@ const NEXT_STEP: Partial<Record<NeedsYouItem['reason'], () => string>> = {
       defaultMessage:
         'The session used up its subscription limit; Pantheon has it go on once the limit resets and opens no new turn until then. The user waits for the reset, or moves it to another runtime.',
     }),
+  usage_limit_reached: () =>
+    t({
+      id: 'daemon.nextStep.usageLimitReached',
+      defaultMessage: 'Continue the session after the limit resets, or fork it to another runtime.',
+    }),
+  session_turn_stalled: () =>
+    t({
+      id: 'daemon.nextStep.sessionTurnStalled',
+      defaultMessage: 'Open the session to see where it stopped.',
+    }),
   task_dispatch_failed: () =>
     t({
       id: 'daemon.nextStep.taskDispatchFailed',
@@ -161,7 +171,6 @@ const deviceName = (planned: Planned) =>
     : t({ id: 'daemon.blocker.queued.thisComputer', defaultMessage: 'this computer' });
 
 const QUEUED: Record<Wait, (planned: Planned) => string> = {
-  step: () => t({ id: 'daemon.blocker.queued.none', defaultMessage: 'Queued' }),
   paused: () =>
     t({ id: 'daemon.blocker.queued.paused', defaultMessage: 'Queued: dispatch is paused' }),
   runtime_capacity: () =>
@@ -240,20 +249,15 @@ const QUEUED: Record<Wait, (planned: Planned) => string> = {
 function blockerText(
   blocker: BoardBlocker,
   wait: Wait | undefined,
-  step: { title: string } | undefined,
   planned: Planned,
 ): string | null {
   switch (blocker.code) {
     case 'queued': {
+      // An older daemon may send a wait this table does not have.
       const queued =
-        wait === 'step' && step
-          ? t(
-              { id: 'daemon.blocker.queued.step', defaultMessage: 'Queued: waiting for “{title}”' },
-              { title: step.title },
-            )
-          : wait
-            ? QUEUED[wait](planned)
-            : t({ id: 'daemon.blocker.queued.none', defaultMessage: 'Queued' });
+        wait && QUEUED[wait]
+          ? QUEUED[wait](planned)
+          : t({ id: 'daemon.blocker.queued.none', defaultMessage: 'Queued' });
       return blocker.error === undefined
         ? queued
         : t(
@@ -303,14 +307,13 @@ function blockerText(
 export function blockerTexts(
   task: Pick<
     BoardModel['tasks'][number],
-    'blockers' | 'blocker_codes' | 'dispatch_wait' | 'waiting_step' | 'planned'
+    'blockers' | 'blocker_codes' | 'dispatch_wait' | 'planned'
   >,
 ): string[] {
   const codes = task.blocker_codes;
   if (codes?.length !== task.blockers.length) return task.blockers;
   return task.blockers.map(
-    (text, i) =>
-      blockerText(codes[i]!, task.dispatch_wait, task.waiting_step, task.planned) ?? text,
+    (text, i) => blockerText(codes[i]!, task.dispatch_wait, task.planned) ?? text,
   );
 }
 

@@ -5,7 +5,6 @@ import { defineConfig } from 'electron-vite';
 import { build } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
-import { sourceLocations } from './src/build/source-locations.js';
 
 const webRoot = fileURLToPath(new URL('../web', import.meta.url));
 const webVersion = JSON.parse(readFileSync(path.join(webRoot, 'package.json'), 'utf8')).version;
@@ -89,6 +88,6 @@ export * as ReactFlow from '@xyflow/react';
       // Component names stay readable in a packaged build's stacks and debug reports.
       rolldownOptions: { input: path.join(webRoot, 'index.html'), output: { keepNames: true } },
     },
-    plugins: [sourceLocations(path.resolve(webRoot, '../..')), react(), tailwindcss()],
+    plugins: [react(), tailwindcss()],
   },
 });

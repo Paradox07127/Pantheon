@@ -12,8 +12,6 @@ import type {
   WorkflowPolicy,
   Workspace,
 } from '@pantheon/domain';
-import type { ControlContext } from '../../packages/control/dist/context.js';
-import { improvementSignals } from '../../packages/control/dist/improvement-signals.js';
 import { eventually, gateFolder, insideSandbox, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
@@ -636,39 +634,6 @@ it.skipIf(insideSandbox)(
 );
 
 it.skipIf(insideSandbox)(
-  'finds the cell over budget once three of its five latest direct tasks spent more than their budget, and proposes no change',
-  async () => {
-    const f = await mergeFixture();
-    Object.assign(f.adapter, { traceEvents: true });
-    const ids = ['a', 'b', 'c', 'd', 'e'];
-    const { lead, worktree } = await leadOnTask(
-      f,
-      ids.map((id) => task(id)),
-    );
-    const over = [true, false, true, false, true];
-    for (const [index, id] of ids.entries()) {
-      setDirectBudget(f, over[index] ? 5 : 1_000_000);
-      if (index) start(f, lead.id, id);
-      commit(worktree, `src/${id}.ts`, `export const ${id} = 1;\n`);
-      await report(f, lead.id);
-      await endTurn(f, lead.id);
-      await recordOf(f, lead.id, id);
-    }
-    const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
-
-    expect(
-      f.store.list<Retrospective>('retrospectives').map((row) => (row.budget_ratio ?? 0) > 1),
-    ).toEqual(over);
-    expect(
-      improvementSignals(ctx, f.project.id).filter((row) => row.signal === 'over_budget'),
-    ).toEqual([expect.objectContaining({ cell: { domain: 'backend-logic', tier: 't1' } })]);
-    await f.control.tick();
-    expect(f.store.db.prepare('SELECT count(*) AS n FROM improvements').get()).toEqual({ n: 0 });
-  },
-  60000,
-);
-
-it.skipIf(insideSandbox)(
   'times the work of a direct task up to its own report when another task reports first',
   async () => {
     const f = await mergeFixture();
@@ -766,7 +731,6 @@ it('lets go of the claim of a direct task given a new contract while it merges',
   expect(current(f, lead.id).direct_task).toEqual({
     id: 'a',
     generation: 2,
-    definition_version: 0,
   });
 }, 30000);
 

@@ -228,37 +228,6 @@ export function recordGateRun(
     }
 }
 
-/**
- * Records a check that failed on the branch a task merged into, and resolves the issues of a
- * check that passed there. The caller owns the transaction.
- */
-export function recordMergedCheck(
-  ctx: ControlContext,
-  input: { project_id: string; name: string; passed: boolean; output: string },
-): void {
-  const result: GateResult = {
-    name: input.name,
-    argv: [],
-    exit_code: input.passed ? 0 : 1,
-    duration_ms: 0,
-    timed_out: false,
-    output: input.output,
-  };
-  if (!input.passed) {
-    recordSignal(ctx, {
-      project_id: input.project_id,
-      source: 'gate_failures',
-      fingerprint: gateFingerprint(result),
-      title: `${input.name} failed after a merge: ${errorLine(result)}`,
-      sample: input.output,
-      scope: 'default_branch',
-    });
-    return;
-  }
-  for (const issue of openIssues(ctx, input.project_id, 'gate_failures'))
-    if (issue.fingerprint.startsWith(`${input.name}:`)) resolveSignal(ctx, issue.id);
-}
-
 const scopeOf = (session: Session) =>
   `${session.runtime}:${session.reported_model ?? session.requested_model ?? 'default'}`;
 

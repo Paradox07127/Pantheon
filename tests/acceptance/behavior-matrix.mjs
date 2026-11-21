@@ -71,24 +71,6 @@ const behaviours = {
 /** Steps of the before_merge slot; the task's own acceptance command (`test -f`) is in every structure. */
 const structures = {
   acceptance_only: [],
-  prompt_verification: [
-    {
-      id: 'verify',
-      title: 'Verify the result',
-      kind: {
-        type: 'prompt',
-        prompt: 'Check the result against the goal and fix what does not match.',
-        target: 'task',
-      },
-    },
-  ],
-  independent_check: [
-    {
-      id: 'content-check',
-      title: 'Content check',
-      kind: { type: 'command', command: `grep -qx ${EXPECTED} ${FILE}`, timeout_seconds: 30 },
-    },
-  ],
 };
 
 async function runCell(behaviour, structure, goalChange) {
@@ -151,14 +133,6 @@ async function runCell(behaviour, structure, goalChange) {
       { project_id: project.id, runtime: adapter.name, permission_mode: 'auto_edit' },
       await revision(),
     );
-    await fixture.call('workflow.definition.set', {
-      project_id: project.id,
-      definition: {
-        slots: { before_dispatch: [], before_merge: structures[structure], after_merge: [] },
-      },
-      base_version: 0,
-    });
-
     const steps = behaviours[behaviour].steps(repo);
     const plan = {
       base_version: 0,
@@ -431,7 +405,7 @@ await writeEvidence(evidenceDir, {
 console.log(table);
 
 // The matrix means nothing unless every cell settled, the correct behaviour merges everywhere,
-// and the wrong-content behaviour separates the structure that checks content from the one that does not.
+// and the acceptance alone lets the wrong content through.
 const broken = [
   ...cells
     .filter((row) => !row.settled)
@@ -445,9 +419,6 @@ const broken = [
   ...(cell('writes_wrong_content', 'acceptance_only').merged
     ? []
     : ['acceptance_only stopped the wrong content, so the probe shows no gap']),
-  ...(cell('writes_wrong_content', 'independent_check').merged
-    ? ['independent_check merged the wrong content']
-    : []),
 ];
 if (broken.length) {
   console.error(broken.join('\n'));

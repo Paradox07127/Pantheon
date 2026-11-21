@@ -5,7 +5,7 @@ import type { ControlContext } from './context.js';
 import { reviewerRuntime } from './review.js';
 import { verifierRuntime } from './runtime-vendor.js';
 import { taskChoice, taskPath } from './task-dispatch.js';
-import { taskWorkflow } from './workflow-engine.js';
+import { PLAN_REVIEW_TIERS, REVIEW_MAX_ROUNDS } from './merge-review.js';
 import { workflowPolicy } from './workflow-policy.js';
 
 type Role = BoardLaneEstimate['runtimes'][number]['role'];
@@ -39,20 +39,15 @@ export function estimateLane(
   const milestoneWriters = new Map<string, Set<string>>();
   for (const task of tasks) {
     const path = taskPath(ctx, plan.project_id, task),
-      definition = taskWorkflow(ctx, plan, task.id).definition,
       choice = taskChoice(ctx, plan, task);
     const writers = path === 'direct' ? 0 : path === 'parallel' ? task.parallel!.length : 1;
     byPart.tasks += writers;
     count('writer', choice.runtime, writers);
     if (path === 'review_loop') {
-      byPart.reviews += definition.review.max_rounds;
-      count(
-        'reviewer',
-        reviewerRuntime(ctx, plan.project_id, choice.runtime),
-        definition.review.max_rounds,
-      );
+      byPart.reviews += REVIEW_MAX_ROUNDS;
+      count('reviewer', reviewerRuntime(ctx, plan.project_id, choice.runtime), REVIEW_MAX_ROUNDS);
     }
-    if (task.kind && definition.plan_review.tiers.includes(task.kind.tier)) byPart.plan_review = 1;
+    if (task.kind && PLAN_REVIEW_TIERS.includes(task.kind.tier)) byPart.plan_review = 1;
     if (task.milestone)
       milestoneWriters.set(
         task.milestone,

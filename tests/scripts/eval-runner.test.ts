@@ -16,8 +16,6 @@ type Row = {
   hidden_passed: boolean | null;
   turn_error: string | null;
   runtime_version: string;
-  playbook_version: string | null;
-  playbook_sha256?: string | null;
   policy_version: number | null;
 };
 type Spec = Record<string, unknown>;
@@ -91,37 +89,13 @@ describe('a fixture eval run', () => {
     ).toEqual(Array(7).fill(0));
   }, 600000);
 
-  it('tags the rows of a real lead with each playbook version it compares', () => {
-    const { status, stderr, rows } = evalRun(
-      '--lead',
-      'real',
-      '--condition',
-      'playbook=v1',
-      '--condition',
-      'playbook=v2',
-    );
+  it('runs each goal under a real lead that plans and dispatches it', () => {
+    const { status, stderr, rows } = evalRun('--lead', 'real', '--condition', 'default');
     expect(status, stderr).toBe(0);
-    const playbooks = ['v1', 'v2'].map(
-      (version) =>
-        new Set(
-          rows
-            .filter((row) => row.condition === `playbook=${version}`)
-            .map((row) => row.playbook_sha256),
-        ),
-    );
-    expect(playbooks.map((hashes) => [...hashes])).toEqual([
-      [expect.stringMatching(/^[0-9a-f]{64}$/)],
-      [expect.stringMatching(/^[0-9a-f]{64}$/)],
-    ]);
-    expect([...playbooks[0]!][0]).not.toBe([...playbooks[1]!][0]);
-    for (const version of ['v1', 'v2']) {
-      const condition = `playbook=${version}`;
-      expect(rows.filter((row) => row.condition === condition)).toHaveLength(7);
-      expect(count(rows, condition, (row) => row.playbook_version === version)).toBe(7);
-      // The lead planned and dispatched each goal, so the runs end as the scripted lead's do.
-      expect(count(rows, condition, (row) => row.outcome === 'merged')).toBe(3);
-      expect(count(rows, condition, (row) => row.hidden_passed === false)).toBe(1);
-    }
+    expect(rows.filter((row) => row.condition === 'default')).toHaveLength(7);
+    // The lead planned and dispatched each goal, so the runs end as the scripted lead's do.
+    expect(count(rows, 'default', (row) => row.outcome === 'merged')).toBe(3);
+    expect(count(rows, 'default', (row) => row.hidden_passed === false)).toBe(1);
   }, 600000);
 });
 
@@ -192,14 +166,13 @@ describe('one dispatch run', () => {
         name: 'milestone_wake',
         mode: 'dispatch',
         lead: 'scripted',
-        before_merge: [],
         policy: { acceptance_wake: 'milestone' },
       },
       hiddenCheck: fixtureTasks.hiddenCheck,
       settleMs: 60000,
       quietMs: 2000,
     });
-    expect(row).toMatchObject({ outcome: 'merged', hidden_passed: true, playbook_version: null });
+    expect(row).toMatchObject({ outcome: 'merged', hidden_passed: true });
     expect(row.policy_version).toBeGreaterThan(0);
   }, 120000);
 });

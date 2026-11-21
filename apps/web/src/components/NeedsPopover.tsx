@@ -34,7 +34,6 @@ import {
   needActions,
   needCommand,
   needWhat,
-  noVerdictKind,
   type NeedAction,
   type NeedItem,
 } from '../screens/board/frame-model';
@@ -186,7 +185,6 @@ export function needsGlyph(item: NeedsYouItem): ReactNode {
       return <MergeBlockedGlyph />;
     case 'milestone.ready_for_acceptance':
       return <StateGlyph name="ready" />;
-    case 'workflow.approval':
     case 'external.approval':
     case 'board.lane.approval':
       return <StateGlyph name="approval" />;
@@ -294,7 +292,7 @@ export function NeedsPopover({
     const failed = answers[key];
     // A lead's question is answered on its card, which the lead's thread does not show.
     const card = item.kind === 'lead.question' ? needsKey(item) : null;
-    const kind = noVerdictKind(item as NeedItem) ?? decisionText(item.decision);
+    const kind = decisionText(item.decision);
     const named = item.lane_title ?? (session && board ? sessionTitle(session, board) : undefined);
     const row: ListRow = {
       key,

@@ -217,7 +217,6 @@ describe('changing a lead plan proposal before accepting it', () => {
       acceptance: ['pnpm test export', 'pnpm lint'],
       iteration: 'it-7',
       estimate: 3,
-      workflow_id: 'careful',
       device: 'mac-mini',
       device_reason: 'Has the signing key',
       needs: ['gpu', 'signing'],
@@ -253,7 +252,6 @@ describe('changing a lead plan proposal before accepting it', () => {
     expect(of(zh('data.planEdit.field.goal'))).toBe('Export the refunds nightly');
     expect(of(zh('data.planEdit.field.scope'))).toBe('src/exportdocs/export.md');
     expect(of(zh('data.planEdit.field.acceptance'))).toBe('pnpm test exportpnpm lint');
-    expect(of(zh('data.planEdit.field.workflow'))).toBe('careful');
     expect(of(zh('data.planEdit.field.iteration'))).toBe('Iteration 7');
     expect(of(zh('data.planEdit.field.estimate'))).toBe('3 点');
     expect(of(zh('data.planEdit.field.device'))).toBe('mac-miniHas the signing key');

@@ -5,6 +5,7 @@ import {
   command,
   inputSchemas,
   querySchemas,
+  sessionTools,
   type CommandType,
 } from '@pantheon/protocol';
 import { fixture, user } from '../helpers.js';
@@ -42,7 +43,6 @@ it('defines a strict input schema for each unimplemented command and the queries
     'github.items',
     'github.pr.detail',
     'import.candidates',
-    'improvement.signals',
     'mcp.app.resource',
     'mcp.status',
     'memory.document',
@@ -67,6 +67,7 @@ it('defines a strict input schema for each unimplemented command and the queries
     'project.head',
     'project.heatmap',
     'project.intro.read',
+    'project.landing.read',
     'project.read',
     'project.review.metrics',
     'project.timeline',
@@ -74,7 +75,7 @@ it('defines a strict input schema for each unimplemented command and the queries
     'project.trace.stats',
     'project.usage.read',
     'projects.summary',
-    'retrospective.list',
+    'review.read',
     'runtime.models',
     'runtime.status',
     'session.activity',
@@ -100,8 +101,6 @@ it('defines a strict input schema for each unimplemented command and the queries
     'task.trace',
     'tool.calls',
     'trace.time',
-    'workflow.definition',
-    'workflow.definition.list',
     'workflow.policy',
     'workspace.stale',
   ]);
@@ -136,6 +135,47 @@ it('rejects a defined but unimplemented command with unsupported_command and kee
   } finally {
     await f.close();
   }
+});
+
+it('gives a conductor session exactly four tools with strict inputs', () => {
+  expect(sessionTools.conductor).toEqual({
+    request_review: 'conductor.review',
+    report_ready: 'conductor.ready',
+    spawn_session: 'conductor.spawn',
+    read_state: 'conductor.state',
+  });
+  const cases: [CommandType, Record<string, unknown>, Record<string, unknown>[]][] = [
+    [
+      'conductor.review' as CommandType,
+      { runtimes: ['codex', 'claude'], session_id: 'spawned' },
+      [{ runtimes: [] }, { runtimes: ['codex', 'claude', 'gemini'] }, {}],
+    ],
+    ['conductor.ready' as CommandType, {}, [{ project_id: 'project' }]],
+    [
+      'conductor.spawn' as CommandType,
+      { runtime: 'codex', input: 'Write the docs', model: 'model', effort: 'high' },
+      [
+        { runtime: 'codex', input: '' },
+        { runtime: 'codex', input: 'Write the docs', effort: 'huge' },
+        { input: 'Write the docs' },
+      ],
+    ],
+    ['conductor.state' as CommandType, {}, [{ session_id: 'session' }]],
+  ];
+  for (const [type, valid, invalid] of cases) {
+    expect(Object.hasOwn(inputSchemas, type), type).toBe(true);
+    expect(inputSchemas[type].safeParse(valid).success, type).toBe(true);
+    expect(inputSchemas[type].safeParse({ ...valid, extra: 1 }).success, type).toBe(false);
+    for (const input of invalid)
+      expect(inputSchemas[type].safeParse(input).success, JSON.stringify(input)).toBe(false);
+  }
+  expect(
+    inputSchemas['session.create'].safeParse({
+      project_id: 'project',
+      input: 'Ship the export',
+      purpose: 'conductor',
+    }).success,
+  ).toBe(true);
 });
 
 it('accepts only the known effort levels when creating a session or changing its model', () => {

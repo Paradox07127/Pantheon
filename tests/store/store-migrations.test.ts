@@ -390,15 +390,20 @@ it('adds the playbook table with one default and one playbook per runtime of a p
   expect(tableList(store.db)).toEqual(expect.arrayContaining([{ name: 'playbooks' }]));
   const sections = { before_you_plan: 'Read first.', routing: 'Route.', replies: 'Reply.' };
   const playbook = { revision: 1, project_id: row.id, version: 1, versions: { 1: sections } };
-  store.insert('playbooks', { ...playbook, id: 'default' });
-  store.insert('playbooks', { ...playbook, id: 'codex', runtime: 'codex' });
-  store.insert('playbooks', { ...playbook, id: 'claude', runtime: 'claude' });
-  store.insert('playbooks', { ...playbook, id: 'other-default', project_id: 'other' });
-  expect(() => store.insert('playbooks', { ...playbook, id: 'default-again' })).toThrow();
-  expect(() =>
-    store.insert('playbooks', { ...playbook, id: 'codex-again', runtime: 'codex' }),
-  ).toThrow();
-  expect(store.get('playbooks', 'codex')).toEqual({ ...playbook, id: 'codex', runtime: 'codex' });
+  // The store does not list this table, so its rows are written and read by SQL.
+  const insert = (value: typeof playbook & { id: string; runtime?: string }) =>
+    store.db
+      .prepare('INSERT INTO playbooks (id, revision, data) VALUES (?, ?, ?)')
+      .run(value.id, value.revision, JSON.stringify(value));
+  insert({ ...playbook, id: 'default' });
+  insert({ ...playbook, id: 'codex', runtime: 'codex' });
+  insert({ ...playbook, id: 'claude', runtime: 'claude' });
+  insert({ ...playbook, id: 'other-default', project_id: 'other' });
+  expect(() => insert({ ...playbook, id: 'default-again' })).toThrow();
+  expect(() => insert({ ...playbook, id: 'codex-again', runtime: 'codex' })).toThrow();
+  expect(
+    JSON.parse(String(store.db.prepare("SELECT data FROM playbooks WHERE id='codex'").get()?.data)),
+  ).toEqual({ ...playbook, id: 'codex', runtime: 'codex' });
   expect(store.get('projects', row.id)).toEqual(row);
 });
 
@@ -423,8 +428,50 @@ it('adds the setting proposal table to a database without it', () => {
     state: 'pending',
     at: 1,
   };
-  store.insert('setting_proposals', proposal);
-  expect(store.get('setting_proposals', proposal.id)).toEqual(proposal);
+  // The store does not list this table, so its rows are written and read by SQL.
+  store.db
+    .prepare('INSERT INTO setting_proposals (id, revision, data) VALUES (?, ?, ?)')
+    .run(proposal.id, proposal.revision, JSON.stringify(proposal));
+  expect(
+    JSON.parse(
+      String(
+        store.db.prepare('SELECT data FROM setting_proposals WHERE id=?').get(proposal.id)?.data,
+      ),
+    ),
+  ).toEqual(proposal);
+  expect(store.get('projects', row.id)).toEqual(row);
+});
+
+it('adds the landing table with its project index to a database without it', () => {
+  const file = databaseFile();
+  const behind = open(
+    file,
+    migrations.filter((migration) => migration.version < 16),
+  );
+  behind.insert('projects', row);
+  close(behind);
+  const store = open(file);
+  expect(tableList(store.db)).toEqual(expect.arrayContaining([{ name: 'landings' }]));
+  expect(
+    store.db
+      .prepare(
+        `EXPLAIN QUERY PLAN SELECT data FROM landings WHERE json_extract(data,'$.project_id')=?`,
+      )
+      .all('value')
+      .map((step) => String(step.detail)),
+  ).toEqual([expect.stringMatching(/^SEARCH landings USING INDEX /)]);
+  const landing = {
+    id: 'landing',
+    revision: 1,
+    project_id: row.id,
+    root: '/project',
+    branch: 'feature',
+    target_branch: 'main',
+    workspace_id: 'workspace',
+    state: 'queued',
+  };
+  store.insert('landings', landing);
+  expect(store.get('landings', landing.id)).toEqual(landing);
   expect(store.get('projects', row.id)).toEqual(row);
 });
 
@@ -470,6 +517,7 @@ it('indexes the per-project turn reads of the session list on a database one ver
 it('creates the whole schema through known migrations in a memory and a file database', () => {
   const schema = [
     ...tables,
+    'agent_proposals',
     'event_retention',
     'events',
     'improvements',
@@ -481,10 +529,13 @@ it('creates the whole schema through known migrations in a memory and a file dat
     'memory_search_docsize',
     'memory_search_idx',
     'outbox',
+    'playbooks',
     'project_intros',
     'range_stories',
     'schema_migrations',
+    'setting_proposals',
     'sqlite_sequence',
+    'workflow_definitions',
   ]
     .sort()
     .map((name) => ({ name }));
@@ -501,25 +552,15 @@ it('creates the whole schema through known migrations in a memory and a file dat
 it('keeps workflow names unique per project, allows one default and lets child step runs repeat by iteration', () => {
   const store = new Store(':memory:');
   openStores.push(store);
-  const definition = { revision: 1, project_id: 'project', is_default: false };
-  store.insert('workflow_definitions', {
-    ...definition,
-    id: 'default',
-    name: 'Default',
-    is_default: true,
-  });
-  store.insert('workflow_definitions', { ...definition, id: 'release', name: 'Release' });
-  expect(() =>
-    store.insert('workflow_definitions', { ...definition, id: 'duplicate', name: 'Release' }),
-  ).toThrow();
-  expect(() =>
-    store.insert('workflow_definitions', {
-      ...definition,
-      id: 'default-again',
-      name: 'Other',
-      is_default: true,
-    }),
-  ).toThrow();
+  const definition = { project_id: 'project', is_default: false };
+  const insertDefinition = (id: string, data: object) =>
+    store.db
+      .prepare('INSERT INTO workflow_definitions (id, revision, data) VALUES (?, 1, ?)')
+      .run(id, JSON.stringify({ ...definition, ...data }));
+  insertDefinition('default', { name: 'Default', is_default: true });
+  insertDefinition('release', { name: 'Release' });
+  expect(() => insertDefinition('duplicate', { name: 'Release' })).toThrow();
+  expect(() => insertDefinition('default-again', { name: 'Other', is_default: true })).toThrow();
   const child = {
     revision: 1,
     lead_session_id: 'lead',
@@ -557,20 +598,25 @@ it('drops the stored role prompts of template agents and the app_debug group, ke
     instructions: 'You keep the changelog current.',
   });
   const proposal = { revision: 1, project_id: 'project', session_id: 'assistant-session', at: 1 };
-  previous.insert('agent_proposals', {
+  // The store does not list this table, so its rows are written and read by SQL.
+  const insertProposal = (value: { id: string; revision: number; [key: string]: unknown }) =>
+    previous.db
+      .prepare('INSERT INTO agent_proposals (id, revision, data) VALUES (?, ?, ?)')
+      .run(value.id, value.revision, JSON.stringify(value));
+  insertProposal({
     ...proposal,
     id: 'new-ideas',
     state: 'pending',
     fields: { template: 'ideas', name: 'Ideas', instructions: 'Copied role prompt' },
   });
-  previous.insert('agent_proposals', {
+  insertProposal({
     ...proposal,
     id: 'change-assistant',
     agent_id: 'assistant',
     state: 'pending',
     fields: { instructions: 'Copied role prompt', tools: ['board', 'app_debug'] },
   });
-  previous.insert('agent_proposals', {
+  insertProposal({
     ...proposal,
     id: 'change-custom',
     agent_id: 'custom',
@@ -580,6 +626,10 @@ it('drops the stored role prompts of template agents and the app_debug group, ke
   close(previous);
 
   const store = open(file);
+  const storedProposal = (id: string) =>
+    JSON.parse(
+      String(store.db.prepare('SELECT data FROM agent_proposals WHERE id=?').get(id)?.data),
+    ) as unknown;
   expect(store.must('agents', 'assistant')).toEqual({
     ...agent,
     id: 'assistant',
@@ -589,17 +639,15 @@ it('drops the stored role prompts of template agents and the app_debug group, ke
   expect(store.must('agents', 'custom')).toMatchObject({
     instructions: 'You keep the changelog current.',
   });
-  expect(store.must('agent_proposals', 'new-ideas')).toMatchObject({
+  expect(storedProposal('new-ideas')).toMatchObject({
     fields: { template: 'ideas', name: 'Ideas' },
   });
-  expect(store.must('agent_proposals', 'new-ideas')).not.toHaveProperty('fields.instructions');
-  expect(store.must('agent_proposals', 'change-assistant')).toMatchObject({
+  expect(storedProposal('new-ideas')).not.toHaveProperty('fields.instructions');
+  expect(storedProposal('change-assistant')).toMatchObject({
     fields: { tools: ['board'] },
   });
-  expect(store.must('agent_proposals', 'change-assistant')).not.toHaveProperty(
-    'fields.instructions',
-  );
-  expect(store.must('agent_proposals', 'change-custom')).toMatchObject({
+  expect(storedProposal('change-assistant')).not.toHaveProperty('fields.instructions');
+  expect(storedProposal('change-custom')).toMatchObject({
     fields: { instructions: 'You keep the release notes current.' },
   });
 });

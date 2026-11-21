@@ -244,38 +244,6 @@ describe('needs-you list', () => {
     expect(opens[to]!.focus).toHaveBeenCalled();
   });
 
-  it('names a step that ended without a verdict No verdict, with Count as passed and Count as failed', () => {
-    const step = item({
-      source: { table: 'workflow_step_runs', id: 'step-run-1', revision: 2 },
-      kind: 'workflow.approval',
-      session_id: 'session-login',
-      status: 'inconclusive',
-      reason: 'workflow_approval',
-      decision: 'other',
-      primary: 'workflow.step.decide',
-      actions: [
-        { command: 'workflow.step.decide', allowed: true, decision: 'approve' },
-        { command: 'workflow.step.decide', allowed: true, decision: 'reject' },
-      ],
-    });
-    const h = mount(() => NeedsPopover({ items: [step], trigger }));
-    root(h.value).props.onOpenChange(true);
-    h.render();
-    expect(text(button(h.value, zh('board.needs.kind.noVerdict')))).toBe(
-      `${zh('board.needs.kind.noVerdict')}Fix login`,
-    );
-    expect(button(h.value, zh('board.needs.actions.countPassed'))).toBeTruthy();
-    expect(
-      find(
-        h.value,
-        (n) =>
-          n.type !== 'button' &&
-          !!n.props.onClick &&
-          text(n) === zh('board.needs.actions.countFailed'),
-      ),
-    ).toBeTruthy();
-  });
-
   it.each([
     ['lead', []],
     ['user', [zh('board.needs.actions.merge'), zh('board.needs.actions.gates')]],

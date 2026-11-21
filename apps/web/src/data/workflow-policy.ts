@@ -1,6 +1,5 @@
 import type {
   FlowPath,
-  Retrospective,
   TaskBudget,
   TaskKind,
   WorkflowParam,
@@ -8,15 +7,12 @@ import type {
 } from '@pantheon/domain';
 import type { WorkflowPolicyView } from '@pantheon/protocol';
 import { t } from '../i18n';
-import { useBoard } from './board';
 import { sendProjectCommand, useProjectQuery, type MutationResult } from './project-read';
-import { useQuery, useRefetchTick } from './workbench-sessions';
 
-export type { Retrospective, WorkflowParam, WorkflowPolicy, WorkflowPolicyView };
+export type { WorkflowParam, WorkflowPolicy, WorkflowPolicyView };
 
 /** The fields of workflow.policy.set besides project_id; an absent field stays as it is. */
 export interface PolicyPatch {
-  improvement_mode?: WorkflowPolicy['improvement_mode'];
   plan_changes?: WorkflowPolicy['plan_changes'];
   /** null turns it off. */
   question_defaults?: WorkflowPolicy['question_defaults'] | null;
@@ -62,48 +58,6 @@ export const useWorkflowPolicy = (project_id: string | null) =>
     events: true,
   });
 
-/** A plan task of a project, by the task id its plan gives it. */
-export interface TaskRef {
-  project_id: string;
-  task_id: string;
-}
-
-const acceptRetrospectives = (value: unknown): Retrospective[] | null =>
-  Array.isArray(value) && value.every((r) => isObject(r) && typeof r.id === 'string')
-    ? (value as Retrospective[])
-    : null;
-
-// Ids hold no newline, so one joins the two parts of the query key.
-const taskParams = (key: string) => {
-  const at = key.indexOf('\n');
-  return { project_id: key.slice(0, at), task_id: key.slice(at + 1) };
-};
-
-/**
- * GET /v1/retrospective.list of one task, newest first, again after one of its retrospectives is
- * recorded; reads nothing without a task.
- */
-export const useTaskRetrospectives = (task: TaskRef | null) => {
-  const sequence = useBoard(
-    (s) =>
-      (task &&
-        s.events.findLast(
-          (e) =>
-            e.kind === 'retrospective.recorded' &&
-            e.project_id === task.project_id &&
-            (e.payload as { task_id?: unknown } | null)?.task_id === task.task_id,
-        )?.sequence) ??
-      0,
-  );
-  return useQuery(
-    'retrospective.list',
-    task && `${task.project_id}\n${task.task_id}`,
-    taskParams,
-    acceptRetrospectives,
-    useRefetchTick(sequence, false),
-  );
-};
-
 /** A project without a stored policy reads it at version 0, and its first write expects no row. */
 const policyRevision = (policy: WorkflowPolicy) =>
   policy.policy_version === 0 ? null : policy.revision;
@@ -137,7 +91,6 @@ export const PARAM_LABEL: Record<
   | 'runtime_parallel'
   | 'dispatch_paused'
   | 'runtime_quota_threshold'
-  | 'improvement_mode'
   | 'plan_changes'
   | 'question_defaults'
   | 'project_budget'
@@ -179,12 +132,6 @@ export const PARAM_LABEL: Record<
     return t({
       id: 'data.workflowPolicy.param.taskSizeHint',
       defaultMessage: 'Task file count hint',
-    });
-  },
-  get improvement_mode() {
-    return t({
-      id: 'data.workflowPolicy.param.improvementMode',
-      defaultMessage: 'Workflow improvement',
     });
   },
   get plan_changes() {

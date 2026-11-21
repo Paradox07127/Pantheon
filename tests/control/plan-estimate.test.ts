@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import type { BoardPlan, Principal, Retrospective, WorkflowPolicy } from '@pantheon/domain';
+import { REVIEW_MAX_ROUNDS } from '../../packages/control/dist/merge-review.js';
 import { settle, user } from '../helpers.js';
 import { dispatchEveryTier, workbenchFixture } from './workbench-fixture.js';
 
@@ -78,15 +79,6 @@ it.each([
     const f = await workbenchFixture();
     dispatchEveryTier(f);
     setPolicy(f, { milestone_verify: 'auto' });
-    f.call('workflow.definition.set', {
-      project_id: f.project.id,
-      base_version: 0,
-      definition: {
-        slots: { before_dispatch: [], before_merge: [], after_merge: [] },
-        plan_review: { tiers: ['t3'] },
-        review: { max_rounds: 2 },
-      },
-    });
     const estimate = await estimateOf(
       f,
       [
@@ -104,8 +96,13 @@ it.each([
       tasks: 3,
       milestones: 1,
       sessions: {
-        total: 3 + 2 + 1 + planReview,
-        by_part: { tasks: 3, reviews: 2, plan_review: planReview, milestone_verify: 1 },
+        total: 3 + REVIEW_MAX_ROUNDS + 1 + planReview,
+        by_part: {
+          tasks: 3,
+          reviews: REVIEW_MAX_ROUNDS,
+          plan_review: planReview,
+          milestone_verify: 1,
+        },
       },
     });
     expect(estimate.runtimes).toContainEqual({

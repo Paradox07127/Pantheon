@@ -1,17 +1,17 @@
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
+import { FixtureAdapter } from '@pantheon/adapters';
 import type {
   BoardPlan,
   Project,
   Session,
+  SessionTurn,
   StepRun,
-  WorkflowDefinition,
-  WorkflowStep,
   Workspace,
 } from '@pantheon/domain';
 import * as validation from '../../packages/control/dist/validation-executor.js';
-import { eventually, settle, user } from '../helpers.js';
+import { eventually, settle } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
 type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
@@ -20,16 +20,6 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const empty = (): WorkflowDefinition => ({
-  slots: { before_dispatch: [], before_merge: [], after_merge: [] },
-  plan_review: { tiers: ['t3'] },
-  review: { max_rounds: 3 },
-});
-const approval: WorkflowStep = {
-  id: 'signoff',
-  title: 'Approve the result',
-  kind: { type: 'approval' },
-};
 const current = (f: Fixture, id: string) => f.store.must<Session>('sessions', id);
 const runs = (f: Fixture) => f.store.list<StepRun>('workflow_step_runs');
 const workerOf = (f: Fixture, lead: Session) =>
@@ -58,17 +48,12 @@ function validationResult(exit_code = 0): validation.ValidationResult {
 }
 
 /** A task worker on an auto-merging project, whose acceptance is the only gate command. */
-async function taskWorker(definition: WorkflowDefinition) {
+async function taskWorker(taskPath: BoardPlan['tasks'][number]['path'] = 'dispatch') {
   const f = await workbenchFixture({ delay: 1 });
   git(f.source, 'config', 'user.name', 'Source User');
   git(f.source, 'config', 'user.email', 'source@example.invalid');
   const lead = await f.create('Plan the export');
   await settle(f, lead);
-  f.call('workflow.definition.set', {
-    project_id: f.project.id,
-    definition,
-    base_version: f.control.workflowDefinition(user, f.project.id).definition_version,
-  });
   f.store.insert<BoardPlan>('board_plans', {
     id: lead.id,
     revision: 1,
@@ -85,7 +70,7 @@ async function taskWorker(definition: WorkflowDefinition) {
         source: ['Plan the export'],
         scope: ['.'],
         acceptance: ['true'],
-        path: 'dispatch',
+        path: taskPath,
         kind: { tier: 't2', domain: 'backend-logic' },
       },
     ],
@@ -127,7 +112,7 @@ const finish = (f: Fixture, worker: Session) =>
 
 it('counts only its own commits as the change of a session rebased for a gate that failed', async () => {
   vi.spyOn(validation, 'runValidationCommand').mockResolvedValue(validationResult(1));
-  const { f, worker, workspace } = await taskWorker(empty());
+  const { f, worker, workspace } = await taskWorker();
   commit(workspace.path, 'session.txt');
   // Another task landed first.
   const landed = commit(f.source, 'source.txt');
@@ -145,17 +130,48 @@ it('counts only its own commits as the change of a session rebased for a gate th
   expect(git(workspace.path, 'diff', '--name-only', base, 'HEAD')).toBe('session.txt');
 });
 
-it('runs the gate again when the project environment changed while the merge waited for approval', async () => {
+/** Adds a reviewer runtime whose review sessions hand in a pass verdict once the returned release is called. */
+function heldReviewer(f: Fixture) {
+  const reviewer = new FixtureAdapter(1);
+  reviewer.name = 'reviewer';
+  f.control.adapters.set(reviewer.name, reviewer);
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  const send = reviewer.send.bind(reviewer);
+  reviewer.send = async (handle, turn) => {
+    const session = current(f, f.store.must<SessionTurn>('session_turns', turn.turn_id).session_id);
+    if (session.review_id) {
+      await released;
+      f.call(
+        'review.verdict',
+        { verdict: 'pass', summary: 'No findings: checked session.txt' },
+        null,
+        {
+          id: `session:${session.id}`,
+          role: 'reviewer',
+          session_id: session.id,
+          project_id: f.project.id,
+          expires_at: Date.now() + 60000,
+        },
+      );
+    }
+    return send(handle, turn);
+  };
+  return release;
+}
+
+it('runs the gate again when the project environment changed while the merge waited for its review', async () => {
   const execute = vi
     .spyOn(validation, 'runValidationCommand')
     .mockResolvedValue(validationResult());
-  const definition = empty();
-  definition.slots.before_merge = [approval];
-  const { f, worker, workspace } = await taskWorker(definition);
+  const { f, worker, workspace } = await taskWorker('review_loop');
+  const release = heldReviewer(f);
   const head = commit(workspace.path, 'session.txt');
   finish(f, worker);
   await eventually(
-    () => runs(f).some((r) => r.step.id === approval.id && r.state === 'waiting'),
+    () =>
+      current(f, worker.id).merge?.reason === 'workflow_approval' &&
+      runs(f).some((run) => run.state === 'running'),
     () => f.control.tick(),
     10000,
   );
@@ -170,15 +186,13 @@ it('runs the gate again when the project environment changed while the merge wai
     },
     project.revision,
   );
-  f.call('workflow.step.decide', {
-    step_run_id: runs(f).find((r) => r.state === 'waiting')!.id,
-    decision: 'approve',
-  });
+  release();
   await eventually(
     () => current(f, worker.id).outcome === 'merged',
     () => f.control.tick(),
     10000,
   );
   expect(git(f.source, 'rev-parse', 'HEAD')).toBe(head);
+  expect(runs(f).map((run) => run.state)).toEqual(['passed']);
   expect(execute.mock.calls.map((call) => call[0].env?.GATE_MODE)).toEqual([undefined, 'strict']);
 });

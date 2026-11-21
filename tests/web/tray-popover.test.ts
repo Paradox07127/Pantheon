@@ -53,18 +53,6 @@ const question: NeedsYouItem = {
   actions: [],
 };
 
-const workflowApproval: NeedsYouItem = {
-  source: { table: 'workflow_step_runs', id: 'step-1', revision: 1 },
-  kind: 'workflow.approval',
-  project_id: 'alpha',
-  session_id: 'session-a',
-  status: 'waiting',
-  created_at: NOW - 2 * MINUTE,
-  reason: 'workflow_approval',
-  step_title: 'Deploy to staging',
-  actions: [],
-};
-
 const heldRequest: NeedsYouItem = {
   source: { table: 'board_plans', id: 'lead-2', revision: 1 },
   kind: 'external.approval',
@@ -241,8 +229,8 @@ const button = (tree: ReactElement, label: string) =>
   find(tree, (n) => n.type === 'button' && text(n.props.children).includes(label));
 
 describe('tray popover waiting group', () => {
-  it('counts only approvals, questions and workflow approvals across every project', async () => {
-    needs = [approval('ap-1'), question, workflowApproval, failedSession];
+  it('counts only approvals, questions and external approvals across every project', async () => {
+    needs = [approval('ap-1'), question, heldRequest, failedSession];
     const tree = (await popover()).value;
     expect(bridge.query).toHaveBeenCalledWith('needs_you.list', undefined);
     const waiting = group(tree, WAITING);
@@ -252,7 +240,7 @@ describe('tray popover waiting group', () => {
     expect(body).toContain('18 分');
     expect(body).toContain('pnpm db:migrate --env staging');
     expect(body).toContain('lead 问了一个问题');
-    expect(body).toContain('Deploy to staging');
+    expect(body).toContain(zh('data.reason.externalApproval'));
     expect(body).not.toContain(zh('data.reason.sessionFailed'));
   });
 

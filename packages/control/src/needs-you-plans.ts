@@ -14,7 +14,7 @@ import { blockedReport } from './lead-inbox.js';
 import { stuckUpstream } from './task-dispatch.js';
 import { laneHeld } from './lane-stops.js';
 import { runningPlanReview } from './review.js';
-import { taskWorkflow } from './workflow-engine.js';
+import { PLAN_REVIEW_TIERS } from './merge-review.js';
 import {
   NEXT_STEP,
   action,
@@ -79,9 +79,7 @@ export function planItems(
           (task) =>
             task.lane === laneId &&
             !!task.kind &&
-            taskWorkflow(ctx, plan, task.id).definition.plan_review.tiers.includes(
-              task.kind.tier,
-            ) &&
+            PLAN_REVIEW_TIERS.includes(task.kind.tier) &&
             !!runningPlanReview(ctx, plan, task.id),
         ),
         next_step: NEXT_STEP.lane_plan_awaiting_approval,

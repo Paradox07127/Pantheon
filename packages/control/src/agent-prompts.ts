@@ -347,9 +347,9 @@ Caution: hold t9 until the user finishes their manual test of the importer (they
    - verification_changed: the diff weakens tests or changes gate, CI or build configuration. Have the session revert it, or list those files by exact path in the scope when the task needs them.
    - Rebase conflict that keeps coming back: another task changes the same files. Add a dependency between the tasks and restart the later one.
    - No commits: ask the session with message_task what it found; a session that concluded no change is needed should report that, and the task may be better as a report task.
-4. Before merge, the user's before_merge steps run: approval, a prompt turn or a review. A review_loop task gets a review by another runtime; blocking findings go back to its session until the review passes or the rounds run out. A failed step comes back to you as an update.
+4. Before merge, a review_loop task gets a review by another runtime; blocking findings go back to its session until the review passes or the rounds run out. A failed step comes back to you as an update.
 5. Merge. With auto-merge on, Pantheon merges and you get a merged update naming the session. With auto-merge off, the commits wait for the user to merge them from the session; tell the user the task is ready, once, and set a follow-up if a later step depends on that merge.
-6. After merge, after_merge steps run. Then judge the result: read the task's state and generation, check every current part of a parallel task landed, read the commits by SHA with git show and compare them with the user's words. If something is missing, add a task; do not reopen the merged one.
+6. After merge, judge the result: read the task's state and generation, check every current part of a parallel task landed, read the commits by SHA with git show and compare them with the user's words. If something is missing, add a task; do not reopen the merged one.
 7. A done_when report task has no gate. Check its decisive claim against something you can inspect, ask the session for missing evidence, and call accept_task with the evidence once it holds. accept_task records your evidence; it does not check it.
 8. When every task of a milestone is done, project_read shows it ready_for_acceptance; check its criteria, then milestone_accept.`,
   },
@@ -420,7 +420,6 @@ The goal has 400 characters. Spend them on the cause and the change; the user's 
 Routing and path
 - Give each task its kind, a domain and a tier. Pantheon raises the tier from the scope: more than two paths or a directory make it at least t2; paths in more than one package, or a path or goal that names migrations, authentication, concurrency, a public API or secrets, make it t3. When a task's runtime, model or effort differs from the project's defaults, give the reason in one sentence in route_reason.
 - lead.workflow.path gives the path for each tier; when a task's path differs, give the reason in flow_reason. A review_loop task is reviewed by another runtime before it merges, and findings go back to its session until the review passes or the rounds run out. A parallel task has 2 to 4 parts, each with its own title, goal, scope and acceptance.
-- lead.workflow.steps lists the user's steps before dispatch, before merge and after merge; a task may wait there for approval, a prompt turn or a review, and a failed step comes back to you as an update.
 - When project_read has lead.devices, a task may name a device with device_reason, the labels it needs in needs (such as os=macos or arch=arm64), and the resources it holds in uses, at most what that device lists. Give tasks that compete for the same resource the same resource name, or different devices.
 
 Weak and good, for the same bug
@@ -519,7 +518,6 @@ A task session sees only its task, not this conversation. Write each task so a s
   - review_loop: dispatched like dispatch; before it merges, another runtime, or the task's own runtime when it is the only one, reviews its changes and sends blocking findings back to its session until the review passes or the review rounds run out.
   - parallel: give the task 2 to 4 parts in parallel, each with its own title, goal, scope and acceptance; Pantheon opens one session for each part.
   - direct: you do it yourself (see Direct tasks).
-- lead.workflow.steps in project_read lists the user's custom steps by slot: before_dispatch steps run before a task opens, before_merge steps after its gates pass and before it merges, and after_merge steps after it merges (for a done_when report task, after its done report and before you accept it). A task may wait there for the user's approval, a prompt turn or a review; a failed step comes back to you as a board update.
 - When project_read has lead.devices, a task may name the device its session runs on in device, with the reason in one sentence in device_reason. Put what the device must have in needs: os=<system> and arch=<architecture> as lead.devices gives them (such as os=macos or arch=arm64), and the device labels. Name what the task session holds for itself while it runs, such as a test database, a port, a simulator or a GPU, as a resource in uses; give tasks that would compete for the same thing the same resource name, or put them on different devices. uses may name only resources that lead.devices lists for that device under resources, at most the listed amount; leave uses out when the device lists none.
 
 ## Dispatching
@@ -558,7 +556,7 @@ Pantheon computes task state and sends you a message starting "[Pantheon] Board 
 - draw shows a chart in this conversation when it makes an answer clearer; give it pin only when the user asks to see the chart on the board, and replaces to redraw one in place.
 - sync_board, when the user asks to sync or refresh the board, returns the plan with task states and recent commits; you then rewrite the plan with update_board. rerun_baseline reassesses the project when the user asks for it, and the user approves each run.`;
 
-/** The lead sections a playbook replaces; the opening and the other sections are contract and stay in code. */
+/** The behaviour sections of the lead instructions; the opening and the other sections are contract. */
 const PLAYBOOK_HEADINGS: Record<string, keyof PlaybookSections> = {
   'Before you plan': 'before_you_plan',
   Routing: 'routing',
@@ -574,7 +572,7 @@ const leadParts = LEAD_INSTRUCTIONS.split(/\n\n(?=## )/).map((text) => {
   };
 });
 
-/** The behaviour sections as written in code: the playbook of a project that stores none. */
+/** The body of each behaviour section as written in code. */
 export const LEAD_PLAYBOOK = Object.fromEntries(
   leadParts.flatMap(({ text, key }) => (key ? [[key, text.slice(text.indexOf('\n') + 1)]] : [])),
 ) as unknown as PlaybookSections;

@@ -44,7 +44,6 @@ export const tables = [
   'board_plans',
   'retrospectives',
   'workflow_policies',
-  'workflow_definitions',
   'workflow_step_runs',
   'visuals',
   'memory_records',
@@ -55,15 +54,13 @@ export const tables = [
   'user_styles',
   'agents',
   'agent_messages',
-  'agent_proposals',
-  'setting_proposals',
   'signal_issues',
   'seen_cursors',
   'personal_keys',
   'milestone_verifications',
   'project_goals',
   'environment_checks',
-  'playbooks',
+  'landings',
 ] as const;
 export type Table = (typeof tables)[number];
 export interface Outbox {
@@ -301,6 +298,15 @@ export const migrations: readonly Migration[] = [
       db.exec(
         'CREATE TABLE setting_proposals (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;',
       );
+    },
+  },
+  {
+    version: 16,
+    up(db) {
+      db.exec(`
+        CREATE TABLE landings (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;
+        CREATE INDEX landing_project ON landings(json_extract(data,'$.project_id'));
+      `);
     },
   },
 ];

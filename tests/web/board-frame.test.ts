@@ -137,39 +137,6 @@ const need = (extra: Partial<BoardNeed>): BoardNeed => ({
 const keys = (item: BoardNeed) => needActions(item).map((a) => [a.key, a.label, a.reason]);
 
 describe('needs-you strip buttons', () => {
-  it('approves or rejects a workflow step that waits for the user', () => {
-    const step = need({
-      source: { table: 'workflow_step_runs', id: 'step-run-1', revision: 2 },
-      kind: 'workflow.approval',
-      session_id: 'lead-1',
-      task_id: 'lead-1:task-a',
-      status: 'waiting',
-      reason: 'workflow_approval',
-      step_title: 'Security sign-off',
-      actions: [
-        { command: 'workflow.step.decide', allowed: true },
-        { command: 'workflow.step.decide', allowed: true },
-      ],
-      binding: undefined,
-    });
-    expect(keys(step)).toEqual([
-      ['approve', act('approveStep'), null],
-      ['reject', act('rejectStep'), null],
-      ['open', OPEN, null],
-    ]);
-    expect(needWhat(step)).toBe(detailed(reason('workflowApproval'), 'Security sign-off'));
-    expect(needCommand(step, 'approve')).toEqual({
-      type: 'workflow.step.decide',
-      input: { step_run_id: 'step-run-1', decision: 'approve' },
-      revision: null,
-    });
-    expect(needCommand(step, 'reject')).toEqual({
-      type: 'workflow.step.decide',
-      input: { step_run_id: 'step-run-1', decision: 'reject' },
-      revision: null,
-    });
-  });
-
   it.each([
     [
       'offers allow once, allow for the session and deny on a permission request',
@@ -229,6 +196,37 @@ describe('needs-you strip buttons', () => {
       (['session.failed', 'session.reconciling'] as const).map((kind) =>
         need({ source: { table: 'sessions', id: 'worker-1', revision: 7 }, kind, actions: [] }),
       ),
+      [['open', OPEN, null]],
+    ],
+    [
+      'continues or opens a session that reached its usage limit',
+      [
+        need({
+          source: { table: 'sessions', id: 'worker-1', revision: 7 },
+          kind: 'session.failed',
+          reason: 'usage_limit_reached',
+          decision: 'other',
+          resets_at: NOW + 3_600_000,
+          primary: 'session.send',
+          actions: [{ command: 'session.send', allowed: true }],
+        }),
+      ],
+      [
+        ['continue', act('continue'), null],
+        ['open', OPEN, null],
+      ],
+    ],
+    [
+      'only opens a session whose turn stalled',
+      [
+        need({
+          source: { table: 'sessions', id: 'worker-1', revision: 7 },
+          kind: 'session.failed',
+          reason: 'session_turn_stalled',
+          decision: 'other',
+          actions: [],
+        }),
+      ],
       [['open', OPEN, null]],
     ],
   ])('%s', (_, items, expected) => {

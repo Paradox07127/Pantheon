@@ -496,7 +496,6 @@ export async function run({ workspace, evidenceDir }) {
           lead_session_id: leadId,
           id: task.id,
           generation: 1,
-          definition_version: 0,
         };
         if (!isDeepStrictEqual(session.task, expected))
           throw new Error(

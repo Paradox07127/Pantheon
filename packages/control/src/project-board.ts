@@ -58,7 +58,7 @@ type PlanInput = Omit<
   ReturnType<(typeof inputSchemas)['board.plan.update']['parse']>,
   'base_version' | 'trigger_event'
 > & { order_lock?: string[] };
-type PlanTask = PlanInput['tasks'][number];
+type PlanTask = Omit<PlanInput['tasks'][number], 'workflow_id'>;
 type EditOp = ReturnType<(typeof inputSchemas)['board.plan.edit']['parse']>['ops'][number];
 type PatchOp = Exclude<EditOp, { type: 'resolve_edit' | 'refute_assumption' }>;
 type ProposedOp = ReturnType<(typeof inputSchemas)['board.plan.propose']['parse']>['ops'][number];
@@ -369,18 +369,6 @@ function refuseInvalid(ctx: ControlContext, input: PlanInput, quoted: string[] =
       'invalid_input',
       `tasks: task ${task.id} takes the parallel path, which needs two to four lead-defined parts`,
     );
-    if (task.workflow_id) {
-      const workflow = ctx.store.get<import('@pantheon/domain').StoredWorkflowDefinition>(
-        'workflow_definitions',
-        task.workflow_id,
-      );
-      requireThat(
-        (workflow && workflow.project_id === input.project_id) ||
-          task.workflow_id === input.project_id,
-        'invalid_input',
-        `Task ${task.id} names no workflow in this project`,
-      );
-    }
   }
 }
 
@@ -589,6 +577,8 @@ function storePlan(
   } = {},
 ): BoardPlan {
   input = withStoredGoals(ctx, leadId, input);
+  // A retired workflow_id on a task is accepted and not stored.
+  input = { ...input, tasks: input.tasks.map(({ workflow_id: _, ...task }) => task) };
   const problem = goalLinkProblem(ctx, input.project_id, leadId, input.milestones);
   requireThat(!problem, 'invalid_input', problem ?? '');
   refuseInvalid(ctx, input, options.quoted);
@@ -616,7 +606,6 @@ function storePlan(
       external_source: task.external_source,
       scope: task.scope,
       acceptance: task.acceptance,
-      workflow_id: task.workflow_id,
       parallel: task.parallel,
       done_when: task.done_when,
       model: task.model,
@@ -655,7 +644,6 @@ function storePlan(
       ...(task.brief ? { brief: task.brief } : {}),
       scope: task.scope,
       acceptance: task.acceptance,
-      workflow_id: task.workflow_id,
       parallel: task.parallel,
       done_when: task.done_when ?? 'merged',
     });
@@ -670,9 +658,24 @@ function storePlan(
     input.tasks.map((task) => {
       const was = kept(task.id),
         contract = contractHash(task);
+      // A hash stored before the upgrade counted the retired `workflow_id`.
+      const workflowId = (
+        current?.tasks.find((old) => old.id === task.id) as { workflow_id?: string } | undefined
+      )?.workflow_id;
       const generation = !was
         ? (ownEntry(current?.retired, task.id) ?? 0) + 1
-        : was.contract === contract
+        : was.contract === contract ||
+            (workflowId !== undefined &&
+              was.contract ===
+                hash({
+                  goal: task.goal,
+                  ...(task.brief ? { brief: task.brief } : {}),
+                  scope: task.scope,
+                  acceptance: task.acceptance,
+                  workflow_id: workflowId,
+                  parallel: task.parallel,
+                  done_when: task.done_when ?? 'merged',
+                }))
           ? was.generation
           : was.generation + 1;
       return [task.id, { generation, contract }];
@@ -694,7 +697,6 @@ function storePlan(
     ),
     ...holds.map((laneId) => [laneId, { held_at: ctx.store.now(), plan_version: planVersion }]),
   ]);
-  const playbook = ctx.store.get<Session>('sessions', leadId)?.playbook;
   const value: BoardPlan = {
     id: leadId,
     revision: 1,
@@ -705,7 +707,6 @@ function storePlan(
     order_lock: orderLock,
     tasks: input.tasks,
     plan_version: planVersion,
-    ...(playbook ? { playbook } : {}),
     pending_edits: options.pendingEdits ?? current?.pending_edits ?? [],
     pending_proposals: current?.pending_proposals ?? [],
     ...(current?.questions ? { questions: current.questions } : {}),
@@ -952,10 +953,7 @@ function applyOps(plan: PlanInput, ops: PatchOp[]): PlanInput {
                     op.patch.milestone === null
                       ? undefined
                       : (op.patch.milestone ?? task.milestone),
-                  workflow_id:
-                    op.patch.workflow_id === null
-                      ? undefined
-                      : (op.patch.workflow_id ?? task.workflow_id),
+                  workflow_id: undefined,
                   path: op.patch.path === null ? undefined : (op.patch.path ?? task.path),
                   model: op.patch.model === null ? undefined : (op.patch.model ?? task.model),
                   effort: op.patch.effort === null ? undefined : (op.patch.effort ?? task.effort),
@@ -1264,7 +1262,6 @@ function userEdit(
                   'model',
                   'effort',
                   'path',
-                  'workflow_id',
                   'parallel',
                 ] as const
               ).some(

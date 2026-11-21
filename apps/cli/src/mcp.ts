@@ -75,7 +75,7 @@ const descriptions: Record<ToolCommand, string> = {
   'review.request':
     "Ask for an independent read-only review of a committed task session in your plan: session_id from project_read, runtimes naming the reviewers (a runtime other than the writer's when one is available). Use it when a change is risky and its path has no review step. Findings come back as a board update; send concrete ones to the session with message_task. A review is evidence for your decision: it never accepts or merges a task, and a failed reviewer is not a clean review. On a task whose review step failed without a fail verdict, it runs that step's review again with the step's own reviewer, not the runtimes you name, and returns the reopened run. On a task whose review step a reviewer failed by verdict, it sends the verdict and findings to the task session, runs the review again after that turn, and returns handed_back. Refused when the round limit is reached or the same reviewer is already reviewing that session.",
   'project.read':
-    "Read the project: details, brief, milestones, and every lead's board plan with each task's state and sessions. A lead also gets a lead section: workflow policy (paths, steps, slots), devices, and recent retrospectives and runtime reviews. Call it before you plan or decide, and after a board update when you need the current state; a task session calls it to see the tasks around its own. It returns plan_version, which update_board, edit_board and propose_board need as base_version. To rewrite the plan from the repository, use sync_board instead.",
+    "Read the project: details, brief, milestones, and every lead's board plan with each task's state and sessions. A lead also gets a lead section: workflow policy (paths), devices, and recent retrospectives and runtime reviews. Call it before you plan or decide, and after a board update when you need the current state; a task session calls it to see the tasks around its own. It returns plan_version, which update_board, edit_board and propose_board need as base_version. To rewrite the plan from the repository, use sync_board instead.",
   'board.plan.update':
     'Write your whole board plan: headline, lanes, tasks with dependencies, milestones, risks and assumptions. Send the full plan every time; a task left out is removed. Use it for a new plan or a change to many tasks; for a few tasks use edit_board, and for a change the user must decide use propose_board. A task done when merged needs scope and acceptance; one with done_when report may have neither. Returns the plan with its new plan_version. Refused "The plan is at version N": read the plan and resend with base_version N. Refused for a source quote no user message contains: copy the user\'s words exactly.',
   'board.plan.edit':
@@ -91,7 +91,7 @@ const descriptions: Record<ToolCommand, string> = {
   'task.message':
     'Send a message to the open session of one task of your plan, by task id and, for a parallel task, the part: answer its requirement report, tell it how to go on after an interrupt, or ask it to fix something. The session reads it with the prefix [Lead]; it sees nothing of your conversation, so make the message self-contained. An idle session starts a turn at once; a running one reads it after its turn. Under 2000 characters. Refused when the task has no open session: use start_task.',
   'task.accept':
-    'Accept a done_when report task after its session sent a done report: evidence says what you checked that shows the task is done. Pantheon records your evidence and does not check it, so check the report\'s decisive claim first. The task becomes done and its milestone can be accepted. Refused for a task done when merged (it completes by merging), for a task with no done report since its contract changed, and while after-merge steps wait. Refused "Project memory changed": call memory_context, recheck, and call again.',
+    'Accept a done_when report task after its session sent a done report: evidence says what you checked that shows the task is done. Pantheon records your evidence and does not check it, so check the report\'s decisive claim first. The task becomes done and its milestone can be accepted. Refused for a task done when merged (it completes by merging), and for a task with no done report since its contract changed. Refused "Project memory changed": call memory_context, recheck, and call again.',
   'board.plan.reassess':
     "Answer the user's pause of your plan with a re-assessment card: done (what the plan finished so far), blocked (what is stuck and why) and change (what you would change before it goes on), each in plain sentences. The user reads it before resuming the plan; a later call replaces it. No new task session starts while the plan is paused, so end your turn after it. Refused when your plan is not paused.",
   'lead.note.read':
@@ -154,8 +154,14 @@ const descriptions: Record<ToolCommand, string> = {
     "Read one Pantheon guide by name: the steps for a task that comes up rarely, such as writing a handoff note. Your instructions list the guides with when to read each; read the matching guide before you start that task, not after it. A guide holds procedure, not project facts or the user's decisions. Returns the guide's text. An unknown name returns the list of guides instead; pick a name from it and call again.",
   'agent.agents':
     "List this project's agents: id, name, template, role, tool groups, routines, and archived_at for an archived one.",
-  'workflow.step.verdict':
-    'Hand in the verdict of the workflow step your current turn works on, when its prompt asks for one: verdict pass or fail, a summary of what you checked, and 1-8 evidence items, each a command you ran in this turn copied exactly or a file you changed. Call it before the turn ends; without a verdict the step waits for the user. A later call in the same turn replaces the verdict. Refused invalid_input for a command this turn did not run, and for a pass with nothing this turn shows; the error lists the commands that ran. Refused invalid_state when no step waits on this turn.',
+  'conductor.review':
+    'Ask one or two other runtimes to review your committed changes (or those of a session you spawned). The result comes back to you as a message when the review ends.',
+  'conductor.ready':
+    "Declare your committed changes ready: Pantheon runs the project's gate on them and lands them on the target branch. Refused while a review of these changes has open blocking findings.",
+  'conductor.spawn':
+    'Start a session of another runtime in a new worktree cut from your current commit, with the given first message. Use it only for work that needs another vendor; use your own subagents otherwise. You get a message when its turn ends.',
+  'conductor.state':
+    "Read this project's changes, their checks (gate, reviews), the landing queue and the items waiting for the user.",
 };
 
 const INVENTORY_TOOL = 'project_extensions_inventory';
@@ -222,6 +228,12 @@ function browserContent(type: CommandType, answer: unknown) {
 /** Input fields the session identity fills in when it has them; the model never sees them. */
 const boundFields = ['project_id'] as const;
 
+/** Leaves out of a tool's input schema the retired keys the tool accepts and ignores. */
+function hideRetired({ jsonSchema }: { jsonSchema: { properties?: Record<string, unknown> } }) {
+  for (const [key, field] of Object.entries(jsonSchema.properties ?? {}))
+    if ((field as { retired?: boolean }).retired) delete jsonSchema.properties![key];
+}
+
 /** The expected revision a session sends for a tool, when the session rather than the model decides it. */
 const boundRevision = (type: CommandType) =>
   type.startsWith('memory.') ||
@@ -256,10 +268,10 @@ const boundRevision = (type: CommandType) =>
   type === 'agent.routine.cancel' ||
   type === 'agent.agents' ||
   type === 'agent.guide' ||
-  type === 'workflow.step.verdict' ||
   type === 'review.verdict' ||
   type === 'board.sync' ||
   type === 'project.baseline.start' ||
+  type.startsWith('conductor.') ||
   browserTool(type);
 
 // Submits after which the session ends its turn; other write receipts carry ids the next call needs.
@@ -433,7 +445,9 @@ export async function createMcpServer(daemonUrl: string, token: string): Promise
           ...Object.entries(tools).map(([name, type]) => ({
             name,
             description: descriptions[type as ToolCommand],
-            inputSchema: schemas[name]!.toJSONSchema() as Tool['inputSchema'],
+            inputSchema: schemas[name]!.toJSONSchema({
+              override: hideRetired,
+            }) as Tool['inputSchema'],
           })),
           ...(identity.baseline_id === undefined
             ? []

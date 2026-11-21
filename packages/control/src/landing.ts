@@ -26,7 +26,6 @@ import { segments } from './task-dispatch.js';
 import { retiredBinding, taskGeneration, sessionPlanTask } from './board-plan.js';
 import { workflowPolicy } from './workflow-policy.js';
 import { onDevice } from './remote-workspace.js';
-import { sessionWorkflow, workflowCondition, type ConditionAnswers } from './workflow-engine.js';
 import { forgetWorktreeReads } from './workbench-session.js';
 import { headerPath } from './landing-diff.js';
 import { recordGateRun } from './signal-sources.js';
@@ -84,61 +83,30 @@ function taskOfSession(ctx: ControlContext, session: Session) {
     : undefined;
 }
 
+/** The enabled gate commands of one project root. */
+export function projectGateCommands(project: Project, root: string): GateCommands | undefined {
+  return project.gates?.[root]?.filter((command) => command.enabled !== false);
+}
+
 /**
  * The gate of the project folder a clone delivers into, then the acceptance of the session's
- * board task, which may need what the gate built, then its before-merge command steps; answers
- * decide their conditions as beforeMergeCommands says.
+ * board task, which may need what the gate built.
  */
 export function gateCommands(
   ctx: ControlContext,
   project: Project,
   workspace: Workspace,
   session: Session,
-  answers?: ConditionAnswers,
 ): GateCommands | undefined {
   const folder = workspace.source ? rootOf(project, [workspace.source]) : undefined;
-  const configured = folder
-    ? project.gates?.[folder]?.filter((command) => command.enabled !== false)
-    : undefined;
+  const configured = folder ? projectGateCommands(project, folder) : undefined;
   const task = taskOfSession(ctx, session);
   const acceptance = task?.acceptance ?? [];
-  const steps = task ? beforeMergeCommands(ctx, session, task, answers) : [];
-  if (!acceptance.length && !steps.length) return configured;
+  if (!acceptance.length) return configured;
   return [
     ...(configured ?? []),
     ...acceptance.map((command) => ({ name: command, argv: ['/bin/sh', '-c', command] })),
-    ...steps,
   ];
-}
-
-/**
- * The before-merge command steps the session's workflow runs for task, as gate commands; a
- * condition answers lack, or a view has not read yet, counts as applying.
- */
-export function beforeMergeCommands(
-  ctx: ControlContext,
-  session: Session,
-  task: BoardPlan['tasks'][number],
-  answers?: ConditionAnswers,
-): GateCommands {
-  return sessionWorkflow(ctx, session)
-    .definition.slots.before_merge.filter(
-      (step) =>
-        step.kind.type === 'command' &&
-        workflowCondition(ctx, step, session.id, undefined, undefined, answers) !== false &&
-        (!step.applies_to?.tiers ||
-          (task.kind && step.applies_to.tiers.includes(task.kind.tier))) &&
-        (!step.applies_to?.domains ||
-          (task.kind && step.applies_to.domains.includes(task.kind.domain))),
-    )
-    .map((step) => {
-      const kind = step.kind as Extract<typeof step.kind, { type: 'command' }>;
-      return {
-        name: `${step.id}: ${step.title}`,
-        argv: ['/bin/sh', '-c', kind.command],
-        timeout_ms: kind.timeout_seconds * 1000,
-      };
-    });
 }
 
 /**
@@ -160,6 +128,48 @@ function failureClass(result: ValidationResult): GateFailureClass | undefined {
 /** Who runs a gate command; allGates marks every command as a gate candidate, as an environment check's are. */
 type GateRunner = Pick<LandingOwner, 'projectId' | 'cancelled'> & { allGates?: boolean };
 
+// The most gate commands one daemon runs at once, across all sources and kinds of check.
+const GATE_SLOTS = 2;
+/** Each daemon's gate commands in a slot, and the waiters a freed slot passes to in arrival order. */
+const gateSlots = new WeakMap<ControlContext, { running: number; waiting: (() => void)[] }>();
+
+/** Runs `run` in a gate slot; undefined when the daemon closed or the run was cancelled first. */
+async function inGateSlot<T>(
+  ctx: ControlContext,
+  cancelled: () => boolean,
+  run: () => Promise<T>,
+): Promise<T | undefined> {
+  let slots = gateSlots.get(ctx);
+  if (!slots) gateSlots.set(ctx, (slots = { running: 0, waiting: [] }));
+  const held = slots;
+  // A freed slot passes straight to the first waiter, so a free slot means nobody waits.
+  if (held.running < GATE_SLOTS) held.running++;
+  else {
+    const granted = await new Promise<boolean>((resolve) => {
+      const grant = () => {
+        clearInterval(poll);
+        resolve(true);
+      };
+      const poll = setInterval(() => {
+        if (!ctx.closing && !cancelled()) return;
+        clearInterval(poll);
+        held.waiting.splice(held.waiting.indexOf(grant), 1);
+        resolve(false);
+      }, 50);
+      held.waiting.push(grant);
+    });
+    if (!granted) return;
+  }
+  try {
+    return await run();
+  } finally {
+    const next = held.waiting.shift();
+    if (next) next();
+    else held.running--;
+  }
+}
+
+/** The command's result; undefined when it was stopped while it waited for a gate slot. */
 async function runGateCommand(
   ctx: ControlContext,
   owner: GateRunner,
@@ -167,34 +177,38 @@ async function runGateCommand(
   command: GateCommands[number],
   candidate: string,
   disposable: boolean,
-): Promise<NonNullable<LandingItem['gate_results']>[number]> {
-  const project = ctx.store.must<Project>('projects', owner.projectId);
-  const result = await runValidationCommand({
-    ctx,
-    key,
-    argv: command.argv,
-    cwd: candidate,
-    root: candidate,
-    ...(disposable ? { disposable } : {}),
-    // Gates inherit no daemon credentials. PATH locates installed executables only;
-    // the sandbox still controls which files and child processes they can access.
-    env: {
-      ...project.env,
-      PATH: process.env.PATH ?? '/usr/bin:/bin',
-      LANG: 'en_US.UTF-8',
-      // Gates verify a candidate without installing; pnpm's pre-run install writes the store outside the sandbox.
-      pnpm_config_verify_deps_before_run: 'false',
-    },
-    // The user opened the GPU to the project's gate commands, not to acceptance or hidden checks.
-    gpu:
-      project.gate_gpu === true &&
-      (owner.allGates === true ||
-        Object.values(project.gates ?? {}).some((commands) =>
-          commands.some((gate) => JSON.stringify(gate.argv) === JSON.stringify(command.argv)),
-        )),
-    timeoutMs: command.timeout_ms ?? 1200000,
-    cancelled: owner.cancelled,
+): Promise<NonNullable<LandingItem['gate_results']>[number] | undefined> {
+  const result = await inGateSlot(ctx, owner.cancelled, () => {
+    // Read once the slot is held: the user can change the project while the command waits.
+    const project = ctx.store.must<Project>('projects', owner.projectId);
+    return runValidationCommand({
+      ctx,
+      key,
+      argv: command.argv,
+      cwd: candidate,
+      root: candidate,
+      ...(disposable ? { disposable } : {}),
+      // Gates inherit no daemon credentials. PATH locates installed executables only;
+      // the sandbox still controls which files and child processes they can access.
+      env: {
+        ...project.env,
+        PATH: process.env.PATH ?? '/usr/bin:/bin',
+        LANG: 'en_US.UTF-8',
+        // Gates verify a candidate without installing; pnpm's pre-run install writes the store outside the sandbox.
+        pnpm_config_verify_deps_before_run: 'false',
+      },
+      // The user opened the GPU to the project's gate commands, not to acceptance or hidden checks.
+      gpu:
+        project.gate_gpu === true &&
+        (owner.allGates === true ||
+          Object.values(project.gates ?? {}).some((commands) =>
+            commands.some((gate) => JSON.stringify(gate.argv) === JSON.stringify(command.argv)),
+          )),
+      timeoutMs: command.timeout_ms ?? 1200000,
+      cancelled: owner.cancelled,
+    });
   });
+  if (!result) return;
   const failure = failureClass(result);
   return Object.assign(
     {
@@ -223,6 +237,32 @@ async function runGateCommand(
 
 export const gateFailed = (result: NonNullable<LandingItem['gate_results']>[number]): boolean =>
   result.state !== 'skipped' && (result.exit_code !== 0 || result.timed_out);
+
+/** The newest merge of each source repository; the next one starts after it. */
+const sourceMerges = new WeakMap<ControlContext, Map<string, Promise<void>>>();
+
+/** Runs `run` after the newest landing of the same source repository ends. */
+export function afterSourceLandings(
+  ctx: ControlContext,
+  source: string,
+  run: () => Promise<void>,
+): Promise<void> {
+  let queue = sourceMerges.get(ctx);
+  if (!queue) sourceMerges.set(ctx, (queue = new Map()));
+  // Two landings that read the same source HEAD would race its ref update.
+  const completion: Promise<void> = (queue.get(source) ?? Promise.resolve())
+    .catch(() => {})
+    .then(() => run())
+    .finally(() => {
+      if (queue.get(source) === completion) queue.delete(source);
+      ctx.completions.delete(completion);
+      if (!ctx.closing) ctx.changed();
+    });
+  queue.set(source, completion);
+  ctx.completions.add(completion);
+  void completion.catch(() => {});
+  return completion;
+}
 
 function gitFailure(result: Awaited<ReturnType<typeof runGit>>): string {
   return (result.stderr.toString().trim() || result.error || 'Git command failed').split('\n')[0]!;
@@ -450,7 +490,7 @@ async function runChecked(
   disposable: boolean,
 ) {
   const result = await runGateCommand(ctx, owner, key, command, candidate, disposable);
-  if (ctx.closing || owner.cancelled()) return;
+  if (!result || ctx.closing || owner.cancelled()) return;
   // Later commands would check another tree than the commit that lands.
   const changed = await changedTracked(candidate, commit, path.join(temporary, 'index'));
   if (changed)

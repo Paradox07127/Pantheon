@@ -1,10 +1,5 @@
 import type { Approval, BoardPlan, Milestone, Principal, Session } from '@pantheon/domain';
-import {
-  inputSchemas,
-  type ProjectBriefItem,
-  type ProjectBriefProse,
-  type ProjectBriefRef,
-} from '@pantheon/protocol';
+import { inputSchemas, type ProjectBriefProse, type ProjectBriefRef } from '@pantheon/protocol';
 import { readAppSettings } from './app-settings.js';
 import { userOnly, type ControlContext, type Handlers } from './context.js';
 import {
@@ -61,7 +56,7 @@ function refTitle(
 export function briefFacts(
   ctx: ControlContext,
   projectId: string,
-  items: ProjectBriefItem[],
+  items: ReturnType<typeof proseItems>,
 ): BriefFact[] {
   const plans = ctx.store
     .list<BoardPlan>('board_plans')
@@ -78,9 +73,7 @@ export function briefFacts(
             ? `${named ?? 'An untitled session'} merged.`
             : item.kind === 'failure'
               ? `${named ?? 'A session'} failed: ${item.reason}.`
-              : item.kind === 'assumption'
-                ? `The plan assumes something new: ${item.text}`
-                : `An agent proposal${named ? ` for ${named}` : ''} waits for the user.`;
+              : `The plan assumes something new: ${item.text}`;
     return { key: refKey(item.ref), ref: item.ref, text };
   });
 }

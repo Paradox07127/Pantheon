@@ -16,8 +16,11 @@ import type {
   SessionTurn,
   Visual,
 } from '@pantheon/domain';
+import type { ControlContext } from '../../packages/control/dist/context.js';
+import { inPlaceSessionSpec } from '../../packages/control/dist/in-place-session.js';
+import { workbenchSessionSpec } from '../../packages/control/dist/workbench-session.js';
 import { awaitWorkspaceReady, eventually, fixture, user } from '../helpers.js';
-import { git } from './workbench-fixture.js';
+import { git, workbenchFixture } from './workbench-fixture.js';
 
 const cleanup: (() => Promise<unknown>)[] = [];
 afterEach(async () => {
@@ -173,6 +176,24 @@ const text = (result: Awaited<ReturnType<Client['callTool']>>) =>
 const receipt = (result: Awaited<ReturnType<Client['callTool']>>) => {
   const refused = /^Refused [^:]+: (\S+)(?: — ([\s\S]*))?$/.exec(text(result));
   return refused ? { error: refused[1], message: refused[2] } : JSON.parse(text(result));
+};
+
+const CONDUCTOR_TEXT =
+  "Pantheon gives this session four tools. request_review: another vendor reviews your committed changes; the result comes back to you as a message. report_ready: your committed changes go through the project's gate and land. spawn_session: another vendor's session starts in a new worktree from your current commit; you hear when its turn ends. read_state: this project's changes, checks, landing queue and items waiting for the user. Plan, split work and run subagents with your own tools.";
+/** Each conductor tool with a valid input, and the command it sends. */
+const conductorCalls = [
+  ['request_review', 'conductor.review', { runtimes: ['codex'] }],
+  ['report_ready', 'conductor.ready', {}],
+  ['spawn_session', 'conductor.spawn', { runtime: 'codex', input: 'Write the docs' }],
+  ['read_state', 'conductor.state', {}],
+] as const;
+const refusalCode = (run: () => unknown) => {
+  try {
+    run();
+  } catch (error) {
+    return (error as { code?: string }).code;
+  }
+  throw new Error('Expected a refusal');
 };
 
 it('describes project_read facts without promising feedback', async () => {
@@ -610,7 +631,6 @@ it('mounts a lead credential on a workbench session and a worker credential on a
     'browser_open',
     'browser_read',
     'browser_screenshot',
-    'step_verdict',
     'reassess',
     'guide',
   ]);
@@ -660,7 +680,6 @@ it('mounts a lead credential on a workbench session and a worker credential on a
     'browser_open',
     'browser_read',
     'browser_screenshot',
-    'step_verdict',
   ]);
   expect(text(await workerClient.callTool({ name: 'update_board', arguments: plan }))).toBe(
     'Refused update_board: permission_denied',
@@ -711,6 +730,14 @@ it('mounts a lead credential on a workbench session and a worker credential on a
   expect(text(await workerClient.callTool({ name: 'stop_task', arguments: stop }))).toBe(
     'Refused stop_task: permission_denied',
   );
+  for (const spec of [lead.spec, worker.spec]) {
+    const principal = f.auth.authenticate(`Bearer ${sessionToken(spec)}`)!;
+    for (const [, type, input] of conductorCalls)
+      expect(
+        refusalCode(() => f.control.execute(principal, command(principal.id, type, input))),
+        type,
+      ).toBe('permission_denied');
+  }
 });
 
 it('tells a lead to plan a small change as one direct task before it changes the repository', async () => {
@@ -858,6 +885,140 @@ it('refuses a credential role that does not match the session', async () => {
   });
   expect(() => f.auth.issueSession(workbench, 'planner')).toThrow('Active session required');
   expect(() => f.auth.issueSession(planner, 'lead')).toThrow('Active session required');
+});
+
+it('mounts only the four conductor tools and their instructions on a conductor worktree session', async () => {
+  const f = await sessionFixture('planner');
+  const draft = f.call<{ id: string; revision: number }>('memory.propose', {
+    project_id: f.project.id,
+    key: 'language',
+    kind: 'decision',
+    text: 'Use precise terminology',
+  });
+  f.call('memory.commit', { memory_id: draft.id }, draft.revision);
+  const session = await f.call<Session>('session.create', {
+    project_id: f.project.id,
+    runtime: f.adapter.name,
+    input: 'Ship the export',
+    purpose: 'conductor',
+  });
+  expect(session).toMatchObject({ conductor: true });
+  expect(session).not.toHaveProperty('lead');
+  const workspace = await awaitWorkspaceReady(f.control, session.workspace_id!);
+  await eventually(
+    () => f.starts.mock.calls.some(([spec]) => spec.platform_session_id === session.id),
+    () => f.control.tick(),
+  );
+  const spec = f.starts.mock.calls.find(([spec]) => spec.platform_session_id === session.id)![0];
+  expect(spec.pantheon_mcp).toBeDefined();
+  expect(spec.pantheon_mcp).not.toHaveProperty('ask_tools');
+  expect(spec.control_instructions).toBe(
+    `You are working for the user in the git worktree at ${workspace.path}. When your changes are complete, commit them there with git. Do not write files outside this worktree.\n\n${CONDUCTOR_TEXT}`,
+  );
+  const send = vi.mocked(f.adapter.send);
+  await eventually(
+    () => send.mock.calls.some(([, turn]) => turn.input.includes('Ship the export')),
+    () => f.control.tick(),
+  );
+  expect(
+    send.mock.calls.find(([, turn]) => turn.input.includes('Ship the export'))![1].input,
+  ).not.toContain('[Pantheon current project memory]');
+  const principal = f.auth.authenticate(`Bearer ${sessionToken(spec)}`)!;
+  expect(principal).toMatchObject({ session_id: session.id, role: 'conductor' });
+  expect(f.control.sessionPrincipal(principal).allowed_tool_names).toBeUndefined();
+  const client = await connect(spec);
+  const tools = (await client.listTools()).tools;
+  expect(tools.map((tool) => [tool.name, Object.keys(tool.inputSchema.properties ?? {})])).toEqual([
+    ['request_review', ['runtimes', 'session_id']],
+    ['report_ready', []],
+    ['spawn_session', ['runtime', 'input', 'model', 'effort']],
+    ['read_state', []],
+  ]);
+  for (const [name, , input] of conductorCalls)
+    expect(receipt(await client.callTool({ name, arguments: input })), name).toMatchObject({
+      error: 'not_implemented',
+    });
+  for (const [, type, input] of conductorCalls)
+    expect(
+      refusalCode(() => f.call(type, input)),
+      type,
+    ).toBe('permission_denied');
+});
+
+it('mounts the conductor tools on a conductor session in the project folder', async () => {
+  const f = await workbenchFixture();
+  const auth = new AuthRegistry('user-credential', () => f.store.now());
+  const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
+  Object.assign(ctx, {
+    issueSessionCredential: (sessionId: string, role: Role) => {
+      const token_file = path.join(f.root, `token-${sessionId}`);
+      writeFileSync(
+        token_file,
+        auth.issueSession(f.store.must<Session>('sessions', sessionId), role),
+        {
+          mode: 0o600,
+        },
+      );
+      return { token_file, daemon_url: 'http://127.0.0.1:4321' };
+    },
+  });
+  vi.stubGlobal('fetch', async (input: string | URL | Request, init?: RequestInit) => {
+    const request = new Request(input, init);
+    try {
+      const principal = auth.authenticate(request.headers.get('authorization'));
+      if (new URL(request.url).pathname === '/v1/session-principal')
+        return Response.json(f.control.sessionPrincipal(principal));
+      return Response.json({ receipt: await f.control.execute(principal, await request.json()) });
+    } catch (error) {
+      return Response.json(
+        { error: (error as { code?: string }).code, message: (error as Error).message },
+        { status: 403 },
+      );
+    }
+  });
+  const session = await f.call<Promise<Session>>('session.create', {
+    project_id: f.project.id,
+    runtime: f.adapter.name,
+    input: 'Ship the parser fix',
+    workspace: 'in_place',
+    purpose: 'conductor',
+  });
+  expect(session).toMatchObject({ conductor: true, in_place: {} });
+  const spec = await inPlaceSessionSpec(ctx, session);
+  const folder = f.store.must<import('@pantheon/domain').Workspace>(
+    'workspaces',
+    session.workspace_id!,
+  ).path;
+  expect(spec.control_instructions).toBe(
+    `You are working in the project folder at ${folder}, on its current branch. Commit your changes there; Pantheon runs the gates in this folder, and the session lands once they pass on the commit you leave. Do not write files outside the project folder.\n\n${CONDUCTOR_TEXT}`,
+  );
+  const client = await connect(spec);
+  expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual(
+    conductorCalls.map(([name]) => name),
+  );
+  expect(receipt(await client.callTool({ name: 'read_state', arguments: {} }))).toMatchObject({
+    error: 'not_implemented',
+  });
+});
+
+it('gives a session another session spawned no Pantheon tools', async () => {
+  const f = await sessionFixture('planner');
+  const session = await f.call<Session>('session.create', {
+    project_id: f.project.id,
+    runtime: f.adapter.name,
+    input: 'Write the docs',
+  });
+  await awaitWorkspaceReady(f.control, session.workspace_id!);
+  const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
+  const spawned = f.store.update(
+    'sessions',
+    { ...f.store.must<Session>('sessions', session.id), spawned_by: { session_id: 'conductor' } },
+    f.store.must<Session>('sessions', session.id).revision,
+  );
+  const spec = workbenchSessionSpec(ctx, spawned);
+  expect(spec.pantheon_mcp).toBeUndefined();
+  expect(spec.user_session).toBe(true);
+  expect(spec.control_instructions).toBe('');
 });
 
 it('exposes draw without credential fields and returns field errors and redraw receipts', async () => {

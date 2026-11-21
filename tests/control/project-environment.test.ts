@@ -10,7 +10,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterEach, expect, it } from 'vitest';
-import type { Project, Session, SessionSpec, Workspace } from '@pantheon/domain';
+import type { Landing, Project, Session, SessionSpec, Workspace } from '@pantheon/domain';
 import { inputSchemas } from '@pantheon/protocol';
 import {
   gitFolderAsync,
@@ -288,6 +288,42 @@ it('refuses to drop a folder that a session still holds unmerged work from', asy
   expect((await drop()).roots).toEqual([f.extra]);
 });
 
+/** A landing of a branch into the project's folder, as project.land records one. */
+function landingRow(f: Awaited<ReturnType<typeof setup>>, state: Landing['state']) {
+  return f.store.insert<Landing>('landings', {
+    id: `landing-${state}`,
+    revision: 1,
+    project_id: f.project.id,
+    root: f.projectRoot,
+    branch: 'feature',
+    target_branch: 'main',
+    workspace_id: worktree(f).id,
+    state,
+  });
+}
+
+it.each<Landing['state']>(['queued', 'running'])(
+  'refuses to drop a folder that a %s landing lands into',
+  async (state) => {
+    const f = await setup();
+    const landing = landingRow(f, state);
+    const drop = () =>
+      f.call<Project>(
+        'project.environment.set',
+        { project_id: f.project.id, name: f.project.name, roots: [f.extra], env: {} },
+        f.store.must<Project>('projects', f.project.id).revision,
+      );
+    expect(drop).toThrow(
+      expect.objectContaining({
+        code: 'root_in_use',
+        message: expect.stringContaining(landing.id),
+      }),
+    );
+    f.store.update<Landing>('landings', { ...landing, state: 'landed' }, landing.revision);
+    expect((await drop()).roots).toEqual([f.extra]);
+  },
+);
+
 it('reads every root configuration: the gate of each root and merged extensions', async () => {
   const f = await setup();
   const write = (root: string, name: string, value: unknown) => {
@@ -381,6 +417,20 @@ it('refuses to remove a project while one of its sessions is running', async () 
   );
   expect(f.store.must<Project>('projects', f.project.id)).not.toHaveProperty('removed_at');
 });
+
+it.each<Landing['state']>(['queued', 'running'])(
+  'refuses to remove a project while one of its landings is %s',
+  async (state) => {
+    const f = await setup();
+    landingRow(f, state);
+    expect(() =>
+      f.call('project.remove', { project_id: f.project.id }, f.project.revision),
+    ).toThrow(
+      expect.objectContaining({ code: 'resource_busy', message: 'Project has active work' }),
+    );
+    expect(f.store.must<Project>('projects', f.project.id)).not.toHaveProperty('removed_at');
+  },
+);
 
 it('removes a project and restores the same project with its history when the folder is opened again', async () => {
   const f = await setup();

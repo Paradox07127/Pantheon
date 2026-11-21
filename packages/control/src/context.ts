@@ -441,6 +441,7 @@ export function usesPantheonTools(ctx: ControlContext, session: Session): boolea
     session.task ||
     session.resident ||
     session.lead ||
+    session.conductor ||
     session.project_setup ||
     // An adopted folder session keeps its planner credential.
     credentialRole(session, sessionWorkspaceKind(ctx, session)) !== 'lead' ||

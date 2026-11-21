@@ -16,7 +16,7 @@ it('accepts optional enabled and skippable gate commands and validates their typ
   ).toBe(false);
 });
 
-it('validates gate failure and runner policies and trial task bounds', () => {
+it('validates gate failure and runner policies', () => {
   for (const gate_on_fail of ['handback', 'retry', 'stop'])
     for (const gate_runner of ['daemon', 'session'])
       expect(
@@ -34,23 +34,4 @@ it('validates gate failure and runner policies and trial task bounds', () => {
     inputSchemas['workflow.policy.set'].safeParse({ project_id: 'project', gate_runner: 'agent' })
       .success,
   ).toBe(false);
-  const definition = { slots: { before_dispatch: [], before_merge: [], after_merge: [] } };
-  for (const trial_tasks of [1, 20])
-    expect(
-      inputSchemas['workflow.definition.set'].safeParse({
-        project_id: 'project',
-        base_version: 0,
-        definition,
-        trial_tasks,
-      }).success,
-    ).toBe(true);
-  for (const trial_tasks of [0, 21, 1.5])
-    expect(
-      inputSchemas['workflow.definition.set'].safeParse({
-        project_id: 'project',
-        base_version: 0,
-        definition,
-        trial_tasks,
-      }).success,
-    ).toBe(false);
 });

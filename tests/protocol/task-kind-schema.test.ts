@@ -87,3 +87,43 @@ it('accepts optional task types and token budgets in plans and edits', () => {
     expect(validPatch({ token_budget })).toBe(false);
   }
 });
+
+it('accepts the parallel path on a task with two to four lead-defined parts, not as a tier default', () => {
+  const task = {
+    id: 'export',
+    title: 'Export',
+    goal: 'Export data',
+    lane: 'core',
+    depends_on: [],
+    source: ['Export data'],
+    scope: ['src'],
+    acceptance: ['true'],
+    path: 'parallel',
+    parallel: [
+      { title: 'Writer', goal: 'Write export', scope: ['src/export.ts'], acceptance: ['true'] },
+      { title: 'Tests', goal: 'Test export', scope: ['src/export.test.ts'], acceptance: ['true'] },
+    ],
+  };
+  const accepts = (parallel: unknown) =>
+    inputSchemas['board.plan.edit'].safeParse({
+      project_id: 'project',
+      base_version: 0,
+      ops: [{ type: 'add_task', task: { ...task, parallel } }],
+    }).success;
+  expect(accepts(task.parallel)).toBe(true);
+  expect(accepts([task.parallel[0]])).toBe(false);
+  expect(accepts(Array(5).fill(task.parallel[0]))).toBe(false);
+  // A tier cannot default to parallel: only a task with lead-defined parts takes that path.
+  expect(
+    inputSchemas['workflow.policy.set'].safeParse({
+      project_id: 'project',
+      path: { t2: 'parallel' },
+    }).success,
+  ).toBe(false);
+  expect(
+    inputSchemas['workflow.policy.set'].safeParse({
+      project_id: 'project',
+      budget: { t2: { parallel: { input_tokens: 1, wall_ms: 1 } } },
+    }).success,
+  ).toBe(true);
+});

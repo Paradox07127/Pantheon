@@ -61,6 +61,19 @@ describe('next steps the daemon writes', () => {
     expect(nextStepText({ reason: 'merge_stuck', next_step: STUCK })).toBe(STUCK);
   });
 
+  it.each([
+    [
+      'usage_limit_reached',
+      'Continue the session after the limit resets, or fork it to another runtime.',
+      'usageLimitReached',
+    ],
+    ['session_turn_stalled', 'Open the session to see where it stopped.', 'sessionTurnStalled'],
+  ] as const)('words the next step of %s in the interface language', (reason, next_step, id) => {
+    expect(nextStepText({ reason, next_step })).toBe(zh(`daemon.nextStep.${id}`));
+    setLocaleSync('en', {});
+    expect(nextStepText({ reason, next_step })).toBe(next_step);
+  });
+
   it("shows the daemon's text for a reason the interface does not know, and none without one", () => {
     expect(nextStepText({ reason: 'gate_failed', next_step: 'Fix the gate' })).toBe('Fix the gate');
     expect(nextStepText({ reason: 'merge_stuck' })).toBeUndefined();
@@ -113,6 +126,14 @@ describe('board blockers the daemon writes', () => {
         ),
       ),
     ).toEqual(['合并受阻：odd_code']);
+    setLocaleSync('en', {});
+    expect(
+      blockerTexts(
+        task(['Queued: waiting for a workflow step'], [{ code: 'queued' }], {
+          dispatch_wait: 'step' as Task['dispatch_wait'],
+        }),
+      ),
+    ).toEqual(['Queued']);
   });
 });
 

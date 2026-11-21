@@ -22,16 +22,6 @@ await call(
 );
 // Room for all four tasks, whose sessions keep their places after their turn ends.
 await call('workflow.policy.set', { project_id, max_parallel_limit: 4, max_parallel: 4 });
-// No plan review, so a task's start waits on nothing but the lane's plan approval.
-await call('workflow.definition.set', {
-  project_id,
-  definition: {
-    slots: { before_dispatch: [], before_merge: [], after_merge: [] },
-    plan_review: { tiers: [] },
-    review: { max_rounds: 1 },
-  },
-  base_version: 0,
-});
 
 const script = (...steps) => `fixture-script\n${JSON.stringify(steps)}`;
 const RISKY = `Risky lane ${stamp}`;

@@ -9,7 +9,8 @@ import {
 } from '@pantheon/domain';
 import { projectAccess, type ControlContext } from './context.js';
 import { listedOutcomes, requireMergeReady } from './workbench-session.js';
-import { usageResetAt } from './continuation.js';
+import { daemonDriven, usageResetAt } from './continuation.js';
+import { sessionStall } from './session-stall.js';
 import { acceptInput } from './session.js';
 import { ownEntry, retiredBinding } from './board-plan.js';
 import { BACKGROUND_LONG_MS, longBackground } from './progress.js';
@@ -114,6 +115,25 @@ export function sessionItems(
           : alerts.includes('stall_unanswered')
             ? 'task_turn_stalled'
             : undefined;
+    // A session a person drives is not resumed after its usage limit resets; the user goes on.
+    const executedLast =
+        session.state === 'open' && !daemonDriven(ctx, session)
+          ? latestExecuted(ctx, sessionTurns.get(session.id) ?? [])
+          : undefined,
+      limitEnd =
+        executedLast?.state === 'failed'
+          ? (
+              ctx.store
+                .statement(
+                  "SELECT payload FROM events WHERE aggregate_id=? AND kind='agent.turn.completed' AND json_extract(payload,'$.turn_id')=? ORDER BY sequence DESC LIMIT 1",
+                )
+                .get(session.id, executedLast.id) as { payload: string } | undefined
+            )?.payload
+          : undefined,
+      limitHit = limitEnd
+        ? (JSON.parse(limitEnd) as { error_code?: string; resets_at?: number })
+        : undefined,
+      stallAt = sessionStall(ctx, session, running);
     // The tracker hands a failed gate or a blocked merge to the open lead of the task.
     const taskPlan = session.task && planOf.get(session.task.lead_session_id),
       taskLead = taskPlan && ctx.store.get<Session>('sessions', taskPlan.id),
@@ -155,7 +175,11 @@ export function sessionItems(
                             ? 'usage_limit_waiting'
                             : limit
                               ? 'continuation_limit_reached'
-                              : undefined));
+                              : limitHit?.error_code === 'usage_limit'
+                                ? 'usage_limit_reached'
+                                : stallAt !== undefined
+                                  ? 'session_turn_stalled'
+                                  : undefined));
     // The lead hears of a task session's long background task; the user of any other session's.
     if (!session.task)
       for (const background of longBackground(ctx, session.id))
@@ -213,6 +237,40 @@ export function sessionItems(
         decision: 'other',
         actions: [],
         resets_at: resetAt,
+        next_step: NEXT_STEP[kind],
+      });
+      continue;
+    }
+    if (kind === 'usage_limit_reached') {
+      items.push({
+        source: { table: 'sessions', id: session.id, revision: session.revision },
+        kind: 'session.failed',
+        project_id: session.project_id,
+        status: session.state,
+        created_at: latestEvent(ctx, executedLast!.id, 'turn.failed')?.created_at ?? 0,
+        reason: kind,
+        decision: 'other',
+        primary: 'session.send',
+        actions: [
+          action('session.send', () =>
+            projectAccess(ctx, principal, session.project_id, 'session.send'),
+          ),
+        ],
+        ...(limitHit!.resets_at === undefined ? {} : { resets_at: limitHit!.resets_at }),
+        next_step: NEXT_STEP[kind],
+      });
+      continue;
+    }
+    if (kind === 'session_turn_stalled') {
+      items.push({
+        source: { table: 'sessions', id: session.id, revision: session.revision },
+        kind: 'session.failed',
+        project_id: session.project_id,
+        status: session.state,
+        created_at: stallAt!,
+        reason: kind,
+        decision: 'other',
+        actions: [],
         next_step: NEXT_STEP[kind],
       });
       continue;

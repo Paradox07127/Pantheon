@@ -361,7 +361,6 @@ it('scopes task memory by lead, task and generation, not by the worker session d
     task_id: `${lead.id}:export`,
     input: 'Build export',
   });
-  expect(worker.task).toHaveProperty('definition_version');
   const w = as(worker.id, 'worker');
   const propose = (key: string, text: string, task?: unknown, p?: typeof w) =>
     f.call<any>(

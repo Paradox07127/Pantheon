@@ -605,17 +605,14 @@ export async function startDaemon(options: DaemonOptions) {
       'agent.wakes': (p, i) => control.agentWakes(p, i.agent_id, i.limit, i.routine_id),
       'agent.ledger': (p, i) => control.agentLedger(p, i.agent_id, i.weeks),
       'agent.routines': (p, i) => control.agentRoutines(p, i.project_id),
-      'retrospective.list': (p, i) => control.retrospectiveList(p, i.project_id, i.task_id),
-      'workflow.definition': (p, i) => control.workflowDefinition(p, i.project_id, i.id),
-      'workflow.definition.list': (p, i) => control.workflowDefinitionList(p, i.project_id),
       'workflow.policy': (p, i) => control.workflowPolicy(p, i.project_id),
-      'improvement.signals': (p, i) => control.improvementSignals(p, i.project_id),
       'task.trace': (p, i) => control.taskTrace(p, i.project_id, i.lead_session_id, i.task_id),
       'task.thread': (p, i) => control.taskThread(p, i.project_id, i.lead_session_id, i.task_id),
       'project.review.metrics': (p, i) => control.projectReviewMetrics(p, i.project_id),
       'project.intro.read': (p, i) => control.projectIntroRead(p, i.project_id),
       'project.baseline.read': (p, i) => control.projectBaselineRead(p, i.project_id),
       'project.environment.checks': (p, i) => control.environmentChecks(p, i),
+      'project.landing.read': (p, i) => control.landingRead(p, i.landing_id),
       'project.facts.read': (p, i) => control.projectFactsRead(p, i.project_id),
       'change_story.list': (p, i) => control.changeStoryList(p, i.project_id),
       'change_story.diff': (p, i) => control.changeStoryDiff(p, i.story_id),
@@ -658,6 +655,7 @@ export async function startDaemon(options: DaemonOptions) {
         );
       },
       'session.reviews': (p, i) => control.sessionReviews(p, i.session_id),
+      'review.read': (p, i) => control.reviewRead(p, i.review_id),
       'session.comments': (p, i) => control.sessionComments(p, i.session_id),
       'needs_you.list': async (p, i) => {
         await prefetch(p, i.project_id);

@@ -395,6 +395,31 @@ describe('decision notices', () => {
     expect(decisionNotices(gone.seen, [milestone], withMilestone).notices).toHaveLength(1);
   });
 
+  it('notifies a stalled session turn once while listed, opening the session; a usage limit gives none', () => {
+    const session = (id: string, reason: NeedsYouItem['reason']): NeedsYouItem => ({
+      source: { table: 'sessions', id, revision: 4 },
+      kind: 'session.failed',
+      project_id: 'beta',
+      status: 'failed',
+      created_at: 0,
+      reason,
+      decision: 'other',
+      actions: [],
+    });
+    const limited = session('beta-login', 'usage_limit_reached');
+    const stalled = session('beta-story', 'session_turn_stalled');
+    const first = decisionNotices(null, [], board);
+    const next = decisionNotices(first.seen, [limited, stalled], board);
+    expect(next.notices).toEqual([
+      {
+        title: 'Beta app',
+        body: zh('data.reason.sessionTurnStalled'),
+        target: { project_id: 'beta', session_id: 'beta-story' },
+      },
+    ]);
+    expect(decisionNotices(next.seen, [limited, stalled], board).notices).toEqual([]);
+  });
+
   it('notifies none of the items present at the first read, nor while the list is not read', () => {
     const first = decisionNotices(null, [milestone], withMilestone);
     expect(first.notices).toEqual([]);

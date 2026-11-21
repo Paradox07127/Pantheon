@@ -469,8 +469,8 @@ describe('the notifications page', () => {
       [say('merged'), 'brief'],
       [say('overdueQuestion'), 'now'],
     ]);
-    // Every rule key but the agent proposals the interface does not offer, then the locked row.
-    expect(all).toHaveLength(ATTENTION_KINDS.length);
+    // Every rule key, then the locked row.
+    expect(all).toHaveLength(ATTENTION_KINDS.length + 1);
     expect(
       nodes(all[0]!.props.children).map((n) => [n.props.value, text(n.props.children)]),
     ).toEqual([
@@ -505,7 +505,7 @@ describe('the notifications page', () => {
   it('stands every choice empty and disabled until the settings are read', () => {
     const host = mount(() => NotificationsPage());
     expect(groups(host.value).map((g) => [g.props.value, g.props.disabled])).toEqual([
-      ...ATTENTION_KINDS.filter((kind) => kind !== 'agent_proposal').map(() => [null, true]),
+      ...ATTENTION_KINDS.map(() => [null, true]),
       ['now', true],
     ]);
   });

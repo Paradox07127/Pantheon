@@ -78,13 +78,6 @@ const need = (id: string, extra: Partial<NeedsYouItem> = {}): NeedsYouItem => ({
   binding: { action: 'Bash', input_summary: 'pnpm db:migrate --env staging' },
   ...extra,
 });
-const step = need('step-1', {
-  source: { table: 'workflow_step_runs', id: 'step-1', revision: 1 },
-  kind: 'workflow.approval',
-  reason: 'workflow_approval',
-  binding: undefined,
-  actions: [{ command: 'workflow.step.decide', allowed: true }],
-});
 const external = need('beta-docs', {
   source: { table: 'board_plans', id: 'beta-docs', revision: 1 },
   kind: 'external.approval',
@@ -386,23 +379,18 @@ describe('system notifications and in-app cards', () => {
     expect(sent().map((n) => n.body)).toEqual([zh('data.notifications.baselinePending')]);
   });
 
-  it('notifies a workflow step and an external request waiting for approval, and shows their cards', async () => {
-    render({ items: [step, external] });
+  it('notifies an external request waiting for approval, and shows its card', async () => {
+    render({ items: [external] });
     await settle();
-    // Their target names no session, so the desktop hands the click to the main window's strip.
+    // Its target names no session, so the desktop hands the click to the main window's strip.
     expect(sent()).toEqual([
-      {
-        title: 'Fix login 等你审批',
-        body: zh('data.reason.workflowApproval'),
-        target: { project_id: expect.stringMatching(/^beta\n/), session_id: '' },
-      },
       {
         title: 'Write docs 等你审批',
         body: zh('data.reason.externalApproval'),
         target: { project_id: expect.stringMatching(/^beta\n/), session_id: '' },
       },
     ]);
-    expect(cards.shown()).toEqual(['Write docs', 'Fix login']);
+    expect(cards.shown()).toEqual(['Write docs']);
   });
 
   it('notifies a lane whose plan waits for approval, counts it on the badge and opens it where it is answered', async () => {
@@ -508,7 +496,7 @@ describe('system notifications and in-app cards', () => {
 });
 
 describe('the dock badge', () => {
-  it('counts only what waits for an answer: requests, lead questions and workflow approvals', () => {
+  it('counts only what waits for an answer: requests, lead questions and external approvals', () => {
     const items: NeedsYouItem[] = [
       need('approval-1'),
       need('approval-2', { project_id: 'alpha', questions: [] }),
@@ -517,10 +505,10 @@ describe('the dock badge', () => {
         kind: 'lead.question',
         reason: 'lead_question',
       }),
-      need('step', {
-        source: { table: 'workflow_step_runs', id: 'step', revision: 1 },
-        kind: 'workflow.approval',
-        reason: 'workflow_approval',
+      need('external', {
+        source: { table: 'board_plans', id: 'external', revision: 1 },
+        kind: 'external.approval',
+        reason: 'external_approval',
       }),
       need('undelivered', { status: 'undelivered', reason: 'answer_undelivered' }),
       ...(
@@ -603,22 +591,6 @@ describe('a click on a system notification', () => {
     ]);
   });
 
-  it('opens the workflow step of the notice clicked, not a later step of the same session', async () => {
-    const openProjectNeed = vi.fn<(projectId: string, needKey: string) => void>();
-    useShell.setState({ openProjectNeed });
-    const later = need('step-2', {
-      ...step,
-      source: { table: 'workflow_step_runs', id: 'step-2', revision: 1 },
-    });
-    render({ items: [step, later] });
-    await settle();
-    for (const target of sent().map((n) => n.target)) click!(target);
-    expect(openProjectNeed.mock.calls).toEqual([
-      ['beta', 'workflow_step_runs:step-1'],
-      ['beta', 'workflow_step_runs:step-2'],
-    ]);
-  });
-
   it("opens a lead's question where it is answered, and the lead's session once it is answered", async () => {
     const openProjectNeed = vi.fn<(projectId: string, needKey: string) => void>();
     useShell.setState({ openProjectNeed });
@@ -633,14 +605,13 @@ describe('a click on a system notification', () => {
     expect(openProjectNeed).toHaveBeenCalledTimes(1);
   });
 
-  it('opens a workflow step and an external request waiting for approval where they are answered', async () => {
+  it('opens an external request waiting for approval where it is answered', async () => {
     const openProjectNeed = vi.fn<(projectId: string, needKey: string) => void>();
     useShell.setState({ openProjectNeed });
-    render({ items: [step, external] });
+    render({ items: [external] });
     await settle();
     for (const target of sent().map((n) => n.target)) click!(target);
     expect(openProjectNeed.mock.calls).toEqual([
-      ['beta', 'workflow_step_runs:step-1'],
       ['beta', 'board_plans:beta-docs:github:acme/docs#3'],
     ]);
     expect(openProjectSession).not.toHaveBeenCalled();

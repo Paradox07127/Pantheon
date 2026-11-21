@@ -156,11 +156,7 @@ const label = (tree: unknown, name: string) =>
 
 beforeEach(() => {
   runCommand.mockReset();
-  reads.current = {
-    'workflow.definition.list': [
-      { id: 'project-a', name: 'Default', version: 2, is_default: true },
-    ],
-  };
+  reads.current = {};
   reads.errors = {};
   reads.stale = new Set();
   reads.reloads = 0;
@@ -176,7 +172,7 @@ describe('the contract of a plan task before its read lands', () => {
     expect(h.value).not.toBeNull();
     expect(group(h.value).props['aria-busy']).toBe(true);
     expect(rows(h.value).filter((r) => r.startsWith('label:'))).toEqual(
-      ['goal', 'scope', 'acceptance', 'doneWhen', 'workflow', 'milestone'].map(
+      ['goal', 'scope', 'acceptance', 'doneWhen', 'milestone'].map(
         (field) => `label:${zh(`board.plan.field.${field}`)}`,
       ),
     );

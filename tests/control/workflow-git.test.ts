@@ -6,15 +6,12 @@ import type {
   BoardPlan,
   Project,
   Session,
+  SessionTurn,
   StepRun,
-  WorkflowDefinition,
-  WorkflowStep,
   Workspace,
 } from '@pantheon/domain';
-import type { ControlContext } from '../../packages/control/dist/context.js';
 import * as validation from '../../packages/control/dist/validation-executor.js';
-import { readConditions, workflowCondition } from '../../packages/control/dist/workflow-engine.js';
-import { awaitWorkspaceReady, countingGit, eventually, gitRunsOf, settle } from '../helpers.js';
+import { countingGit, eventually, settle } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
 type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
@@ -44,7 +41,6 @@ function slowGit(pattern: string) {
   return counter;
 }
 
-const contextOf = (f: Fixture) => (f.control as unknown as { ctx: ControlContext }).ctx;
 const current = (f: Fixture, id: string) => f.store.must<Session>('sessions', id);
 const runs = (f: Fixture) => f.store.list<StepRun>('workflow_step_runs');
 
@@ -54,8 +50,8 @@ function commit(repository: string, name: string) {
   git(repository, 'commit', '--quiet', '-m', `Add ${name}`);
 }
 
-/** A lead with one dispatch task whose project merges automatically through the definition. */
-async function workflowTask(beforeMerge: WorkflowStep[]) {
+/** A lead with one task on the path whose project merges automatically. */
+async function workflowTask(taskPath: BoardPlan['tasks'][number]['path'] = 'dispatch') {
   vi.spyOn(validation, 'runValidationCommand').mockResolvedValue({
     exit_code: 0,
     signal: null,
@@ -80,16 +76,6 @@ async function workflowTask(beforeMerge: WorkflowStep[]) {
   git(f.source, 'config', 'user.email', 'source@example.invalid');
   const lead = await f.create('Plan the export');
   await settle(f, lead);
-  const definition: WorkflowDefinition = {
-    slots: { before_dispatch: [], before_merge: beforeMerge, after_merge: [] },
-    plan_review: { tiers: ['t3'] },
-    review: { max_rounds: 3 },
-  };
-  await f.call('workflow.definition.set', {
-    project_id: f.project.id,
-    definition,
-    base_version: 0,
-  });
   f.store.insert<BoardPlan>('board_plans', {
     id: lead.id,
     revision: 1,
@@ -106,7 +92,7 @@ async function workflowTask(beforeMerge: WorkflowStep[]) {
         source: ['Plan the export'],
         scope: ['.'],
         acceptance: ['true'],
-        path: 'dispatch',
+        path: taskPath,
         kind: { tier: 't2', domain: 'backend-logic' },
       },
     ],
@@ -139,54 +125,8 @@ async function workflowTask(beforeMerge: WorkflowStep[]) {
   return { f, worker };
 }
 
-it('reads the changed paths of a step condition from the merge base with one source rev-parse', async () => {
-  const f = await workbenchFixture();
-  const session = await f.create();
-  const workspace = await awaitWorkspaceReady(f.control, session.workspace_id!);
-  await eventually(
-    () => current(f, session.id).state === 'open' && f.turns(session.id)[0]?.state === 'completed',
-    () => f.control.tick(),
-  );
-  // The worktree starts past its base, and the source moves on after that.
-  commit(f.source, 'source-first.txt');
-  git(workspace.path, 'merge', '--quiet', '--ff-only', 'main');
-  commit(workspace.path, 'work.txt');
-  commit(f.source, 'source-second.txt');
-  const head = git(workspace.path, 'rev-parse', 'HEAD'),
-    base = git(workspace.path, 'merge-base', head, git(f.source, 'rev-parse', 'HEAD')),
-    separate = git(workspace.path, 'diff', '--name-only', '--no-renames', base, head).split('\n');
-  expect(separate).toEqual(['work.txt']);
-  const step: WorkflowStep = {
-    id: 'work',
-    title: 'Work',
-    when: { changed_paths: ['work.txt'] },
-    kind: { type: 'approval' },
-  };
-  // The search indexer runs git in the worktree while the session is pending; its run would be counted.
-  await eventually(
-    () => f.store.db.prepare('SELECT 1 FROM session_search_pending LIMIT 1').get() === undefined,
-  );
-  const counter = countingGit();
-  restores.push(counter.restore);
-  await readConditions(contextOf(f), session.id, 'before_merge');
-  counter.reset();
-  const changed = await readConditions(contextOf(f), session.id, 'before_merge');
-  expect(
-    workflowCondition(contextOf(f), step, session.id, 'before_merge', undefined, changed),
-  ).toBe(true);
-  expect([...changed.values()]).toEqual([separate]);
-  const runs = counter.runs();
-  expect(gitRunsOf(runs, 'merge-base')).toHaveLength(1);
-  // The range's worktree HEAD, then the source HEAD with its objects path.
-  expect(gitRunsOf(runs, 'rev-parse')).toHaveLength(2);
-  expect(gitRunsOf(runs, 'diff')).toHaveLength(1);
-  expect(runs, runs.join('\n')).toHaveLength(4);
-});
-
 it('starts a review step while the event loop runs', async () => {
-  const { f, worker } = await workflowTask([
-    { id: 'second-look', title: 'Review the diff', kind: { type: 'review', blocking: true } },
-  ]);
+  const { f, worker } = await workflowTask('review_loop');
   const reviewer = new FixtureAdapter(1);
   reviewer.name = 'reviewer';
   f.control.adapters.set(reviewer.name, reviewer);
@@ -197,7 +137,7 @@ it('starts a review step while the event loop runs', async () => {
     () => f.control.tick(),
     10000,
   );
-  slowGit('diff --no-color --no-ext-diff');
+  const slow = slowGit('diff --no-color --no-ext-diff');
   const stall = longestStall();
   await eventually(
     () => !!runs(f)[0]?.review_id,
@@ -205,12 +145,11 @@ it('starts a review step while the event loop runs', async () => {
     10000,
   );
   expect(stall()).toBeLessThan(500);
+  expect(slow.log()).toContain('slow start');
 });
 
 it('records the merge a review step before the merge holds as a session event', async () => {
-  const { f, worker } = await workflowTask([
-    { id: 'second-look', title: 'Review the diff', kind: { type: 'review', blocking: true } },
-  ]);
+  const { f, worker } = await workflowTask('review_loop');
   const reviewer = new FixtureAdapter(1);
   reviewer.name = 'reviewer';
   f.control.adapters.set(reviewer.name, reviewer);
@@ -231,25 +170,41 @@ it('records the merge a review step before the merge holds as a session event', 
   ).toMatchObject([{ state: 'blocked', reason: 'workflow_approval' }]);
 });
 
-it('admits the merge after an approval before the merge while the event loop runs', async () => {
-  const { f, worker } = await workflowTask([
-    { id: 'signoff', title: 'Approve the result', kind: { type: 'approval' } },
-  ]);
+it('admits the merge after a review step before the merge while the event loop runs', async () => {
+  const { f, worker } = await workflowTask('review_loop');
+  const reviewer = new FixtureAdapter(1);
+  reviewer.name = 'reviewer';
+  f.control.adapters.set(reviewer.name, reviewer);
+  // Each reviewer session hands in a pass verdict as its turn starts, as review_verdict does.
+  const send = reviewer.send.bind(reviewer);
+  reviewer.send = async (handle, turn) => {
+    const session = current(f, f.store.must<SessionTurn>('session_turns', turn.turn_id).session_id);
+    if (session.review_id)
+      f.call(
+        'review.verdict',
+        { verdict: 'pass', summary: 'No findings: checked answer.txt' },
+        null,
+        {
+          id: `session:${session.id}`,
+          role: 'reviewer',
+          session_id: session.id,
+          project_id: f.project.id,
+          expires_at: Date.now() + 60000,
+        },
+      );
+    return send(handle, turn);
+  };
   await eventually(
-    () => runs(f).some((run) => run.state === 'waiting'),
+    () => runs(f).some((run) => run.state === 'running'),
     () => f.control.tick(),
     10000,
   );
   slowGit('status --porcelain=v2');
-  const started = performance.now();
-  f.call('workflow.step.decide', {
-    step_run_id: runs(f).find((run) => run.state === 'waiting')!.id,
-    decision: 'approve',
-  });
-  expect(performance.now() - started).toBeLessThan(500);
+  const stall = longestStall();
   await eventually(
     () => current(f, worker.id).merge?.state === 'running' || !!current(f, worker.id).outcome,
     () => f.control.tick(),
     10000,
   );
+  expect(stall()).toBeLessThan(500);
 });

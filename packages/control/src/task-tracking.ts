@@ -18,7 +18,6 @@ import {
 import { inputSchemas, type Command } from '@pantheon/protocol';
 import {
   gitFolderAsync,
-  insert,
   projectAccess,
   userOnly,
   type ControlContext,
@@ -73,7 +72,6 @@ import {
 import {
   acceptInput,
   advanceQueuedHandoffs,
-  queuedTurn,
   releaseIdleConversation,
   taskReportGeneration,
   unsnooze,
@@ -93,12 +91,10 @@ import { advanceMilestoneVerifications } from './milestone-verify.js';
 import { finishStops } from './workbench-session.js';
 import { projectOverBudget, workflowPolicy } from './workflow-policy.js';
 import { wakeHold } from './agent-contract.js';
-import {
-  advanceSteps,
-  afterMergeHolds,
-  readMergeConditions,
-  type ConditionAnswers,
-} from './workflow-engine.js';
+import { advanceMergeReviews } from './merge-review.js';
+import { queueTurn } from './session-wake.js';
+
+export { queueTurn } from './session-wake.js';
 
 type Tracked = BoardPlan['notified'][string];
 type Alert = NonNullable<BoardPlan['alerted']>[string][number];
@@ -231,10 +227,7 @@ function taskUnderWay(ctx: ControlContext, plan: BoardPlan, taskId: string): boo
  */
 function wakeDue(ctx: ControlContext, plan: BoardPlan): boolean {
   const waking = plan.inbox.filter(
-    (note) =>
-      wakingNote(plan, note) &&
-      !finishingMerge(ctx, plan, note) &&
-      !((note.kind === 'merged' || reportDone(plan, note)) && afterMergeHolds(ctx, plan, note)),
+    (note) => wakingNote(plan, note) && !finishingMerge(ctx, plan, note),
   );
   if (!waking.length) return false;
   if (waking.some((note) => note.kind !== 'merged')) return true;
@@ -822,7 +815,6 @@ function reportDirectTask(
   report: ReturnType<(typeof inputSchemas)['task.report']['parse']>,
   commandId: string,
   parsed: GitResult | undefined,
-  conditions: ConditionAnswers,
 ): { task_id: string; reported_head: string; next: string } {
   const lead = ctx.store.must<Session>('sessions', leadId),
     claimed = lead.direct_task;
@@ -863,8 +855,7 @@ function reportDirectTask(
   // As autoMergeAfterTurn decides once this turn ends.
   const project = ctx.store.must<Project>('projects', lead.project_id),
     workspace = ctx.store.must<Workspace>('workspaces', lead.workspace_id!),
-    merges =
-      autoMerge(ctx, project) && !!gateCommands(ctx, project, workspace, next, conditions)?.length;
+    merges = autoMerge(ctx, project) && !!gateCommands(ctx, project, workspace, next)?.length;
   return {
     task_id: claimed.id,
     reported_head: head,
@@ -1247,7 +1238,7 @@ export function tickTaskTracking(ctx: ControlContext): void {
     if (wakeDue(ctx, next)) wakeLead(ctx, next, '');
   }
   tellChangedContracts(ctx);
-  advanceSteps(ctx);
+  advanceMergeReviews(ctx);
   advanceMilestoneVerifications(ctx);
   dispatchTasks(ctx);
 }
@@ -1500,46 +1491,6 @@ export function continueInterruptedLead(ctx: ControlContext, leadId: string, cau
   });
 }
 
-/** Starts the turn on an idle session; on a running one it waits, outside the outbox, for that turn to end. */
-export function queueTurn(
-  ctx: ControlContext,
-  session: Session,
-  input: string,
-  origin: NonNullable<SessionTurn['origin']>,
-  cause: string,
-  extras?: Pick<
-    SessionTurn,
-    | 'attachments'
-    | 'skills'
-    | 'refs'
-    | 'reference_context'
-    | 'handoff'
-    | 'causal_depth'
-    | 'lead_note_ids'
-    | 'wake'
-  >,
-): SessionTurn {
-  const turn: SessionTurn = { ...queuedTurn(session, input, 'send', extras), origin };
-  if (session.state !== 'running') {
-    const { archived_at, ...rest } = session;
-    const next = ctx.store.update(
-      'sessions',
-      { ...rest, state: 'running' as const, turn_count: session.turn_count + 1, merge: undefined },
-      session.revision,
-    );
-    if (archived_at) ctx.store.event('session.unarchived', next, next.project_id, {}, cause);
-    ctx.store.enqueue('session.turn', { turn_id: turn.id });
-  } else
-    ctx.store.update(
-      'sessions',
-      { ...session, turn_count: session.turn_count + 1 },
-      session.revision,
-    );
-  insert(ctx, 'session_turns', turn, 'turn.queued', session.project_id, cause);
-  ctx.store.event('session.turn.delivery', turn, turn.project_id, { delivery: 'pending' }, cause);
-  return turn;
-}
-
 /**
  * The plan with each task's state and sessions and the recent commits of each git folder; a lead
  * that cannot write its plan is not asked to rewrite it.
@@ -1691,13 +1642,7 @@ export function prepareBoardSync(ctx: ControlContext, p: Principal, c: Command):
 }
 
 // Blocked and requirement reports, and the done report of a report task, wake the lead.
-function taskReport(
-  ctx: ControlContext,
-  p: Principal,
-  c: Command,
-  git: GitResult[],
-  conditions: ConditionAnswers = new Map(),
-) {
+function taskReport(ctx: ControlContext, p: Principal, c: Command, git: GitResult[]) {
   const input = inputSchemas['task.report'].parse(c.input);
   requireThat(
     input.kind !== 'blocked' || input.reason,
@@ -1710,8 +1655,7 @@ function taskReport(
     'permission_denied',
     'A resident lead works on no task itself, so it has nothing to report; its task sessions report',
   );
-  if (p.role === 'lead')
-    return reportDirectTask(ctx, p.session_id!, input, c.command_id, git[0], conditions);
+  if (p.role === 'lead') return reportDirectTask(ctx, p.session_id!, input, c.command_id, git[0]);
   requireThat(p.role === 'worker', 'permission_denied', 'Worker session required');
   // A worker credential is only issued to a session opened from a task.
   const task = ctx.store.must<Session>('sessions', p.session_id!).task!;
@@ -1764,8 +1708,7 @@ function taskReport(
   if (
     note.kind !== 'requirement' &&
     note.kind !== 'blocked' &&
-    // As in wakeDue, a done report waits for the task's after-merge steps.
-    !(reportDone(plan, note) && !afterMergeHolds(ctx, plan, note)) &&
+    !reportDone(plan, note) &&
     !unchecked
   )
     return { pending: next.inbox.length };
@@ -1802,14 +1745,10 @@ export function prepareTaskReport(
             ]
           : [];
   if (!reads.length) return (ctx, p, c) => taskReport(ctx, p, c, []);
-  return Promise.all([
-    Promise.all(reads.map((args) => runGit(workspace!.path, args, undefined, true))),
-    // A lead's report says whether its gate merges the task, which its conditions decide.
-    p.role === 'lead' ? readMergeConditions(ctx, session!.id) : new Map(),
-  ]).then(
-    ([git, conditions]): Handler =>
+  return Promise.all(reads.map((args) => runGit(workspace!.path, args, undefined, true))).then(
+    (git): Handler =>
       (ctx, p, c) =>
-        taskReport(ctx, p, c, git, conditions),
+        taskReport(ctx, p, c, git),
   );
 }
 
@@ -1930,11 +1869,6 @@ export const taskTrackingHandlers: Handlers = {
       doneReported(ctx, plan, task.id),
       'invalid_state',
       `Task ${task.id} has no done report since its contract last changed to accept`,
-    );
-    requireThat(
-      !afterMergeHolds(ctx, plan, { task_id: task.id }),
-      'invalid_state',
-      `Task ${task.id} waits for its after-merge workflow steps; accept it once they pass`,
     );
     const accepted = { at: ctx.store.now(), evidence: input.evidence, generation };
     const next = ctx.store.update(

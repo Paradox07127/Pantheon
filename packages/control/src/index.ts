@@ -68,14 +68,7 @@ import { recover, reconcile } from './recovery.js';
 import { snapshot, snapshotAccess } from './snapshot.js';
 import { projectRead } from './project-facts.js';
 import { projectUsageRead } from './usage-report.js';
-import { retrospectiveList } from './retrospective.js';
-import {
-  checkWorkflowSkills,
-  workflowDefinitionList,
-  workflowDefinitionView,
-} from './workflow-engine.js';
 import { inheritedPolicy, workflowPolicy } from './workflow-policy.js';
-import { improvementSignals } from './improvement-signals.js';
 import { taskTrace } from './task-trace.js';
 import { taskThread } from './task-thread.js';
 import { projectReviewMetrics, reviewExecutionReader, reviewTimeReader } from './review.js';
@@ -86,6 +79,7 @@ import {
   projectFactsRead,
 } from './baseline.js';
 import { environmentChecks } from './environment-check.js';
+import { landingRead } from './branch-landing.js';
 import {
   changeStoryDiff,
   changeStoryList,
@@ -705,17 +699,6 @@ export class Control extends EventEmitter {
       const modelsChecked = prepareSessionModels(this.ctx, principal, command);
       if (modelsChecked) return modelsChecked.then(applyPrepared);
     }
-    // Skills are checked against the runtimes' inventories, which are read asynchronously.
-    const skillsChecked =
-      command.type === 'workflow.definition.set' &&
-      ![key, commandKey].some((k) => this.store.receipt(k))
-        ? checkWorkflowSkills(
-            this.ctx,
-            principal,
-            input as ReturnType<(typeof inputSchemas)['workflow.definition.set']['parse']>,
-          )
-        : undefined;
-    if (skillsChecked) return skillsChecked.then(() => apply());
     return applyPrepared();
   }
   snapshot(principal: Principal, projectId?: string): unknown {
@@ -769,9 +752,6 @@ export class Control extends EventEmitter {
   projectUsageRead(principal: Principal, projectId: string) {
     return projectUsageRead(this.ctx, principal, projectId);
   }
-  retrospectiveList(principal: Principal, projectId: string, taskId?: string) {
-    return retrospectiveList(this.ctx, principal, projectId, taskId);
-  }
   workflowPolicy(principal: Principal, projectId: string): WorkflowPolicyView {
     projectAccess(this.ctx, principal, projectId, 'workflow.policy');
     this.ctx.store.must<Project>('projects', projectId);
@@ -779,20 +759,6 @@ export class Control extends EventEmitter {
       ...workflowPolicy(this.ctx, projectId),
       defaults: inheritedPolicy(this.ctx),
     };
-  }
-  workflowDefinition(principal: Principal, projectId: string, workflowId?: string) {
-    projectAccess(this.ctx, principal, projectId, 'workflow.definition');
-    return workflowDefinitionView(this.ctx, projectId, workflowId);
-  }
-  workflowDefinitionList(principal: Principal, projectId: string) {
-    projectAccess(this.ctx, principal, projectId, 'workflow.definition.list');
-    this.ctx.store.must<Project>('projects', projectId);
-    return workflowDefinitionList(this.ctx, projectId);
-  }
-  improvementSignals(principal: Principal, projectId: string) {
-    projectAccess(this.ctx, principal, projectId, 'improvement.signals');
-    this.ctx.store.must<Project>('projects', projectId);
-    return improvementSignals(this.ctx, projectId);
   }
   taskTrace(principal: Principal, projectId: string, leadId: string, taskId: string) {
     return taskTrace(this.ctx, principal, projectId, leadId, taskId);
@@ -814,6 +780,9 @@ export class Control extends EventEmitter {
     input: { project_id: string; baseline_id?: string; limit?: number },
   ) {
     return environmentChecks(this.ctx, principal, input);
+  }
+  landingRead(principal: Principal, landingId: string) {
+    return landingRead(this.ctx, principal, landingId);
   }
   projectFactsRead(principal: Principal, projectId: string) {
     return projectFactsRead(this.ctx, principal, projectId);
@@ -939,12 +908,22 @@ export class Control extends EventEmitter {
   sessionReviews(principal: Principal, sessionId: string) {
     const session = this.store.must<Session>('sessions', sessionId);
     projectAccess(this.ctx, principal, session.project_id, 'project.read');
-    const executions = reviewExecutionReader(this.ctx, session.project_id),
-      times = reviewTimeReader(this.ctx, session.project_id);
     return this.store
       .list<Review>('reviews')
       .filter((review) => review.session_id === sessionId)
-      .map((review) => ({ ...review, ...times(review), executions: executions(review) }));
+      .map(this.reviewView(session.project_id));
+  }
+  reviewRead(principal: Principal, reviewId: string) {
+    userOnly(principal);
+    const review = this.store.must<Review>('reviews', reviewId);
+    projectAccess(this.ctx, principal, review.project_id, 'project.read');
+    return this.reviewView(review.project_id)(review);
+  }
+  /** A review with its start and end times and the execution of each reviewer. */
+  private reviewView(projectId: string) {
+    const executions = reviewExecutionReader(this.ctx, projectId),
+      times = reviewTimeReader(this.ctx, projectId);
+    return (review: Review) => ({ ...review, ...times(review), executions: executions(review) });
   }
   sessionPrincipal(principal: Principal) {
     // MCP initializes during resume, before the runtime returns its new handle.

@@ -249,8 +249,6 @@ describe('board refresh', () => {
     ...each('reads the board again when what waits for the user changes: ', [
       'workflow.policy_changed',
       'workflow.step_changed',
-      'workflow.definition_trial_completed',
-      'workflow.definition_trial_decided',
       'board.plan_proposed',
       'board.plan_proposal_resolved',
       'lead.question_asked',

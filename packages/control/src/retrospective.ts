@@ -4,17 +4,14 @@ import {
   type BoardPlan,
   type GateFailureClass,
   type LeadNote,
-  type Principal,
-  type Project,
   type Retrospective,
   type Session,
   type SessionTurn,
-  type StepRun,
   type TaskBudget,
   type TaskKind,
 } from '@pantheon/domain';
 import type { GateFirstPass } from '@pantheon/protocol';
-import { projectAccess, type ControlContext } from './context.js';
+import type { ControlContext } from './context.js';
 import {
   awaitingChange,
   boardTaskId,
@@ -34,11 +31,6 @@ import { workflowPolicy } from './workflow-policy.js';
 
 type PlanTask = BoardPlan['tasks'][number];
 type Tokens = NonNullable<Retrospective['task_usage']>;
-const SLOT_STAGES = {
-  before_dispatch: 'dispatch_wait',
-  before_merge: 'gate_and_merge',
-  after_merge: 'merge_to_acceptance',
-} as const;
 interface EventRow {
   sequence: number;
   kind: string;
@@ -46,8 +38,6 @@ interface EventRow {
   created_at: number;
   payload: Record<string, unknown>;
 }
-
-const LIST_LIMIT = 200;
 
 export function latestRetrospectives(rows: Retrospective[], projectId: string) {
   const latest = new Map<string, Retrospective>();
@@ -416,55 +406,6 @@ function budgetRatio(ctx: ControlContext, row: Retrospective): number | undefine
   return ratioToBudget(input, wall, budget);
 }
 
-/**
- * The generation's waits for the user on an approval or an inconclusive prompt, oldest first, each
- * from where the earlier waits of its slot end; a wait still open lasts until `until`, or is left out.
- */
-export function stepWaits(
-  ctx: ControlContext,
-  plan: BoardPlan,
-  taskId: string,
-  generation: number,
-  until?: number,
-): { from: number; to: number; slot: StepRun['slot'] }[] {
-  const runIds = new Set(
-    ctx.store
-      .list<StepRun>('workflow_step_runs')
-      .filter(
-        (run) =>
-          run.lead_session_id === plan.id &&
-          run.task_id === taskId &&
-          run.generation === generation &&
-          (run.step.kind.type === 'approval' || run.step.kind.type === 'prompt'),
-      )
-      .map((run) => run.id),
-  );
-  const waitingSince = new Map<string, { at: number; slot: StepRun['slot'] }>(),
-    waits: { from: number; to: number; slot: StepRun['slot'] }[] = [];
-  for (const event of ctx.store.kindEvents(plan.project_id, ['workflow.step_changed'])) {
-    if (!runIds.has(event.aggregate_id)) continue;
-    const payload = event.payload as { state: StepRun['state']; slot: StepRun['slot'] };
-    const since = waitingSince.get(event.aggregate_id);
-    if (payload.state === 'waiting' || payload.state === 'inconclusive')
-      waitingSince.set(event.aggregate_id, { at: event.created_at, slot: payload.slot });
-    else if (since !== undefined) {
-      waitingSince.delete(event.aggregate_id);
-      waits.push({ from: since.at, to: event.created_at, slot: payload.slot });
-    }
-  }
-  if (until !== undefined)
-    for (const { at, slot } of waitingSince.values()) waits.push({ from: at, to: until, slot });
-  // Waits that overlap in one slot count once.
-  waits.sort((a, b) => a.from - b.from);
-  return waits.map((wait, i) => {
-    const covered = Math.max(
-      wait.from,
-      ...waits.slice(0, i).flatMap((each) => (each.slot === wait.slot ? [each.to] : [])),
-    );
-    return { from: Math.min(covered, wait.to), to: wait.to, slot: wait.slot };
-  });
-}
-
 function record(
   ctx: ControlContext,
   plan: BoardPlan,
@@ -583,13 +524,6 @@ function record(
         gate_and_merge: span(mergeStartedAt, mergedAt),
         merge_to_acceptance: span(mergedAt, acceptedAt),
       };
-  // Each wait for the user on an approval or an inconclusive prompt leaves the stage it fell in.
-  for (const wait of stepWaits(ctx, plan, taskId, generation)) {
-    const ms = wait.to - wait.from,
-      stage = SLOT_STAGES[wait.slot];
-    stages.step_approval = (stages.step_approval ?? 0) + ms;
-    if (stages[stage] !== undefined) stages[stage] = Math.max(0, stages[stage] - ms);
-  }
   const model = direct
     ? (leadWork!.ended.findLast((turn) => turn.reported_model)?.reported_model ??
       lead?.reported_model ??
@@ -870,26 +804,4 @@ function recordUnrecorded(ctx: ControlContext): void {
     }
   }
   for (const session of landed) recordSession(ctx, session);
-}
-
-/** The project's retrospectives, newest first, of one task when taskId is given. */
-export function retrospectiveList(
-  ctx: ControlContext,
-  principal: Principal,
-  projectId: string,
-  taskId?: string,
-): Retrospective[] {
-  projectAccess(ctx, principal, projectId, 'retrospective.list');
-  ctx.store.must<Project>('projects', projectId);
-  return (
-    ctx.store.db
-      .prepare(
-        "SELECT data FROM retrospectives WHERE json_extract(data,'$.project_id')=? ORDER BY rowid",
-      )
-      .all(projectId) as { data: string }[]
-  )
-    .map((row) => JSON.parse(row.data) as Retrospective)
-    .filter((row) => taskId === undefined || row.task_id === taskId)
-    .sort((a, b) => b.recorded_at - a.recorded_at)
-    .slice(0, LIST_LIMIT);
 }

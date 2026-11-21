@@ -24,16 +24,6 @@ try {
     { project_id, runtime: 'fixture', permission_mode: 'ask' },
     (await board()).projects.find((p) => p.id === project_id).revision,
   );
-  // No plan review, so a started task opens its session at once.
-  await call('workflow.definition.set', {
-    project_id,
-    definition: {
-      slots: { before_dispatch: [], before_merge: [], after_merge: [] },
-      plan_review: { tiers: [] },
-      review: { max_rounds: 1 },
-    },
-    base_version: 0,
-  });
   // The lead would allow the task session's prompt itself; this one has to wait on the user.
   await call('workflow.policy.set', { project_id, charter: { approve_worker_prompts: 'off' } });
   await page.click({ role: 'button', name: '项目看板', exact: true });

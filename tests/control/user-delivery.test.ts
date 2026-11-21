@@ -10,7 +10,6 @@ import type {
 } from '@pantheon/domain';
 import type { ControlContext } from '../../packages/control/dist/context.js';
 import { recordSignal } from '../../packages/control/dist/signals.js';
-import { recordMergedCheck } from '../../packages/control/dist/signal-sources.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
 type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
@@ -138,11 +137,12 @@ it("delivers the Assistant's own message to the user unchanged", async () => {
 
 it('lets a gate failure on the default branch reach the user directly, and routes a task-branch one', async () => {
   const r = await reporterFixture('triage');
-  recordMergedCheck(r.ctx, {
+  recordSignal(r.ctx, {
     project_id: r.f.project.id,
-    name: 'typecheck',
-    passed: false,
-    output: 'error TS2322: Type string is not assignable to type number',
+    source: 'gate_failures',
+    fingerprint: 'typecheck:default-branch',
+    title: 'typecheck failed after a merge: error TS2322',
+    scope: 'default_branch',
   });
   const main = r.f.store.list<SignalIssue>('signal_issues')[0]!;
   expect(main.scope).toBe('default_branch');
@@ -169,11 +169,12 @@ it('routes even a gate failure on the default branch when the urgent list is emp
     project_id: r.f.project.id,
     urgent_direct: [],
   });
-  recordMergedCheck(r.ctx, {
+  recordSignal(r.ctx, {
     project_id: r.f.project.id,
-    name: 'typecheck',
-    passed: false,
-    output: 'error TS2322',
+    source: 'gate_failures',
+    fingerprint: 'typecheck:default-branch',
+    title: 'typecheck failed after a merge: error TS2322',
+    scope: 'default_branch',
   });
   const main = r.f.store.list<SignalIssue>('signal_issues')[0]!;
   const message = r.tell({ text: 'typecheck fails on main.', signal_issue_id: main.id });

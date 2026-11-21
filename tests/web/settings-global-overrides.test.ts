@@ -30,7 +30,6 @@ const beta = {
   gates: { '/work/beta': [{ name: 'test', argv: ['pnpm', 'test'] }] },
 };
 const builtin = {
-  improvement_mode: 'auto',
   path: { t1: 'direct', t2: 'dispatch', t3: 'dispatch' },
   acceptance_wake: 'each_merge',
   max_parallel: 3,

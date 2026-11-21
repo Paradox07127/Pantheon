@@ -228,7 +228,6 @@ node tests/acceptance/verify/run.mjs --boot [--out <目录>] [--size WxH] [条�
 | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `node scripts/linux-test.mjs [命令]`        | 把检出目录(含未提交和未跟踪的文件，不含被忽略的文件)拷进装了 git、bubblewrap、socat、nc 的特权 Docker 容器。容器的 Node 版本取根 `package.json` 的 `devEngines.runtime`。装好依赖后运行命令(默认 `pnpm test`)。 |
 | `node scripts/benchmark-session-search.mjs` | 在 `pnpm build` 之后量会话搜索。单次查询超过 100 ms 就失败。                                                                                                                                                    |
-| `node scripts/refresh-leaderboards.mjs`     | 读取公开排行榜，写 `~/.pantheon/leaderboards.json`(`--out` 可改)。路由表把它当作先验。                                                                                                                          |
 
 ## 接口文档
 

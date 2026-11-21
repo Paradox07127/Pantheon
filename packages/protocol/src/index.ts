@@ -17,22 +17,13 @@ import { agentLedgerQuerySchemas } from './agent-ledger.js';
 export type { AgentLedgerWeek } from './agent-ledger.js';
 import { appInputSchemas, appToolEffects, appToolGroups, appTools } from './app-tools.js';
 import { agentInputSchemas, agentToolEffects, agentToolGroups, agentTools } from './agent-tools.js';
-import {
-  reviewerTools,
-  workflowInputSchemas,
-  workflowToolEffects,
-  workflowToolGroups,
-  workflowTools,
-} from './workflow-tools.js';
-import { playbookInputSchemas } from './playbooks.js';
+import { reviewerTools, workflowInputSchemas } from './workflow-tools.js';
 import {
   planPauseInputSchemas,
   planPauseToolEffects,
   planPauseToolGroups,
   planPauseTools,
 } from './plan-pause.js';
-export type { PlaybookRead } from './playbooks.js';
-export type { PlaybookExport } from './playbooks.js';
 import { milestoneCheckInputSchemas } from './milestone-checks.js';
 export type { HiddenChecksRead } from './milestone-checks.js';
 import { questionBatchInputSchemas } from './question-batches.js';
@@ -48,7 +39,6 @@ import type {
   CharterPower,
   EffortLevel,
   FlowPath,
-  Improvement,
   LaneDepth,
   McpServerStatus,
   NeedsYouItem,
@@ -62,7 +52,6 @@ import type {
   ProjectIntro,
   QuotaWindow,
   Retrospective,
-  ImprovementSignal,
   Review,
   CapabilityReport,
   RuntimeStatus as PreflightRuntimeStatus,
@@ -77,7 +66,6 @@ import type {
   RuntimeReviewHistory,
   TraceLane,
   TraceSpan,
-  WorkflowDefinition,
   WorkflowPolicy,
   WorkflowParam,
   WorkflowStep,
@@ -307,7 +295,6 @@ export const sessionTools = {
     ...alwaysOnTools,
     ...appTools,
     ...agentTools,
-    ...workflowTools,
     ...planPauseTools,
     guide: 'agent.guide',
   },
@@ -318,7 +305,12 @@ export const sessionTools = {
     status_line: 'task.status_line',
     draw: 'visual.draw',
     ...browserTools,
-    ...workflowTools,
+  },
+  conductor: {
+    request_review: 'conductor.review',
+    report_ready: 'conductor.ready',
+    spawn_session: 'conductor.spawn',
+    read_state: 'conductor.state',
   },
 } as const;
 
@@ -357,7 +349,6 @@ export const leadToolEffects = {
   ...alwaysOnToolEffects,
   ...appToolEffects,
   ...agentToolEffects,
-  ...workflowToolEffects,
   ...planPauseToolEffects,
   guide: 'read',
 } as const satisfies Record<keyof typeof sessionTools.lead, 'read' | 'write' | 'costly'>;
@@ -380,7 +371,6 @@ export const leadToolGroups: Record<
   ...inGroup(alwaysOnTools, 'always_on'),
   ...appToolGroups,
   ...agentToolGroups,
-  ...workflowToolGroups,
   ...planPauseToolGroups,
   project_read: 'board',
   update_board: 'board',
@@ -690,9 +680,8 @@ const planTask = z
       .describe(
         'direct, dispatch, review_loop or parallel; absent means lead.workflow.path for its tier.',
       ),
-    workflow_id: str
-      .optional()
-      .describe("A named workflow from lead.workflow; absent means the project's default."),
+    /** Retired; a stored value is accepted and ignored. */
+    workflow_id: str.optional().meta({ retired: true }),
     parallel: z
       .array(
         z.strictObject({
@@ -818,11 +807,8 @@ const planChangeOps = [
             'direct, dispatch, review_loop or parallel; null removes it and its flow_reason, so the path for its tier applies.',
           ),
         flow_reason: planTask.shape.flow_reason,
-        /** null takes the task's named workflow away, so the project's default one applies. */
-        workflow_id: str
-          .nullable()
-          .optional()
-          .describe("A named workflow from lead.workflow; null returns to the project's default."),
+        /** Retired; a stored value is accepted and ignored. */
+        workflow_id: str.nullable().optional().meta({ retired: true }),
         parallel: planTask.shape.parallel,
       })
       .describe('Only the fields that change; the others keep their value.'),
@@ -1237,6 +1223,7 @@ const storedTierBudget = z
   .optional();
 /** Workflow policy settings as a policy stores them; the project budget belongs to each project alone. */
 const workflowPolicySettings = z.strictObject({
+  /** No longer used; a stored value is read without error and ignored. */
   improvement_mode: z.enum(['auto', 'confirm', 'off']).optional(),
   plan_changes: z.enum(['auto', 'confirm']).optional(),
   charter: charter.optional(),
@@ -1285,7 +1272,6 @@ const decisionKinds = {
   question: true,
   milestone_accept: true,
   repeated_failure: true,
-  agent_proposal: true,
   permission: true,
   budget: true,
   improvement: true,
@@ -1299,8 +1285,8 @@ export type AttentionKind = NeedsYouItem['decision'] | 'merged';
 /** The keys of the attention delivery rules: the decisions, then the notices that ask for none. */
 export const ATTENTION_KINDS: readonly AttentionKind[] = [...NEEDS_YOU_DECISIONS, 'merged'];
 export type AttentionDelivery = 'now' | 'brief' | 'never';
-const BRIEF_BY_DEFAULT: readonly AttentionKind[] = ['milestone_accept', 'agent_proposal', 'merged'];
-/** How each kind reaches the user until the user chooses: milestones to accept, agent proposals and merges wait for the brief. */
+const BRIEF_BY_DEFAULT: readonly AttentionKind[] = ['milestone_accept', 'merged'];
+/** How each kind reaches the user until the user chooses: milestones to accept and merges wait for the brief. */
 export const DEFAULT_ATTENTION_DELIVERY = Object.fromEntries(
   ATTENTION_KINDS.map((kind) => [kind, BRIEF_BY_DEFAULT.includes(kind) ? 'brief' : 'now']),
 ) as Record<AttentionKind, AttentionDelivery>;
@@ -1331,6 +1317,11 @@ const attentionDelivery = z.partialRecord(
   z.enum(ATTENTION_KINDS),
   z.enum(['now', 'brief', 'never']),
 );
+/** Retired; a stored agent_proposal rule is accepted and ignored. */
+const storedAttentionDelivery = z.partialRecord(
+  z.enum([...ATTENTION_KINDS, 'agent_proposal']),
+  z.enum(['now', 'brief', 'never']),
+);
 /** The decisions the user can let the personal agent answer; none until the user turns one on. */
 export const PERSONAL_ANSWER_KINDS = [
   'question',
@@ -1357,7 +1348,7 @@ export const userConfigSchema = z
     /** The brief of a project carries a paragraph from the side model; absent is on. */
     brief_prose: z.boolean().optional(),
     /** How each attention kind reaches the user; an absent kind is its default. */
-    attention_delivery: attentionDelivery.optional(),
+    attention_delivery: storedAttentionDelivery.optional(),
     /** Local HH:MM range, possibly across midnight, in which now waits for the brief. */
     quiet_hours: quietHours.optional(),
     /** The most question rounds of a baseline; absent is 5. */
@@ -1545,61 +1536,6 @@ export const boardPlanInputSchema = z.strictObject({
     .describe(
       'Up to 16 `{ text }`: each decision you made for the user on an open point, so they can correct it.',
     ),
-});
-
-const workflowLeafStep = z.strictObject({
-  id: str,
-  title: str,
-  applies_to: z
-    .strictObject({
-      tiers: z.array(z.enum(taskTiers)).optional(),
-      domains: z.array(z.enum(taskDomains)).optional(),
-    })
-    .optional(),
-  when: z.strictObject({ changed_paths: z.array(z.string()).max(16) }).optional(),
-  kind: z.discriminatedUnion('type', [
-    z.strictObject({
-      type: z.literal('command'),
-      command: str,
-      timeout_seconds: z.number().positive(),
-    }),
-    z.strictObject({ type: z.literal('approval') }),
-    z.strictObject({
-      type: z.literal('prompt'),
-      prompt: str,
-      target: z.enum(['task', 'lead']).optional(),
-      skill: z.strictObject({ name: str, path: str }).optional(),
-      expects: z.enum(['verdict', 'turn']).optional(),
-    }),
-    z.strictObject({
-      type: z.literal('review'),
-      runtime: str.optional(),
-      model: str.optional(),
-      effort: z.enum(EFFORT_LEVELS).optional(),
-      blocking: z.boolean().optional(),
-    }),
-  ]),
-});
-const workflowStep = workflowLeafStep.extend({
-  kind: z.discriminatedUnion('type', [
-    ...workflowLeafStep.shape.kind.options,
-    z.strictObject({ type: z.literal('parallel'), steps: z.array(workflowLeafStep).min(2).max(4) }),
-    z.strictObject({
-      type: z.literal('loop'),
-      step: workflowLeafStep,
-      max: z.number().int().min(1).max(5),
-      until: z.literal('passes'),
-    }),
-  ]),
-});
-const workflowDefinition = z.strictObject({
-  slots: z.strictObject({
-    before_dispatch: z.array(workflowStep),
-    before_merge: z.array(workflowStep),
-    after_merge: z.array(workflowStep),
-  }),
-  plan_review: z.strictObject({ tiers: z.array(z.enum(taskTiers)) }).default({ tiers: ['t3'] }),
-  review: z.strictObject({ max_rounds: z.number().int().min(1).max(5) }).default({ max_rounds: 3 }),
 });
 
 const visualSize = z.enum(['S', 'M', 'L']);
@@ -2170,7 +2106,6 @@ export const inputSchemas = {
   ...appInputSchemas,
   ...agentInputSchemas,
   ...workflowInputSchemas,
-  ...playbookInputSchemas,
   ...milestoneCheckInputSchemas,
   ...planPauseInputSchemas,
   ...questionBatchInputSchemas,
@@ -2378,35 +2313,11 @@ export const inputSchemas = {
     task_id: planId.describe('The task whose session runs the background task.'),
     background_id: str.describe('The id of the background task, as the session reports it.'),
   }),
-  'workflow.definition.set': z.strictObject({
-    project_id: str,
-    id: str.optional(),
-    definition: workflowDefinition,
-    trial_tasks: z.number().int().min(1).max(20).optional(),
-    base_version: z.number().int().nonnegative(),
-  }),
-  'workflow.definition.save_as': z.strictObject({
-    project_id: str,
-    from_id: str.optional(),
-    name: z.string().min(1).max(60),
-  }),
-  'workflow.definition.set_default': z.strictObject({ project_id: str, id: str }),
-  'workflow.definition.trial.decide': z.strictObject({
-    project_id: str,
-    id: str.optional(),
-    decision: z.enum(['keep', 'revert']),
-  }),
-  'workflow.step.decide': z.strictObject({
-    step_run_id: str,
-    decision: z.enum(['approve', 'reject']),
-    reason: str.optional(),
-  }),
   /** Removes the project's own workflow policy values, so it follows the global ones; the user only. */
   'workflow.policy.reset': z.strictObject({ project_id: str }),
   /** Changes the given workflow policy parameters of a project; the user only. */
   'workflow.policy.set': z.strictObject({
     project_id: str,
-    improvement_mode: z.enum(['auto', 'confirm', 'off']).optional(),
     plan_changes: z.enum(['auto', 'confirm']).optional(),
     /** Merged into the current charter by power. */
     charter: charter.optional(),
@@ -2442,12 +2353,6 @@ export const inputSchemas = {
       .optional()
       .describe(
         'auto moves a task session whose hand-backs of one problem ran out to the writer fallback runtime for one more hand-back; off leaves it to the lead.',
-      ),
-    eval_runner: z
-      .enum(['off', 'on'])
-      .optional()
-      .describe(
-        'on lets the user start the requested eval of a playbook change from the app, which spends real model runs; off leaves its command to run by hand.',
       ),
     handback_limit: z.union([z.literal(0), z.number().int().min(2).max(5)]).optional(),
     /** null clears the hint. */
@@ -2687,6 +2592,14 @@ export const inputSchemas = {
     root: str.optional(),
     baseline_id: str.optional(),
   }),
+  /** The user only; lands branch onto the branch checked out in root through the root's gate, and returns the started Landing. */
+  'project.land': z.strictObject({
+    root: str,
+    branch: str,
+    message: str
+      .optional()
+      .describe('When present, the commits land as one commit with this message.'),
+  }),
   'project.worktree.set': z.strictObject({
     project_id: str,
     copy_paths: z.array(worktreePath),
@@ -2738,7 +2651,7 @@ export const inputSchemas = {
   'project.override.clear': z.strictObject({
     project_id: str,
     key: z.enum(PROJECT_SETTING_KEYS),
-    param: workflowPolicySettings.keyof().optional(),
+    param: workflowPolicySettings.keyof().exclude(['improvement_mode']).optional(),
   }),
   /** {project_id, at}; moves the caller's seen cursor of the project to at, now by default. project.brief lists what happened after it. */
   'project.seen': z.strictObject({ project_id: str, at: z.number().int().min(0).optional() }),
@@ -2813,8 +2726,9 @@ export const inputSchemas = {
       /**
        * project_setup: the first message starts with the guide for a project built from nothing.
        * lead: the session plans on the board with the Pantheon tools; without a purpose or task it runs as the bare runtime.
+       * conductor: the native session with only the four conductor tools.
        */
-      purpose: z.enum(['project_setup', 'lead']).optional(),
+      purpose: z.enum(['project_setup', 'lead', 'conductor']).optional(),
     })
     .refine(validSessionWorkspace, { message: 'An in-place session cannot have a start point' }),
   /** Opens a new worktree session with the source's files and a text handoff. */
@@ -2990,6 +2904,16 @@ export const inputSchemas = {
         "The reviewing runtimes, at least one; choose runtimes other than the writer's when available.",
       ),
   }),
+  /** The user only; reviews the commits from the merge base of base and head up to head, and returns the started Review. */
+  'review.range': z.strictObject({
+    root: str.describe('A project root; its repository is reviewed.'),
+    base: str.describe('The ref the changes start from; the merge base with head is used.'),
+    head: str.optional().describe('The ref with the changes; absent means HEAD.'),
+    runtimes: strings
+      .min(1)
+      .optional()
+      .describe("The reviewing runtimes; absent means the project's reviewer."),
+  }),
   'review.finding': z
     .strictObject({
       location: findingText,
@@ -3009,6 +2933,21 @@ export const inputSchemas = {
     outcome: z.enum(['adopted', 'dismissed']),
     note: str.optional(),
   }),
+  /** A conductor session only; its project and its own session come from its credential. */
+  'conductor.review': z.strictObject({
+    runtimes: strings.min(1).max(2).describe('The reviewing runtimes, one or two.'),
+    session_id: str
+      .optional()
+      .describe('A session you spawned whose changes to review; absent means your own.'),
+  }),
+  'conductor.ready': z.strictObject({}),
+  'conductor.spawn': z.strictObject({
+    runtime: str.describe('The runtime of the new session.'),
+    input: str.describe('The first message of the new session.'),
+    model: str.optional(),
+    effort: z.enum(EFFORT_LEVELS).optional(),
+  }),
+  'conductor.state': z.strictObject({}),
   /** The user only. */
   'runtime.reconnect': z.strictObject({ runtime: str }),
   /** Reconnects a server of a live native session; the user only. */
@@ -3087,6 +3026,8 @@ export const querySchemas = {
     baseline_id: str.optional(),
     limit: z.coerce.number().int().min(1).max(100).default(20),
   }),
+  /** The user only; returns one Landing. */
+  'project.landing.read': z.strictObject({ landing_id: str }),
   /** The user only; returns ProjectIntroRead. */
   'project.intro.read': z.strictObject({ project_id: str }),
   'project.facts.read': z.strictObject({ project_id: str }),
@@ -3141,6 +3082,8 @@ export const querySchemas = {
     since: z.coerce.number().int().min(0).optional(),
   }),
   'session.reviews': z.strictObject({ session_id: str }),
+  /** The user only; returns one Review. */
+  'review.read': z.strictObject({ review_id: str }),
   'change_story.list': z.strictObject({ project_id: str }),
   'change_story.diff': z.strictObject({ story_id: str }),
   'session.create.preview': z
@@ -3229,12 +3172,7 @@ export const querySchemas = {
     project_id: str,
     days: z.enum(['7', '30', '90', 'all']).default('30'),
   }),
-  'retrospective.list': z.strictObject({ project_id: str, task_id: str.optional() }),
   'workflow.policy': z.strictObject({ project_id: str }),
-  'workflow.definition': z.strictObject({ project_id: str, id: str.optional() }),
-  'workflow.definition.list': z.strictObject({ project_id: str }),
-  /** The signals the project's retrospectives show, with the change each suggests. */
-  'improvement.signals': z.strictObject({ project_id: str }),
   'task.trace': z.strictObject({ project_id: str, lead_session_id: str, task_id: str }),
   /** TaskThreadEntry[] of the task in event order. */
   'task.thread': z.strictObject({ project_id: str, lead_session_id: str, task_id: str }),
@@ -3421,7 +3359,7 @@ export interface ProjectSummary {
 }
 /** What a brief item links to; a merge is the merged session's id, decided the project's id. */
 export interface ProjectBriefRef {
-  kind: 'task' | 'milestone' | 'merge' | 'approval' | 'proposal' | 'event' | 'decided';
+  kind: 'task' | 'milestone' | 'merge' | 'approval' | 'event' | 'decided';
   id: string;
 }
 /** One thing that happened after the brief's since; times are Unix milliseconds. */
@@ -3439,7 +3377,6 @@ export type ProjectBriefItem =
   | { kind: 'milestone'; ref: ProjectBriefRef; title: string; done: number; total: number }
   | { kind: 'merge'; ref: ProjectBriefRef; at: number }
   | { kind: 'assumption'; ref: ProjectBriefRef; at: number; text: string }
-  | { kind: 'proposal'; ref: ProjectBriefRef; at: number }
   /** Listed when something was decided for the user after since; count is all of project.decisions. */
   | { kind: 'decided'; ref: ProjectBriefRef; count: number; types: Record<DecisionType, number> };
 /** The side model's paragraph about a brief; each sentence cites the items it is about. */
@@ -3940,29 +3877,6 @@ export interface GateFirstPass {
   tasks: number;
   passed: number;
 }
-/** Results over the last 30 local calendar days. */
-export interface WorkflowStepResult {
-  tasks: number;
-  passed: number;
-  /** Six five-day buckets, oldest first, including empty buckets. */
-  buckets: { tasks: number; passed: number }[];
-}
-/** GET /v1/workflow.definition; the editable definition and the fixed path in order. */
-export interface WorkflowDefinitionView {
-  id: string;
-  name: string;
-  is_default: boolean;
-  trial?: { tasks: number; done: number; previous_version: number };
-  definition_version: number;
-  definition: WorkflowDefinition;
-  /** Results of listed slot steps, by step id; absent without completed first attempts. */
-  step_results?: Record<string, WorkflowStepResult>;
-  fixed_steps: {
-    id: string;
-    policy: Record<string, unknown>;
-    result?: WorkflowStepResult;
-  }[];
-}
 export interface BoardSessionTime {
   sessions: number;
   working_ms: number;
@@ -4156,8 +4070,6 @@ export interface BoardModel {
     path?: FlowPath;
     /** Index in the owner's plan; absent on standalone session rows. */
     order?: number;
-    /** The workflow the task takes, the project id for the default one; absent on standalone session rows. */
-    workflow_id?: string;
     milestone_id: string | null;
     iteration_id?: string | null;
     estimate?: number;
@@ -4235,10 +4147,8 @@ export interface BoardModel {
      */
     step_runs?: {
       id: string;
-      slot: keyof WorkflowDefinition['slots'];
+      slot: StepRun['slot'];
       step_id: string;
-      /** The workflow the run came from, the project id for the default one. */
-      workflow_id: string;
       title: string;
       kind: WorkflowStep['kind']['type'];
       state: Exclude<StepRun['state'], 'retired'>;
@@ -4246,12 +4156,8 @@ export interface BoardModel {
       /** The session the run belongs to; absent on a run of the task before it has one. */
       session_id?: string;
       created_at: number;
-      /** Absent until the run passed, failed or was rejected. */
+      /** Absent until the run passed or failed. */
       finished_at?: number;
-      /** verdict: the step passes only on a verdict the session hands in; absent otherwise. */
-      expects?: 'verdict';
-      /** The verdict the session handed in for the run's current turn; absent without one. */
-      verdict?: Omit<NonNullable<StepRun['verdict']>, 'session_id'>;
       /** On a review step that started its review: each reviewer runtime and the verdict it handed in, if any. */
       reviewers?: { runtime: string; verdict?: 'pass' | 'fail'; summary?: string }[];
     }[];
@@ -4259,7 +4165,6 @@ export interface BoardModel {
       | 'upstream'
       | 'scope'
       | 'plan_review'
-      | 'step'
       | 'retry'
       | 'budget'
       | 'capacity'
@@ -4985,27 +4890,6 @@ export const command = (
   type,
   input,
 });
-
-/** GET /v1/improvement.signals; fixed rules over project records, without a model. */
-export interface ImprovementSignalFinding {
-  signal: ImprovementSignal;
-  cell?: TaskKind;
-  /** The supporting retrospectives, newest first; empty for event-based evidence. */
-  retrospective_ids: string[];
-  suggestion?:
-    | Omit<Extract<Improvement['change'], { type: 'policy_change' }>, 'from'>
-    | Extract<Improvement['change'], { type: 'experience' }>;
-  withheld?: 'pinned' | 'already_set';
-  evidence?:
-    | {
-        kind: 'always_approved_command';
-        command: string;
-        approvals: number;
-        rule?: string;
-        session_id?: string;
-      }
-    | { kind: 'late_gate_failure'; name: string; runs: number; median_prior_ms: number };
-}
 
 /** GET /v1/permission.rules; newest first, with titles of sessions that still exist. */
 export interface ProjectPermissionRule {

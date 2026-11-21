@@ -152,7 +152,6 @@ it('lets a lead claim a direct task itself, without a task session, and write in
   expect(current(f, lead.id).direct_task).toEqual({
     id: 'a',
     generation: 1,
-    definition_version: 0,
   });
   expect(eventsOf(f, lead.id, 'task.claimed')).toEqual([{ task_id: 'a', generation: 1 }]);
   expect((await delivered(f, send, lead)).read_only ?? false).toBe(false);
@@ -289,7 +288,6 @@ it('refuses a direct task started with others, and a second one while the lead w
   expect(current(f, lead.id).direct_task).toEqual({
     id: 'a',
     generation: 1,
-    definition_version: 0,
   });
 });
 
@@ -339,7 +337,6 @@ it('records the worktree head when the lead reports its direct task done', async
   expect(current(f, lead.id).direct_task).toEqual({
     id: 'a',
     generation: 1,
-    definition_version: 0,
     reported_head: git(worktree, 'rev-parse', 'HEAD'),
     reported_at: expect.any(Number),
   });

@@ -165,8 +165,6 @@ describe('project summary refresh', () => {
       'lead.question_answered',
       'workflow.step_created',
       'workflow.step_changed',
-      'workflow.definition_trial_completed',
-      'workflow.definition_trial_decided',
       'workflow.policy_changed',
     ])
       expect([kind, changesSummary(kind)]).toEqual([kind, true]);

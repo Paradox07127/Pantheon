@@ -6,7 +6,6 @@ import type {
   Principal,
   Session,
   SessionTurn,
-  StepRun,
   Workspace,
 } from '@pantheon/domain';
 import type { ControlContext } from '../../packages/control/dist/context.js';
@@ -406,49 +405,6 @@ it('starts a new dispatch wait when a stopped request is requested again', async
       expect.objectContaining({ duration_ms: 6_000, started_at: now - 6_000 }),
     ]);
     expect(queue[0]!.wait_ms_by_reason).toBeUndefined();
-  } finally {
-    await f.close();
-  }
-});
-
-it('keeps a workflow step that waits for the user after an inconclusive turn open', async () => {
-  let now = 1_800_000_000_000;
-  const from = now;
-  const f = await fixture({ now: () => now });
-  try {
-    const project = f.project.id;
-    const run = f.store.insert<StepRun>('workflow_step_runs', {
-      id: 'export-check',
-      revision: 1,
-      project_id: project,
-      lead_session_id: 'step-lead',
-      task_id: 'exports',
-      generation: 1,
-      definition_version: 1,
-      slot: 'before_merge',
-      step: {
-        id: 'check',
-        title: 'Check the export',
-        kind: { type: 'prompt', prompt: 'Check the export', expects: 'verdict' },
-      },
-      state: 'running',
-      session_id: 'step-worker',
-      created_at: now,
-    });
-    f.store.event('workflow.step_changed', run, project, { state: 'running' });
-    now += 10_000;
-    const inconclusive = f.store.update<StepRun>(
-      'workflow_step_runs',
-      { ...run, state: 'inconclusive' },
-      run.revision,
-    );
-    f.store.event('workflow.step_changed', inconclusive, project, { state: 'inconclusive' });
-    now += 50_000;
-    const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
-    const result = runtimeDiagnostics(ctx, project, from, now, { live: true });
-    expect(result.findings.filter((finding) => finding.kind === 'workflow_step')).toEqual([
-      expect.objectContaining({ ongoing: true, duration_ms: 60_000 }),
-    ]);
   } finally {
     await f.close();
   }

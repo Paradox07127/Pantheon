@@ -167,19 +167,6 @@ export function boardHistory(
   const decisions: BoardHistory['decisions'] = [],
     decisionTasks = new Map<string, BoardPlan['tasks'][number]>(),
     stepRuns = new Map(projectRows<StepRun>('workflow_step_runs').map((run) => [run.id, run]));
-  // A prompt step queues its turn right before the change that marks the step running.
-  const stepTurns = new Set(
-    events.flatMap((event, index) =>
-      event.kind === 'workflow.step_changed' &&
-      (event.payload as { state?: string }).state === 'running' &&
-      stepRuns.get(event.aggregate_id)?.step.kind.type === 'prompt' &&
-      events[index - 1]?.kind === 'turn.queued' &&
-      turnOf.get(events[index - 1]!.aggregate_id)?.session_id ===
-        stepRuns.get(event.aggregate_id)!.session_id
-        ? [events[index - 1]!.aggregate_id]
-        : [],
-    ),
-  );
   const mergedSessions = new Map<string, number>(),
     // By session id, or by `<task key>:<generation>` for a lead's direct merge.
     merges = new Map<string, { at: number; payload: MergedPayload }>(),
@@ -290,16 +277,10 @@ export function boardHistory(
     if (event.kind === 'approval.requested' || event.kind === 'lead.question_asked') day.waited++;
     if (event.kind === 'workflow.step_changed') {
       const run = stepRuns.get(event.aggregate_id)!;
-      if (p.state === 'waiting' && run.step.kind.type === 'approval') day.waited++;
-      // A parallel or loop step fails after its child, whose reason it keeps.
-      if (
-        (p.state === 'failed' || p.state === 'rejected') &&
-        run.step.kind.type !== 'parallel' &&
-        run.step.kind.type !== 'loop'
-      )
+      if (p.state === 'failed')
         stepHandbacks.set(
           boardTaskId(owner(run.lead_session_id), run.task_id),
-          run.step.kind.type === 'review' || run.step.kind.type === 'approval' ? 'review' : 'other',
+          run.step.kind.type === 'review' ? 'review' : 'other',
         );
     }
     if (event.kind === 'session.gate_checked') {
@@ -403,12 +384,7 @@ export function boardHistory(
         key = session?.task
           ? boardTaskId(owner(session.task.lead_session_id), session.task.id)
           : claims.get(turn.session_id);
-      if (
-        key &&
-        turn.origin === 'tracker' &&
-        !turn.input.startsWith(INBOX_HEADER) &&
-        !stepTurns.has(turn.id)
-      ) {
+      if (key && turn.origin === 'tracker' && !turn.input.startsWith(INBOX_HEADER)) {
         const reasons = handbacks.get(key) ?? { gate: 0, review: 0, other: 0 },
           reason = turn.input.startsWith('[Pantheon] The workflow review “')
             ? 'review'

@@ -348,3 +348,142 @@ it('keeps test counts on the gate failure returned with a blocked merge', async 
     tests,
   });
 });
+
+/** Gate commands that each hold until released, counting how many run at the same moment. */
+function heldGateCommands() {
+  const releases: (() => void)[] = [];
+  let running = 0,
+    most = 0;
+  const execute = vi.spyOn(validation, 'runValidationCommand').mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        most = Math.max(most, ++running);
+        releases.push(() => {
+          running--;
+          resolve(validationResult());
+        });
+      }),
+  );
+  const ran = (sessionId: string) =>
+    execute.mock.calls.filter(([input]) => input.key.includes(sessionId)).length;
+  return { releases, ran, most: () => most };
+}
+
+const started = (f: Fixture, sessionId: string) =>
+  payloads(f, sessionId, 'session.gate_started').length;
+
+it('runs at most two gate commands of the daemon at once and runs the third once a slot frees', async () => {
+  const f = await workbenchFixture();
+  const sessions = [await idleSession(f), await idleSession(f), await idleSession(f)];
+  await setGate(f, [{ name: 'Check', argv: ['check'] }]);
+  const gates = heldGateCommands();
+  for (const { session } of sessions) await runGates(f, session.id);
+  await eventually(
+    () =>
+      sessions.every(({ session }) => started(f, session.id) === 1) && gates.releases.length >= 2,
+    () => f.control.tick(),
+    10000,
+  );
+  expect(gates.most()).toBe(2);
+  gates.releases[0]!();
+  await eventually(
+    () => gates.releases.length === 3,
+    () => f.control.tick(),
+    10000,
+  );
+  gates.releases[1]!();
+  gates.releases[2]!();
+  await eventually(
+    () => sessions.every(({ session }) => current(f, session.id).gate_run?.state === 'completed'),
+    () => f.control.tick(),
+    10000,
+  );
+  expect(gates.most()).toBe(2);
+  for (const { session } of sessions)
+    expect(f.control.sessionGates(user, session.id).last!.results).toMatchObject([
+      { name: 'Check', exit_code: 0, timed_out: false },
+    ]);
+});
+
+it('drops a gate cancelled while it waits for a slot without running its command or keeping a slot', async () => {
+  const f = await workbenchFixture();
+  const sessions = [await idleSession(f), await idleSession(f), await idleSession(f)];
+  await setGate(f, [{ name: 'Check', argv: ['check'] }]);
+  const gates = heldGateCommands();
+  for (const { session } of sessions) await runGates(f, session.id);
+  await eventually(
+    () =>
+      sessions.every(({ session }) => started(f, session.id) === 1) && gates.releases.length === 2,
+    () => f.control.tick(),
+    10000,
+  );
+  const waiting = sessions.find(({ session }) => gates.ran(session.id) === 0)!.session;
+  const all = sessions.map(({ session }) => session);
+  f.call('session.gates.cancel', { session_id: waiting.id }, current(f, waiting.id).revision);
+  await eventually(
+    () => current(f, waiting.id).gate_run?.state === 'cancelled',
+    () => f.control.tick(),
+    10000,
+  );
+  expect(gates.ran(waiting.id)).toBe(0);
+  expect(payloads(f, waiting.id, 'session.gate_checked')).toHaveLength(0);
+  gates.releases[0]!();
+  await eventually(
+    () => !f.control.sessionGates(user, waiting.id).running,
+    () => f.control.tick(),
+  );
+  // One gate still holds a slot, so the rerun can start only in the slot the first one freed.
+  await runGates(f, waiting.id);
+  await eventually(
+    () => gates.ran(waiting.id) === 1,
+    () => f.control.tick(),
+    10000,
+  );
+  gates.releases[1]!();
+  gates.releases[2]!();
+  await eventually(
+    () => all.every((session) => current(f, session.id).gate_run?.state === 'completed'),
+    () => f.control.tick(),
+    10000,
+  );
+  for (const session of all)
+    expect(f.control.sessionGates(user, session.id).last!.results).toMatchObject([
+      { name: 'Check', exit_code: 0, timed_out: false },
+    ]);
+});
+
+it('starts a gate command that waited for a slot with the project environment of that moment', async () => {
+  const f = await workbenchFixture();
+  const sessions = [await idleSession(f), await idleSession(f), await idleSession(f)];
+  await setGate(f, [{ name: 'Check', argv: ['check'] }]);
+  const gates = heldGateCommands();
+  for (const { session } of sessions) await runGates(f, session.id);
+  await eventually(
+    () =>
+      sessions.every(({ session }) => started(f, session.id) === 1) && gates.releases.length === 2,
+    () => f.control.tick(),
+    10000,
+  );
+  const project = f.store.must<Project>('projects', f.project.id);
+  await f.call(
+    'project.environment.set',
+    { project_id: project.id, name: project.name, roots: project.roots, env: { GATE_MARK: 'new' } },
+    project.revision,
+  );
+  gates.releases[0]!();
+  await eventually(
+    () => gates.releases.length === 3,
+    () => f.control.tick(),
+    10000,
+  );
+  expect(vi.mocked(validation.runValidationCommand).mock.calls[2]![0].env).toMatchObject({
+    GATE_MARK: 'new',
+  });
+  gates.releases[1]!();
+  gates.releases[2]!();
+  await eventually(
+    () => sessions.every(({ session }) => current(f, session.id).gate_run?.state === 'completed'),
+    () => f.control.tick(),
+    10000,
+  );
+});

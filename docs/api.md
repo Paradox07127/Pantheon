@@ -70,9 +70,6 @@ daemon 只监听 `127.0.0.1`。客户端有桌面端(`apps/desktop`,经 preload 
 
 ## 命令语义要点
 
-- `improvement.list` returns `ImprovementListItem[]`, preserving existing fields. `trial_started_at`, `source` (`daemon` for retrospective signals or `lead`), `retrospective_ids`, and `lead_session_id` already existed; trace analysis is not an improvement source. The added `trial` contains `tasks_seen`, `tasks_required` (10 tasks), and named `metrics` with `unit`, optional `baseline`, and optional `trial` values. These are the evaluator's measurements: token and time totals, task and finding counts, or wakes per task. Missing samples or measurements omit values; `trial.status_reason: "no_baseline"` means the comparison cannot decide. Ended trials retain their evaluated sample; older ended trials use their status-event comparison when available, otherwise retrospectives up to their decision time.
-- `improvement.sessions {project_id, improvement_id}` returns `{session_id, title?, delivered}[]` for non-archived sessions matching an experience's domain, tier and runtime. It also previews scope for candidate or inactive rules. Diagnostic trace sessions are excluded. `delivered` means the rule id was in that session's latest acknowledged memory packet, after its byte budget; older receipts without ids cannot prove delivery. Policy changes configure workflow rather than session instructions and return an empty list.
-- `improvement.decide` with `decision: "reject"` accepts optional `reject_reason` (`duplicate` = duplicate of an existing rule, `not_useful` = not useful) and optional `reject_note` (at most 200 characters after trimming). Both are stored and returned beside `status_reason`; rejecting without either field keeps working.
 - `memory.archive` keeps its record result and adds `archived_ids`: the retracted id and every record made stale by that retraction, including transitive dependents. The durable journal records their previous states; records already invalid before the retraction are not part of its undo.
 - `memory.undo_retraction {memory_id}` is user-only and uses the archived root's `expected_revision`. It returns `{restored_ids, skipped: [{memory_id, reason}]}`, where reasons are `changed` (revision changed after retraction) or `replaced` (a newer version of that scope was committed). It restores the same ids and prior lifecycle states, including drafts. `memory_not_retracted` refuses expired, superseded, stale or legacy archives without a retraction journal; `memory_retraction_replaced` refuses a newer committed version of the root key and task scope, even if that version was later archived. Both retraction and undo are atomic command transactions. Undo emits `memory.retraction_undone`, shown by `memory.recent` as `retraction_undone`. The existing `memory.restore` still creates a new draft for review.
 
@@ -116,25 +113,14 @@ daemon 只监听 `127.0.0.1`。客户端有桌面端(`apps/desktop`,经 preload 
 - `board.view.leads[].messages_today[].gates` counts gate runs started by the session today, including failed and cancelled runs; zero is omitted.
 - `board.view.leads[].messages_today[].in_flight` names moving lines as `lead`, `subagent`, `review` or `gate`; pending or queued dispatch/message delivery, an unfinished sub-agent call in a running turn, a running review, or an unfinished gate run qualifies. Empty lists are omitted; sessions with only moving lines still have rows.
 - `board.view.leads[].events_today` lists `{ at, kind, session_id }` for task-session handbacks (`handback`) and model changes (`model_change`), in epoch milliseconds and time order, keeping the newest 200; empty lists are omitted. These daily fields use local midnight through the read time, independent of the board range.
-- `improvement.signals[].evidence.rule` is the newest command approval's reusable permission rule key, present only when that approval supports a project rule.
-- `improvement.signals[].evidence.session_id` is the source session of that newest command approval, present together with `rule` only when it supports a project rule.
 - `board.view.counts.session_time { sessions, working_ms, waiting_ms, gate_ms, queue_ms }` gives the per-part median milliseconds over workbench sessions merged in the range, from each session's first event to its merge; it is absent without merges. Open approvals or questions take precedence, then a gate or merge, then review after a successful turn when nothing runs, then a running turn, then queue. Overlapping user waits count once, with approval before question before review.
 - `board.view.counts.previous.session_time` gives the same median parts and session count for sessions merged in the preceding range; it is absent without such sessions.
 - `board.view.counts.wait_by_reason_ms { approval?, review?, question? }` totals project session wait milliseconds intersecting the chosen range, including still-open waits through the range end; zero reasons and an empty object are omitted. Questions include both AskUserQuestion approvals and lead questions; review begins after a successful turn and ends when work, a gate or a merge begins, or the session ends.
-- `improvement.signals[].evidence` is optional: `always_approved_command` carries `{ kind, command, approvals }` for a command with at least five user approvals, no refusals in the last seven days and no covering project permission rule; `late_gate_failure` carries `{ kind, name, runs, median_prior_ms }` for a non-first command failing in at least three runs in that window, each after all predecessors executed and passed. Carried results are not executions. Commands use retained permission-request input, not truncated approval summaries. Both signals have empty `retrospective_ids` and no `suggestion`.
 - `board.view.gate_failures` lists command names that failed at least twice among gate runs completed in the chosen board range, ordered by descending `failed_runs` then name, limited to ten. Each row contains `{ name, failed_runs, runs, flaky }`; `flaky` means one commit has both a failed and passed execution of the named command in the range. Carried results are not executions and are excluded. The field is absent when no command qualifies.
 - `project.gates.history {project_id, since?, limit?}` accepts an optional epoch-millisecond `since`. With it, runs starting at or after that instant are returned newest by start first, with `limit` up to 500. Without it, the existing newest-completed-first order, default of 30 and maximum of 100 remain.
 - Gate commands accept `enabled` (default `true`) and `skippable` (default `false`). Disabled commands produce no result or count. Failed skippable commands retain their exit code and reason with `state: skipped`; they never count as passed. `session.gate_step_checked` updates the session list's completed counts while later commands run.
 - `workflow.policy.set` accepts `gate_on_fail: handback | retry | stop` and `gate_runner: daemon | session`, defaulting to `handback` and `daemon`. Retry repeats each failed command once without repeating successes. Stop uses the same user escalation as `handback_limit: 0`. Session gates run in the local session workspace; remote session execution is refused with `unsupported_capability` because the existing device helper has no bounded exit-code executor.
-- Definitions have project-unique names and stable IDs. The original definition is `Default`; omitted IDs select the current default. `workflow.definition.list`, `workflow.definition.save_as`, and `workflow.definition.set_default` manage named definitions. A plan task's optional `workflow_id` selects its definition; running sessions pin its ID and version.
-- `workflow.definition.set { trial_tasks: 1..20 }` enrolls the next tasks reaching the first changed slot (or before dispatch for changes confined to fixed-step settings). Other tasks keep the previous definition. `trial { tasks, done, previous_version }` reports progress; completed trials add a `workflow.definition.trial` needs-you item, decided with `workflow.definition.trial.decide { project_id, id?, decision: keep | revert }`. Done counts enrolled tasks whose changed-slot runs have ended. Enrolled task versions remain pinned after either decision.
 - The `parallel` task path uses the plan task's `parallel` array of 2–4 `{ title, goal, scope, acceptance }` parts. Each part runs in its own session and worktree; existing source merge queues land them in sequence. All parts must fit the configured project, runtime and device capacity; a four-part split therefore needs at least four session places.
-- Steps accept `when: { changed_paths: string[] }` with at most 16 Git-diff path globs. Unmatched conditions record `skipped` with reason `condition`; before-dispatch steps have no task diff. Parallel step groups contain 2–4 leaf steps and fail if any child fails. Loop groups contain one leaf step, `max: 1..5` and `until: passes`; skipped inner steps skip the loop. Parallel and loop groups cannot nest. Child runs and loop attempts are persisted for recovery and approval decisions.
-- `workflow.definition.step_results` optionally maps listed slot step ids to their results over the last 30 local calendar days through the read time. Results are per workflow: they count only that workflow's own step runs, and runs recorded without a workflow id count for the original `Default` workflow; steps without an ended first attempt in that period are omitted, as is an empty map. The editable `definition` is unchanged.
-- `workflow.definition.fixed_steps[].result` optionally gives the same result for `gate` and `review`. The gate shares `board.view.counts.gate_first_pass`'s newest-task-retrospective rule and recording time, including failed tasks without a successful gate attempt. Reviews use the first round for a task, or for a standalone session; plan reviews are excluded.
-- A workflow result's `tasks` counts ended first attempts in the period. Slot steps use their first run's `created_at`, reviews their first `review.requested` time; task identity is the lead and task id across generations. Pending, running and waiting first attempts do not count.
-- A workflow result's `passed` counts first attempts that passed: slot steps retain their first terminal event's state across retries, and reviews must complete without a valid blocking finding, even if that finding was later resolved or became stale.
-- A workflow result's `buckets` contains six `{ tasks, passed }` counts for consecutive five-local-day windows, oldest first, with zeros for empty windows; the buckets sum to the result totals. Local calendar boundaries follow `board.view { days: 30 }`, including daylight saving changes.
 
 ## Project workbench settings
 
@@ -244,11 +230,6 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
   also uses its fallback at the existing quota threshold check; a limited fallback still waits.
   Reviewer selection tries its fallback after the preferred reviewer fails admission. These settings
   add no installation, authentication or connection probes and do not transfer running native sessions.
-- `routing.set` sets or clears (`choice: null`) one `(domain, tier, slot)` override. A cell absent
-  from the table returns `not_found`; unknown domains, tiers or slots return `invalid_input`.
-  Each returned choice has `first_source` or `alternate_source` (`user` or `records`). Candidates
-  retain local run count `n` and success count `s`, with `success_rate: s / n` or `null` without runs;
-  `p` remains the posterior score. A single-model project's first choice is marked `user`.
 - `project.usageTargets.set` merges `targets: { [runtime]: number | null }`; `null` clears a target.
   `project.read.project.usage_targets` returns the stored targets, absent when none remain. Values
   are nonnegative whole tokens; negative and fractional values return `invalid_input`.
@@ -325,6 +306,15 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `change_story.revert_patch` | `story_id`: string<br>`card`: integer |  |
 | `change_story.start` | `session_id`: string |  |
 | `change_story.submit` | `overall`: object<br>`cards`: object[]<br>`noise`: string[]<br>`story_id`: string | change_story_submit (project session) |
+
+### conductor
+
+| type | input | MCP 工具 |
+|---|---|---|
+| `conductor.ready` | — | report_ready (conductor) |
+| `conductor.review` | `runtimes`: string[]<br>`session_id?`: string | request_review (conductor) |
+| `conductor.spawn` | `runtime`: string<br>`input`: string<br>`model?`: string<br>`effort?`: "none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max" \| "ultra" | spawn_session (conductor) |
+| `conductor.state` | — | read_state (conductor) |
 
 ### device
 
@@ -415,15 +405,6 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `personal.key.create` | `label`: string |  |
 | `personal.key.revoke` | `key_id`: string |  |
 
-### playbook
-
-| type | input | MCP 工具 |
-|---|---|---|
-| `playbook.export` | `project_id`: string<br>`runtime?`: string<br>`version`: integer |  |
-| `playbook.get` | `project_id`: string<br>`runtime?`: string<br>`version?`: integer |  |
-| `playbook.remove` | `project_id`: string<br>`runtime?`: string<br>`base_version`: integer |  |
-| `playbook.set` | `project_id`: string<br>`runtime?`: string<br>`base_version`: integer<br>`sections`: object |  |
-
 ### project.autoMerge
 
 | type | input | MCP 工具 |
@@ -498,6 +479,12 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `project.intro.start` | `project_id`: string |  |
 | `project.intro.submit` | `summary`: string<br>`sources`: string[]<br>`features`: object[]<br>`modules`: object[]<br>`architecture?`: object<br>`body?`: string | project_intro_submit (project session) |
 
+### project.land
+
+| type | input | MCP 工具 |
+|---|---|---|
+| `project.land` | `root`: string<br>`branch`: string<br>`message?`: string |  |
+
 ### project.open
 
 | type | input | MCP 工具 |
@@ -508,7 +495,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
-| `project.override.clear` | `project_id`: string<br>`key`: "workflow_policy" \| "session_defaults" \| "usage_targets" \| "external_events" \| "auto_merge"<br>`param?`: "improvement_mode" \| "plan_changes" \| "charter" \| "must_ask_extra" \| "urgent_direct" \| "path" \| "acceptance_wake" \| "max_parallel" \| "max_parallel_limit" \| "runtime_parallel" \| "dispatch_paused" \| "runtime_quota_threshold" \| "gate_on_fail" \| "gate_runner" \| "handback_limit" \| "task_size_hint" \| "budget" \| "pinned" |  |
+| `project.override.clear` | `project_id`: string<br>`key`: "workflow_policy" \| "session_defaults" \| "usage_targets" \| "external_events" \| "auto_merge"<br>`param?`: "plan_changes" \| "charter" \| "must_ask_extra" \| "urgent_direct" \| "path" \| "acceptance_wake" \| "max_parallel" \| "max_parallel_limit" \| "runtime_parallel" \| "dispatch_paused" \| "runtime_quota_threshold" \| "gate_on_fail" \| "gate_runner" \| "handback_limit" \| "task_size_hint" \| "budget" \| "pinned" |  |
 
 ### project.read
 
@@ -566,6 +553,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 |---|---|---|
 | `review.finding` | `location`: string<br>`quote`: string<br>`evidence`: string<br>`impact`: string<br>`blocking`: boolean<br>`reproduction?`: object | review_finding (reviewer) |
 | `review.finding.resolve` | `review_id`: string<br>`finding_id`: string<br>`outcome`: "adopted" \| "dismissed"<br>`note?`: string |  |
+| `review.range` | `root`: string<br>`base`: string<br>`head?`: string<br>`runtimes?`: string[] |  |
 | `review.request` | `session_id`: string<br>`runtimes`: string[] | request_review (lead) |
 | `review.verdict` | `verdict`: "pass" \| "fail"<br>`summary`: string | review_verdict (reviewer) |
 
@@ -588,7 +576,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `session.comment.delete` | `comment_id`: string |  |
 | `session.comment.resolve` | `comment_id`: string<br>`state`: "sent" \| "kept" |  |
 | `session.compact` | `session_id`: string<br>`instructions?`: string |  |
-| `session.create` | `project_id`: string<br>`workspace?`: "worktree" \| "in_place" \| "auto"<br>`from?`: object \| object<br>`runtime?`: string<br>`backend?`: string<br>`model?`: string<br>`effort?`: "none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max" \| "ultra"<br>`permission_mode?`: "ask" \| "auto_edit" \| "plan" \| "auto" \| "full_access"<br>`fast?`: boolean<br>`ultracode?`: boolean<br>`input`: string<br>`refs?`: (object \| object)[]<br>`attachments?`: string[]<br>`skills?`: object[]<br>`task_id?`: string<br>`device_id?`: string<br>`purpose?`: "project_setup" \| "lead" |  |
+| `session.create` | `project_id`: string<br>`workspace?`: "worktree" \| "in_place" \| "auto"<br>`from?`: object \| object<br>`runtime?`: string<br>`backend?`: string<br>`model?`: string<br>`effort?`: "none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max" \| "ultra"<br>`permission_mode?`: "ask" \| "auto_edit" \| "plan" \| "auto" \| "full_access"<br>`fast?`: boolean<br>`ultracode?`: boolean<br>`input`: string<br>`refs?`: (object \| object)[]<br>`attachments?`: string[]<br>`skills?`: object[]<br>`task_id?`: string<br>`device_id?`: string<br>`purpose?`: "project_setup" \| "lead" \| "conductor" |  |
 | `session.delete` | `session_id`: string |  |
 | `session.discard` | `session_id`: string |  |
 | `session.fork` | `session_id`: string<br>`runtime?`: string<br>`model?`: string<br>`effort?`: "none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max" \| "ultra"<br>`before_turn_id?`: string<br>`before_span_id?`: string<br>`input`: string<br>`refs?`: (object \| object)[]<br>`attachments?`: string[]<br>`skills?`: object[] |  |
@@ -670,14 +658,8 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
-| `workflow.definition.save_as` | `project_id`: string<br>`from_id?`: string<br>`name`: string |  |
-| `workflow.definition.set` | `project_id`: string<br>`id?`: string<br>`definition`: object<br>`trial_tasks?`: integer<br>`base_version`: integer |  |
-| `workflow.definition.set_default` | `project_id`: string<br>`id`: string |  |
-| `workflow.definition.trial.decide` | `project_id`: string<br>`id?`: string<br>`decision`: "keep" \| "revert" |  |
 | `workflow.policy.reset` | `project_id`: string |  |
-| `workflow.policy.set` | `project_id`: string<br>`improvement_mode?`: "auto" \| "confirm" \| "off"<br>`plan_changes?`: "auto" \| "confirm"<br>`charter?`: object<br>`must_ask_extra?`: string[]<br>`question_defaults?`: object \| null<br>`urgent_direct?`: "main_gate_failed"[]<br>`path?`: object<br>`acceptance_wake?`: "each_merge" \| "milestone"<br>`max_parallel?`: integer<br>`max_parallel_limit?`: integer<br>`runtime_parallel?`: object<br>`dispatch_paused?`: boolean<br>`runtime_quota_threshold?`: number<br>`gate_on_fail?`: "handback" \| "retry" \| "stop"<br>`gate_runner?`: "daemon" \| "session"<br>`milestone_verify?`: "off" \| "auto"<br>`recovery_switch?`: "off" \| "auto"<br>`eval_runner?`: "off" \| "on"<br>`handback_limit?`: 0 \| integer<br>`task_size_hint?`: integer \| null<br>`budget?`: object<br>`project_budget?`: object \| null<br>`pinned?`: ("path" \| "acceptance_wake" \| "max_parallel" \| "handback_limit" \| "task_size_hint" \| "runtime_quota_threshold" \| "budget")[] |  |
-| `workflow.step.decide` | `step_run_id`: string<br>`decision`: "approve" \| "reject"<br>`reason?`: string |  |
-| `workflow.step.verdict` | `verdict`: "pass" \| "fail"<br>`summary`: string<br>`evidence`: object[] | step_verdict (lead), step_verdict (worker) |
+| `workflow.policy.set` | `project_id`: string<br>`plan_changes?`: "auto" \| "confirm"<br>`charter?`: object<br>`must_ask_extra?`: string[]<br>`question_defaults?`: object \| null<br>`urgent_direct?`: "main_gate_failed"[]<br>`path?`: object<br>`acceptance_wake?`: "each_merge" \| "milestone"<br>`max_parallel?`: integer<br>`max_parallel_limit?`: integer<br>`runtime_parallel?`: object<br>`dispatch_paused?`: boolean<br>`runtime_quota_threshold?`: number<br>`gate_on_fail?`: "handback" \| "retry" \| "stop"<br>`gate_runner?`: "daemon" \| "session"<br>`milestone_verify?`: "off" \| "auto"<br>`recovery_switch?`: "off" \| "auto"<br>`handback_limit?`: 0 \| integer<br>`task_size_hint?`: integer \| null<br>`budget?`: object<br>`project_budget?`: object \| null<br>`pinned?`: ("path" \| "acceptance_wake" \| "max_parallel" \| "handback_limit" \| "task_size_hint" \| "runtime_quota_threshold" \| "budget")[] |  |
 
 ### workspace
 
@@ -712,7 +694,6 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `github.items` | `project_id`: string<br>`kind`: "pr" \| "issue" |
 | `github.pr.detail` | `project_id`: string<br>`number`: integer |
 | `import.candidates` | — |
-| `improvement.signals` | `project_id`: string |
 | `mcp.app.resource` | `session_id`: string<br>`server`: string<br>`uri`: string |
 | `mcp.status` | `project_id`: string<br>`runtime`: string<br>或<br>`session_id`: string |
 | `memory.document` | `project_id`: string |
@@ -737,6 +718,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `project.head` | `project_id`: string |
 | `project.heatmap` | `project_id`: string<br>`days?`: "7" \| "30" \| "90" \| "all" |
 | `project.intro.read` | `project_id`: string |
+| `project.landing.read` | `landing_id`: string |
 | `project.read` | `project_id`: string |
 | `project.review.metrics` | `project_id`: string |
 | `project.timeline` | `project_id`: string<br>`since?`: string |
@@ -744,7 +726,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `project.trace.stats` | `project_id`: string<br>`since`: number<br>`until`: number |
 | `project.usage.read` | `project_id`: string |
 | `projects.summary` | — |
-| `retrospective.list` | `project_id`: string<br>`task_id?`: string |
+| `review.read` | `review_id`: string |
 | `runtime.models` | `project_id`: string<br>`runtime`: string |
 | `runtime.status` | `refresh?`: string |
 | `session.activity` | `session_id`: string |
@@ -770,8 +752,6 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `task.trace` | `project_id`: string<br>`lead_session_id`: string<br>`task_id`: string |
 | `tool.calls` | `project_id`: string<br>`command?`: string<br>`limit?`: integer |
 | `trace.time` | `project_id`: string<br>`lane_key?`: string<br>`from?`: string<br>`to?`: string |
-| `workflow.definition` | `project_id`: string<br>`id?`: string |
-| `workflow.definition.list` | `project_id`: string |
 | `workflow.policy` | `project_id`: string |
 | `workspace.stale` | `project_id`: string |
 

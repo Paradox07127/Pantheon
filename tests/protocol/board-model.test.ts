@@ -6,7 +6,6 @@ import {
   type BoardModel,
   type BoardSegment,
   type BoardWaiting,
-  type ImprovementSignalFinding,
   type StaleWorkspaces,
   type WorkbenchSession,
 } from '@pantheon/protocol';
@@ -234,20 +233,6 @@ it('types optional digest time partitions and user wait reasons', () => {
   >();
   expectTypeOf<BoardModel['counts']['wait_by_reason_ms']>().toEqualTypeOf<
     { approval?: number; review?: number; question?: number } | undefined
-  >();
-});
-
-it('types optional command approval and late gate evidence on signal findings', () => {
-  expectTypeOf<ImprovementSignalFinding['evidence']>().toEqualTypeOf<
-    | {
-        kind: 'always_approved_command';
-        command: string;
-        approvals: number;
-        rule?: string;
-        session_id?: string;
-      }
-    | { kind: 'late_gate_failure'; name: string; runs: number; median_prior_ms: number }
-    | undefined
   >();
 });
 

@@ -12,8 +12,6 @@ import type {
   SessionHandle,
   StepRun,
   UserTurn,
-  WorkflowDefinition,
-  WorkflowStep,
   Workspace,
 } from '@pantheon/domain';
 import * as validation from '../../packages/control/dist/validation-executor.js';
@@ -21,11 +19,6 @@ import { eventually, settle, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
 type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
-const empty = (): WorkflowDefinition => ({
-  slots: { before_dispatch: [], before_merge: [], after_merge: [] },
-  plan_review: { tiers: ['t3'] },
-  review: { max_rounds: 3 },
-});
 const current = (f: Fixture, id: string) => f.store.must<Session>('sessions', id);
 const runs = (f: Fixture) => f.store.list<StepRun>('workflow_step_runs');
 const principal = (f: Fixture, id: string, role: 'lead' | 'worker' | 'reviewer'): Principal => ({
@@ -38,16 +31,8 @@ const principal = (f: Fixture, id: string, role: 'lead' | 'worker' | 'reviewer')
 const workerOf = (f: Fixture, lead: Session) =>
   f.store.list<Session>('sessions').find((s) => s.task?.lead_session_id === lead.id)!;
 const script = (...steps: object[]) => `fixture-script\n${JSON.stringify(steps)}`;
-/** A turn that runs one shell command, then stays running long enough to hand in a verdict. */
-const shellTurn = (command: string) =>
-  script({ trace: { tool: 'Bash', input: { command } } }, { wait: 2000 });
-const verdictStep = (prompt: string, target?: 'lead'): WorkflowStep => ({
-  id: 'check',
-  title: 'Check the export',
-  kind: { type: 'prompt', prompt, expects: 'verdict', ...(target ? { target } : {}) },
-});
 
-async function setup(definition: WorkflowDefinition) {
+async function setup(fields: Partial<BoardPlan['tasks'][number]> = {}) {
   vi.spyOn(validation, 'runValidationCommand').mockResolvedValue({
     exit_code: 0,
     signal: null,
@@ -72,11 +57,6 @@ async function setup(definition: WorkflowDefinition) {
   git(f.source, 'config', 'user.email', 'source@example.invalid');
   const lead = await f.create('Plan the export');
   await settle(f, lead);
-  await f.call('workflow.definition.set', {
-    project_id: f.project.id,
-    definition,
-    base_version: 0,
-  });
   f.store.insert<BoardPlan>('board_plans', {
     id: lead.id,
     revision: 1,
@@ -95,6 +75,7 @@ async function setup(definition: WorkflowDefinition) {
         acceptance: ['true'],
         path: 'dispatch',
         kind: { tier: 't2', domain: 'backend-logic' },
+        ...fields,
       },
     ],
     risks: [],
@@ -142,333 +123,6 @@ const merged = (f: Fixture, worker: Session) =>
     10000,
   );
 
-/** Waits until the step's turn is running and has recorded its shell call. */
-const shellRan = (f: Fixture, sessionId: string) =>
-  eventually(
-    () => {
-      const run = runs(f)[0];
-      return (
-        run?.state === 'running' &&
-        f.store.db
-          .prepare(
-            "SELECT 1 FROM events WHERE aggregate_id=? AND kind='agent.tool.started' AND payload ->> '$.turn_id'=?",
-          )
-          .get(sessionId, run.turn_id!) !== undefined
-      );
-    },
-    () => f.control.tick(),
-    10000,
-  );
-
-const verdict = (
-  f: Fixture,
-  sessionId: string,
-  role: 'lead' | 'worker',
-  input: { verdict: 'pass' | 'fail'; summary: string; evidence: { kind: string; ref: string }[] },
-) =>
-  f.call<NonNullable<StepRun['verdict']>>(
-    'workflow.step.verdict',
-    input,
-    null,
-    principal(f, sessionId, role),
-  );
-
-/** A verdict step before the merge whose turn ended without a verdict, once the merge after that turn stopped at it. */
-async function inconclusive() {
-  const definition = empty();
-  definition.slots.before_merge = [verdictStep('Check that the export keeps the header row')];
-  const { f, lead } = await setup(definition);
-  const worker = await build(f, lead);
-  await eventually(
-    () => runs(f)[0]?.state === 'inconclusive' && current(f, worker.id).merge?.state === 'blocked',
-    () => f.control.tick(),
-    10000,
-  );
-  for (let i = 0; i < 3; i++) await f.control.tick();
-  return { f, lead, worker, run: runs(f)[0]! };
-}
-
-it('holds the merge of a verdict step whose turn ends without a verdict and asks the user', async () => {
-  const { f, worker, run } = await inconclusive();
-  expect(f.turns(worker.id).find((t) => t.id === run.turn_id)!.input).toContain('step_verdict');
-  expect(current(f, worker.id)).toMatchObject({
-    merge: { state: 'blocked', reason: 'workflow_approval' },
-  });
-  expect(current(f, worker.id).outcome).toBeUndefined();
-  expect(
-    f.control.needsYou(user, f.project.id).items.find((i) => i.source.id === run.id),
-  ).toMatchObject({
-    kind: 'workflow.approval',
-    status: 'inconclusive',
-    step_title: 'Check the export',
-    actions: [
-      { command: 'workflow.step.decide', decision: 'approve', allowed: true },
-      { command: 'workflow.step.decide', decision: 'reject', allowed: true },
-    ],
-  });
-});
-
-it('holds the merge of an inconclusive verdict step behind a project gate and shows its task waiting for approval', async () => {
-  const definition = empty();
-  definition.slots.before_merge = [verdictStep('Check that the export keeps the header row')];
-  const { f, lead } = await setup(definition);
-  const project = f.store.must<Project>('projects', f.project.id);
-  f.call(
-    'project.gate.set',
-    {
-      project_id: project.id,
-      root: f.source,
-      commands: [{ name: 'Passes', argv: [process.execPath, '-e', 'process.exit(0)'] }],
-    },
-    project.revision,
-  );
-  const worker = await build(f, lead);
-  await eventually(
-    () => runs(f)[0]?.state === 'inconclusive',
-    () => f.control.tick(),
-    10000,
-  );
-  const seen: (string | undefined)[] = [];
-  await eventually(
-    () => {
-      seen.push(current(f, worker.id).merge?.state);
-      return (
-        seen.length > 3 &&
-        current(f, worker.id).merge?.state !== 'running' &&
-        !f.store.pending().some((job) => job.kind === 'session.merge')
-      );
-    },
-    () => f.control.tick(),
-    10000,
-  );
-  expect(seen).not.toContain('running');
-  expect(current(f, worker.id).merge).toMatchObject({
-    state: 'blocked',
-    reason: 'workflow_approval',
-  });
-  expect(
-    f.control.boardView(user, f.project.id, 1).tasks.find((t) => t.id === `${lead.id}:export`),
-  ).toMatchObject({ state: 'waiting_approval' });
-});
-
-it('passes an inconclusive step the user approves and merges, and refuses the lead', async () => {
-  const { f, lead, worker, run } = await inconclusive();
-  expect(() =>
-    f.call(
-      'workflow.step.decide',
-      { step_run_id: run.id, decision: 'approve' },
-      null,
-      principal(f, lead.id, 'lead'),
-    ),
-  ).toThrowError(expect.objectContaining({ code: 'permission_denied' }));
-  f.call('workflow.step.decide', { step_run_id: run.id, decision: 'approve' });
-  expect(f.store.must<StepRun>('workflow_step_runs', run.id).state).toBe('passed');
-  await merged(f, worker);
-});
-
-it('passes a verdict step on a pass whose command ran in its turn, and merges', async () => {
-  const definition = empty();
-  definition.slots.before_merge = [verdictStep(shellTurn('pnpm test --filter export'))];
-  const { f, lead } = await setup(definition);
-  const worker = await build(f, lead);
-  await shellRan(f, worker.id);
-  expect(
-    verdict(f, worker.id, 'worker', {
-      verdict: 'pass',
-      summary: 'The export tests pass',
-      evidence: [{ kind: 'command', ref: 'pnpm   test --filter export' }],
-    }),
-  ).toMatchObject({
-    verdict: 'pass',
-    evidence: [{ kind: 'command', ref: 'pnpm   test --filter export', checked: true }],
-    session_id: worker.id,
-    turn_id: runs(f)[0]!.turn_id,
-  });
-  await merged(f, worker);
-  expect(runs(f)[0]!.state).toBe('passed');
-});
-
-it("fails a verdict step on a fail and quotes its summary in the lead's blocked note", async () => {
-  const definition = empty();
-  definition.slots.before_merge = [verdictStep(shellTurn('pnpm test'))];
-  const { f, lead } = await setup(definition);
-  const worker = await build(f, lead);
-  await shellRan(f, worker.id);
-  verdict(f, worker.id, 'worker', {
-    verdict: 'fail',
-    summary: 'The export drops the header row',
-    evidence: [{ kind: 'command', ref: 'pnpm test' }],
-  });
-  await eventually(
-    () => runs(f)[0]?.state === 'failed',
-    () => f.control.tick(),
-    10000,
-  );
-  expect(
-    f.store.kindEvents(f.project.id, ['lead.note_added']).map((e) => e.payload as LeadNote),
-  ).toContainEqual(
-    expect.objectContaining({
-      kind: 'blocked',
-      text: expect.stringContaining('The export drops the header row'),
-    }),
-  );
-  expect(current(f, worker.id).outcome).toBeUndefined();
-});
-
-it('refuses evidence naming a command its turn did not run', async () => {
-  const definition = empty();
-  definition.slots.before_dispatch = [verdictStep(shellTurn('pnpm test'), 'lead')];
-  const { f, lead } = await setup(definition);
-  startTask(f, lead);
-  await shellRan(f, lead.id);
-  expect(() =>
-    verdict(f, lead.id, 'lead', {
-      verdict: 'fail',
-      summary: 'Lint reports two errors',
-      evidence: [{ kind: 'command', ref: 'pnpm lint' }],
-    }),
-  ).toThrowError(
-    expect.objectContaining({
-      code: 'invalid_input',
-      message: expect.stringContaining('pnpm test'),
-    }),
-  );
-  expect(runs(f)[0]).not.toHaveProperty('verdict');
-});
-
-it('lists only the last ten commands of the turn in a refusal and counts the earlier ones', async () => {
-  const commands = Array.from(
-    { length: 12 },
-    (_, i) => `echo step-${String(i + 1).padStart(2, '0')}`,
-  );
-  const definition = empty();
-  definition.slots.before_dispatch = [
-    verdictStep(
-      script(...commands.map((command) => ({ trace: { tool: 'Bash', input: { command } } })), {
-        wait: 2000,
-      }),
-      'lead',
-    ),
-  ];
-  const { f, lead } = await setup(definition);
-  startTask(f, lead);
-  await eventually(
-    () => {
-      const run = runs(f)[0];
-      return (
-        run?.state === 'running' &&
-        (
-          f.store.db
-            .prepare(
-              "SELECT count(*) AS n FROM events WHERE aggregate_id=? AND kind='agent.tool.started' AND payload ->> '$.turn_id'=?",
-            )
-            .get(lead.id, run.turn_id!) as { n: number }
-        ).n === 12
-      );
-    },
-    () => f.control.tick(),
-    10000,
-  );
-  let message = '';
-  try {
-    verdict(f, lead.id, 'lead', {
-      verdict: 'fail',
-      summary: 'Lint reports two errors',
-      evidence: [{ kind: 'command', ref: 'pnpm lint' }],
-    });
-  } catch (error) {
-    message = (error as Error).message;
-  }
-  expect(message).toContain(`(2 earlier commands not shown) ${commands.slice(2).join('; ')}`);
-  expect(message).not.toContain('echo step-02');
-});
-
-it('treats a shell call without command text as no command, so a pass with an unchecked item is accepted', async () => {
-  const definition = empty();
-  definition.slots.before_dispatch = [
-    verdictStep(script({ trace: { tool: 'Bash', input: {} } }, { wait: 2000 }), 'lead'),
-  ];
-  const { f, lead } = await setup(definition);
-  startTask(f, lead);
-  await shellRan(f, lead.id);
-  expect(
-    verdict(f, lead.id, 'lead', {
-      verdict: 'pass',
-      summary: 'The tests pass',
-      evidence: [{ kind: 'command', ref: 'pnpm test' }],
-    }),
-  ).toMatchObject({ evidence: [{ kind: 'command', ref: 'pnpm test', checked: false }] });
-});
-
-it.each([
-  ['without expects', {}],
-  ['expecting its turn', { expects: 'turn' as const }],
-])('refuses a verdict for a running prompt step %s', async (_, fields) => {
-  const definition = empty();
-  definition.slots.before_dispatch = [
-    {
-      id: 'brief',
-      title: 'Brief the lead',
-      kind: { type: 'prompt', prompt: shellTurn('pnpm test'), target: 'lead', ...fields },
-    },
-  ];
-  const { f, lead } = await setup(definition);
-  startTask(f, lead);
-  await shellRan(f, lead.id);
-  expect(() =>
-    verdict(f, lead.id, 'lead', {
-      verdict: 'pass',
-      summary: 'The tests pass',
-      evidence: [{ kind: 'command', ref: 'pnpm test' }],
-    }),
-  ).toThrowError(
-    expect.objectContaining({
-      code: 'invalid_state',
-      message: expect.stringContaining('does not ask for a verdict'),
-    }),
-  );
-  expect(runs(f)[0]).not.toHaveProperty('verdict');
-});
-
-it('refuses a verdict from a session that is not the step target', async () => {
-  const definition = empty();
-  definition.slots.before_merge = [verdictStep(shellTurn('pnpm test'))];
-  const { f, lead } = await setup(definition);
-  const worker = await build(f, lead);
-  await shellRan(f, worker.id);
-  expect(() =>
-    verdict(f, lead.id, 'lead', {
-      verdict: 'pass',
-      summary: 'The tests pass',
-      evidence: [{ kind: 'command', ref: 'pnpm test' }],
-    }),
-  ).toThrowError(expect.objectContaining({ code: 'invalid_state' }));
-});
-
-it.each([
-  ['without expects', {}],
-  ['expecting its turn', { expects: 'turn' as const }],
-])('passes a prompt step %s once its turn completes', async (_, fields) => {
-  const definition = empty();
-  definition.slots.before_dispatch = [
-    {
-      id: 'brief',
-      title: 'Brief the lead',
-      kind: { type: 'prompt', prompt: 'Brief the lead on the export', target: 'lead', ...fields },
-    },
-  ];
-  const { f, lead } = await setup(definition);
-  startTask(f, lead);
-  await eventually(
-    () => runs(f)[0]?.state === 'passed',
-    () => f.control.tick(),
-    10000,
-  );
-  expect(f.turns(lead.id).find((t) => t.id === runs(f)[0]!.turn_id)!.input).toBe(
-    'Brief the lead on the export',
-  );
-});
-
 /** A reviewer that replies with one line, then stays running long enough to hand in a verdict. */
 class ReplyingReviewer extends FixtureAdapter {
   override send(handle: SessionHandle, turn: UserTurn) {
@@ -486,18 +140,13 @@ class SilentReviewer extends FixtureAdapter {
   }
 }
 
-/** A review step before the merge, once its reviewer on another runtime is running. */
-async function reviewing(
-  Reviewer: typeof FixtureAdapter = ReplyingReviewer,
-  blocking = true,
-  maxRounds = 3,
-) {
-  const definition = empty();
-  definition.review.max_rounds = maxRounds;
-  definition.slots.before_merge = [
-    { id: 'second-look', title: 'Review the diff', kind: { type: 'review', blocking } },
-  ];
-  const { f, lead } = await setup(definition);
+/** The review a review loop task gets before the merge, once its reviewer on another runtime is running. */
+async function reviewingLoop(Reviewer: typeof FixtureAdapter = ReplyingReviewer) {
+  const { f, lead } = await setup({ path: 'review_loop' });
+  return reviewerRunning(f, lead, Reviewer);
+}
+
+async function reviewerRunning(f: Fixture, lead: Session, Reviewer: typeof FixtureAdapter) {
   const reviewer = new Reviewer(1);
   reviewer.name = 'reviewer';
   f.control.adapters.set(reviewer.name, reviewer);
@@ -512,7 +161,7 @@ async function reviewing(
 }
 
 it("fails a blocking review step on a reviewer's fail verdict without findings and quotes its summary to the lead", async () => {
-  const { f, worker, review, reviewerId } = await reviewing();
+  const { f, worker, review, reviewerId } = await reviewingLoop();
   f.call(
     'review.verdict',
     { verdict: 'fail', summary: 'The export drops the header row' },
@@ -538,7 +187,7 @@ it("fails a blocking review step on a reviewer's fail verdict without findings a
 });
 
 it('fails a blocking review step whose reviewer hands in no verdict and wakes the lead with its name', async () => {
-  const { f, lead, worker, review } = await reviewing();
+  const { f, lead, worker, review } = await reviewingLoop();
   await eventually(
     () => ['passed', 'failed'].includes(runs(f)[0]?.state ?? ''),
     () => f.control.tick(),
@@ -581,7 +230,7 @@ const stepFailed = (f: Fixture) =>
   );
 
 it("runs a review step whose reviewer handed in no verdict again on the lead's request_review, and merges once it passes", async () => {
-  const { f, lead, worker, review } = await reviewing();
+  const { f, lead, worker, review } = await reviewingLoop();
   await stepFailed(f);
   const failed = runs(f)[0]!,
     first = review();
@@ -636,7 +285,7 @@ async function failedByVerdict(f: Fixture, reviewerId: string) {
 }
 
 it("sends a reviewer's fail verdict and open findings to the task session on the lead's request_review, and reviews again after its turn", async () => {
-  const { f, lead, worker, review, reviewerId } = await reviewing();
+  const { f, lead, worker, review, reviewerId } = await reviewingLoop();
   const first = review();
   f.store.update<Review>(
     'reviews',
@@ -697,7 +346,7 @@ it("sends a reviewer's fail verdict and open findings to the task session on the
 });
 
 it('refuses to send a fail verdict to a task session that takes no turn, and leaves the step as it was', async () => {
-  const { f, lead, worker, reviewerId } = await reviewing();
+  const { f, lead, worker, reviewerId } = await reviewingLoop();
   const failed = await failedByVerdict(f, reviewerId);
   const held = current(f, worker.id);
   f.store.update<Session>('sessions', { ...held, stop_pending: true }, held.revision);
@@ -711,16 +360,18 @@ it('refuses to send a fail verdict to a task session that takes no turn, and lea
 });
 
 it('fails a review step the lead ran again at the round limit and tells the lead', async () => {
-  const { f, lead, worker } = await reviewing(ReplyingReviewer, true, 1);
+  const { f, lead, worker } = await reviewingLoop();
   await stepFailed(f);
   const failed = runs(f)[0]!;
-  expect(await requestReview(f, lead, worker)).toEqual({ reopened: failed.id });
-  await stepFailed(f);
+  for (let round = 1; round <= 3; round++) {
+    expect(await requestReview(f, lead, worker)).toEqual({ reopened: failed.id });
+    await stepFailed(f);
+  }
   expect(runs(f)[0]).toMatchObject({
     id: failed.id,
-    reason: 'Code review limit reached: at most 1 rounds per reviewed session',
+    reason: 'Code review limit reached: at most 3 rounds per reviewed session',
   });
-  expect(f.store.list<Review>('reviews')).toHaveLength(1);
+  expect(f.store.list<Review>('reviews')).toHaveLength(3);
   expect(notes(f)).toContainEqual(
     expect.objectContaining({
       kind: 'blocked',
@@ -732,8 +383,20 @@ it('fails a review step the lead ran again at the round limit and tells the lead
 });
 
 it('refuses to send a fail verdict to the task session at the round limit', async () => {
-  const { f, lead, worker, reviewerId } = await reviewing(ReplyingReviewer, true, 1);
-  const failed = await failedByVerdict(f, reviewerId);
+  const { f, lead, worker, review } = await reviewingLoop();
+  for (let round = 1; round < 3; round++) {
+    await stepFailed(f);
+    expect(await requestReview(f, lead, worker)).toEqual({ reopened: runs(f)[0]!.id });
+  }
+  await eventually(
+    () =>
+      !!runs(f)[0]?.review_id &&
+      review().round === 3 &&
+      f.turns(review().session_ids[0]!)[0]?.state === 'running',
+    () => f.control.tick(),
+    10000,
+  );
+  const failed = await failedByVerdict(f, review().session_ids[0]!);
   const turns = f.turns(worker.id).length;
   await expect(() => requestReview(f, lead, worker)).rejects.toThrow('Code review limit reached');
   expect(f.turns(worker.id)).toHaveLength(turns);
@@ -741,17 +404,8 @@ it('refuses to send a fail verdict to the task session at the round limit', asyn
   expect(runs(f)[0]).not.toHaveProperty('turn_id');
 });
 
-it('passes a non-blocking review step whose review completes with a reply and no verdict', async () => {
-  const { f, worker, review } = await reviewing(ReplyingReviewer, false);
-  await merged(f, worker);
-  expect(runs(f)[0]!.state).toBe('passed');
-  expect(review()).toMatchObject({ state: 'completed', findings: [] });
-  expect(review()).not.toHaveProperty('incomplete');
-  expect(review()).not.toHaveProperty('verdicts');
-});
-
 it("gives both the incomplete reason and the reviewer's fail verdict when a blocking review step fails", async () => {
-  const { f, reviewerId } = await reviewing(SilentReviewer);
+  const { f, reviewerId } = await reviewingLoop(SilentReviewer);
   f.call(
     'review.verdict',
     { verdict: 'fail', summary: 'The export drops the header row' },
@@ -772,7 +426,7 @@ it("gives both the incomplete reason and the reviewer's fail verdict when a bloc
 });
 
 it('keeps the verdicts of two reviewers on the same runtime and fails the step by the fail verdict', async () => {
-  const { f, review, reviewerId } = await reviewing();
+  const { f, review, reviewerId } = await reviewingLoop();
   const first = review();
   const second = f.store.insert<Session>('sessions', {
     id: 'second-reviewer',

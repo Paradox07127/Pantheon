@@ -9,7 +9,7 @@ import {
 import type { ControlContext } from './context.js';
 import { moveTaskMemory } from './memory-access.js';
 import { dispatchQueue } from './task-dispatch.js';
-import { waitingStep } from './workflow-engine.js';
+import { waitingStep } from './merge-review.js';
 
 export const boardTaskId = (lead: string, id: string): string => `${lead}:${id}`;
 

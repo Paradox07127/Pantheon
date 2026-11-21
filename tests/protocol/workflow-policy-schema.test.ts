@@ -6,7 +6,6 @@ it('accepts a workflow policy change and refuses an unknown parameter value', ()
   expect(
     schema.safeParse({
       project_id: 'project',
-      improvement_mode: 'confirm',
       plan_changes: 'confirm',
       path: { t1: 'dispatch' },
       max_parallel: 2,

@@ -105,11 +105,8 @@ const COUNTS: readonly {
   },
 ];
 
-// The icon of each decision the user makes on what waits; the interface offers no agent proposal.
-const KIND_ICONS: Record<
-  Exclude<NonNullable<NeedsYouItem['decision']>, 'agent_proposal'>,
-  LucideIcon
-> = {
+// The icon of each decision the user makes on what waits.
+const KIND_ICONS: Record<NonNullable<NeedsYouItem['decision']>, LucideIcon> = {
   plan_change: Workflow,
   question: MessageSquare,
   milestone_accept: Flag,
@@ -648,12 +645,7 @@ export function ProjectRow(props: {
                   {kindIcon(top.decision)}
                   <Clip
                     className="pr-tt"
-                    text={
-                      top.question?.question ??
-                      top.lane_title ??
-                      top.step_title ??
-                      needReasonText(top)
-                    }
+                    text={top.question?.question ?? top.lane_title ?? needReasonText(top)}
                   />
                   {blocksText(top.blocks) && (
                     <span className="pr-age">{blocksText(top.blocks)}</span>

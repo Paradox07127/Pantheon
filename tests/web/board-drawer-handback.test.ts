@@ -280,7 +280,7 @@ describe('what the drawer offers on a task its lead works on or a session cannot
     expect(starts(task())).toBe(false);
     expect(starts(direct({ state: 'merged', status: 'done' }))).toBe(false);
     expect(starts(todo({ blocked_since: NOW - 60_000 }))).toBe(false);
-    for (const wait of ['upstream', 'scope', 'answer', 'step'] as const)
+    for (const wait of ['upstream', 'scope', 'answer'] as const)
       expect(starts(todo({ dispatch_wait: wait }))).toBe(false);
     expect(starts(todo({ dispatch_wait: 'capacity' }))).toBe(true);
   });

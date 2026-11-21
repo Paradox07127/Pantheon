@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import {
   DomainError,
@@ -29,6 +29,7 @@ import {
   resolvedPath,
   revision,
   sessionPrincipal,
+  userOnly,
   type ControlContext,
   type Handler,
   type Handlers,
@@ -36,6 +37,7 @@ import {
 import { sessionDefaults } from './user-config.js';
 import { finalOutput } from './agent-app-tools.js';
 import { runGit } from './git.js';
+import { mergeBase } from './merge-preview.js';
 import { sessionGoal, sessionRangeAsync, type DiffRange } from './landing-diff.js';
 import { confirmTermination } from './process.js';
 import type { WrittenState } from './non-writer-audit.js';
@@ -50,11 +52,14 @@ import {
 } from './board-plan.js';
 import { appendNote, contractLines } from './lead-inbox.js';
 import { wakeLead } from './task-tracking.js';
-import { reopenReviewStep, sessionWorkflow, taskWorkflow } from './workflow-engine.js';
+import { PLAN_REVIEW_TIERS, REVIEW_MAX_ROUNDS, reopenReviewStep } from './merge-review.js';
 
 export const REVIEW_WALL_TIME_MS = 2 * 60 * 60 * 1000;
 export const reviewInstruction =
   'Review these changes against the task goal. Record each problem with review_finding; quote the diff exactly. End the review with one review_verdict call, pass or fail, with a summary of what you checked.';
+const rangeInstruction = `${reviewInstruction} Write each finding's location as path:line in the changed file. The checkout in your working directory may not be the reviewed head; changes.diff is the reviewed code.`;
+/** A finding location naming a file and a line or line range. */
+const FINDING_PLACE = /^(.+?):(\d+)(?:-\d+)?$/;
 const planInstruction = (listed: string) =>
   `Review this board plan before its high-risk tasks start: ${listed}. Record each problem with review_finding, with the task id as location and a quote copied exactly from plan.json. End the review with one review_verdict call, pass or fail, with a summary of what you checked.`;
 
@@ -150,7 +155,7 @@ export function prepareReviewRequest(
       const round =
         ctx.store.list<Review>('reviews').filter((review) => review.session_id === session.id)
           .length + 1;
-      const maxRounds = sessionWorkflow(ctx, session).definition.review.max_rounds;
+      const maxRounds = REVIEW_MAX_ROUNDS;
       requireThat(
         round <= maxRounds,
         'invalid_state',
@@ -164,6 +169,106 @@ export function prepareReviewRequest(
         session_id: session.id,
         requester,
         range,
+      });
+      return { ...review, review_id: review.id };
+    };
+  })();
+}
+
+/** The real path of a root the caller named and the project that lists it, once the principal may act there. */
+export function projectAtRoot(
+  ctx: ControlContext,
+  principal: Principal,
+  named: string,
+  action: string,
+) {
+  let root = '';
+  try {
+    root = realpathSync(named);
+  } catch {
+    // A missing root is reported below like any root of no project.
+  }
+  const project = ctx.store
+    .list<Project>('projects')
+    .find((candidate) => candidate.removed_at === undefined && candidate.roots.includes(root));
+  requireThat(project, 'not_found', `${named} is not a project root`);
+  projectAccess(ctx, principal, project.id, action);
+  return { root, project };
+}
+
+/** The input, real root and project of a review.range, once its permissions are checked. */
+function rangeTarget(ctx: ControlContext, principal: Principal, command: Command) {
+  userOnly(principal);
+  const input = inputSchemas['review.range'].parse(command.input);
+  const { root, project } = projectAtRoot(ctx, principal, input.root, command.type);
+  revision(ctx, command);
+  return { input, root, project };
+}
+
+export async function commitOf(root: string, ref: string): Promise<string> {
+  const result = await runGit(
+    root,
+    ['rev-parse', '--verify', '--quiet', '--end-of-options', `${ref}^{commit}`],
+    undefined,
+    true,
+  );
+  requireThat(result.exit_code === 0, 'invalid_input', `Not a commit: ${ref}`);
+  return result.stdout.toString().trim();
+}
+
+/** review.range; the refs, their merge base, the diff and the commit messages are read before the transaction. */
+export function prepareRangeReview(
+  ctx: ControlContext,
+  principal: Principal,
+  command: Command,
+): Promise<Handler> {
+  const { input, root } = rangeTarget(ctx, principal, command);
+  const head = input.head ?? 'HEAD';
+  return (async () => {
+    const to_sha = await commitOf(root, head),
+      from_sha = await mergeBase(root, await commitOf(root, input.base), to_sha);
+    requireThat(from_sha, 'invalid_input', `${input.base} and ${head} share no history`);
+    requireThat(
+      from_sha !== to_sha,
+      'invalid_input',
+      `No committed changes to review between ${input.base} and ${head}`,
+    );
+    const [diff, log] = await Promise.all([
+      runGit(root, ['diff', '--no-color', '--no-ext-diff', from_sha, to_sha], undefined, true),
+      runGit(root, ['log', '--format=%B', `${from_sha}..${to_sha}`], undefined, true),
+    ]);
+    for (const result of [diff, log])
+      requireThat(
+        result.exit_code === 0,
+        'git_failed',
+        result.stderr.toString().trim() || result.error || 'Git failed',
+      );
+    const goal = log.stdout.toString('utf8').slice(0, 2000);
+    return (ctx: ControlContext, principal: Principal, command: Command) => {
+      const { input, project } = rangeTarget(ctx, principal, command);
+      const busy = ctx.store
+        .list<Review>('reviews')
+        .some(
+          (review) =>
+            review.state === 'running' &&
+            review.refs &&
+            review.range?.from_sha === from_sha &&
+            review.range.to_sha === to_sha,
+        );
+      requireThat(!busy, 'resource_busy', 'This range is already under review');
+      const reviewer = input.runtimes ? undefined : reviewerRuntime(ctx, project.id, '');
+      requireThat(
+        input.runtimes || reviewer,
+        'unsupported_capability',
+        'No runtime can run a read-only review',
+      );
+      const review = startReview(ctx, project.id, input.runtimes ?? [reviewer!], {
+        round: 1,
+        cause: command.command_id,
+        prompt: `${rangeInstruction}\n\nTask goal:\n${goal}\n\nChanges:\n${diff.stdout.toString('utf8')}`,
+        artifact: { name: 'changes.diff', content: diff.stdout },
+        range: { source: root, from_sha, to_sha },
+        refs: { base: input.base, head },
       });
       return { ...review, review_id: review.id };
     };
@@ -455,6 +560,7 @@ export function startReview(
     session_id?: string;
     requester?: Review['requester'];
     range?: NonNullable<Review['range']>;
+    refs?: Review['refs'];
     plan?: Review['plan'];
     /** Overrides the session defaults' model and effort of every reviewer session. */
     choice?: { model?: string; effort?: EffortLevel };
@@ -469,6 +575,7 @@ export function startReview(
       project_id: project.id,
       ...(options.session_id ? { session_id: options.session_id } : {}),
       ...(options.range ? { range: options.range } : {}),
+      ...(options.refs ? { refs: options.refs } : {}),
       ...(options.requester ? { requester: options.requester } : {}),
       ...(options.plan ? { plan: options.plan } : {}),
       round: options.round,
@@ -582,7 +689,7 @@ export function reviewPlan(ctx: ControlContext, plan: BoardPlan, cause: string):
     .filter(
       (task) =>
         task.kind &&
-        taskWorkflow(ctx, plan, task.id).definition.plan_review.tiers.includes(task.kind.tier) &&
+        PLAN_REVIEW_TIERS.includes(task.kind.tier) &&
         taskState(plan, task.id, taskSessions(ctx, plan.id, task.id), lead) !== 'done',
     )
     .map((task) => ({ task_id: task.id, generation: taskGeneration(plan, task.id) }))
@@ -684,6 +791,10 @@ export function recordFinding(
       finding.artifact_error = 'artifact_unavailable';
     }
   }
+  if (review.refs && !FINDING_PLACE.test(finding.location)) {
+    finding.blocking = false;
+    finding.unlocated = true;
+  }
   const next = ctx.store.update(
     'reviews',
     { ...review, findings: [...review.findings, finding] },
@@ -728,7 +839,7 @@ export function markStaleFindings(ctx: ControlContext, session: Session): void {
 function findingFiles(reviews: Review[]): string[] | undefined {
   const files = new Set<string>();
   for (const finding of reviews.flatMap((review) => review.findings.filter(openFinding))) {
-    const place = /^(.+?):(\d+)(?:-\d+)?$/.exec(finding.location);
+    const place = FINDING_PLACE.exec(finding.location);
     if (!place) return undefined;
     files.add(place[1]!);
   }

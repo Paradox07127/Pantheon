@@ -50,7 +50,7 @@ export const ROUTINE_TEMPLATES: readonly RoutineTemplate[] = [
     id: 'weekly-self-review',
     title: 'Weekly self-review',
     prompt:
-      "Read lead.retrospectives and the improvement signals in project_read, and what you did yourself this week. Name at most 3 points of friction from this week, each with its evidence, and state each one's sample size n; when the evidence is weak, say so. When you found none, say so.",
+      "Read lead.retrospectives in project_read, and what you did yourself this week. Name at most 3 points of friction from this week, each with its evidence, and state each one's sample size n; when the evidence is weak, say so. When you found none, say so.",
     every_minutes: WEEK_MINUTES,
     enabled: false,
   },

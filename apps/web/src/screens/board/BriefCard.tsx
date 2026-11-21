@@ -152,9 +152,7 @@ export function BriefCard({
       d.kind === 'replan' && !!d.replan && d.at > brief.since,
   );
   const waitingReplans = history?.pending_replans ?? [];
-  // The card draws no agent proposals, which the brief still lists.
-  const drawn = brief.items.filter((item) => item.kind !== 'proposal');
-  if (drawn.length === 0 && replans.length === 0 && waitingReplans.length === 0) return null;
+  if (brief.items.length === 0 && replans.length === 0 && waitingReplans.length === 0) return null;
   /** Shows the whole history, with the re-plan made at `at` open. */
   const toTimeline = (at?: number) => {
     if (at !== undefined) askReplan(at);

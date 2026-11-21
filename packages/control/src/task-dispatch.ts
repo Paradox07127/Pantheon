@@ -50,7 +50,7 @@ import { backgroundTasks, nextDepth } from './progress.js';
 import { runningPlanReview } from './review.js';
 import { laneHeld } from './lane-stops.js';
 import { projectOverBudget, workflowPolicy } from './workflow-policy.js';
-import { slotWait, startSlot, taskWorkflow } from './workflow-engine.js';
+import { PLAN_REVIEW_TIERS } from './merge-review.js';
 import { listDevices } from './devices.js';
 import { homeRuntime, readUserConfig, sessionDefaults } from './user-config.js';
 
@@ -64,7 +64,6 @@ export type DispatchWait =
   | 'upstream'
   | 'scope'
   | 'plan_review'
-  | 'step'
   | 'retry'
   | 'budget'
   | 'capacity'
@@ -423,11 +422,10 @@ export function dispatchQueue(
       (laneHeld(plan, task.lane) ? 'plan_approval' : undefined) ??
       taskWaits(ctx, plan, task, held)?.wait ??
       (task.kind &&
-      taskWorkflow(ctx, plan, task.id).definition.plan_review.tiers.includes(task.kind.tier) &&
+      PLAN_REVIEW_TIERS.includes(task.kind.tier) &&
       runningPlanReview(ctx, plan, task.id)
         ? 'plan_review'
         : undefined) ??
-      (slotWait(ctx, plan, task, 'before_dispatch') ? 'step' : undefined) ??
       (ctx.runtimeStatus
         .get(runtimeId)
         ?.quota?.windows.some(
@@ -955,20 +953,13 @@ export function userTaskInput(
     `The scope of task ${task.id} overlaps tasks ${waits?.task_ids.join(', ')}, which are under way; open it after they end`,
   );
   const review =
-    task.kind &&
-    taskWorkflow(ctx, plan, task.id).definition.plan_review.tiers.includes(task.kind.tier)
+    task.kind && PLAN_REVIEW_TIERS.includes(task.kind.tier)
       ? runningPlanReview(ctx, plan, task.id)
       : undefined;
   requireThat(
     !review,
     'invalid_state',
     `Task ${task.id} waits for the plan review ${review?.id}; open it once the review ends`,
-  );
-  const step = slotWait(ctx, plan, task, 'before_dispatch');
-  requireThat(
-    !step,
-    'invalid_state',
-    `Task ${task.id} waits for workflow step ${step?.title}; start it through task.start first`,
   );
   const choice = userTaskChoice(ctx, input);
   const deviceId = input.device_id ?? task.device ?? 'local',
@@ -1125,9 +1116,7 @@ function claimDirectTask(
   plan: BoardPlan,
   taskIds: string[],
   commandId: string,
-):
-  | { claimed: string; generation: number; note?: string }
-  | { wait: 'step'; step: NonNullable<ReturnType<typeof slotWait>> } {
+): { claimed: string; generation: number; note?: string } {
   requireThat(
     !workflowPolicy(ctx, plan.project_id).dispatch_paused,
     'resource_busy',
@@ -1166,8 +1155,7 @@ function claimDirectTask(
     `Task ${task.id} is done: you merged it`,
   );
   const review =
-    task.kind &&
-    taskWorkflow(ctx, plan, task.id).definition.plan_review.tiers.includes(task.kind.tier)
+    task.kind && PLAN_REVIEW_TIERS.includes(task.kind.tier)
       ? runningPlanReview(ctx, plan, task.id)
       : undefined;
   requireThat(
@@ -1180,12 +1168,6 @@ function claimDirectTask(
     'invalid_state',
     `Task ${task.id} is in lane ${task.lane}, which waits for the user to approve its plan; start it once the user approves`,
   );
-  startSlot(ctx, plan, task, 'before_dispatch');
-  const step = slotWait(ctx, plan, task, 'before_dispatch');
-  if (step) {
-    startSlot(ctx, plan, task, 'before_dispatch');
-    return { wait: 'step', step };
-  }
   const upstream = task.depends_on.find(
     (id) => taskState(plan, id, taskSessions(ctx, plan.id, id)) !== 'done',
   );
@@ -1214,18 +1196,12 @@ function claimDirectTask(
     'resource_busy',
     `Device ${deviceId} has too little ${short.join(', ')} free for task ${task.id}; start it after the tasks using it end`,
   );
-  const generation = taskGeneration(plan, task.id),
-    workflow = taskWorkflow(ctx, plan, task.id);
+  const generation = taskGeneration(plan, task.id);
   const next = ctx.store.update(
     'sessions',
     {
       ...lead,
-      direct_task: {
-        id: task.id,
-        generation,
-        definition_version: workflow.definition_version,
-        ...(workflow.id !== plan.project_id ? { workflow_id: workflow.id } : {}),
-      },
+      direct_task: { id: task.id, generation },
     },
     lead.revision,
   );

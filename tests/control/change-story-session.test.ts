@@ -217,66 +217,6 @@ it('freezes task acceptance and exact commit/configuration command evidence for 
   expect(ready.result?.unmatched_acceptance).toEqual([]);
 });
 
-it('counts a gate that ran the before-merge command steps as recorded evidence of its commit', async () => {
-  const { w, session, workspace, startStory } = await idleWorkbenchSession();
-  const head = commitAnswer(workspace.path, 'explained\n');
-  w.call('workflow.definition.set', {
-    project_id: w.project.id,
-    definition: {
-      slots: {
-        before_dispatch: [],
-        before_merge: [
-          {
-            id: 'lint',
-            title: 'Lint the answer',
-            kind: { type: 'command', command: 'test -s answer.txt', timeout_seconds: 30 },
-          },
-        ],
-        after_merge: [],
-      },
-      plan_review: { tiers: ['t3'] },
-      review: { max_rounds: 3 },
-    },
-    base_version: 0,
-  });
-  const acceptance = ['test -f answer.txt'];
-  attachStoryTask(w, session.id, acceptance);
-  const bound = w.store.must<Session>('sessions', session.id);
-  w.store.update(
-    'sessions',
-    { ...bound, task: { ...bound.task!, definition_version: 1 } },
-    bound.revision,
-  );
-  const commands = [
-    { name: acceptance[0]!, argv: ['/bin/sh', '-c', acceptance[0]!] },
-    {
-      name: 'lint: Lint the answer',
-      argv: ['/bin/sh', '-c', 'test -s answer.txt'],
-      timeout_ms: 30000,
-    },
-  ];
-  w.store.event(
-    'session.gate_checked',
-    w.store.must<Session>('sessions', session.id),
-    w.project.id,
-    {
-      commit: head,
-      check_spec_hash: hash(commands),
-      results: commands.map((cmd) => ({
-        ...cmd,
-        exit_code: 0,
-        timed_out: false,
-        duration_ms: 5,
-        output: 'answer verified',
-      })),
-    },
-  );
-  expect((await startStory()).context?.checks).toMatchObject({
-    state: 'recorded',
-    spec_hash: hash(commands),
-  });
-});
-
 it("binds a parallel part's gate run to its story", async () => {
   const { w, session, workspace, startStory } = await idleWorkbenchSession();
   const head = commitAnswer(workspace.path, 'explained\n');

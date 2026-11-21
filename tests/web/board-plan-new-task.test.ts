@@ -414,7 +414,6 @@ describe('editing the record fields of a plan task', () => {
       type: 'set_task',
       task_id: 'a',
       patch: {
-        workflow_id: 'review-first',
         iteration: 'it-2',
         estimate: 5,
         device: 'linux-b',
@@ -424,7 +423,6 @@ describe('editing the record fields of a plan task', () => {
       },
     };
     expect(opChanges(model, 'lead-1', op)).toEqual([
-      { field: zh('data.planEdit.field.workflow'), before: null, after: 'review-first' },
       { field: zh('data.planEdit.field.iteration'), before: 'Sprint 1', after: 'Sprint 2' },
       { field: zh('data.planEdit.field.estimate'), before: '2 点', after: '5 点' },
       { field: zh('data.planEdit.field.device'), before: 'mac-a', after: 'linux-b' },
@@ -435,14 +433,9 @@ describe('editing the record fields of a plan task', () => {
     const cleared: PlanOp = {
       type: 'set_task',
       task_id: 'a',
-      patch: { workflow_id: null, iteration: null },
+      patch: { iteration: null },
     };
     expect(opChanges(model, 'lead-1', cleared)).toEqual([
-      {
-        field: zh('data.planEdit.field.workflow'),
-        before: null,
-        after: zh('data.planEdit.workflow.default'),
-      },
       {
         field: zh('data.planEdit.field.iteration'),
         before: 'Sprint 1',

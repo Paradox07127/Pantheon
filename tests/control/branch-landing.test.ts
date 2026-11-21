@@ -1,0 +1,423 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { expect, it, vi } from 'vitest';
+import type { Landing, Principal, Project, Session, Workspace } from '@pantheon/domain';
+import * as validation from '../../packages/control/dist/validation-executor.js';
+import { awaitWorkspaceReady, eventually, insideSandbox, user } from '../helpers.js';
+import { git, workbenchFixture } from './workbench-fixture.js';
+
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
+type Gate = { name: string; argv: string[] };
+
+const passes: Gate = {
+  name: 'Passes',
+  argv: [process.execPath, '-e', "process.stdout.write('ok')"],
+};
+
+async function setGate(f: Fixture, commands: Gate[]) {
+  await f.call<Project>(
+    'project.gate.set',
+    { project_id: f.project.id, root: f.source, commands },
+    f.store.must<Project>('projects', f.project.id).revision,
+  );
+}
+
+/** A project whose source repository names the user who rebases and commits onto it. */
+async function landFixture(gates: Gate[] = [passes]) {
+  const f = await workbenchFixture();
+  git(f.source, 'config', 'user.name', 'Source User');
+  git(f.source, 'config', 'user.email', 'source@example.invalid');
+  if (gates.length) await setGate(f, gates);
+  return f;
+}
+
+function commit(repository: string, name: string, contents: string) {
+  mkdirSync(path.dirname(path.join(repository, name)), { recursive: true });
+  writeFileSync(path.join(repository, name), contents);
+  git(repository, 'add', '--', name);
+  git(repository, 'commit', '--quiet', '-m', `Update ${name}`);
+  return git(repository, 'rev-parse', 'HEAD');
+}
+
+/** Makes the branch from main with one commit per file, returns its tip and checks main out again. */
+function branch(f: Fixture, name: string, files: [string, string][]) {
+  git(f.source, 'checkout', '--quiet', '-b', name, 'main');
+  for (const [file, contents] of files) commit(f.source, file, contents);
+  git(f.source, 'checkout', '--quiet', 'main');
+  return git(f.source, 'rev-parse', name);
+}
+
+const land = (f: Fixture, input: Record<string, unknown> = {}, principal: Principal = user) =>
+  (async () =>
+    f.call<Promise<Landing>>(
+      'project.land',
+      { root: f.source, branch: 'feature', ...input },
+      null,
+      principal,
+    ))();
+
+const row = (f: Fixture, id: string) => f.store.must<Landing>('landings', id);
+
+async function ended(f: Fixture, id: string): Promise<Landing> {
+  await eventually(
+    () => ['landed', 'no_changes', 'blocked'].includes(row(f, id).state),
+    () => f.control.tick(),
+    20000,
+  );
+  return row(f, id);
+}
+
+const removalsQueued = (f: Fixture) =>
+  (
+    f.store.db.prepare("SELECT payload FROM outbox WHERE kind='workspace.remove'").all() as {
+      payload: string;
+    }[]
+  ).map((job) => (JSON.parse(job.payload) as { workspace_id: string }).workspace_id);
+
+it.skipIf(insideSandbox)(
+  'lands a branch no session owns through the gate and fast-forwards the checked-out branch',
+  async () => {
+    const f = await landFixture();
+    const base = git(f.source, 'rev-parse', 'main');
+    const tip = branch(f, 'feature', [['feature.txt', 'feature\n']]);
+    const started = await land(f);
+    expect(started).toMatchObject({ state: 'queued', branch: 'feature', target_branch: 'main' });
+    const done = await ended(f, started.id);
+    expect(done).toMatchObject({
+      state: 'landed',
+      from_sha: base,
+      to_sha: tip,
+      gate_results: [expect.objectContaining({ name: 'Passes', exit_code: 0 })],
+    });
+    expect(done.landing).toBeUndefined();
+    expect(git(f.source, 'rev-parse', 'main')).toBe(tip);
+    expect(git(f.source, 'rev-parse', 'feature')).toBe(tip);
+    expect(git(f.source, 'symbolic-ref', '--short', 'HEAD')).toBe('main');
+    expect(removalsQueued(f)).toContain(done.workspace_id);
+    expect(f.control.landingRead(user, started.id)).toEqual(row(f, started.id));
+  },
+);
+
+it.skipIf(insideSandbox)(
+  'blocks a branch whose gate fails with the failing output and leaves the root as it was',
+  async () => {
+    const f = await landFixture([
+      {
+        name: 'Always fails',
+        argv: [process.execPath, '-e', "process.stderr.write('gate broke'); process.exit(3)"],
+      },
+    ]);
+    const base = git(f.source, 'rev-parse', 'main');
+    branch(f, 'feature', [['feature.txt', 'feature\n']]);
+    const done = await ended(f, (await land(f)).id);
+    expect(done).toMatchObject({ state: 'blocked', reason: 'gate_failed' });
+    expect(done.gate_results).toEqual([
+      expect.objectContaining({ name: 'Always fails', exit_code: 3 }),
+    ]);
+    expect(done.gate_results![0]!.output).toContain('gate broke');
+    expect(git(f.source, 'rev-parse', 'main')).toBe(base);
+    expect(git(f.source, 'status', '--porcelain')).toBe('');
+  },
+);
+
+it.skipIf(insideSandbox)(
+  'rebases a branch onto a target that moved on and keeps the history linear',
+  async () => {
+    const f = await landFixture();
+    branch(f, 'feature', [['feature.txt', 'feature\n']]);
+    const moved = commit(f.source, 'other.txt', 'other\n');
+    const done = await ended(f, (await land(f)).id);
+    expect(done).toMatchObject({ state: 'landed', from_sha: moved });
+    expect(git(f.source, 'rev-parse', 'main')).toBe(done.to_sha);
+    expect(git(f.source, 'rev-parse', 'main~1')).toBe(moved);
+    expect(git(f.source, 'rev-list', '--merges', 'main')).toBe('');
+    expect(git(f.source, 'show', 'main:feature.txt')).toBe('feature');
+    expect(git(f.source, 'show', 'main:other.txt')).toBe('other');
+  },
+);
+
+it.skipIf(insideSandbox)('blocks a branch that conflicts with the target', async () => {
+  const f = await landFixture();
+  branch(f, 'feature', [['answer.txt', 'feature side\n']]);
+  const moved = commit(f.source, 'answer.txt', 'main side\n');
+  const done = await ended(f, (await land(f)).id);
+  expect(done).toMatchObject({
+    state: 'blocked',
+    reason: 'rebase_conflict',
+    conflicts: ['answer.txt'],
+    conflict_commits: ['Update answer.txt'],
+  });
+  expect(git(f.source, 'rev-parse', 'main')).toBe(moved);
+});
+
+it('reports no changes for a branch the target already holds', async () => {
+  const f = await landFixture();
+  const tip = branch(f, 'feature', [['feature.txt', 'feature\n']]);
+  git(f.source, 'merge', '--quiet', '--ff-only', 'feature');
+  const done = await ended(f, (await land(f)).id);
+  expect(done).toMatchObject({ state: 'no_changes' });
+  expect(git(f.source, 'rev-parse', 'main')).toBe(tip);
+});
+
+it('blocks a branch that changes agent configuration', async () => {
+  const f = await landFixture();
+  const base = git(f.source, 'rev-parse', 'main');
+  branch(f, 'feature', [['.claude/settings.json', '{}\n']]);
+  const done = await ended(f, (await land(f)).id);
+  expect(done).toMatchObject({
+    state: 'blocked',
+    reason: 'protected_paths',
+    conflicts: ['.claude/settings.json'],
+  });
+  expect(git(f.source, 'rev-parse', 'main')).toBe(base);
+});
+
+it('blocks a landing whose root checked out another branch after the request', async () => {
+  const f = await landFixture();
+  const base = git(f.source, 'rev-parse', 'main');
+  const tip = branch(f, 'feature', [['feature.txt', 'feature\n']]);
+  const started = await land(f);
+  git(f.source, 'checkout', '--quiet', '-b', 'elsewhere');
+  const done = await ended(f, started.id);
+  expect(done).toMatchObject({ state: 'blocked', reason: 'target_branch_changed' });
+  expect(git(f.source, 'rev-parse', 'main')).toBe(base);
+  expect(git(f.source, 'rev-parse', 'elsewhere')).toBe(base);
+  expect(git(f.source, 'rev-parse', 'feature')).toBe(tip);
+});
+
+it.skipIf(insideSandbox)(
+  'lands the commits as one commit with the message, though the branch merged the target in',
+  async () => {
+    const f = await landFixture();
+    branch(f, 'feature', [
+      ['feature.txt', 'feature\n'],
+      ['second.txt', 'second\n'],
+    ]);
+    commit(f.source, 'other.txt', 'other\n');
+    git(f.source, 'checkout', '--quiet', 'feature');
+    git(f.source, 'merge', '--quiet', '--no-edit', '--no-ff', 'main');
+    git(f.source, 'checkout', '--quiet', 'main');
+    const moved = commit(f.source, 'third.txt', 'third\n');
+    const tip = git(f.source, 'rev-parse', 'feature');
+    const expected = git(f.source, 'merge-tree', '--write-tree', 'main', 'feature');
+    const done = await ended(f, (await land(f, { message: 'Land the feature' })).id);
+    expect(done).toMatchObject({ state: 'landed', from_sha: moved });
+    expect(git(f.source, 'rev-list', '--count', `${moved}..main`)).toBe('1');
+    expect(git(f.source, 'rev-parse', 'main~1')).toBe(moved);
+    expect(git(f.source, 'log', '-1', '--format=%B', 'main')).toBe('Land the feature');
+    expect(git(f.source, 'rev-parse', 'main^{tree}')).toBe(expected);
+    expect(git(f.source, 'rev-parse', 'feature')).toBe(tip);
+  },
+);
+
+it.skipIf(insideSandbox)(
+  'reports no changes for a branch whose commits already landed as one commit',
+  async () => {
+    const f = await landFixture();
+    branch(f, 'feature', [
+      ['feature.txt', 'feature\n'],
+      ['second.txt', 'second\n'],
+    ]);
+    await ended(f, (await land(f, { message: 'Land the feature' })).id);
+    const landed = git(f.source, 'rev-parse', 'main');
+    expect(await ended(f, (await land(f)).id)).toMatchObject({ state: 'no_changes' });
+    expect(git(f.source, 'rev-parse', 'main')).toBe(landed);
+  },
+);
+
+it('reports no changes for a branch with a message whose commits undo each other', async () => {
+  const f = await landFixture();
+  const base = git(f.source, 'rev-parse', 'main');
+  branch(f, 'feature', [['feature.txt', 'feature\n']]);
+  git(f.source, 'checkout', '--quiet', 'feature');
+  git(f.source, 'revert', '--no-edit', 'HEAD');
+  git(f.source, 'checkout', '--quiet', 'main');
+  const done = await ended(f, (await land(f, { message: 'Land the feature' })).id);
+  expect(done).toMatchObject({ state: 'no_changes' });
+  expect(git(f.source, 'rev-parse', 'main')).toBe(base);
+});
+
+it('blocks a queued landing whose root lost its gate commands before it ran', async () => {
+  const f = await landFixture();
+  const base = git(f.source, 'rev-parse', 'main');
+  branch(f, 'feature', [['feature.txt', 'feature\n']]);
+  const started = await land(f);
+  await setGate(f, []);
+  const done = await ended(f, started.id);
+  expect(done).toMatchObject({ state: 'blocked', reason: 'no_gate_commands' });
+  expect(git(f.source, 'rev-parse', 'main')).toBe(base);
+});
+
+const lead: Principal = { id: 'some-lead', role: 'lead' };
+
+it.each<[string, (f: Fixture) => Promise<unknown>, string]>([
+  [
+    'a root that is not a project root',
+    (f) => land(f, { root: path.dirname(f.source) }),
+    'not_found',
+  ],
+  ['a branch that does not exist', (f) => land(f, { branch: 'no-such-branch' }), 'invalid_input'],
+  [
+    'a branch that looks like an option',
+    (f) => land(f, { branch: `--output=${path.join(f.root, 'leaked')}` }),
+    'invalid_input',
+  ],
+  [
+    'a root without gate commands',
+    async (f) => {
+      await setGate(f, []);
+      return land(f);
+    },
+    'invalid_state',
+  ],
+  [
+    'a root with a detached HEAD',
+    (f) => {
+      git(f.source, 'checkout', '--quiet', '--detach', 'main');
+      return land(f);
+    },
+    'invalid_state',
+  ],
+  ['a principal other than the user', (f) => land(f, {}, lead), 'permission_denied'],
+  [
+    'a branch already landing',
+    async (f) => {
+      await land(f);
+      return land(f);
+    },
+    'resource_busy',
+  ],
+])('refuses %s and queues no other landing', async (_name, run, code) => {
+  const f = await landFixture();
+  branch(f, 'feature', [['feature.txt', 'feature\n']]);
+  const error = await run(f).then(
+    () => undefined,
+    (thrown: unknown) => thrown,
+  );
+  expect(error).toMatchObject({ code });
+  expect(f.store.list<Landing>('landings')).toHaveLength(code === 'resource_busy' ? 1 : 0);
+  expect(f.store.list<Workspace>('workspaces')).toHaveLength(code === 'resource_busy' ? 1 : 0);
+});
+
+function passedGate(): validation.ValidationResult {
+  return {
+    exit_code: 0,
+    signal: null,
+    duration_ms: 5,
+    stdout: Buffer.alloc(0),
+    stderr: Buffer.alloc(0),
+    log: Buffer.alloc(0),
+    tail: 'ok',
+    timedOut: false,
+    stdout_sha256: '',
+    stderr_sha256: '',
+    output_truncated: false,
+    boundary: {
+      kind: 'macos-seatbelt',
+      network: 'loopback',
+      supported: true,
+      stop_scope: 'process-group',
+    },
+  };
+}
+
+it('starts the gate of a branch landing only after a session merge of the same root ends', async () => {
+  const f = await landFixture();
+  const session = await f.create();
+  const workspace = await awaitWorkspaceReady(f.control, session.workspace_id!);
+  await eventually(
+    () =>
+      f.turns(session.id)[0]!.state === 'completed' &&
+      f.store.must<Session>('sessions', session.id).state === 'open',
+    () => f.control.tick(),
+  );
+  commit(workspace.path, 'answer.txt', 'merged by the session\n');
+  branch(f, 'feature', [['feature.txt', 'feature\n']]);
+  const order: string[] = [];
+  vi.spyOn(validation, 'runValidationCommand').mockImplementation(async (input) => {
+    const owner = input.key.split(':')[1]!.split('-')[0]!;
+    order.push(`${owner} started`);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    order.push(`${owner} ended`);
+    return passedGate();
+  });
+  await f.call(
+    'session.merge',
+    { session_id: session.id },
+    f.store.must<Session>('sessions', session.id).revision,
+  );
+  await eventually(
+    () => order.length > 0,
+    () => f.control.tick(),
+    10000,
+  );
+  const done = await ended(f, (await land(f)).id);
+  expect(done.state).toBe('landed');
+  expect(order).toEqual(['session started', 'session ended', 'land started', 'land ended']);
+  expect(git(f.source, 'show', 'main:answer.txt')).toBe('merged by the session');
+  expect(git(f.source, 'show', 'main:feature.txt')).toBe('feature');
+});
+
+it('finishes a landing whose gate the daemon stopped, once the daemon starts again', async () => {
+  const f = await landFixture();
+  const tip = branch(f, 'feature', [['feature.txt', 'feature\n']]);
+  let release: () => void = () => {};
+  const gate = vi
+    .spyOn(validation, 'runValidationCommand')
+    .mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => (release = resolve));
+      return passedGate();
+    })
+    .mockResolvedValue(passedGate());
+  const started = await land(f);
+  await eventually(
+    () => gate.mock.calls.length === 1,
+    () => f.control.tick(),
+    10000,
+  );
+  expect(row(f, started.id).state).toBe('running');
+  const stopping = f.control.shutdown();
+  release();
+  await stopping;
+  expect(row(f, started.id).state).toBe('running');
+  await f.restart(undefined, { abandon: true });
+  const done = await ended(f, started.id);
+  expect(done).toMatchObject({ state: 'landed', to_sha: tip });
+  expect(gate).toHaveBeenCalledTimes(2);
+  expect(git(f.source, 'rev-parse', 'main')).toBe(tip);
+});
+
+it('leaves the commits of a landing that waited for the root unsquashed when the daemon stops', async () => {
+  const f = await landFixture();
+  branch(f, 'feature', [['feature.txt', 'feature\n']]);
+  branch(f, 'other', [
+    ['other.txt', 'other\n'],
+    ['more.txt', 'more\n'],
+  ]);
+  let release: () => void = () => {};
+  const gate = vi.spyOn(validation, 'runValidationCommand').mockImplementation(async () => {
+    await new Promise<void>((resolve) => (release = resolve));
+    return passedGate();
+  });
+  const first = await land(f);
+  await eventually(
+    () => gate.mock.calls.length === 1,
+    () => f.control.tick(),
+    10000,
+  );
+  const waiting = await land(f, { branch: 'other', message: 'Land the other branch' });
+  await eventually(
+    () => row(f, waiting.id).state === 'running',
+    () => f.control.tick(),
+    10000,
+  );
+  expect(gate.mock.calls[0]![0].key).toContain(first.id);
+  const stopping = f.control.shutdown();
+  release();
+  await stopping;
+  const worktree = f.store.must<Workspace>('workspaces', row(f, waiting.id).workspace_id).path;
+  expect(git(worktree, 'rev-list', '--count', `${git(f.source, 'rev-parse', 'main')}..HEAD`)).toBe(
+    '2',
+  );
+  expect(gate).toHaveBeenCalledTimes(1);
+});

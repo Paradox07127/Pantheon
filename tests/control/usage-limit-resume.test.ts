@@ -267,6 +267,39 @@ it('leaves a session a person drives failed after a usage-limit failure', async 
   expect(current(f, session.id).state).toBe('open');
 });
 
+it('lists a session a person drives that hit its usage limit in needs-you until a new turn runs', async () => {
+  const f = await workbenchFixture();
+  skewedClock(f);
+  const resetsAt = f.store.now() + 2 * 60 * MINUTE;
+  failNextTurn(f, usageLimit(resetsAt));
+  const session = await f.create();
+  await settle(f, session);
+  const reached = () =>
+    f.control
+      .needsYou(user, f.project.id)
+      .items.filter((item) => item.reason === 'usage_limit_reached');
+
+  expect(reached()).toMatchObject([
+    {
+      source: { table: 'sessions', id: session.id },
+      kind: 'session.failed',
+      decision: 'other',
+      resets_at: resetsAt,
+      primary: 'session.send',
+      actions: [{ command: 'session.send', allowed: true }],
+      next_step: 'Continue the session after the limit resets, or fork it to another runtime.',
+    },
+  ]);
+  f.call(
+    'session.send',
+    { session_id: session.id, input: 'Try again' },
+    current(f, session.id).revision,
+  );
+  await settle(f, session);
+  expect(f.turns(session.id)).toMatchObject([{ state: 'failed' }, { state: 'completed' }]);
+  expect(reached()).toEqual([]);
+});
+
 it('tells the lead of a task session turn that failed for another reason', async () => {
   const f = await workbenchFixture();
   const lead = await leadWithPlan(f);

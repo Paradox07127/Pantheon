@@ -259,6 +259,94 @@ it('drops the stall of a task turn that made progress again, and tells the lead 
   expect(notes(f, lead.id, 'stalled')).toHaveLength(1);
 });
 
+/** A session a person drives whose turn runs for longer than the test. */
+async function hangingSession(f: Fixture) {
+  const session = await f.create();
+  await settle(f, session);
+  f.call(
+    'session.send',
+    { session_id: session.id, input: 'fixture-script\n[{"hang":true}]' },
+    current(f, session.id).revision,
+  );
+  await eventually(
+    () => f.turns(session.id).at(-1)?.state === 'running',
+    () => f.control.tick(),
+  );
+  return { session, turn: f.turns(session.id).at(-1)! };
+}
+
+it('tells the user when the turn of a session a person drives makes no progress for the stall window', async () => {
+  const f = await workbenchFixture();
+  const advance = skewedClock(f);
+  const { session } = await hangingSession(f);
+
+  advance(9 * MINUTE);
+  await f.control.tick();
+  expect(itemsOf(f, session.id)).toEqual([]);
+  advance(2 * MINUTE);
+  await f.control.tick();
+  expect(itemsOf(f, session.id)).toEqual([
+    expect.objectContaining({
+      kind: 'session.failed',
+      reason: 'session_turn_stalled',
+      decision: 'other',
+      actions: [],
+      next_step: 'Open the session to see where it stopped.',
+    }),
+  ]);
+});
+
+it('does not call the turn of a session a person drives stalled while its permission request waits', async () => {
+  const f = await workbenchFixture();
+  const advance = skewedClock(f);
+  const { session } = await hangingSession(f);
+  f.store.insert<Approval>('approvals', {
+    id: 'push-request',
+    revision: 1,
+    project_id: f.project.id,
+    kind: 'permission',
+    session_id: session.id,
+    request_id: 'push-request',
+    tool: 'Bash',
+    input_hash: 'a'.repeat(64),
+    decider: 'user',
+    state: 'pending',
+    created_at: f.store.now(),
+  });
+
+  advance(11 * MINUTE);
+  await f.control.tick();
+  expect(itemsOf(f, session.id)).toEqual([]);
+});
+
+it('records each stall of the turn of a session a person drives once', async () => {
+  const f = await workbenchFixture();
+  const advance = skewedClock(f);
+  const { session, turn } = await hangingSession(f);
+  const stalls = () =>
+    f.store
+      .kindEvents(f.project.id, ['session.turn_stalled'])
+      .filter((event) => event.aggregate_id === session.id);
+
+  advance(11 * MINUTE);
+  await f.control.tick();
+  await f.control.tick();
+  expect(stalls()).toHaveLength(1);
+  f.store.event('agent.message.delta', current(f, session.id), f.project.id, {
+    turn_id: turn.id,
+    kind: 'message.delta',
+    text: 'Back at work',
+  });
+  await f.control.tick();
+  expect(itemsOf(f, session.id)).toEqual([]);
+  expect(stalls()).toHaveLength(1);
+
+  advance(11 * MINUTE);
+  await f.control.tick();
+  await f.control.tick();
+  expect(stalls()).toHaveLength(2);
+});
+
 it('does not call a turn stalled while it streams text', async () => {
   const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);

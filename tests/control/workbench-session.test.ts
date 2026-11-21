@@ -654,7 +654,6 @@ it('binds a session created from a board task', async () => {
     lead_session_id: lead.id,
     id: 'api',
     generation: 2,
-    definition_version: 0,
   });
   expect(worker.title).toBe(`${'Serve exports over HTTP from the export service'.slice(0, 39)}…`);
   expect(() => create(`${lead.id}:missing`)).toThrow(

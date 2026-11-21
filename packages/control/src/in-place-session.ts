@@ -29,8 +29,8 @@ import { inheritedEnvAllowlist, managedSessionSpec, sessionExtensions } from './
 import { inPlaceSandbox } from './protection.js';
 import { reviewsRoots } from './session.js';
 import { registerInPlaceWorkspace } from './workspace.js';
-import { leadInstructions, PLATFORM_CORE } from './agent-prompts.js';
-import { startedLeadPlaybook } from './playbooks.js';
+import { LEAD_PLAYBOOK, leadInstructions, PLATFORM_CORE } from './agent-prompts.js';
+import { CONDUCTOR_INSTRUCTIONS } from './conductor.js';
 import { checkPermissionMode, workerInstructions } from './workbench-session.js';
 import { writerTempDirectory } from './workspace-removal.js';
 
@@ -115,7 +115,7 @@ export async function inPlaceSessionSpec(
     ? sessionMcp(ctx, session, credentialRole(session, workspace.kind))
     : undefined;
   // A new folder session without a task leads like a worktree session the user opened.
-  const planningLead = pantheonMcp && session.in_place && !session.task;
+  const planningLead = pantheonMcp && session.in_place && !session.task && !session.conductor;
   return managedSessionSpec(ctx, {
     platform_session_id: session.id,
     project_id: project.id,
@@ -139,9 +139,10 @@ export async function inPlaceSessionSpec(
             ]),
       ...(session.task ? [workerInstructions(ctx, session.task, questionTool)] : []),
       // A planning lead asks with ask_user, which LEAD_INSTRUCTIONS names.
-      ...(planningLead ? [leadInstructions(startedLeadPlaybook(ctx, session))] : []),
+      ...(planningLead ? [leadInstructions(LEAD_PLAYBOOK)] : []),
+      ...(pantheonMcp && session.conductor ? [CONDUCTOR_INSTRUCTIONS] : []),
       // workerInstructions tells a task session how to ask.
-      ...(questionTool && pantheonTools && !planningLead && !session.task
+      ...(questionTool && pantheonTools && !planningLead && !session.task && !session.conductor
         ? [
             `When the user must decide or answer something, ask with the ${questionTool} tool instead of asking in plain text. Give 2 to 4 short options with the one you recommend first; the user can also type an answer of their own.`,
           ]

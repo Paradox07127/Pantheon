@@ -34,13 +34,12 @@ const refusal = (run: () => unknown) => {
   return 'accepted';
 };
 
-it('holds milestones to accept, agent proposals and merges for the brief, delivers every other kind now and sets no quiet hours by default', async () => {
+it('holds milestones to accept and merges for the brief, delivers every other kind now and sets no quiet hours by default', async () => {
   const f = await setup();
   const settings = f.call<AppSettings>('app.settings.set', {});
   expect(settings.attention_delivery).toEqual({
     ...Object.fromEntries(NEEDS_YOU_DECISIONS.map((kind) => [kind, 'now'])),
     milestone_accept: 'brief',
-    agent_proposal: 'brief',
     merged: 'brief',
   });
   expect(settings.quiet_hours).toBeUndefined();
@@ -91,6 +90,32 @@ it('reads and saves settings over a config that still holds the commit range exp
   const saved = f.call<AppSettings>('app.settings.set', { session_recap: false });
   expect(saved.session_recap).toBe(false);
   expect(saved).not.toHaveProperty('baseline_range_story');
+});
+
+it('reads and saves settings over a config whose delivery rules still name agent proposals', async () => {
+  const userConfigDir = mkdtempSync(path.join(os.tmpdir(), 'pantheon-app-settings-'));
+  writeFileSync(
+    path.join(userConfigDir, 'config.json'),
+    JSON.stringify({
+      version: 1,
+      attention_delivery: { agent_proposal: 'never', question: 'brief' },
+    }),
+  );
+  const f = await fixture({ controlOptions: { userConfigDir } });
+  cleanups.push(async () => {
+    await f.close();
+    rmSync(userConfigDir, { recursive: true, force: true });
+  });
+  const read = f.control.appSettings({ id: 'user', role: 'user' });
+  expect(read.attention_delivery).not.toHaveProperty('agent_proposal');
+  expect(read.attention_delivery.question).toBe('brief');
+  const saved = f.call<AppSettings>('app.settings.set', {
+    session_recap: false,
+    attention_delivery: { budget: 'never' },
+  });
+  expect(saved.session_recap).toBe(false);
+  expect(saved.attention_delivery).toMatchObject({ question: 'brief', budget: 'never' });
+  expect(saved.attention_delivery).not.toHaveProperty('agent_proposal');
 });
 
 it.each([

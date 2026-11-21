@@ -20,7 +20,7 @@ import { continueSession } from './continuation.js';
 import { returnNotes } from './lead-inbox.js';
 import { finishRollback, restoreCheckpoint } from './checkpoint.js';
 import { recoverQueuedHandoff, unsnooze } from './session.js';
-import { recoverWorkflowSteps } from './workflow-engine.js';
+import { retireRemovedStepRuns } from './merge-review.js';
 import { recoverMilestoneVerifications } from './milestone-verify.js';
 import { recoverEnvironmentChecks } from './environment-check.js';
 import { reconciledStates } from './non-writer-audit.js';
@@ -110,7 +110,7 @@ export async function recover(ctx: ControlContext): Promise<void> {
   rollbackTransaction(ctx, () => {
     recoverChildProcesses(ctx);
     recoverGateRuns(ctx);
-    recoverWorkflowSteps(ctx);
+    retireRemovedStepRuns(ctx);
     recoverMilestoneVerifications(ctx);
     recoverEnvironmentChecks(ctx);
     for (const workspace of ctx.store

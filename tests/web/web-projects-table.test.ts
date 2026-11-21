@@ -362,7 +362,6 @@ describe('project table row', () => {
         permission: 3,
         budget: 1,
         external: 1,
-        agent_proposal: 1,
       }),
     );
     const labels = buttons(byKind(tree)).map((b) => b.props['aria-label']);

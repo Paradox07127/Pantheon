@@ -28,10 +28,8 @@ import {
 import { personalAnswer, personalCalled } from './personal-scope.js';
 import { runtimeReviewHistory } from './runtime-review.js';
 import { RUNTIME_LOOKBACK_MS, runtimeDiagnostics } from './runtime-findings.js';
-import { improvementSignals } from './improvement-signals.js';
 import { chartered, charterModes } from './charter.js';
 import { workflowPolicy } from './workflow-policy.js';
-import { workflowDefinition } from './workflow-engine.js';
 import { listDevices } from './devices.js';
 import { deviceLoads } from './task-dispatch.js';
 import { readUserConfig } from './user-config.js';
@@ -308,7 +306,6 @@ function leadGuidance(ctx: ControlContext, projectId: string, leadSessionId: str
     ),
     workflow: {
       policy_version: policy.policy_version,
-      improvement_mode: policy.improvement_mode,
       path: policy.path,
       acceptance_wake: policy.acceptance_wake,
       max_parallel: policy.max_parallel,
@@ -317,12 +314,6 @@ function leadGuidance(ctx: ControlContext, projectId: string, leadSessionId: str
       pinned: policy.pinned,
       plan_changes: policy.plan_changes,
       charter: charterModes(ctx, projectId),
-      steps: Object.fromEntries(
-        Object.entries(workflowDefinition(ctx, projectId).definition.slots).map(([slot, steps]) => [
-          slot,
-          steps.map((step) => ({ id: step.id, title: step.title, kind: step.kind.type })),
-        ]),
-      ) as LeadGuidance['workflow']['steps'],
     },
     retrospectives: ctx.store
       .list<Retrospective>('retrospectives')
@@ -343,13 +334,6 @@ function leadGuidance(ctx: ControlContext, projectId: string, leadSessionId: str
           ? { runtime_finding_count: row.runtime_findings.length }
           : {}),
         ...(row.turn_failure_codes ? { turn_failure_codes: row.turn_failure_codes } : {}),
-      })),
-    signals: improvementSignals(ctx, projectId)
-      .slice(0, 10)
-      .map(({ signal, cell, retrospective_ids }) => ({
-        signal,
-        ...(cell ? { cell } : {}),
-        retrospective_ids,
       })),
     ...(loads
       ? {

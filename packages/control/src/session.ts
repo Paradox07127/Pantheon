@@ -1109,7 +1109,9 @@ export function createTurnQueue(ctx: ControlContext, initial: SessionTurn, resum
           turn.origin === 'reflection' ? undefined : compactionInstructions(ctx, turn.session_id);
         const input = { ...copied, input: userTurn(delivered).input };
         const memory =
-          beforeDelivery.runtime_review || !usesPantheonTools(ctx, beforeDelivery)
+          beforeDelivery.runtime_review ||
+          beforeDelivery.conductor ||
+          !usesPantheonTools(ctx, beforeDelivery)
             ? undefined
             : ctx.store.transaction(() =>
                 prepareMemoryDelivery(
@@ -1347,9 +1349,10 @@ export function createTurnQueue(ctx: ControlContext, initial: SessionTurn, resum
       const injection = Promise.resolve().then(async () => {
         try {
           const steered = ctx.store.must<Session>('sessions', turn.session_id);
-          const memory = usesPantheonTools(ctx, steered)
-            ? ctx.store.transaction(() => prepareMemoryDelivery(ctx, steered, turn.id))
-            : undefined;
+          const memory =
+            usesPantheonTools(ctx, steered) && !steered.conductor
+              ? ctx.store.transaction(() => prepareMemoryDelivery(ctx, steered, turn.id))
+              : undefined;
           const input = await deviceTurn(ctx, turn.session_id, userTurn(turn));
           // Only a delivered steer carries the context; a queued one is sent later as its own turn.
           const found = turn.origin ? undefined : appContexts.get(ctx)?.get(turn.session_id);
@@ -1778,7 +1781,7 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
     // Only a session with memory tools hears about memory, and only one that can write about writing.
     const tools = purposeSessionTools(session);
     const memoryText =
-      session.resident?.kind === 'personal' || !usesPantheonTools(ctx, session)
+      session.resident?.kind === 'personal' || session.conductor || !usesPantheonTools(ctx, session)
         ? undefined
         : !tools || tools.includes('memory.propose')
           ? MEMORY_INSTRUCTIONS

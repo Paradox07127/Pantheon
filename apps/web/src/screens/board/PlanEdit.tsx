@@ -34,7 +34,6 @@ import {
 import { CHOSEN_PATHS, DOMAIN_LABEL, PATH_LABEL, tierText } from '../../data/workflow-policy';
 import { useRuntimeModels } from '../../data/runtime-models';
 import { offeredRuntimes, useRuntimeStatus } from '../../data/runtime-status';
-import { useWorkflowList } from '../../data/workflow-definition';
 import { t } from '../../i18n';
 import { EFFORT_LABEL, defaultModel } from '../sessions/model';
 import { taskTokens } from './activity';
@@ -416,7 +415,6 @@ export interface ContractFieldsProps {
 /** Goal, scope, acceptance, done-when, flow path and milestone, sent together as one set_task patch. */
 export function ContractFields({ model, target, busy: sending, send }: ContractFieldsProps) {
   const { contract: read, version, milestones, stale, error, reload } = usePlanContract(target);
-  const workflows = useWorkflowList(target.projectId).read ?? [];
   const owner = `${target.projectId}\n${target.taskId}\n`;
   const current = useRef(owner);
   current.current = owner;
@@ -517,7 +515,6 @@ export function ContractFields({ model, target, busy: sending, send }: ContractF
   const doneText = t({ id: 'board.plan.field.doneWhen', defaultMessage: 'Done when' });
   const milestoneText = t({ id: 'board.plan.field.milestone', defaultMessage: 'Milestone' });
   const pathText = t({ id: 'board.plan.field.path', defaultMessage: 'Flow path' });
-  const workflowText = t({ id: 'board.plan.field.workflow', defaultMessage: 'Workflow' });
   return (
     <div
       className="bd-ct"
@@ -582,23 +579,6 @@ export function ContractFields({ model, target, busy: sending, send }: ContractF
           ]}
         />
       </div>
-      {label(workflowText)}
-      <Select
-        aria-label={workflowText}
-        value={draft.workflow_id ?? ''}
-        disabled={busy}
-        onChange={(next) => change({ workflow_id: next || undefined })}
-        options={[
-          {
-            value: '',
-            label: t({ id: 'board.plan.field.pathDefault', defaultMessage: 'Follow the default' }),
-          },
-          ...(draft.workflow_id && !workflows.some((w) => w.id === draft.workflow_id)
-            ? [{ value: draft.workflow_id, label: draft.workflow_id }]
-            : []),
-          ...workflows.map((w) => ({ value: w.id, label: w.name })),
-        ]}
-      />
       {label(milestoneText)}
       <Select
         aria-label={milestoneText}

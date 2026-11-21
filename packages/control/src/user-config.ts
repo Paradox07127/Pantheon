@@ -49,7 +49,11 @@ export type ProjectDefaults = NonNullable<UserConfig['project_defaults']>;
 
 /** The values every project follows where it has none of its own. */
 export function projectDefaults(dir: string | undefined): ProjectDefaults {
-  return readUserConfig(dir).project_defaults ?? {};
+  const defaults = readUserConfig(dir).project_defaults ?? {};
+  if (defaults.workflow_policy?.improvement_mode === undefined) return defaults;
+  // No longer used; a stored value is ignored.
+  const { improvement_mode: _unused, ...workflow_policy } = defaults.workflow_policy;
+  return { ...defaults, workflow_policy };
 }
 
 /** The project's session defaults, else the global ones; undefined leaves the composer's own default. */

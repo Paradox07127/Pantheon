@@ -8,13 +8,7 @@ import type {
 } from '@pantheon/domain';
 import { awaitingChange, taskGeneration } from './board-plan.js';
 import type { ControlContext } from './context.js';
-import {
-  firstPlannedAt,
-  leadTurnsWithin,
-  leadWakes,
-  ratioToBudget,
-  stepWaits,
-} from './retrospective.js';
+import { firstPlannedAt, leadTurnsWithin, leadWakes, ratioToBudget } from './retrospective.js';
 import { taskPath } from './task-dispatch.js';
 import { turnInputTokens } from './turn-usage.js';
 import { workflowPolicy } from './workflow-policy.js';
@@ -106,11 +100,7 @@ export function taskBudgetUse(
           (sum, turn) => sum + turn.input_tokens,
           0,
         ));
-  const waited = stepWaits(ctx, plan, taskId, generation, now).reduce(
-    (sum, wait) => sum + Math.max(0, Math.min(wait.to, now) - Math.max(wait.from, start)),
-    0,
-  );
-  const wallMs = Math.max(0, now - start - waited);
+  const wallMs = Math.max(0, now - start);
   return {
     ratio: ratioToBudget(inputTokens, wallMs, limit),
     input_tokens: inputTokens,

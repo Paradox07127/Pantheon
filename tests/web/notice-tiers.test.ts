@@ -95,13 +95,6 @@ const askUser = (id: string, session_id: string) =>
     ] as never,
   });
 
-const workflowStep = approval('step-1', 'beta-login', {
-  source: { table: 'workflow_step_runs', id: 'step-1', revision: 1 },
-  kind: 'workflow.approval',
-  reason: 'workflow_approval',
-  binding: undefined,
-  actions: [{ command: 'workflow.step.decide', allowed: true }],
-});
 const externalRequest = approval('beta-docs', 'beta-docs', {
   source: { table: 'board_plans', id: 'beta-docs', revision: 1 },
   kind: 'external.approval',
@@ -271,14 +264,7 @@ describe('cards for what needs the user', () => {
     });
   });
 
-  it('gives a workflow step and an external request waiting for approval a card that opens it in the needs-you strip, even while its session is in front', () => {
-    const step = approval('step-1', 'beta-login', {
-      source: { table: 'workflow_step_runs', id: 'step-1', revision: 1 },
-      kind: 'workflow.approval',
-      reason: 'workflow_approval',
-      binding: undefined,
-      actions: [{ command: 'workflow.step.decide', allowed: true }],
-    });
+  it('gives an external request waiting for approval a card that opens it in the needs-you strip, even while its session is in front', () => {
     const held = approval('beta-docs', 'beta-docs', {
       source: { table: 'board_plans', id: 'beta-docs', revision: 1 },
       kind: 'external.approval',
@@ -287,16 +273,9 @@ describe('cards for what needs the user', () => {
       binding: undefined,
       actions: [{ command: 'external.approve', allowed: true }],
     });
-    const looking = { ...away, sessionId: 'beta-login' };
-    const cards = [step, held].map((item) => needsCard(item, board, looking, noRespond));
+    const looking = { ...away, sessionId: 'beta-docs' };
+    const cards = [held].map((item) => needsCard(item, board, looking, noRespond));
     expect(cards.map((card) => card && shape(card.options))).toEqual([
-      {
-        id: 'workflow_step_runs:step-1',
-        heading: 'Fix login',
-        event: zh('data.noticeTiers.waitsApproval'),
-        summary: reasonText('workflow_approval'),
-        since: NOW - 2 * 60_000,
-      },
       {
         id: 'board_plans:beta-docs:github:acme/docs#3',
         heading: 'Write docs',
@@ -310,7 +289,7 @@ describe('cards for what needs the user', () => {
     expect(useShell.getState()).toMatchObject({
       screen: 'trace',
       runsView: 'now',
-      askedNeed: 'workflow_step_runs:step-1',
+      askedNeed: 'board_plans:beta-docs:github:acme/docs#3',
     });
   });
 
@@ -464,9 +443,9 @@ describe('cards for what needs the user', () => {
     ).not.toBeNull();
   });
 
-  it('gives no card for a workflow step or an external request of the project whose needs-you strip the screen shows, while the window has focus', () => {
+  it('gives no card for an external request of the project whose needs-you strip the screen shows, while the window has focus', () => {
     const listing = { sessionId: null, queue: 'beta', listed: new Set<string>(), focused: true };
-    for (const item of [workflowStep, externalRequest]) {
+    for (const item of [externalRequest]) {
       expect(needsCard(item, board, listing, noRespond)).toBeNull();
       expect(needsCard(item, board, { ...listing, focused: false }, noRespond)).not.toBeNull();
       expect(needsCard(item, board, { ...listing, queue: 'alpha' }, noRespond)).not.toBeNull();
@@ -898,9 +877,9 @@ describe('the notice feed', () => {
     expect(mounted.shown()).toEqual([]);
   });
 
-  it('takes the cards of a workflow step and an external request away on arriving at the needs-you strip that answers them', () => {
-    render({ allNeeds: [workflowStep, externalRequest] });
-    expect(mounted.shown()).toEqual(['Write docs', 'Fix login']);
+  it('takes the card of an external request away on arriving at the needs-you strip that answers it', () => {
+    render({ allNeeds: [externalRequest] });
+    expect(mounted.shown()).toEqual(['Write docs']);
     useShell.setState({ screen: 'trace', traceTab: 'runs', runsView: 'now' });
     render();
     expect(mounted.shown()).toEqual([]);

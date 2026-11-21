@@ -8,8 +8,7 @@ import {
 } from '@pantheon/domain';
 import type { ControlContext } from './context.js';
 import { currentBinding, sessionPlanTask, taskGeneration } from './board-plan.js';
-import { beforeMergeCommands, gateCommands } from './landing.js';
-import type { ConditionAnswers } from './workflow-engine.js';
+import { gateCommands } from './landing.js';
 import { sessionGoal } from './landing-diff.js';
 
 /**
@@ -45,26 +44,17 @@ function taskContract(ctx: ControlContext, session: Session) {
   return historical && sessionPlanTask(historical, session);
 }
 
-/**
- * Only a recorded run of this commit and this command configuration can support a story; answers
- * decide the step conditions as beforeMergeCommands says.
- */
-export function storyContext(
-  ctx: ControlContext,
-  session: Session,
-  commit: string,
-  answers?: ConditionAnswers,
-): StoryContext {
+/** Only a recorded run of this commit and this command configuration can support a story. */
+export function storyContext(ctx: ControlContext, session: Session, commit: string): StoryContext {
   const task = taskContract(ctx, session);
   const acceptance = [...(task?.acceptance ?? [])];
   const project = ctx.store.must<Project>('projects', session.project_id);
   const workspace = ctx.store.must<Workspace>('workspaces', session.workspace_id!);
   const projectCommands =
-    gateCommands(ctx, project, workspace, { ...session, task: undefined }, answers) ?? [];
+    gateCommands(ctx, project, workspace, { ...session, task: undefined }) ?? [];
   const commands = [
     ...projectCommands,
     ...acceptance.map((command) => ({ name: command, argv: ['/bin/sh', '-c', command] })),
-    ...(task ? beforeMergeCommands(ctx, session, task, answers) : []),
   ];
   const spec_hash = hash(commands.length ? commands : undefined);
   const event = ctx.store

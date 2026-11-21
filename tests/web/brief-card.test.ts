@@ -160,7 +160,6 @@ const served: ProjectBrief = {
       at: NOW - 400_000,
       reason: 'gate_failed',
     },
-    { kind: 'proposal', ref: { kind: 'proposal', id: 'proposal-1' }, at: NOW - 500_000 },
   ],
 };
 
@@ -346,7 +345,7 @@ describe('since you left card', () => {
     expect(onOpenTask.mock.calls.map(([id]) => id)).toEqual(['lead-1:audit']);
   });
 
-  it('draws the plan lane with the new assumptions and none of the agent proposals the brief lists', async () => {
+  it('draws the plan lane with the new assumptions', async () => {
     serve(served);
     const h = await card('project-brief-c');
     const lane = group(

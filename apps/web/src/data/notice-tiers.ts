@@ -89,11 +89,10 @@ function heading(board: BoardSnapshot, projectId: string, sessionId: string | un
     : (board.projects.find((p) => p.id === projectId)?.name ?? '');
 }
 
-/** The card id of a pending approval, a lead question, a workflow step or an external request; null for any other item. */
+/** The card id of a pending approval, a lead question or an external request; null for any other item. */
 export function needsKey(item: NeedsYouItem): string | null {
   if (item.kind === 'permission' && item.reason === 'permission_requested') return item.source.id;
   if (item.kind === 'lead.question') return `${item.source.id}:${item.request_id ?? ''}`;
-  if (item.kind === 'workflow.approval') return `${item.source.table}:${item.source.id}`;
   // One plan holds every held external request and held lane of its lead.
   if (item.kind === 'external.approval' || item.kind === 'board.lane.approval')
     return `${item.source.table}:${item.source.id}:${item.request_id ?? ''}`;
@@ -103,7 +102,6 @@ export function needsKey(item: NeedsYouItem): string | null {
 /** Whether the needs-you strip answers the item rather than a session's thread. */
 export const answeredInStrip = (item: NeedsYouItem): boolean =>
   item.kind === 'lead.question' ||
-  item.kind === 'workflow.approval' ||
   item.kind === 'external.approval' ||
   item.kind === 'board.lane.approval';
 

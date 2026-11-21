@@ -177,7 +177,7 @@ export const sessionNoticeNow = (
 const defineMessage = (message: Message): Message => message;
 
 /** Each kind's name, in the order the settings list them. */
-export const DECISION_NAME: Record<Exclude<AttentionKind, 'agent_proposal'>, Message> = {
+export const DECISION_NAME: Record<AttentionKind, Message> = {
   plan_change: defineMessage({
     id: 'settings.notifications.planChange',
     defaultMessage: 'Plan change',
@@ -492,11 +492,10 @@ export function liveNotices(
 /** A notice about no session, such as a milestone to accept, names the empty session; it opens the project's inbox. */
 const INBOX = '';
 
-/** Whether an item waits for the user's answer: a request, a lead's question or a workflow step's approval. */
+/** Whether an item waits for the user's answer: a request, a lead's question or an approval. */
 export const waitsForAnswer = (item: NeedsYouItem) =>
   (item.source.table === 'approvals' && item.status === 'pending') ||
   item.kind === 'lead.question' ||
-  item.kind === 'workflow.approval' ||
   item.kind === 'external.approval' ||
   item.kind === 'board.lane.approval';
 
@@ -610,11 +609,13 @@ export function reviewNotice(
 }
 
 const DECISIONS: readonly string[] = ['milestone.ready_for_acceptance', 'board.plan.proposal'];
+// Their notice opens the session. A usage limit is not here: its turn.failed already gives a notice.
+const SESSION_REASONS: readonly string[] = ['session_turn_stalled'];
 
 /**
- * The notices of the milestones ready for acceptance and the proposals that joined the list, each
- * once while it stays listed; the items of the first read give none, and an unread list leaves
- * seen as it was.
+ * The notices of the milestones ready for acceptance, the proposals and the sessions with a
+ * stalled turn that joined the list, each once while it stays listed; the items of
+ * the first read give none, and an unread list leaves seen as it was.
  */
 export function decisionNotices(
   seen: ReadonlySet<string> | null,
@@ -624,7 +625,9 @@ export function decisionNotices(
   r: DeliveryRules | null = getDeliveryRules(),
 ): { seen: ReadonlySet<string> | null; notices: Notice[] } {
   if (!items || !board) return { seen, notices: [] };
-  const decisions = items.filter((item) => DECISIONS.includes(item.kind));
+  const decisions = items.filter(
+    (item) => DECISIONS.includes(item.kind) || SESSION_REASONS.includes(item.reason),
+  );
   const next = new Set<string>();
   const notices: Notice[] = [];
   for (const item of decisions) {
@@ -637,7 +640,10 @@ export function decisionNotices(
     notices.push({
       title: project.name,
       body: title ? reasonDetail(reasonText(item.reason), title) : reasonText(item.reason),
-      target: { project_id: project.id, session_id: INBOX },
+      target: {
+        project_id: project.id,
+        session_id: SESSION_REASONS.includes(item.reason) ? item.source.id : INBOX,
+      },
       ...sound('approval_requested', p),
     });
   }
@@ -865,7 +871,7 @@ function useRequestNotices(items: readonly NeedsYouItem[] | null) {
   }, [items]);
 }
 
-/** Notifies each milestone ready for acceptance and each new proposal of every project once. */
+/** Notifies each item of decisionNotices of every project once. */
 function useDecisionNotices(items: readonly NeedsYouItem[] | null) {
   const seen = useRef<ReadonlySet<string> | null>(null);
   useEffect(() => {

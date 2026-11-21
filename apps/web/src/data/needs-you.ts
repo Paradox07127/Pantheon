@@ -14,8 +14,6 @@ export interface NeedsYouItem {
       | 'board_plans'
       | 'milestones'
       | 'workflow_policies'
-      | 'workflow_definitions'
-      | 'workflow_step_runs'
       | 'memory_records';
     id: string;
     revision: number;
@@ -27,13 +25,11 @@ export interface NeedsYouItem {
     | 'session.gate_failed'
     | 'session.merge_blocked'
     | 'milestone.ready_for_acceptance'
-    | 'workflow.definition.trial'
     | 'board.plan.proposal'
     | 'board.lane.approval'
     | 'board.plan.reassessment'
     | 'project.over_budget'
     | 'lead.question'
-    | 'workflow.approval'
     | 'external.approval'
     | 'memory.decision_budget';
   project_id: string;
@@ -73,9 +69,10 @@ export interface NeedsYouItem {
     | 'lead_turn_stalled'
     | 'lead_wake_limited'
     | 'usage_limit_waiting'
+    | 'usage_limit_reached'
+    | 'session_turn_stalled'
     | 'background_task_long'
     | 'milestone_ready_for_acceptance'
-    | 'workflow_definition_trial_completed'
     | 'plan_proposal_awaiting_decision'
     | 'lane_plan_awaiting_approval'
     | 'plan_reassessment_ready'
@@ -84,8 +81,6 @@ export interface NeedsYouItem {
     | 'task_blocked'
     | 'workflow_approval'
     | 'external_approval'
-    | 'agent_proposal_awaiting_decision'
-    | 'setting_proposal_awaiting_decision'
     | 'plan_decisions_over_budget';
   /** What the user decides. */
   decision?:
@@ -93,7 +88,6 @@ export interface NeedsYouItem {
     | 'question'
     | 'milestone_accept'
     | 'repeated_failure'
-    | 'agent_proposal'
     | 'permission'
     | 'budget'
     | 'improvement'
@@ -154,8 +148,6 @@ export interface NeedsYouItem {
   };
   /** The title of the lane a `board.lane.approval` item holds; no other item has it. */
   lane_title?: string;
-  /** The title of the workflow step that waits for approval. */
-  step_title?: string;
   /** Who acts next and how. */
   next_step?: string;
 }
@@ -224,8 +216,6 @@ export function touchesNeedsYou(kind: string): boolean {
       'task.accepted',
       'workflow.step_created',
       'workflow.step_changed',
-      'workflow.definition_trial_completed',
-      'workflow.definition_trial_decided',
       'workflow.policy_changed',
       'lead.question_asked',
       'board.external_held',
@@ -246,6 +236,7 @@ export function touchesNeedsYou(kind: string): boolean {
       'turn.completed',
       'turn.failed',
       'turn.cancelled',
+      'session.turn_stalled',
     ].includes(kind)
   );
 }
@@ -299,7 +290,7 @@ function knownReason(code: string): string | null {
     case 'uncommitted_changes':
       return t({
         id: 'data.reason.uncommittedChanges',
-        defaultMessage: 'The worktree has uncommitted changes; have it commit them first',
+        defaultMessage: 'The worktree has uncommitted changes that this merge does not commit',
       });
     case 'no_changes':
       return t({ id: 'data.reason.noChanges', defaultMessage: 'No commits to merge' });
@@ -445,6 +436,15 @@ function knownReason(code: string): string | null {
         id: 'data.reason.usageLimitWaiting',
         defaultMessage: 'Subscription usage limit reached; continues on its own after the reset',
       });
+    // usage_limit is the error code of the turn that hit the limit.
+    case 'usage_limit_reached':
+    case 'usage_limit':
+      return t({ id: 'data.reason.usageLimitReached', defaultMessage: 'Usage limit reached' });
+    case 'session_turn_stalled':
+      return t({
+        id: 'data.reason.sessionTurnStalled',
+        defaultMessage: 'No progress for 10 minutes',
+      });
     case 'background_task_long':
       return t({
         id: 'data.reason.backgroundTaskLong',
@@ -470,7 +470,7 @@ function knownReason(code: string): string | null {
     case 'workflow_approval':
       return t({
         id: 'data.reason.workflowApproval',
-        defaultMessage: 'Workflow step awaiting your approval',
+        defaultMessage: 'Waiting for code review',
       });
     case 'external_approval':
       return t({

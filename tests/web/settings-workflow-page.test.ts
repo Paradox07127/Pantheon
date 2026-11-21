@@ -35,7 +35,6 @@ const policy = (patch: Partial<WorkflowPolicy> = {}): WorkflowPolicy => ({
   revision: 2,
   project_id: 'alpha',
   policy_version: 2,
-  improvement_mode: 'confirm',
   plan_changes: 'auto',
   path: { t1: 'direct', t2: 'dispatch', t3: 'dispatch' },
   acceptance_wake: 'each_merge',
@@ -113,7 +112,6 @@ describe('workflow settings page', () => {
     expect(rowNames(groups[1])).toEqual(['path', 'taskSizeHint', 'budget'].map(param));
     expect(rowNames(groups[2])).toEqual([param('acceptanceWake')]);
     expect(rowNames(tree(h))).not.toContain(param('handbackLimit'));
-    expect(rowNames(tree(h))).not.toContain(param('improvementMode'));
   });
 
   it('sends the plan changes choice the user picks', async () => {

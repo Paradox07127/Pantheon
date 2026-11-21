@@ -6,19 +6,20 @@ import { isRuntimeHeld } from './runtime-status.js';
 import { fireDueTimers } from './timers.js';
 import { tickExternalSources } from './external-sources.js';
 import { tickExternalIntake } from './external-events.js';
-import { conditionsDecided, conditionsRead } from './workflow-engine.js';
 import {
   deliverPermissionAnswer,
   recordAnswerDelivery,
   type PermissionAnswer,
 } from './approvals.js';
 import { removeWorkspace } from './workspace-removal.js';
+import { runLanding } from './branch-landing.js';
 import { autoMergesRead, mergeSession, rollbackTransaction } from './workbench-session.js';
 import { removeReviewDirectories } from './review-removal.js';
 import { startWorkspaceProvisioning } from './provisioning.js';
 import { tickChangeStories } from './change-story.js';
 import { tickProjectBaselines } from './baseline.js';
 import { tickTaskTracking } from './task-tracking.js';
+import { tickSessionStalls } from './session-stall.js';
 import { tickPersonalAttention } from './personal-agent.js';
 import { readDispatchOpenings } from './task-dispatch.js';
 import { forgetRetrospectiveScan, recordRetrospectives } from './retrospective.js';
@@ -30,9 +31,6 @@ export async function tick(ctx: ControlContext): Promise<void> {
     await stopConversations(ctx);
     // The tracker and the merge jobs see the merges turns that ended have admitted.
     await autoMergesRead(ctx);
-    // The step decisions below use the condition answers that earlier decisions requested.
-    const reading = conditionsRead(ctx);
-    if (reading) await reading;
     ctx.store.transaction(() => tickProjectBaselines(ctx));
     ctx.store.transaction(() => tickChangeStories(ctx));
     tickExternalIntake(ctx);
@@ -43,14 +41,13 @@ export async function tick(ctx: ControlContext): Promise<void> {
     try {
       rollbackTransaction(ctx, () => {
         tickTaskTracking(ctx);
+        tickSessionStalls(ctx);
         tickPersonalAttention(ctx);
         recordRetrospectives(ctx);
       });
     } catch (error) {
       forgetRetrospectiveScan(ctx);
       throw error;
-    } finally {
-      conditionsDecided(ctx);
     }
     for (const out of ctx.store.pending()) {
       // Shutdown began while an earlier job awaited; the rest stay pending for the next daemon.
@@ -72,6 +69,7 @@ export async function tick(ctx: ControlContext): Promise<void> {
         await startTurn(ctx, payload.turn_id!);
         ctx.store.mark(out.id, 'done');
       } else if (out.kind === 'session.merge') mergeSession(ctx, payload.session_id!, out.id);
+      else if (out.kind === 'landing.run') runLanding(ctx, payload.landing_id!, out.id);
       else if (out.kind === 'workspace.remove')
         await removeWorkspace(ctx, payload.workspace_id!, out.id);
       else if (out.kind === 'review.remove')

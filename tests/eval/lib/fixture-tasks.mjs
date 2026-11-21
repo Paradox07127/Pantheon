@@ -47,13 +47,12 @@ export const behaviours = {
   turn_fails: () => [{ fail: 'Usage limit reached' }],
 };
 
-/** The conditions a fixture run compares when none is named; the task's acceptance (`test -f`) is in both. */
-export const conditions = ['acceptance_only', 'independent_check'];
+/** The conditions a fixture run compares when none is named: the task's acceptance (`test -f`), and none. */
+export const conditions = ['acceptance_only', 'bare'];
 
 /** What the runs of each condition must come to; a difference means the runner or the report is wrong. */
 export const knownAnswers = {
   acceptance_only: { runs: 7, merged: 3, leaked: 1, leaking: ['writes_wrong_content'] },
-  independent_check: { runs: 7, merged: 2, leaked: 0, leaking: [] },
   dispatch: { runs: 7, merged: 3, leaked: 1, leaking: ['writes_wrong_content'] },
   // No scope check and no sandbox: the out-of-scope and the escaping commits land too.
   bare: { runs: 7, merged: 4, leaked: 1, leaking: ['writes_wrong_content'] },

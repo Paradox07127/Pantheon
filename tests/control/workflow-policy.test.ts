@@ -42,7 +42,6 @@ it('reads the default policy at version 0 when the project has none', async () =
   expect(policyOf(f)).toMatchObject({
     project_id: f.project.id,
     policy_version: 0,
-    improvement_mode: 'auto',
     plan_changes: 'auto',
     path: { t1: 'direct', t2: 'dispatch', t3: 'dispatch' },
     acceptance_wake: 'each_merge',
@@ -104,9 +103,9 @@ it('refuses max_parallel above the user limit and keeps the stored policy', asyn
 
 it('leaves the version and events alone when the input matches the project settings', async () => {
   const f = await opened();
-  set(f, { max_parallel: 2, improvement_mode: 'auto' });
+  set(f, { max_parallel: 2, plan_changes: 'auto' });
   set(f, { max_parallel: 2 });
-  set(f, { max_parallel: 2, improvement_mode: 'auto' });
+  set(f, { max_parallel: 2, plan_changes: 'auto' });
   expect(policyOf(f).policy_version).toBe(1);
   expect(changes(f)).toHaveLength(2);
 });
@@ -121,6 +120,42 @@ it('stores a value equal to the one it follows as the project setting', async ()
   expect(changes(f).map((event) => event.payload)).toMatchObject([
     { param: 'path', from: { t1: 'direct' }, to: { t1: 'direct' } },
     { param: 'max_parallel', from: 3, to: 3 },
+  ]);
+});
+
+it('reads a stored policy that still holds improvement_mode and eval_runner without them, and saves another parameter', async () => {
+  const f = await opened();
+  const stored = {
+    id: f.project.id,
+    revision: 1,
+    project_id: f.project.id,
+    policy_version: 1,
+    improvement_mode: 'confirm',
+    eval_runner: 'on',
+    plan_changes: 'auto',
+    path: { t1: 'direct', t2: 'dispatch', t3: 'dispatch' },
+    acceptance_wake: 'each_merge',
+    max_parallel: 3,
+    max_parallel_limit: 3,
+    handback_limit: 3,
+    budget: {},
+    pinned: [],
+    overridden: ['improvement_mode', 'eval_runner', 'max_parallel'],
+  };
+  f.store.transaction(() =>
+    f.store.insert<WorkflowPolicy>('workflow_policies', stored as unknown as WorkflowPolicy),
+  );
+  const read = f.control.workflowPolicy(user, f.project.id);
+  expect(read).toMatchObject({ max_parallel: 3, policy_version: 1 });
+  expect(read).not.toHaveProperty('improvement_mode');
+  expect(read).not.toHaveProperty('eval_runner');
+  set(f, { max_parallel: 2 });
+  const after = f.store.get<WorkflowPolicy>('workflow_policies', f.project.id)!;
+  expect(after).toMatchObject({ max_parallel: 2, policy_version: 2, overridden: ['max_parallel'] });
+  expect(after).not.toHaveProperty('improvement_mode');
+  expect(after).not.toHaveProperty('eval_runner');
+  expect(changes(f).map((event) => event.payload)).toEqual([
+    { param: 'max_parallel', from: 3, to: 2, by: 'user', policy_version: 2 },
   ]);
 });
 
@@ -274,9 +309,5 @@ it('stores disabled hand-backs and refuses a limit of one', async () => {
   const f = await opened();
   expect(set(f, { handback_limit: 0 }).handback_limit).toBe(0);
   expect(policyOf(f).handback_limit).toBe(0);
-  expect(f.control.workflowDefinition(user, f.project.id).fixed_steps).toContainEqual({
-    id: 'handback',
-    policy: { handback_limit: 0 },
-  });
   expect(() => set(f, { handback_limit: 1 })).toThrow();
 });

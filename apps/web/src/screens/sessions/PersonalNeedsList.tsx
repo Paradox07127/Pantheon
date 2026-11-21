@@ -13,7 +13,6 @@ import { sessionTitle } from '../../data/transcript';
 import { t } from '../../i18n';
 import { clockText } from '../../lib/time-text';
 import { useShell } from '../../store';
-import { noVerdictKind, type NeedItem } from '../board/frame-model';
 
 const SHOWN = 5;
 
@@ -84,7 +83,7 @@ function NeedsList({ items: read, at }: { items: readonly NeedsYouItem[]; at: nu
                 const named =
                   item.lane_title ?? (session && board ? sessionTitle(session, board) : undefined);
                 const reason = needReasonText(item);
-                const kind = noVerdictKind(item as NeedItem) ?? decisionText(item.decision);
+                const kind = decisionText(item.decision);
                 return (
                   <button
                     key={needRowKey(item)}

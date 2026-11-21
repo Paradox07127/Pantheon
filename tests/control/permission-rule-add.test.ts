@@ -2,11 +2,10 @@ import { expect, it } from 'vitest';
 import type { AgentEvent, Approval, Principal, Project } from '@pantheon/domain';
 import type { ControlContext } from '../../packages/control/dist/context.js';
 import { requestApproval } from '../../packages/control/dist/approvals.js';
-import { improvementSignals } from '../../packages/control/dist/improvement-signals.js';
 import { user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
-it('adds a rule from a finding once, lists it, suppresses the finding and answers later requests', async () => {
+it('adds a rule once, lists it and answers later requests', async () => {
   const f = await workbenchFixture();
   const session = await f.create();
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
@@ -35,17 +34,6 @@ it('adds a rule from a finding once, lists it, suppresses the finding and answer
       approval.revision,
     );
   }
-  expect(
-    improvementSignals(ctx, f.project.id).find(
-      (finding) => finding.signal === 'always_approved_command',
-    )?.evidence,
-  ).toEqual({
-    kind: 'always_approved_command',
-    command: 'pnpm test --filter control',
-    approvals: 5,
-    rule: 'Bash(pnpm test)',
-    session_id: session.id,
-  });
   const input = { project_id: f.project.id, rule: 'Bash(pnpm test)', session_id: session.id };
   const project = f.call<Project>('permission.rule.add', input);
   expect(project.permission_rules).toEqual([
@@ -58,11 +46,6 @@ it('adds a rule from a finding once, lists it, suppresses the finding and answer
   const events = f.store.kindEvents(f.project.id, ['project.rule_allowed']);
   expect(events).toHaveLength(1);
   expect(events[0]!.payload).toEqual(project.permission_rules![0]);
-  expect(
-    improvementSignals(ctx, f.project.id).filter(
-      (finding) => finding.signal === 'always_approved_command',
-    ),
-  ).toEqual([]);
   const automatic = request('after-rule');
   expect(automatic).toMatchObject({ state: 'approved', answered_by_rule: input.rule });
   expect(f.control.needsYou(user).items.some((item) => item.source.id === automatic.id)).toBe(

@@ -2928,36 +2928,9 @@ it('divides history handbacks by gate, external review, user review rejection an
   });
   f.store.event('session.merge_blocked', worker, f.project.id, { reason: 'rebase_conflict' });
   queue('conflict-repair', 'Resolve the rebase conflict');
-  const run = f.store.insert<StepRun>('workflow_step_runs', {
-    id: 'export-prompt',
-    revision: 1,
-    project_id: f.project.id,
-    lead_session_id: lead.id,
-    task_id: 'exports',
-    generation: 1,
-    definition_version: 1,
-    slot: 'before_dispatch',
-    step: {
-      id: 'prepare',
-      title: 'Prepare',
-      kind: { type: 'prompt', target: 'lead', prompt: 'Prepare exports' },
-    },
-    state: 'failed',
-    created_at: f.store.now(),
-  });
-  f.store.event('workflow.step_changed', run, f.project.id, {
-    state: 'failed',
-    task_id: 'exports',
-    slot: run.slot,
-    step_id: run.step.id,
-  });
-  f.store.event('task.handed_back', lead, f.project.id, {
-    task_id: 'exports',
-    reason: 'Preparation failed',
-  });
   const row = f.control.boardHistory(user, f.project.id).tasks[0]!;
-  expect(row.handback_reasons).toEqual({ gate: 1, review: 2, other: 2 });
-  expect(row.handbacks).toBe(5);
+  expect(row.handback_reasons).toEqual({ gate: 1, review: 2, other: 1 });
+  expect(row.handbacks).toBe(4);
   expect(Object.values(row.handback_reasons!).reduce((sum, count) => sum + count, 0)).toBe(
     row.handbacks,
   );
@@ -3069,17 +3042,16 @@ it('counts failed task attempts and opened user requests over two history days a
     task: { lead_session_id: lead.id, id: 'exports' },
   });
   f.store.event('session.opened', worker, f.project.id, worker);
-  const approval = f.store.insert<StepRun>('workflow_step_runs', {
-    id: 'export-approval',
+  const review = f.store.insert<StepRun>('workflow_step_runs', {
+    id: 'export-review',
     revision: 1,
     project_id: f.project.id,
     lead_session_id: lead.id,
     task_id: 'exports',
     generation: 1,
-    definition_version: 1,
-    slot: 'before_dispatch',
-    step: { id: 'approve-export', title: 'Approve export', kind: { type: 'approval' } },
-    state: 'waiting',
+    slot: 'before_merge',
+    step: { id: 'review-export', title: 'Review export', kind: { type: 'review' } },
+    state: 'running',
     created_at: now,
   });
   for (const day of [0, 1]) {
@@ -3102,11 +3074,11 @@ it('counts failed task attempts and opened user requests over two history days a
     f.store.event('lead.question_asked', lead, f.project.id, {
       question: 'Choose the export format',
     });
-    f.store.event('workflow.step_changed', approval, f.project.id, {
-      state: day === 0 ? 'waiting' : 'rejected',
+    f.store.event('workflow.step_changed', review, f.project.id, {
+      state: day === 0 ? 'running' : 'failed',
       task_id: 'exports',
-      slot: approval.slot,
-      step_id: approval.step.id,
+      slot: review.slot,
+      step_id: review.step.id,
     });
     if (day === 1) {
       f.store.event('task.handed_back', lead, f.project.id, {
@@ -3134,7 +3106,7 @@ it('counts failed task attempts and opened user requests over two history days a
   }
   const history = f.control.boardHistory(user, f.project.id);
   expect(history.days.map(({ failed, waited }) => ({ failed, waited }))).toEqual([
-    { failed: 1, waited: 3 },
+    { failed: 1, waited: 2 },
     { failed: 1, waited: 2 },
   ]);
   expect(history.tasks[0]!.handback_reasons).toEqual({ gate: 0, review: 1, other: 0 });
@@ -3981,7 +3953,7 @@ it('keeps only the newest two hundred collaboration events in time order', async
   expect(events.at(-1)).toEqual({ at: now - 1, kind: 'handback', session_id: worker.id });
 });
 
-it('copies the verdict of a step run and the reviewers of its review into the task row', async () => {
+it('copies the reviewers of the review of a review step into the task row', async () => {
   const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [{ id: 'exports', title: 'Export data', depends_on: [] }]);
   const step = (id: string, extra: Partial<StepRun>) =>
@@ -3992,31 +3964,12 @@ it('copies the verdict of a step run and the reviewers of its review into the ta
       lead_session_id: lead.id,
       task_id: 'exports',
       generation: 1,
-      definition_version: 0,
       slot: 'before_merge',
-      step: {
-        id,
-        title: id,
-        kind: { type: 'prompt', prompt: 'Check the export', expects: 'verdict' },
-      },
+      step: { id, title: id, kind: { type: 'review' } },
       state: 'failed',
       created_at: f.store.now(),
       ...extra,
     });
-  const verdict = {
-    verdict: 'fail' as const,
-    summary: 'The CSV header misses the currency column.',
-    evidence: [
-      { kind: 'command' as const, ref: 'node scripts/export.mjs', checked: true, exit_code: 1 },
-      { kind: 'file' as const, ref: 'src/export.ts', checked: false },
-    ],
-    session_id: 'export-worker',
-    turn_id: 'check-turn',
-    at: f.store.now(),
-  };
-  step('check', { turn_id: 'check-turn', verdict });
-  // A run sent back to pending keeps the verdict of a turn that is no longer its own.
-  step('stale', { state: 'pending', verdict });
   f.store.insert<Review>('reviews', {
     id: 'export-review',
     revision: 1,
@@ -4077,16 +4030,6 @@ it('copies the verdict of a step run and the reviewers of its review into the ta
   const runs = f.control
     .boardView(user, f.project.id, 1)
     .tasks.find((task) => task.id === `${lead.id}:exports`)!.step_runs!;
-  const { session_id: _, ...shown } = verdict;
-  expect(runs.find((run) => run.id === 'check')!.verdict).toEqual(shown);
-  expect(runs.find((run) => run.id === 'stale')).not.toHaveProperty('verdict');
-  expect(runs.map((run) => [run.id, run.expects])).toEqual([
-    ['check', 'verdict'],
-    ['stale', 'verdict'],
-    ['review', undefined],
-    ['pair', undefined],
-  ]);
-  expect(runs.find((run) => run.id === 'review')).not.toHaveProperty('expects');
   expect(runs.find((run) => run.id === 'review')!.reviewers).toEqual([
     { runtime: 'claude', verdict: 'pass', summary: 'Columns match.' },
     { runtime: 'codex' },
@@ -4186,4 +4129,48 @@ it('gives a lane its depth and plan stop, and an estimate only while it waits fo
     },
     { id: `${lead.id}:misc`, title: 'Misc' },
   ]);
+});
+
+it('reads stored sessions and step runs that pin a workflow version and leaves the pins off the board', async () => {
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [{ id: 'exports', title: 'Export data', depends_on: [] }]);
+  f.store.insert<Session>('sessions', {
+    id: 'pinned-worker',
+    revision: 1,
+    project_id: f.project.id,
+    runtime: f.adapter.name,
+    workspace_id: lead.workspace_id,
+    state: 'open',
+    turn_count: 0,
+    task: {
+      lead_session_id: lead.id,
+      id: 'exports',
+      generation: 1,
+      definition_version: 2,
+      workflow_id: 'release',
+    },
+  } as Session);
+  f.store.insert<StepRun>('workflow_step_runs', {
+    id: 'pinned-review',
+    revision: 1,
+    project_id: f.project.id,
+    lead_session_id: lead.id,
+    task_id: 'exports',
+    generation: 1,
+    definition_version: 2,
+    workflow_id: 'release',
+    slot: 'before_merge',
+    step: { id: 'review-export', title: 'Review export', kind: { type: 'review' } },
+    state: 'running',
+    session_id: 'pinned-worker',
+    created_at: f.store.now(),
+  } as StepRun);
+  const row = f.control
+    .boardView(user, f.project.id, 1)
+    .tasks.find((task) => task.id === `${lead.id}:exports`)!;
+  expect(row.step_runs?.map((run) => run.id)).toEqual(['pinned-review']);
+  expect(JSON.stringify(row)).not.toMatch(/definition_version|workflow_id/);
+  expect(
+    f.control.sessionList(user, f.project.id).some((item) => item.id === 'pinned-worker'),
+  ).toBe(true);
 });

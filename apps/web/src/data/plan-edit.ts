@@ -210,12 +210,6 @@ const PATCH_FIELDS: { key: keyof Patch; field: string }[] = [
 /** Fields an added task lists on lines of their own, so only a set_task change lists them here. */
 const MORE_PATCH_FIELDS: { key: keyof Patch; field: string }[] = [
   {
-    key: 'workflow_id',
-    get field() {
-      return t({ id: 'data.planEdit.field.workflow', defaultMessage: 'Workflow' });
-    },
-  },
-  {
     key: 'flow_reason',
     get field() {
       return t({ id: 'data.planEdit.field.flowReason', defaultMessage: 'Flow path reason' });
@@ -373,10 +367,6 @@ function patchValue(
         : patch.path
           ? PATH_LABEL[patch.path]
           : null;
-    case 'workflow_id':
-      return patch.workflow_id === null
-        ? t({ id: 'data.planEdit.workflow.default', defaultMessage: 'Follow the default' })
-        : (patch.workflow_id ?? null);
     case 'iteration':
       return patch.iteration === null
         ? none()
@@ -494,7 +484,7 @@ export function opChanges(
         after: titles(op.depends_on),
       },
     ];
-  // Scope, acceptance, done_when, the milestone key, the workflow, the flow path reason and the parts
+  // Scope, acceptance, done_when, the milestone key, the flow path reason and the parts
   // take no old value from the board here.
   const now: Patch = task
     ? {
@@ -546,10 +536,6 @@ export function addedTaskFields(
     (model.iterations?.find((i) => i.id === `${leadId}:${task.iteration}`)?.title ??
       task.iteration);
   const more: ContractField[] = [
-    {
-      field: t({ id: 'data.planEdit.field.workflow', defaultMessage: 'Workflow' }),
-      values: task.workflow_id ? [task.workflow_id] : [],
-    },
     {
       field: t({ id: 'data.planEdit.field.iteration', defaultMessage: 'Iteration' }),
       values: iteration ? [iteration] : [],
@@ -805,8 +791,6 @@ export interface Contract {
   milestone: string | null;
   /** The flow path the task names; null follows its tier's. */
   path: FlowPath | null;
-  /** The project workflow the task names; absent follows the default one. */
-  workflow_id?: string;
 }
 
 const entriesOf = (items: readonly string[]) => items.map((s) => s.trim()).filter(Boolean);
@@ -825,8 +809,6 @@ export function contractPatch(before: Contract, after: Contract): Patch {
     ...(after.done_when !== before.done_when ? { done_when: after.done_when } : {}),
     ...(after.milestone !== before.milestone ? { milestone: after.milestone } : {}),
     ...(after.path !== before.path ? { path: after.path } : {}),
-    // null takes a named workflow off the task, so the default one applies.
-    ...(after.workflow_id !== before.workflow_id ? { workflow_id: after.workflow_id ?? null } : {}),
   };
 }
 
@@ -876,7 +858,6 @@ export function usePlanContract(target: EditTarget): {
           done_when: task.done_when ?? 'merged',
           milestone: task.milestone ?? null,
           path: task.path ?? null,
-          ...(task.workflow_id && { workflow_id: task.workflow_id }),
         }
       : null,
     version: plan?.plan_version ?? null,

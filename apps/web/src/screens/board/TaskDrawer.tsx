@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { AlertDialog } from '@base-ui/react/alert-dialog';
 import { Dialog } from '@base-ui/react/dialog';
-import { Check, Crown, File, RefreshCw, Terminal, X } from 'lucide-react';
+import { RefreshCw, X } from 'lucide-react';
 import type { BackendSummary, BoardModel, BoardTaskStatus } from '@pantheon/protocol';
 import { Clip } from '../../components/Clip';
 import { DiffCounts } from '../../components/DiffCounts';
@@ -10,8 +10,6 @@ import { PathText } from '../../components/PathText';
 import { ModelMark, RuntimeGlyph } from '../../components/RuntimeGlyph';
 import { Select } from '../../components/Select';
 import { Splitter } from '../../components/Splitter';
-import { Tip } from '../../components/Tip';
-import { toast } from '../../components/Toast';
 import { useBackends } from '../../data/backends';
 import { useDevices } from '../../data/devices';
 import { focusRequest } from '../../data/focus-request';
@@ -24,7 +22,7 @@ import {
   useLayout,
   useViewportWidth,
 } from '../../data/layout';
-import { ageText, useNow } from '../../data/needs-you';
+import { useNow } from '../../data/needs-you';
 import { needsKey } from '../../data/notice-tiers';
 import { useRuntimeModels, type ModelsState } from '../../data/runtime-models';
 import { useRuntimeStatus } from '../../data/runtime-status';
@@ -57,13 +55,7 @@ import {
   escalationTrack,
   GateChecks,
 } from './DrawerGraphics';
-import {
-  needActions,
-  needCommand,
-  requestNeed,
-  type NeedAction,
-  type NeedItem,
-} from './frame-model';
+import { requestNeed } from './frame-model';
 import { EvidenceMark } from './EvidenceMark';
 import { PlanEdit } from './PlanEdit';
 import { PlanList } from './PlanList';
@@ -128,7 +120,7 @@ export const hasOpenSession = (task: Pick<Task, 'claim' | 'state'>) =>
 const leadClaimed = (task: Task) => !!task.claim && task.claim.session_id === task.owner_session_id;
 
 /** The waits under which the daemon opens no session the user asks for on the task. */
-const STARTS_HELD = new Set<Task['dispatch_wait']>(['upstream', 'scope', 'answer', 'step']);
+const STARTS_HELD = new Set<Task['dispatch_wait']>(['upstream', 'scope', 'answer']);
 
 /** The daemon would open a session the user asks for on the task now. */
 const startable = (task: Task) =>
@@ -550,13 +542,9 @@ function ParallelParts({
   );
 }
 
-type StepRunRow = NonNullable<Task['step_runs']>[number];
+type SnapshotStepRun = NonNullable<Task['step_runs']>[number];
 
-const STEP_CHIP: Partial<Record<StepRunRow['state'], { dot: string; label: () => string }>> = {
-  inconclusive: {
-    dot: 'wait',
-    label: () => t({ id: 'board.task.step.noVerdict', defaultMessage: 'No verdict' }),
-  },
+const STEP_CHIP: Partial<Record<SnapshotStepRun['state'], { dot: string; label: () => string }>> = {
   passed: {
     dot: 'ok',
     label: () => t({ id: 'board.task.step.passed', defaultMessage: 'Passed' }),
@@ -565,58 +553,17 @@ const STEP_CHIP: Partial<Record<StepRunRow['state'], { dot: string; label: () =>
     dot: 'bad',
     label: () => t({ id: 'board.task.step.failed', defaultMessage: 'Failed' }),
   },
-  rejected: {
-    dot: 'bad',
-    label: () => t({ id: 'board.task.step.failed', defaultMessage: 'Failed' }),
-  },
 };
 
-/** The task's newest step run that is not skipped, when it has a verdict, asks for one, or has reviewers. */
-export function shownStepRun(task: Pick<Task, 'step_runs'>): StepRunRow | undefined {
+/** The task's newest step run that is not skipped, when it has reviewers. */
+export function shownStepRun(task: Pick<Task, 'step_runs'>): SnapshotStepRun | undefined {
   const run = task.step_runs?.filter((r) => r.state !== 'skipped').at(-1);
-  return run &&
-    (run.verdict ||
-      run.expects === 'verdict' ||
-      run.state === 'inconclusive' ||
-      run.reviewers?.length)
-    ? run
-    : undefined;
+  return run?.reviewers?.length ? run : undefined;
 }
 
-/** A step run's verdict, or the decision a step that ended without one waits for. */
-function WorkflowStep({
-  step,
-  need,
-  run,
-  now,
-}: {
-  step: StepRunRow;
-  /** The needs-you item that counts a step without a verdict; its actions send the decision. */
-  need: NeedItem | undefined;
-  run: RunBoardCommand | undefined;
-  now: number;
-}) {
-  const [busy, setBusy] = useState(false);
+/** A review step run: its title, state and reviewers. */
+function WorkflowStep({ step }: { step: SnapshotStepRun }) {
   const chip = STEP_CHIP[step.state];
-  const decide =
-    step.state === 'inconclusive' && need && run
-      ? needActions(need).filter((a) => a.key === 'approve' || a.key === 'reject')
-      : [];
-  const press = async (action: NeedAction) => {
-    const command = need && run && needCommand(need, action.key);
-    if (!command || busy || action.reason !== null) return;
-    setBusy(true);
-    const failure = await run!(command.type, command.input, command.revision);
-    // A decision taken keeps the buttons off until the step leaves the needs-you list.
-    if (!failure) return;
-    setBusy(false);
-    toast({ title: failure, kind: 'failure' });
-  };
-  // A failed step before the merge hands its task back to the lead.
-  const wentBack =
-    (step.state === 'failed' || step.state === 'rejected') &&
-    step.slot !== 'after_merge' &&
-    step.kind === 'prompt';
   return (
     <section className="bd-dsec" aria-labelledby="bd-dstep">
       <h3 id="bd-dstep">
@@ -631,56 +578,6 @@ function WorkflowStep({
             </span>
           )}
         </div>
-        {step.state === 'inconclusive' && !step.verdict && (
-          <p className="bd-vnone">
-            {t({
-              id: 'board.task.step.noVerdictLine',
-              defaultMessage: 'The turn ended without a verdict.',
-            })}
-          </p>
-        )}
-        {step.verdict?.summary && <p className="bd-vsum">{step.verdict.summary}</p>}
-        {step.verdict && step.verdict.evidence.length > 0 && (
-          <ul className="bd-vev">
-            {step.verdict.evidence.map((item, i) => (
-              <li key={i}>
-                {item.checked ? (
-                  <Check
-                    className="bd-vck"
-                    role="img"
-                    aria-label={t({ id: 'board.task.step.checked', defaultMessage: 'Checked' })}
-                  />
-                ) : (
-                  <span
-                    className="bd-vunck"
-                    role="img"
-                    aria-label={t({ id: 'board.task.step.unchecked', defaultMessage: 'Unchecked' })}
-                  />
-                )}
-                {item.kind === 'command' ? (
-                  <Terminal aria-hidden="true" />
-                ) : (
-                  <File aria-hidden="true" />
-                )}
-                <span className="bd-vref">{item.ref}</span>
-                {!item.checked ? (
-                  <span className="bd-vnote">
-                    {t({ id: 'board.task.step.notChecked', defaultMessage: 'Not checked' })}
-                  </span>
-                ) : item.exit_code !== undefined ? (
-                  <span className="bd-vexit" data-bad={item.exit_code !== 0 || undefined}>
-                    {t(
-                      { id: 'board.task.step.exit', defaultMessage: 'exit {code}' },
-                      { code: item.exit_code },
-                    )}
-                  </span>
-                ) : (
-                  <span />
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
         {step.reviewers && step.reviewers.length > 0 && (
           <ul className="bd-vrv">
             {step.reviewers.map((reviewer) => (
@@ -710,42 +607,6 @@ function WorkflowStep({
               </li>
             ))}
           </ul>
-        )}
-        {wentBack && (
-          <div className="bd-vback">
-            <Crown aria-hidden="true" />
-            <span className="bd-vbt">
-              {t({ id: 'board.task.step.wentBack', defaultMessage: 'Went back to the lead' })}
-            </span>
-            {step.finished_at !== undefined && (
-              <span className="bd-vexit">{ageText(step.finished_at, now)}</span>
-            )}
-          </div>
-        )}
-        {decide.length > 0 && (
-          <div className="bd-vsa">
-            {decide.map((action) => {
-              const button = (
-                <button
-                  key={action.key}
-                  type="button"
-                  className={action.key === 'approve' ? 'btn pri' : 'btn'}
-                  aria-disabled={busy || action.reason !== null || undefined}
-                  aria-busy={busy || undefined}
-                  onClick={() => void press(action)}
-                >
-                  {action.label}
-                </button>
-              );
-              return action.reason ? (
-                <Tip key={action.key} content={action.reason}>
-                  {button}
-                </Tip>
-              ) : (
-                button
-              );
-            })}
-          </div>
         )}
       </div>
     </section>
@@ -1478,16 +1339,7 @@ export function TaskDrawer({
               </ul>
             </section>
           )}
-          {step && (
-            <WorkflowStep
-              step={step}
-              need={model.needs?.find(
-                (n) => n.kind === 'workflow.approval' && n.source.id === step.id,
-              )}
-              run={tell?.run}
-              now={now}
-            />
-          )}
+          {step && <WorkflowStep step={step} />}
           {!plan && (
             <section className="bd-dsec">
               <h3>{t({ id: 'board.task.drawer.merge', defaultMessage: 'Merge' })}</h3>

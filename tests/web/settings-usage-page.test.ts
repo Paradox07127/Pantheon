@@ -49,7 +49,6 @@ const policy = (patch: Partial<WorkflowPolicy> = {}): WorkflowPolicy => ({
   revision: 2,
   project_id: project.id,
   policy_version: 2,
-  improvement_mode: 'confirm',
   plan_changes: 'auto',
   path: { t1: 'direct', t2: 'dispatch', t3: 'dispatch' },
   acceptance_wake: 'each_merge',
