@@ -2940,7 +2940,13 @@ export const inputSchemas = {
       .optional()
       .describe('A session you spawned whose changes to review; absent means your own.'),
   }),
-  'conductor.ready': z.strictObject({}),
+  'conductor.ready': z.strictObject({
+    session_id: str
+      .optional()
+      .describe(
+        'An idle session you spawned whose committed changes to land; absent means your own.',
+      ),
+  }),
   'conductor.spawn': z.strictObject({
     runtime: str.describe('The runtime of the new session.'),
     input: str.describe('The first message of the new session.'),

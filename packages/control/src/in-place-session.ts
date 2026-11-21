@@ -111,6 +111,8 @@ export async function inPlaceSessionSpec(
   const questionTool = sessionAdapter(ctx, session)?.questionTool;
   const saved = project.extension_overrides?.[session.runtime];
   const pantheonTools = usesPantheonTools(ctx, session);
+  // A conductor runs as the session the user opens, with the Pantheon server added.
+  const userSession = !pantheonTools || !!session.conductor;
   const pantheonMcp = pantheonTools
     ? sessionMcp(ctx, session, credentialRole(session, workspace.kind))
     : undefined;
@@ -155,12 +157,12 @@ export async function inPlaceSessionSpec(
       protected_entries: sandbox.protected_entries.map(({ path, deny }) => ({ path, deny })),
     },
     cwd: workspace.path,
-    env_allowlist: pantheonTools ? NATIVE_ENV_ALLOWLIST : inheritedEnvAllowlist(project),
+    env_allowlist: userSession ? inheritedEnvAllowlist(project) : NATIVE_ENV_ALLOWLIST,
     skills: [],
     mcp_servers: [],
-    ...(pantheonTools ? {} : { user_session: true as const }),
+    ...(userSession ? { user_session: true as const } : {}),
     pantheon_mcp: pantheonMcp,
-    extensions: sessionExtensions(session, saved, !pantheonTools),
+    extensions: sessionExtensions(session, saved, userSession),
     device_id: session.device_id ?? 'local',
     budget: { max_turns: 1, wall_time_ms: ctx.turnWallTimeMs ?? IN_PLACE_TURN_MS },
     permission_mode: session.permission_mode ?? 'ask',

@@ -110,6 +110,7 @@ import { backgroundTasks } from './progress.js';
 import { residentInstructions } from './agent-prompts.js';
 import { residentProfile } from './agent-templates.js';
 import { afterResidentTurn } from './resident.js';
+import { afterSpawnedTurn } from './conductor.js';
 import { recordRouting } from './front-door.js';
 import { personalKeyId } from './personal-scope.js';
 import {
@@ -1250,6 +1251,7 @@ export function createTurnQueue(ctx: ControlContext, initial: SessionTurn, resum
         });
         if (state === 'completed' && current.origin !== 'compaction')
           autoMergeAfterTurn(ctx, initial.session_id, current.id);
+        afterSpawnedTurn(ctx, initial.session_id);
         ctx.changed();
         resolveTurn = undefined;
         waitingForInput = true;
@@ -2089,6 +2091,7 @@ export async function finishTurn(
   });
   recordRouting(ctx, key);
   afterResidentTurn(ctx, ctx.store.must<SessionTurn>('session_turns', key).session_id, key);
+  afterSpawnedTurn(ctx, ctx.store.must<SessionTurn>('session_turns', key).session_id);
   if (stop?.receipt?.stopped === true)
     closeToolRelay(ctx, ctx.store.must<SessionTurn>('session_turns', key).session_id);
   ctx.changed();

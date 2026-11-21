@@ -52,6 +52,7 @@ import {
 } from './board-plan.js';
 import { appendNote, contractLines } from './lead-inbox.js';
 import { wakeLead } from './task-tracking.js';
+import { notifySession } from './session-wake.js';
 import { PLAN_REVIEW_TIERS, REVIEW_MAX_ROUNDS, reopenReviewStep } from './merge-review.js';
 
 export const REVIEW_WALL_TIME_MS = 2 * 60 * 60 * 1000;
@@ -87,14 +88,7 @@ function reviewTarget(ctx: ControlContext, principal: Principal, command: Comman
       'permission_denied',
       'Review target must be a worker of your current board plan',
     );
-    const other = reviewerRuntime(ctx, session.project_id, session.runtime);
-    requireThat(
-      other === undefined ||
-        other === session.runtime ||
-        input.runtimes.every((name) => name !== session.runtime),
-      'invalid_input',
-      `Cross-review runtime must differ from the writer runtime ${session.runtime}; choose another runtime, such as ${other}`,
-    );
+    requireCrossReview(ctx, session, input.runtimes);
     requester = {
       lead_session_id: plan.id,
       task_id: task.id,
@@ -105,6 +99,98 @@ function reviewTarget(ctx: ControlContext, principal: Principal, command: Comman
   return { input, session, requester, goal };
 }
 
+/** Refuses the writer's own runtime as a reviewer while another runtime can review. */
+export function requireCrossReview(ctx: ControlContext, session: Session, runtimes: string[]) {
+  const other = reviewerRuntime(ctx, session.project_id, session.runtime);
+  requireThat(
+    other === undefined ||
+      other === session.runtime ||
+      runtimes.every((name) => name !== session.runtime),
+    'invalid_input',
+    `Cross-review runtime must differ from the writer runtime ${session.runtime}; choose another runtime, such as ${other}`,
+  );
+}
+
+/** A session's committed range and its diff; the caller has checked its access to the session. */
+export async function sessionChanges(ctx: ControlContext, session: Session) {
+  const range = await sessionRangeAsync(ctx, session);
+  requireThat(
+    range.from_sha !== range.to_sha,
+    'invalid_state',
+    'No committed changes to review; commit the changes first',
+  );
+  // Reading this one artifact does not grant the caller the general workspace.read capability.
+  const source = checkedPath(
+      ctx,
+      ctx.store.must<Project>('projects', session.project_id),
+      range.source,
+    ),
+    diff = await runGit(
+      source,
+      ['diff', '--no-color', '--no-ext-diff', range.from_sha, range.to_sha],
+      undefined,
+      true,
+    );
+  requireThat(
+    diff.exit_code === 0,
+    'git_failed',
+    diff.stderr.toString().trim() || diff.error || 'Git diff failed',
+  );
+  return { range, diff: diff.stdout };
+}
+
+/** Refuses a requested reviewer already reviewing the session. */
+export function requireNoRunningReviewer(
+  ctx: ControlContext,
+  session: Session,
+  runtimes: string[],
+) {
+  const duplicate = ctx.store
+    .list<Review>('reviews')
+    .find(
+      (review) =>
+        review.session_id === session.id &&
+        review.state === 'running' &&
+        review.runtimes.some((name) => runtimes.includes(name)),
+    );
+  requireThat(!duplicate, 'resource_busy', 'A requested reviewer is already reviewing this worker');
+}
+
+/** Starts the next review round of a session's committed changes, within the round limit. */
+export function startSessionReview(
+  ctx: ControlContext,
+  session: Session,
+  runtimes: string[],
+  options: {
+    cause: string;
+    goal: string;
+    changes: Awaited<ReturnType<typeof sessionChanges>>;
+    requester?: Review['requester'];
+    notify_session_id?: string;
+  },
+): Review {
+  const round =
+    ctx.store.list<Review>('reviews').filter((review) => review.session_id === session.id).length +
+    1;
+  const maxRounds = REVIEW_MAX_ROUNDS;
+  requireThat(
+    round <= maxRounds,
+    'invalid_state',
+    `Code review limit reached: at most ${maxRounds} rounds per reviewed session (${session.id}).`,
+  );
+  const { diff, range } = options.changes;
+  return startReview(ctx, session.project_id, runtimes, {
+    round,
+    cause: options.cause,
+    prompt: `${reviewInstruction}\n\nTask goal:\n${options.goal}\n\nChanges:\n${diff.toString('utf8')}`,
+    artifact: { name: 'changes.diff', content: diff },
+    session_id: session.id,
+    requester: options.requester,
+    notify_session_id: options.notify_session_id,
+    range,
+  });
+}
+
 /** review.request; the session's range and its diff are read before the transaction. */
 export function prepareReviewRequest(
   ctx: ControlContext,
@@ -113,62 +199,19 @@ export function prepareReviewRequest(
 ): Promise<Handler> {
   const { session } = reviewTarget(ctx, principal, command);
   return (async () => {
-    const range = await sessionRangeAsync(ctx, session);
-    requireThat(range.from_sha !== range.to_sha, 'invalid_state', 'No committed changes to review');
-    // This command already checked project scope and the lead's worker ownership. Reading
-    // this one artifact does not grant the lead the general workspace.read capability.
-    const source = checkedPath(
-        ctx,
-        ctx.store.must<Project>('projects', session.project_id),
-        range.source,
-      ),
-      diff = await runGit(
-        source,
-        ['diff', '--no-color', '--no-ext-diff', range.from_sha, range.to_sha],
-        undefined,
-        true,
-      );
-    requireThat(
-      diff.exit_code === 0,
-      'git_failed',
-      diff.stderr.toString().trim() || diff.error || 'Git diff failed',
-    );
+    const changes = await sessionChanges(ctx, session);
     return (ctx: ControlContext, principal: Principal, command: Command) => {
       const { input, session, requester, goal } = reviewTarget(ctx, principal, command);
       if (requester) {
         const step = reopenReviewStep(ctx, session);
         if (step) return step;
-        const duplicate = ctx.store
-          .list<Review>('reviews')
-          .find(
-            (review) =>
-              review.session_id === session.id &&
-              review.state === 'running' &&
-              review.runtimes.some((name) => input.runtimes.includes(name)),
-          );
-        requireThat(
-          !duplicate,
-          'resource_busy',
-          'A requested reviewer is already reviewing this worker',
-        );
+        requireNoRunningReviewer(ctx, session, input.runtimes);
       }
-      const round =
-        ctx.store.list<Review>('reviews').filter((review) => review.session_id === session.id)
-          .length + 1;
-      const maxRounds = REVIEW_MAX_ROUNDS;
-      requireThat(
-        round <= maxRounds,
-        'invalid_state',
-        `Code review limit reached: at most ${maxRounds} rounds per reviewed session (${session.id}).`,
-      );
-      const review = startReview(ctx, session.project_id, input.runtimes, {
-        round,
+      const review = startSessionReview(ctx, session, input.runtimes, {
         cause: command.command_id,
-        prompt: `${reviewInstruction}\n\nTask goal:\n${goal}\n\nChanges:\n${diff.stdout.toString('utf8')}`,
-        artifact: { name: 'changes.diff', content: diff.stdout },
-        session_id: session.id,
+        goal,
+        changes,
         requester,
-        range,
       });
       return { ...review, review_id: review.id };
     };
@@ -559,6 +602,7 @@ export function startReview(
     artifact: { name: string; content: Buffer };
     session_id?: string;
     requester?: Review['requester'];
+    notify_session_id?: string;
     range?: NonNullable<Review['range']>;
     refs?: Review['refs'];
     plan?: Review['plan'];
@@ -577,6 +621,7 @@ export function startReview(
       ...(options.range ? { range: options.range } : {}),
       ...(options.refs ? { refs: options.refs } : {}),
       ...(options.requester ? { requester: options.requester } : {}),
+      ...(options.notify_session_id ? { notify_session_id: options.notify_session_id } : {}),
       ...(options.plan ? { plan: options.plan } : {}),
       round: options.round,
       runtimes,
@@ -967,6 +1012,7 @@ export function settleReview(
   );
   ctx.store.enqueue('review.remove', { review_id: review.id });
   notifyRequestingLead(ctx, next, turns);
+  notifyRequestingSession(ctx, next, turns);
 }
 
 /** Why a reviewer gave no full result: its turn did not complete, it could not read the input, or it left neither a finding nor a reply. */
@@ -992,23 +1038,9 @@ function incompleteReason(
   return reasons.length ? reasons.join('; ') : undefined;
 }
 
-/** Durable review results return to the owning plan; a transfer routes them to its new lead. */
-function notifyRequestingLead(ctx: ControlContext, review: Review, turns: SessionTurn[]): void {
-  const requester = review.requester;
-  // The workflow engine settles its own review step, and a milestone verification its review.
-  if (!requester || requester.step_run_id || requester.milestone_id) return;
-  let lead = requester.lead_session_id;
-  const visited = new Set<string>();
-  const transfers = ctx.store.kindEvents(review.project_id, ['board.plan_transferred']);
-  while (!visited.has(lead)) {
-    visited.add(lead);
-    const moved = transfers.findLast((event) => (event.payload as { from?: string }).from === lead);
-    if (!moved) break;
-    lead = moved.aggregate_id;
-  }
-  const plan = ctx.store.get<BoardPlan>('board_plans', lead);
-  if (!plan || plan.project_id !== review.project_id) return;
-  const results = [
+/** Each reviewer's outcome and verdict, then the open findings with their locations. */
+function reviewResults(ctx: ControlContext, review: Review, turns: SessionTurn[]): string[] {
+  return [
     ...review.session_ids.map((sessionId) => {
       const session = ctx.store.get<Session>('sessions', sessionId);
       const turn = turns.find((turn) => turn.session_id === sessionId);
@@ -1026,6 +1058,42 @@ function notifyRequestingLead(ctx: ControlContext, review: Review, turns: Sessio
           `${finding.runtime} ${finding.location} (${finding.blocking ? 'must fix before merge' : 'report-only'})\nQuote: ${finding.quote}\nEvidence: ${finding.evidence}\nImpact: ${finding.impact}${finding.reproduction === undefined ? '' : `\nReproduction: ${JSON.stringify(finding.reproduction)}`}`,
       ),
   ];
+}
+
+/** A review a session asked for returns to that session as a message, not through a lead's inbox. */
+function notifyRequestingSession(ctx: ControlContext, review: Review, turns: SessionTurn[]): void {
+  if (!review.notify_session_id) return;
+  const blocking = review.findings.some((finding) => finding.status === 'open' && finding.blocking);
+  const lines = [
+    `[Pantheon] Review ${review.id}: ${review.state}. Reviewed session ${review.session_id}.`,
+    ...(review.range
+      ? [`Reviewed commits: ${review.range.from_sha}..${review.range.to_sha}.`]
+      : []),
+    ...reviewResults(ctx, review, turns),
+    ...(blocking
+      ? ['report_ready is refused until a later review has no open blocking findings.']
+      : []),
+  ];
+  notifySession(ctx, review.notify_session_id, lines.join('\n'), '');
+}
+
+/** Durable review results return to the owning plan; a transfer routes them to its new lead. */
+function notifyRequestingLead(ctx: ControlContext, review: Review, turns: SessionTurn[]): void {
+  const requester = review.requester;
+  // The workflow engine settles its own review step, and a milestone verification its review.
+  if (!requester || requester.step_run_id || requester.milestone_id) return;
+  let lead = requester.lead_session_id;
+  const visited = new Set<string>();
+  const transfers = ctx.store.kindEvents(review.project_id, ['board.plan_transferred']);
+  while (!visited.has(lead)) {
+    visited.add(lead);
+    const moved = transfers.findLast((event) => (event.payload as { from?: string }).from === lead);
+    if (!moved) break;
+    lead = moved.aggregate_id;
+  }
+  const plan = ctx.store.get<BoardPlan>('board_plans', lead);
+  if (!plan || plan.project_id !== review.project_id) return;
+  const results = reviewResults(ctx, review, turns);
   if (review.plan) {
     const next = appendNote(ctx, plan, {
       at: ctx.store.now(),

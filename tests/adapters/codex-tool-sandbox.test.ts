@@ -2558,6 +2558,39 @@ describe('Codex sessions the user opened directly', () => {
     },
   );
 
+  it.each(['start', 'resume'] as const)(
+    'mounts Pantheon on a session the user opened beside the user Codex config on %s',
+    async (method) => {
+      const f = await opened(
+        { ...userSpec(), pantheon_mcp: { command: 'fake-mcp', args: [], env: {} } },
+        method,
+      );
+      const params = threadParams(f.frames);
+      expect(params).not.toHaveProperty('approvalPolicy');
+      expect(params).not.toHaveProperty('approvalsReviewer');
+      expect(params).not.toHaveProperty('sandbox');
+      expect(params.developerInstructions).not.toContain('permission profile');
+      const config = params.config as Record<string, unknown>;
+      expect(config).not.toHaveProperty('default_permissions');
+      expect(Object.keys(config).filter((key) => key.startsWith('permissions.'))).toEqual([]);
+      expect(config.mcp_servers).toEqual({
+        blocked: { enabled: false },
+        pantheon: {
+          command: 'fake-mcp',
+          args: [],
+          env: {},
+          enabled: true,
+          default_tools_approval_mode: 'approve',
+        },
+      });
+      expect(config).not.toHaveProperty('features');
+      expect(config).not.toHaveProperty('apps');
+      expect(f.events.find((event) => event.kind === 'extensions.applied')).toMatchObject({
+        loaded: { mcp_servers: expect.arrayContaining(['pantheon', 'kept', 'with.dot']) },
+      });
+    },
+  );
+
   // In plan mode the adapter declines escalations itself, so the user's auto reviewer must not answer them.
   it.each([
     ['plan', { default_permissions: ':read-only' }, undefined, 'user'],

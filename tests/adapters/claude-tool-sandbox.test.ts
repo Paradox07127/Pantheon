@@ -1462,6 +1462,77 @@ describe('Claude workbench permission modes', () => {
     });
   });
 
+  it("mounts the Pantheon server on a user session without asking for its tools, beside the user's own configuration", async () => {
+    const spec: SessionSpec = {
+      ...writerSpec(),
+      permission_mode: 'ask',
+      user_session: true,
+      pantheon_mcp: { command: 'fake-mcp', args: [], env: {} },
+      control_instructions: 'Conduct the work.',
+      extensions: {
+        mode: 'inherit',
+        overrides: {
+          disabled_mcp_servers: ['pantheon', 'notes'],
+          disabled_plugins: [],
+          disabled_skills: [],
+          disable_hooks: false,
+          disable_apps: false,
+        },
+      },
+    };
+    const requestPermission = vi.fn(async (_tool: string) => ({
+      behavior: 'deny' as const,
+      message: 'Asked the user',
+    }));
+    const options = buildClaudeOptions(
+      spec,
+      { pathToClaudeCodeExecutable: 'fake-claude' },
+      [],
+      requestPermission,
+    );
+    expect(options.mcpServers).toEqual({
+      pantheon: { type: 'stdio', command: 'fake-mcp', args: [], env: {} },
+    });
+    expect(options.settingSources).toEqual(['user', 'project', 'local']);
+    expect(options).not.toHaveProperty('strictMcpConfig');
+    expect(options).not.toHaveProperty('allowedTools');
+    expect(options).not.toHaveProperty('sandbox');
+    expect(options).not.toHaveProperty('maxTurns');
+    expect(options).toMatchObject({ settings: { deniedMcpServers: [{ serverName: 'notes' }] } });
+    expect(options.systemPrompt).toEqual({
+      type: 'preset',
+      preset: 'claude_code',
+      append: 'Conduct the work.',
+    });
+    const hooked = (await options.hooks!.PreToolUse![0]!.hooks[0]!(
+      {
+        hook_event_name: 'PreToolUse',
+        tool_name: 'mcp__pantheon__read_state',
+        tool_input: {},
+        tool_use_id: 'read_state',
+        session_id: 'native',
+        transcript_path: '',
+        cwd: spec.cwd,
+      },
+      'read_state',
+      { signal: new AbortController().signal },
+    )) as { hookSpecificOutput?: object };
+    expect(hooked.hookSpecificOutput).toEqual(hookAsks);
+    expect(
+      await options.canUseTool!(
+        'mcp__pantheon__read_state',
+        {},
+        {
+          signal: new AbortController().signal,
+          toolUseID: 'read_state',
+          requestId: 'read_state',
+          mcpServer: pantheonServer,
+        },
+      ),
+    ).toEqual({ behavior: 'allow', updatedInput: {} });
+    expect(requestPermission).not.toHaveBeenCalled();
+  });
+
   it('asks before the shell commands and edits a user session in auto_edit mode sends to Pantheon', async () => {
     const f = modeOptions('auto_edit', true);
     expect(await f.call('Bash', { command: 'touch x' })).toEqual(asked);

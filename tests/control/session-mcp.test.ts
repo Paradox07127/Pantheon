@@ -15,6 +15,7 @@ import type {
   SessionSpec,
   SessionTurn,
   Visual,
+  Workspace,
 } from '@pantheon/domain';
 import type { ControlContext } from '../../packages/control/dist/context.js';
 import { inPlaceSessionSpec } from '../../packages/control/dist/in-place-session.js';
@@ -930,14 +931,10 @@ it('mounts only the four conductor tools and their instructions on a conductor w
   const tools = (await client.listTools()).tools;
   expect(tools.map((tool) => [tool.name, Object.keys(tool.inputSchema.properties ?? {})])).toEqual([
     ['request_review', ['runtimes', 'session_id']],
-    ['report_ready', []],
+    ['report_ready', ['session_id']],
     ['spawn_session', ['runtime', 'input', 'model', 'effort']],
     ['read_state', []],
   ]);
-  for (const [name, , input] of conductorCalls)
-    expect(receipt(await client.callTool({ name, arguments: input })), name).toMatchObject({
-      error: 'not_implemented',
-    });
   for (const [, type, input] of conductorCalls)
     expect(
       refusalCode(() => f.call(type, input)),
@@ -996,9 +993,94 @@ it('mounts the conductor tools on a conductor session in the project folder', as
   expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual(
     conductorCalls.map(([name]) => name),
   );
-  expect(receipt(await client.callTool({ name: 'read_state', arguments: {} }))).toMatchObject({
-    error: 'not_implemented',
+  expect(
+    receipt(await client.callTool({ name: 'read_state', arguments: {} })).receipt,
+  ).toMatchObject({ changes: expect.any(Array), todo: expect.any(Array) });
+});
+
+/** The spec without the Pantheon server and instructions, with each value that names a session or its workspace replaced. */
+function comparable(spec: SessionSpec, own: Workspace, other: Workspace) {
+  const { pantheon_mcp: _server, control_instructions: _instructions, ...rest } = spec;
+  let text = JSON.stringify(rest);
+  for (const [value, name] of [
+    [spec.env!.TMPDIR!, '<own temporary directory>'],
+    [own.path, '<own workspace>'],
+    [other.path, '<other workspace>'],
+    [path.basename(own.path), '<own workspace name>'],
+    [path.basename(other.path), '<other workspace name>'],
+    [own.id, '<own workspace id>'],
+    [other.id, '<other workspace id>'],
+    [spec.platform_session_id, '<session id>'],
+  ] as const)
+    text = text.replaceAll(value, name);
+  return JSON.parse(text) as Record<string, unknown>;
+}
+
+/** A workbench whose Control hands a session the path of a credential file. */
+async function credentialedWorkbench() {
+  const f = await workbenchFixture();
+  const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
+  Object.assign(ctx, {
+    issueSessionCredential: (sessionId: string) => ({
+      token_file: path.join(f.root, `token-${sessionId}`),
+      daemon_url: 'http://127.0.0.1:4321',
+    }),
   });
+  return { f, ctx };
+}
+
+it('runs a conductor worktree session as the session the user opens, with the Pantheon server added', async () => {
+  const { f, ctx } = await credentialedWorkbench();
+  const open = (purpose?: 'conductor') =>
+    f.call<Promise<Session>>('session.create', {
+      project_id: f.project.id,
+      runtime: f.adapter.name,
+      input: 'Ship the export',
+      ...(purpose ? { purpose } : {}),
+    });
+  const plain = await open();
+  const conductor = await open('conductor');
+  const plainWorkspace = await awaitWorkspaceReady(f.control, plain.workspace_id!);
+  const conductorWorkspace = await awaitWorkspaceReady(f.control, conductor.workspace_id!);
+  const plainSpec = workbenchSessionSpec(ctx, f.store.must<Session>('sessions', plain.id));
+  const conductorSpec = workbenchSessionSpec(ctx, f.store.must<Session>('sessions', conductor.id));
+  expect(plainSpec.pantheon_mcp).toBeUndefined();
+  expect(conductorSpec.pantheon_mcp).toBeDefined();
+  expect(comparable(conductorSpec, conductorWorkspace, plainWorkspace)).toEqual(
+    comparable(plainSpec, plainWorkspace, conductorWorkspace),
+  );
+  expect(conductorSpec.user_session).toBe(true);
+});
+
+it('runs a conductor session in the project folder as the session the user opens there, with the Pantheon server added', async () => {
+  const { f, ctx } = await credentialedWorkbench();
+  const open = (purpose?: 'conductor') =>
+    f.call<Promise<Session>>('session.create', {
+      project_id: f.project.id,
+      runtime: f.adapter.name,
+      input: 'Ship the parser fix',
+      workspace: 'in_place',
+      ...(purpose ? { purpose } : {}),
+    });
+  const plain = await open();
+  const plainSpec = await inPlaceSessionSpec(ctx, plain);
+  // One session at a time writes in the project folder.
+  const opened = f.store.must<Session>('sessions', plain.id);
+  f.store.update(
+    'sessions',
+    { ...opened, archived_at: new Date(f.store.now()).toISOString() },
+    opened.revision,
+  );
+  const conductor = await open('conductor');
+  const conductorSpec = await inPlaceSessionSpec(ctx, conductor);
+  const workspace = (session: Session) =>
+    f.store.must<Workspace>('workspaces', session.workspace_id!);
+  expect(plainSpec.pantheon_mcp).toBeUndefined();
+  expect(conductorSpec.pantheon_mcp).toBeDefined();
+  expect(comparable(conductorSpec, workspace(conductor), workspace(plain))).toEqual(
+    comparable(plainSpec, workspace(plain), workspace(conductor)),
+  );
+  expect(conductorSpec.user_session).toBe(true);
 });
 
 it('gives a session another session spawned no Pantheon tools', async () => {

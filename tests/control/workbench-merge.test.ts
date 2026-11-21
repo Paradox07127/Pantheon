@@ -496,6 +496,36 @@ it.skipIf(insideSandbox)(
   },
 );
 
+it('commits the uncommitted files of a conductor session under its title, then merges that commit', async () => {
+  const f = await mergeFixture();
+  const sourceHead = git(f.source, 'rev-parse', 'HEAD');
+  const session = await f.call<Promise<Session>>('session.create', {
+    project_id: f.project.id,
+    runtime: f.adapter.name,
+    input: 'Ship the export',
+    purpose: 'conductor',
+  });
+  const workspace = await awaitWorkspaceReady(f.control, session.workspace_id!);
+  await eventually(
+    () => f.turns(session.id)[0]!.state === 'completed' && current(f, session.id).state === 'open',
+    () => f.control.tick(),
+  );
+  writeFileSync(path.join(workspace.path, 'answer.txt'), 'edited\n');
+  writeFileSync(path.join(workspace.path, 'untracked.txt'), 'new\n');
+  expect((await merge(f, session.id)).merge).toEqual({ state: 'running' });
+  expect(git(workspace.path, 'rev-parse', 'HEAD^')).toBe(sourceHead);
+  expect(git(workspace.path, 'log', '-1', '--format=%s')).toBe(current(f, session.id).title);
+  // A conductor is not closed when its work lands; the landing message starts its next turn.
+  await eventually(
+    () => git(f.source, 'rev-parse', 'main') === git(workspace.path, 'rev-parse', 'HEAD'),
+    () => f.control.tick(),
+    10000,
+  );
+  expect(current(f, session.id).state).not.toBe('closed');
+  expect(git(f.source, 'show', 'main:untracked.txt')).toBe('new');
+  expect(git(f.source, 'show', 'main:answer.txt')).toBe('edited');
+});
+
 it.each([
   { name: 'a session the user opened', task: false, state: 'ready' },
   { name: 'a task session', task: true, state: 'idle' },

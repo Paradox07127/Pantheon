@@ -56,6 +56,7 @@ import {
 } from '@pantheon/domain';
 import {
   inputSchemas,
+  PROTOCOL_VERSION,
   type Command,
   type SessionCreatePreview,
   type AttachmentMeta,
@@ -149,6 +150,7 @@ import {
   stopTurn,
   unsnooze,
 } from './session.js';
+import { notifySession } from './session-wake.js';
 import { openUserTaskSession, userTaskChoice, userTaskInput, overlaps } from './task-dispatch.js';
 import { kindOfPaths } from './task-kind.js';
 import {
@@ -268,6 +270,8 @@ export function workbenchSessionSpec(ctx: ControlContext, session: Session): Ses
       })
     : undefined;
   const pantheonTools = usesPantheonTools(ctx, session);
+  // A conductor runs as the session the user opens, with the Pantheon server added.
+  const userSession = !pantheonTools || !!session.conductor;
   const pantheonMcp = pantheonTools
     ? sessionMcp(ctx, session, credentialRole(session, workspace.kind))
     : undefined;
@@ -294,7 +298,7 @@ export function workbenchSessionSpec(ctx: ControlContext, session: Session): Ses
     account_ref: session.account_ref,
     role: 'writer',
     ...(session.task ? { task_session: true } : {}),
-    ...(pantheonTools ? {} : { user_session: true as const }),
+    ...(userSession ? { user_session: true as const } : {}),
     control_instructions: [
       ...(pantheonMcp && (session.task || planningLead) ? [PLATFORM_CORE] : []),
       // A session the user opened runs as the bare runtime would, without Pantheon's instructions.
@@ -333,11 +337,11 @@ export function workbenchSessionSpec(ctx: ControlContext, session: Session): Ses
         }
       : {}),
     cwd: workspace.path,
-    env_allowlist: pantheonTools ? NATIVE_ENV_ALLOWLIST : inheritedEnvAllowlist(project),
+    env_allowlist: userSession ? inheritedEnvAllowlist(project) : NATIVE_ENV_ALLOWLIST,
     skills: [],
     mcp_servers: [],
     pantheon_mcp: pantheonMcp,
-    extensions: sessionExtensions(session, saved, !pantheonTools),
+    extensions: sessionExtensions(session, saved, userSession),
     device_id: session.device_id ?? 'local',
     budget: { max_turns: 1, wall_time_ms: ctx.turnWallTimeMs ?? WORKBENCH_TURN_MS },
     permission_mode: session.permission_mode ?? 'ask',
@@ -1129,9 +1133,9 @@ function stateWorktree(
     : null;
 }
 
-/** Whether a merge the user starts commits the session's uncommitted files first: a worktree session the user opened. */
+/** Whether a merge the user starts commits the session's uncommitted files first: a worktree session the user opened or a conductor. */
 const commitsOnMerge = (ctx: ControlContext, session: Session) =>
-  !session.in_place && !usesPantheonTools(ctx, session);
+  !session.in_place && (!usesPantheonTools(ctx, session) || !!session.conductor);
 
 /** Commits on the base and nothing uncommitted, or uncommitted files the merge commits. */
 const listsReady = (
@@ -3162,6 +3166,23 @@ async function mergedTasks(
   return tasks;
 }
 
+/** Tells a conductor how the merge of its own work ended, or the conductor that spawned the session. */
+function notifyMergeWatcher(
+  ctx: ControlContext,
+  session: Session,
+  outcome: string,
+  cause: string,
+): void {
+  const watcher = session.conductor ? session.id : session.spawned_by?.session_id;
+  if (watcher)
+    notifySession(
+      ctx,
+      watcher,
+      `[Pantheon] Session ${session.title ? `"${session.title}" ` : ''}(${session.id}) ${outcome}.`,
+      cause,
+    );
+}
+
 async function completeMerge(ctx: ControlContext, sessionId: string, jobId: string): Promise<void> {
   const session = ctx.store.must<Session>('sessions', sessionId);
   if (session.outcome || session.merge?.state !== 'running') {
@@ -3338,7 +3359,7 @@ async function completeMerge(ctx: ControlContext, sessionId: string, jobId: stri
       });
     ctx.failpoint('after_fast_forward_before_receipt');
     // The pending job lands again as a no-op and retries the close.
-    if (!direct && !(await closeNativeProcesses(ctx, session.id))) return;
+    if (!direct && !session.conductor && !(await closeNativeProcesses(ctx, session.id))) return;
     const numstat = await runGit(
       item.source,
       ['diff', '--numstat', '-z', item.from_sha!, item.to_sha!],
@@ -3359,9 +3380,12 @@ async function completeMerge(ctx: ControlContext, sessionId: string, jobId: stri
     }
     ctx.store.transaction(() => {
       const current = ctx.store.must<Session>('sessions', session.id);
+      // A conductor stays open in its worktree at the landed commit, as a lead after its direct task.
       const next = ctx.store.update(
         'sessions',
-        { ...current, state: 'closed' as const, outcome: 'merged' as const, merge: undefined },
+        current.conductor
+          ? { ...current, merge: undefined }
+          : { ...current, state: 'closed' as const, outcome: 'merged' as const, merge: undefined },
         current.revision,
       );
       ctx.store.event('session.merged', next, next.project_id, {
@@ -3374,9 +3398,15 @@ async function completeMerge(ctx: ControlContext, sessionId: string, jobId: stri
         deletions: files.reduce((sum, file) => sum + (file.deletions ?? 0), 0),
         ...(measuredKind ? { measured_kind: measuredKind } : {}),
       });
-      unsnooze(ctx, session.id, 'session_ended');
-      if (readUserConfig(ctx.userConfigDir).auto_archive_merged) archiveSession(ctx, session.id);
-      ctx.store.enqueue('workspace.remove', { workspace_id: workspace.id, reason: 'merged' });
+      if (current.conductor) {
+        const landed = ctx.store.must<Workspace>('workspaces', workspace.id);
+        ctx.store.update('workspaces', { ...landed, base_sha: item.to_sha! }, landed.revision);
+      } else {
+        unsnooze(ctx, session.id, 'session_ended');
+        if (readUserConfig(ctx.userConfigDir).auto_archive_merged) archiveSession(ctx, session.id);
+        ctx.store.enqueue('workspace.remove', { workspace_id: workspace.id, reason: 'merged' });
+      }
+      notifyMergeWatcher(ctx, next, `landed on ${item.branch} at ${item.to_sha}`, jobId);
       ctx.store.mark(jobId, 'done');
     });
     forgetWorktreeReads(workspace.id);
@@ -3432,7 +3462,15 @@ async function completeMerge(ctx: ControlContext, sessionId: string, jobId: stri
       next.merge,
     );
     if (direct) releaseRetiredClaim(ctx, session.id, direct, next.merge!.reason);
-    if (item.reason !== 'cancelled') unsnooze(ctx, session.id, 'merge_blocked');
+    if (item.reason !== 'cancelled') {
+      unsnooze(ctx, session.id, 'merge_blocked');
+      notifyMergeWatcher(
+        ctx,
+        next,
+        `did not land: ${reason}${gate ? `; the gate command "${gate.name}" failed` : ''}`,
+        jobId,
+      );
+    }
     ctx.store.mark(jobId, 'done');
   });
 }
@@ -4042,13 +4080,47 @@ function mergeRequest(ctx: ControlContext, p: Principal, c: Command): MergeReque
 
 /** Refuses at once what the store refuses, then reads the repository states outside the transaction. */
 function prepareMerge(ctx: ControlContext, p: Principal, c: Command): Promise<Handler> {
-  const { session } = mergeRequest(ctx, p, c);
+  return prepareRequestedMerge(ctx, c, (ctx) => mergeRequest(ctx, p, c));
+}
+
+/**
+ * conductor.ready's merge of the conductor's own session or of a session it spawned, refused and
+ * admitted as the user's merge is; c's expected revision is the session's.
+ */
+export function prepareReadyMerge(
+  ctx: ControlContext,
+  c: Command,
+  sessionId: string,
+): Promise<(ctx: ControlContext) => Session> {
+  return prepareRequestedMerge(ctx, c, (ctx) => {
+    const session = ctx.store.must<Session>('sessions', sessionId);
+    requireThat(
+      session.workspace_id && !session.outcome,
+      'invalid_state',
+      'Only an unfinished worktree session can be merged',
+    );
+    refuseAdopted(ctx, session, NO_MERGE_GATE);
+    return {
+      session,
+      admit: (reads) =>
+        admitMerge(ctx, session, c.command_id, undefined, undefined, undefined, reads),
+    };
+  });
+}
+
+/** prepareMerge of the session request checks; request checks it again in the admitting transaction. */
+function prepareRequestedMerge(
+  ctx: ControlContext,
+  c: Command,
+  request: (ctx: ControlContext) => MergeRequest,
+): Promise<(ctx: ControlContext) => Session> {
+  const { session } = request(ctx);
   requireThat(!mergesPreparing(ctx).has(session.id), 'invalid_state', 'Session is being merged');
   const blocked = mergeBlockedReason(ctx, session, unreadMergeReads);
   if (blocked && blocked !== MERGE_STATE_UNKNOWN)
     throw new DomainError(blocked.code, blocked.message);
   const workspace = ctx.store.must<Workspace>('workspaces', session.workspace_id!);
-  if (session.in_place) return prepareLand(ctx, c, session, workspace);
+  if (session.in_place) return prepareLand(ctx, c, session, workspace, request);
   return readMergeStates(workspace).then(async (reads) => {
     if (commitsOnMerge(ctx, session) && !reads.worktree(workspace)?.clean) {
       requireMergeReady(ctx, ctx.store.must<Session>('sessions', session.id), reads);
@@ -4056,7 +4128,7 @@ function prepareMerge(ctx: ControlContext, p: Principal, c: Command): Promise<Ha
       const worktree = await commitHolding(ctx, c, session, workspace);
       reads = { ...reads, worktree: () => worktree };
     }
-    return (ctx, p, c) => mergeRequest(ctx, p, c).admit(reads);
+    return (ctx) => request(ctx).admit(reads);
   });
 }
 
@@ -4133,7 +4205,8 @@ async function prepareLand(
   c: Command,
   session: Session,
   workspace: Workspace,
-): Promise<Handler> {
+  request: (ctx: ControlContext) => MergeRequest,
+): Promise<(ctx: ControlContext) => Session> {
   const reads = await readMergeStates(workspace);
   requireMergeReady(ctx, ctx.store.must<Session>('sessions', session.id), reads);
   let worktree = reads.worktree(workspace)!;
@@ -4147,8 +4220,8 @@ async function prepareLand(
       true,
     ),
     files = numstat.exit_code === 0 ? numstatFiles(numstat.stdout) : [];
-  return (ctx, p, c) => {
-    const { session } = mergeRequest(ctx, p, c);
+  return (ctx) => {
+    const { session } = request(ctx);
     if (committed) {
       const next = ctx.store.update(
         'sessions',
@@ -4157,6 +4230,7 @@ async function prepareLand(
       );
       ctx.store.event('session.merge_blocked', next, next.project_id, next.merge, c.command_id);
       unsnooze(ctx, session.id, 'merge_blocked', c.command_id);
+      notifyMergeWatcher(ctx, next, 'did not land: gate_required', c.command_id);
       return next;
     }
     requireMergeReady(ctx, session, { ...reads, worktree: () => worktree });
@@ -4287,10 +4361,12 @@ function leadTaskMerge(
  */
 export function autoMergeAfterTurn(ctx: ControlContext, sessionId: string, turnId: string): void {
   if (ctx.closing) return;
-  const candidate = autoMergeCandidate(ctx, sessionId, turnId);
-  if (!candidate) return;
   let reading = autoMergeReads.get(ctx);
   if (!reading) autoMergeReads.set(ctx, (reading = new Set()));
+  if (ctx.store.must<Session>('sessions', sessionId).ready)
+    return mergeReadyAfterTurn(ctx, sessionId, turnId, reading);
+  const candidate = autoMergeCandidate(ctx, sessionId, turnId);
+  if (!candidate) return;
   const work: Promise<void> = readMergeStates(candidate.workspace)
     .then((reads) => {
       if (ctx.closing) return;
@@ -4312,6 +4388,56 @@ const autoMergeReads = new WeakMap<ControlContext, Set<Promise<void>>>();
 /** Waits for the automatic merges after turns to read their repository states and admit. */
 export async function autoMergesRead(ctx: ControlContext): Promise<void> {
   await Promise.allSettled([...(autoMergeReads.get(ctx) ?? [])]);
+}
+
+/**
+ * Merges a conductor's own work as the user's merge does once the turn that declared it ready
+ * completes; any other turn only drops the declaration. A refused merge is told to the conductor.
+ */
+function mergeReadyAfterTurn(
+  ctx: ControlContext,
+  sessionId: string,
+  turnId: string,
+  reading: Set<Promise<void>>,
+): void {
+  const ready = ctx.store.must<Session>('sessions', sessionId).ready!;
+  const session = ctx.store.transaction(() => {
+    const declared = ctx.store.must<Session>('sessions', sessionId);
+    return ctx.store.update('sessions', { ...declared, ready: undefined }, declared.revision);
+  });
+  if (ready.turn_id !== turnId) return;
+  const c: Command = {
+    protocol_version: PROTOCOL_VERSION,
+    command_id: ready.command_id,
+    idempotency_key: ready.command_id,
+    actor: sessionId,
+    expected_revision: session.revision,
+    type: 'conductor.ready',
+    input: {},
+  };
+  const work: Promise<void> = Promise.resolve()
+    .then(() => prepareReadyMerge(ctx, c, sessionId))
+    .then((admit) => {
+      if (!ctx.closing) ctx.store.transaction(() => admit(ctx));
+    })
+    .catch((error: unknown) => {
+      if (!(error instanceof DomainError)) return ctx.diagnostic(error);
+      ctx.store.transaction(() =>
+        notifyMergeWatcher(
+          ctx,
+          ctx.store.must<Session>('sessions', sessionId),
+          `did not land: ${error.code} (${error.message})`,
+          c.command_id,
+        ),
+      );
+    })
+    .finally(() => {
+      ctx.changed();
+      reading.delete(work);
+      ctx.completions.delete(work);
+    });
+  reading.add(work);
+  ctx.completions.add(work);
 }
 
 /** The session and worktree autoMergeAfterTurn merges, checked in the store alone; undefined when it does not. */
@@ -4630,7 +4756,7 @@ function derivedTitle(text: string): string {
 }
 
 /** openWorktreeSession's checks in the store alone. */
-function checkWorktreeSession(
+export function checkWorktreeSession(
   ctx: ControlContext,
   input: ReturnType<(typeof inputSchemas)['session.create']['parse']>,
   forkSource?: Session,

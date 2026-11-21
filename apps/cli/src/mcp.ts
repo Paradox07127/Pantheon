@@ -157,9 +157,9 @@ const descriptions: Record<ToolCommand, string> = {
   'conductor.review':
     'Ask one or two other runtimes to review your committed changes (or those of a session you spawned). The result comes back to you as a message when the review ends.',
   'conductor.ready':
-    "Declare your committed changes ready: Pantheon runs the project's gate on them and lands them on the target branch. Refused while a review of these changes has open blocking findings.",
+    "Declare committed changes ready: Pantheon runs the project's gate on them and lands them on the target branch. Without session_id it is your own work, and the gate starts when this turn ends; with session_id it is an idle session you spawned. The result comes back to you as a message. Refused while the latest review of that work has open blocking findings.",
   'conductor.spawn':
-    'Start a session of another runtime in a new worktree cut from your current commit, with the given first message. Use it only for work that needs another vendor; use your own subagents otherwise. You get a message when its turn ends.',
+    'Start another session in a new worktree cut from your current commit, with the given first message. Use it for work that needs another runtime; use your own subagents otherwise. You get a message when its turn ends. At most 4 unfinished spawned sessions at a time.',
   'conductor.state':
     "Read this project's changes, their checks (gate, reviews), the landing queue and the items waiting for the user.",
 };

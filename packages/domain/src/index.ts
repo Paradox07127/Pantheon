@@ -700,6 +700,8 @@ export interface Session extends Entity {
   lead?: true;
   /** A native session with only the four conductor tools. */
   conductor?: true;
+  /** The conductor's turn that declared its work ready, by command command_id; it merges once that turn completes. */
+  ready?: { turn_id: string; command_id: string };
   /** The conductor session that started this one; it gets no Pantheon tools. */
   spawned_by?: { session_id: string };
   /** Native history fork applied before the next input; after is a runtime message or turn id. */
