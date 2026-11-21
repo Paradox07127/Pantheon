@@ -8,8 +8,8 @@ import {
   type Session,
   type SessionTurn,
 } from '@pantheon/domain';
-import type { ControlContext } from './context.js';
-import { ownEntry, taskGeneration, taskSessions, taskState } from './board-plan.js';
+import { ownEntry, type ControlContext } from './context.js';
+import { taskGeneration, taskSessions, taskState } from './board-plan.js';
 import { appendNote, planLineage } from './lead-inbox.js';
 import { taskBudgetUse } from './task-budget.js';
 

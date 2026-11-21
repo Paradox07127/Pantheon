@@ -42,7 +42,6 @@ const open = () =>
       defaults: undefined,
       focus: 0,
       onCreated: () => {},
-      task: { id: 'lead-1:api', title: 'Add the API', goal: 'Serve the board' },
       recent: [recent],
       onOpen: () => {},
       onClose: () => {},
@@ -131,10 +130,9 @@ it('ages the sessions in progress as time passes without other renders', async (
   }
 });
 
-it('holds the task, the message box and its model menu in the new-session dialog', () => {
+it('holds the message box and its model menu in the new-session dialog', () => {
   const h = open();
   const dialog = find(h.value, (n) => n.props['aria-label'] === zh('sessions.composer.newSession'));
-  expect(nodes(dialog).some((n) => text(n) === 'Add the API')).toBe(true);
   expect(
     nodes(dialog).some((n) => n.props['aria-label'] === zh('sessions.composer.firstMessage')),
   ).toBe(true);

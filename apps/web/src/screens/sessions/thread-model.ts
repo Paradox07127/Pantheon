@@ -1,6 +1,5 @@
 import type {
   ApprovalQuestion,
-  BoardHistory,
   EffortLevel,
   RuntimeModel,
   WorkbenchSession,
@@ -225,20 +224,12 @@ export function modelText(
   return listText(runtime, running.name, running.effort && EFFORT_LABEL[running.effort], backend);
 }
 
-/**
- * The composer text of a session opened from a board task. Left as it is, the daemon opens the
- * session with the first message dispatch sends; other text follows that message.
- */
-export const taskPrompt = (task: { title: string; goal: string }): string =>
-  `${task.title}\n\n${task.goal}`;
-
-/** The session.create input; task_id binds the new session to its board task. */
+/** The session.create input. */
 export function newSessionInput(input: {
   projectId: string;
   runtime: string;
   permissionMode: WorkbenchSession['permission_mode'];
   input: string;
-  taskId?: string;
   backend?: string | null;
   model?: string | null;
   effort?: EffortLevel | null;
@@ -249,7 +240,6 @@ export function newSessionInput(input: {
     runtime: input.runtime,
     permission_mode: input.permissionMode,
     input: input.input,
-    ...(input.taskId ? { task_id: input.taskId } : {}),
     ...(input.backend ? { backend: input.backend } : {}),
     ...(input.model ? { model: input.model } : {}),
     ...(input.effort ? { effort: input.effort } : {}),
@@ -620,7 +610,7 @@ export function findMatches(turns: readonly TurnView[], query: string): FindMatc
 
 export interface TimelineNode {
   id: string;
-  kind: 'goal' | 'task' | 'milestone' | 'wait' | 'turn';
+  kind: 'goal' | 'wait' | 'turn';
   /** Epoch milliseconds. */
   at: number;
   /** The one line the rail shows. */
@@ -632,12 +622,11 @@ export interface TimelineNode {
 }
 
 /**
- * The thread's milestones in time order: goal, completed tasks and reached milestones, key points
- * and waiting requests. A goal, task or milestone points to the turn running by then.
+ * The thread's milestones in time order: goal, key points and waiting requests. A goal points to
+ * the turn running by then.
  */
 export function timelineNodes(input: {
   sessionId: string;
-  history: Pick<BoardHistory, 'tasks' | 'milestones'> | null;
   turns: readonly { id: string; at: number | null; summary?: string }[];
   waits: readonly { id: string; at: number; turn: string | null; question: boolean }[];
   goal?: { text: string; at: string } | null;
@@ -648,12 +637,6 @@ export function timelineNodes(input: {
     input.turns.findLast((turn) => turn.at !== null && turn.at <= at)?.id ??
     input.turns[0]?.id ??
     null;
-  const tasks = (input.history?.tasks ?? []).filter(
-    (task) =>
-      task.state !== 'removed' &&
-      (task.owner_session_id === input.sessionId || task.session_id === input.sessionId),
-  );
-  const milestones = new Set(tasks.flatMap((task) => task.milestone_id ?? []));
   const goal = input.goal ? { text: input.goal.text.trim(), at: Date.parse(input.goal.at) } : null;
   const title = input.title?.trim() ?? '';
   const nodes: TimelineNode[] = [
@@ -677,40 +660,6 @@ export function timelineNodes(input: {
           },
         ]
       : []),
-    ...tasks.flatMap((task) =>
-      task.merged_at === null
-        ? []
-        : [
-            {
-              id: `task:${task.id}`,
-              kind: 'task' as const,
-              at: task.merged_at,
-              label: task.title,
-              name: t(
-                { id: 'sessions.thread.timeline.task', defaultMessage: 'Task done: {title}' },
-                { title: task.title },
-              ),
-              turn: turnAt(task.merged_at),
-            },
-          ],
-    ),
-    ...(input.history?.milestones ?? []).flatMap((milestone) =>
-      milestone.reached_at === null || !milestones.has(milestone.id)
-        ? []
-        : [
-            {
-              id: `milestone:${milestone.id}`,
-              kind: 'milestone' as const,
-              at: milestone.reached_at,
-              label: milestone.title,
-              name: t(
-                { id: 'sessions.thread.timeline.milestone', defaultMessage: 'Milestone: {title}' },
-                { title: milestone.title },
-              ),
-              turn: turnAt(milestone.reached_at),
-            },
-          ],
-    ),
     ...input.turns.flatMap((turn, i) =>
       turn.summary === undefined || turn.at === null
         ? []

@@ -7,14 +7,9 @@ vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMoc
 vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
   (await import('./web-live-stores.js')).liveStores(actual as never),
 );
-vi.mock('@/screens/settings/settings-jump', async (actual) => ({
-  ...(await actual<object>()),
-  openBoardTab: vi.fn(),
-}));
 import { RuntimeGlyph } from '@/components/RuntimeGlyph';
 import { useBoard } from '@/data/board';
 import { Section } from '@/screens/settings/ProjectSettingsScreen';
-import { openBoardTab } from '@/screens/settings/settings-jump';
 import { searchSettings } from '@/screens/settings/settings-search';
 import { UsagePage } from '@/screens/settings/UsagePage';
 import { WorkflowPage } from '@/screens/settings/WorkflowPage';
@@ -104,7 +99,6 @@ afterEach(() => {
   unmountAll();
   vi.unstubAllGlobals();
   useBoard.setState({ board: null });
-  vi.mocked(openBoardTab).mockClear();
 });
 
 describe('usage page token targets', () => {
@@ -248,7 +242,6 @@ describe('usage page board link', () => {
   it('has no link to the engineering board', async () => {
     const h = await mount();
     expect(nodes(tree(h)).filter((n) => n.type === 'button' && text(n) === '看用量')).toEqual([]);
-    expect(openBoardTab).not.toHaveBeenCalled();
   });
 });
 

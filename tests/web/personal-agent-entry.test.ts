@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { WorkbenchSession } from '@pantheon/protocol';
-import { type HookHost, mount as host, named, nodes, text, unmountAll } from './web-hook-host.js';
+import { type HookHost, mount as host, nodes, text, unmountAll } from './web-hook-host.js';
 import { zh } from './i18n-setup.js';
 const mock = vi.hoisted(() => ({ board: {} as any, shell: {} as any }));
 vi.mock('react', async (actual) =>
@@ -21,41 +20,14 @@ const runCommand = vi.hoisted(() =>
   vi.fn(async (..._args: unknown[]): Promise<any> => ({ ok: true, value: { id: 'personal-1' } })),
 );
 vi.mock('@/data/commands', () => ({ runCommand }));
-vi.mock('@/data/agents', async (actual) => ({
-  ...(await actual<object>()),
-  useAgents: () => null,
-}));
 const toast = vi.hoisted(() => vi.fn());
 vi.mock('@/components/Toast', async (actual) => ({ ...(await actual<object>()), toast }));
 import { Sidebar } from '@/components/Sidebar';
 import { currentProject } from '@/data/current-project';
 import { visibleProjects } from '@/data/projects';
-import { PersonalAgentScreen } from '@/screens/sessions/PersonalAgentScreen';
 
-const AT = '2026-11-18T10:00:00.000Z';
 const HOME = { id: 'home', revision: 1, name: 'Personal', roots: [], kind: 'personal' as const };
 const ALPHA = { id: 'alpha', revision: 1, name: 'Alpha', roots: ['/work/alpha'] };
-const session = (id: string, extra: Partial<WorkbenchSession> = {}): WorkbenchSession => ({
-  id,
-  created_at: AT,
-  title: 'Personal',
-  runtime: 'claude',
-  model: null,
-  effort: null,
-  permission_mode: 'ask',
-  workspace_id: null,
-  workspace_kind: 'linked_worktree',
-  state: 'idle',
-  waiting: 0,
-  reconciling: false,
-  stopping: false,
-  last_activity_at: AT,
-  changes: null,
-  merge: null,
-  resident: { kind: 'personal' },
-  ...extra,
-});
-
 beforeEach(() => {
   vi.stubGlobal('localStorage', { getItem: () => null, setItem() {} });
   vi.stubGlobal('window', { addEventListener() {}, removeEventListener() {} });
@@ -73,7 +45,6 @@ beforeEach(() => {
     sessionGroup: null,
     renaming: null,
     openSession: vi.fn(),
-    openPersonal: vi.fn(),
   };
   runCommand.mockClear();
   toast.mockClear();
@@ -152,38 +123,5 @@ describe('a project’s sidebar', () => {
     const ATTENTION = zh('components.sidebar.attention');
     expect(dot(sidebar({ items: [waiting('home', 'h-1')] }))).toBe(false);
     expect(dot(sidebar({ items: [waiting('alpha', 'a-1')] }))).toBe(true);
-  });
-});
-
-describe('personal agent conversation', () => {
-  const needs = { items: [], loading: false, error: null, reload() {} };
-  const screen = (data: WorkbenchSession[] | null) =>
-    host(() =>
-      PersonalAgentScreen({
-        needs,
-        list: { data, loading: data === null, error: null, reload() {} } as any,
-      }),
-    );
-
-  it('shows the newest open personal session under a bar named Personal agent with an All projects chip', () => {
-    mock.board.board.sessions = [{ id: 'personal-2', project_id: 'home', revision: 1 }];
-    const h = screen([
-      session('personal-1', { archived_at: AT }),
-      session('personal-2', { created_at: '2026-11-18T11:00:00.000Z' }),
-    ]);
-    const thread = named(h.value, 'Thread');
-    expect(thread.props.sessionId).toBe('personal-2');
-    // The composer and the thread name the agent as the bar does.
-    expect(thread.props.listed.title).toBe(zh('app.screenName.personal'));
-    const head = nodes(thread.props.head);
-    expect(text(head.find((n) => n.type === 'h1'))).toBe('个人级智能体');
-    expect(head.some((n) => n.props.className === 'chip' && text(n) === '全部项目')).toBe(true);
-  });
-
-  it('keeps the bar while the session list loads', () => {
-    const h = screen(null);
-    expect(nodes(h.value).some((n) => (n.type as { name?: string }).name === 'Thread')).toBe(false);
-    expect(text(nodes(h.value).find((n) => n.type === 'h1'))).toBe(zh('app.screenName.personal'));
-    expect(nodes(h.value).some((n) => n.props['aria-busy'] === 'true')).toBe(true);
   });
 });

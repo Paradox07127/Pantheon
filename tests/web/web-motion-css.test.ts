@@ -240,7 +240,6 @@ const keyframeExceptions: Record<string, string> = {
     'the light is clipped to the letters by background-clip: text; a moving layer would carry the letters',
   'mef-sweep':
     'the light is clipped to the letters by background-clip: text; a moving layer would carry the letters',
-  'bd-flow': 'the dashes run along a curved edge path, which only stroke-dashoffset can follow',
 };
 
 it('animates keyframes only on compositor-friendly and colour properties', () => {

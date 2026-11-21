@@ -7,12 +7,12 @@ import {
   type SessionTurn,
   type Workspace,
 } from '@pantheon/domain';
-import { projectAccess, type ControlContext } from './context.js';
+import { ownEntry, projectAccess, type ControlContext } from './context.js';
 import { listedOutcomes, requireMergeReady } from './workbench-session.js';
 import { daemonDriven, usageResetAt } from './continuation.js';
 import { sessionStall } from './session-stall.js';
 import { acceptInput } from './session.js';
-import { ownEntry, retiredBinding } from './board-plan.js';
+import { retiredBinding } from './board-plan.js';
 import { BACKGROUND_LONG_MS, longBackground } from './progress.js';
 import { workflowPolicy } from './workflow-policy.js';
 import { charterMode } from './charter.js';

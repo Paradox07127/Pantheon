@@ -93,48 +93,6 @@ it('shows the session the store opens again after another was picked in the side
   expect(shown()).toBe('session-a');
 });
 
-it('opens the composer for a board task', async () => {
-  const { useShell } = await vi.importActual<typeof import('@/store')>('@/store');
-  const task = { id: 'lead-1:api', title: 'Add the API', goal: 'Serve the board' };
-  const opened = useShell.getState().sessionOpened;
-  useShell.getState().openTaskSession(task);
-  expect(useShell.getState()).toMatchObject({
-    screen: 'sessions',
-    sessionId: '',
-    sessionTask: task,
-    sessionOpened: opened + 1,
-  });
-  mock.shell = { ...mock.shell, sessionId: '', sessionTask: task };
-  const h = mount(() =>
-    SessionsScreen({ projectId: 'project-a', needs, list: listOf([listed('session-a')]) }),
-  );
-  await h.flush();
-  const composer = named(h.value, 'NewSession');
-  expect(composer.props.task).toBe(task);
-  expect(composer.key).toBe(`project-a:${task.id}`);
-  useShell.getState().openSessions();
-  expect(useShell.getState().sessionTask).toBeNull();
-});
-
-it('drops the board task when a plain new session is started', async () => {
-  const { useShell } = await vi.importActual<typeof import('@/store')>('@/store');
-  useShell.getState().openSession('session-b');
-  useShell.getState().openTaskSession({
-    id: 'lead-1:api',
-    title: 'Add the API',
-    goal: 'Serve the board',
-  });
-  const opened = useShell.getState().sessionOpened;
-  useShell.getState().setScreen('board');
-  useShell.getState().startNewSession();
-  expect(useShell.getState()).toMatchObject({
-    screen: 'sessions',
-    sessionId: '',
-    sessionTask: null,
-    sessionOpened: opened + 1,
-  });
-});
-
 it('follows the first session when the CLI removes the shown one from the refreshed list', async () => {
   mock.shell = { ...mock.shell, sessionId: 'baseline-session' };
   let list = listOf([listed('baseline-session', { state: 'done', workspace_id: null })]);

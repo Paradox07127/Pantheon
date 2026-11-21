@@ -22,7 +22,7 @@ import { RuntimeGlyph } from '../../components/RuntimeGlyph';
 import { elapsedText } from '../../data/transcript';
 import { t } from '../../i18n';
 import { shortcutMatches, useShortcut, type ShortcutId } from '../../lib/shortcuts';
-import { tokenText } from '../board/panels-model';
+import { tokenText } from '../../lib/number-text';
 import {
   callRows,
   stepRow,

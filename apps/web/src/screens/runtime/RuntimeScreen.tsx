@@ -8,7 +8,6 @@ import { ReadStatus } from '../../components/ReadStatus';
 import { RuntimeGlyph } from '../../components/RuntimeGlyph';
 import { StateGlyph, type GlyphName } from '../../components/SessionStateIcon';
 import { Skeleton } from '../../components/Skeleton';
-import { useBoard } from '../../data/board';
 import { useBoardView } from '../../data/board-view';
 import { runCommand } from '../../data/commands';
 import { failureText, useNow } from '../../data/needs-you';
@@ -19,8 +18,7 @@ import { currentLocale, t } from '../../i18n';
 import { shortcutKeys } from '../../lib/shortcuts';
 import { useDelayed } from '../../lib/use-delayed';
 import { useShell } from '../../store';
-import { LeadStates, NeedsStrip } from '../board/BoardFrame';
-import { tokenText, type RunBoardCommand } from '../board/panels-model';
+import { tokenText } from '../../lib/number-text';
 import { CallDetail } from './CallDetail';
 import { CallTable } from './CallTable';
 import {
@@ -188,8 +186,6 @@ export function RunsView({
   const model = boardView.data;
   // A board already shown that a read is replacing gets its status bar only once that read runs long.
   const boardSlow = useDelayed(!!(boardView.loading || boardView.refreshing));
-  const snapshot = useBoard((s) => s.board);
-  const openSession = useShell((s) => s.openSession);
   // Completed work ages out even when the daemon has no new events to publish.
   const windowNow = Math.max(model?.now ?? 0, useNow(15_000));
   const board = useMemo(() => (model ? runtimeBoard(model, windowNow) : null), [model, windowNow]);
@@ -291,10 +287,6 @@ export function RunsView({
     setResponding(new Set(answering.current));
     if (!result.ok) setRespondFailure(failureText(result.error));
   };
-  const run: RunBoardCommand = async (type, input, expectedRevision) => {
-    const result = await runCommand(type, input, expectedRevision);
-    return result.ok ? null : failureText(result.error);
-  };
 
   const shownTrace = past.trace.data;
   const shownLane =
@@ -368,18 +360,6 @@ export function RunsView({
             : t({ id: 'runs.page.nowLabel', defaultMessage: 'Sessions running now' })
         }
       >
-        {!history && !!board?.leads?.length && (
-          <LeadStates leads={board.leads} onOpenSession={openSession} />
-        )}
-        {!history && model && (
-          <NeedsStrip
-            model={model}
-            sessions={snapshot?.sessions ?? NO_SESSIONS}
-            run={run}
-            stale={boardView.stale}
-            onOpenSession={openSession}
-          />
-        )}
         {history ? (
           <ReadStatus label="Trace" {...past.trace} />
         ) : (

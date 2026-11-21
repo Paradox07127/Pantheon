@@ -35,7 +35,6 @@ import {
   type Handlers,
 } from './context.js';
 import { sessionDefaults } from './user-config.js';
-import { finalOutput } from './agent-app-tools.js';
 import { runGit } from './git.js';
 import { mergeBase } from './merge-preview.js';
 import { sessionGoal, sessionRangeAsync, type DiffRange } from './landing-diff.js';
@@ -97,6 +96,18 @@ function reviewTarget(ctx: ControlContext, principal: Principal, command: Comman
     goal = contractLines(task).join('\n');
   }
   return { input, session, requester, goal };
+}
+
+/** The text the agent wrote after its last tool call in the turn. */
+export function finalOutput(ctx: ControlContext, sessionId: string, turnId: string): string {
+  const rows = ctx.store.db
+    .prepare(
+      "SELECT kind, payload ->> '$.text' AS text FROM events WHERE aggregate_id=? AND kind IN ('agent.message.delta', 'agent.tool.started') AND payload ->> '$.turn_id'=? ORDER BY sequence",
+    )
+    .all(sessionId, turnId) as { kind: string; text: string | null }[];
+  let reply = '';
+  for (const row of rows) reply = row.kind === 'agent.tool.started' ? '' : reply + (row.text ?? '');
+  return reply.trim();
 }
 
 /** Refuses the writer's own runtime as a reviewer while another runtime can review. */

@@ -830,59 +830,6 @@ export function keepOrder(
   });
 }
 
-export interface WorkerCounts {
-  running: number;
-  review: number;
-  /** Workers whose newest gate run failed and that have not ended. */
-  failed: number;
-}
-
-const workerRunning = (s: WorkbenchSession) =>
-  s.stopping || ['starting', 'running', 'merging'].includes(s.state);
-const gateFailed = (s: WorkbenchSession) =>
-  s.gate?.state === 'failed' && !ENDED_STATES.has(s.state);
-
-/** How many of the workers run, await review and failed their gates. */
-export function workerCounts(workers: readonly WorkbenchSession[]): WorkerCounts {
-  return {
-    running: workers.filter(workerRunning).length,
-    review: workers.filter((s) => s.state === 'ready').length,
-    failed: workers.filter(gateFailed).length,
-  };
-}
-
-/** The workers of one plan lane, with how many merged; finished once every one of them ended. */
-export interface WorkerLane {
-  key: string;
-  title: string;
-  workers: WorkbenchSession[];
-  merged: number;
-  running: number;
-  failed: number;
-  finished: boolean;
-}
-
-/** The workers by their task's lane, lanes still at work first, each in the order its first worker opened. */
-export function workerLanes(workers: readonly WorkbenchSession[]): WorkerLane[] {
-  const lanes = new Map<string, WorkbenchSession[]>();
-  for (const s of [...workers].sort((a, b) => a.created_at.localeCompare(b.created_at))) {
-    const key = s.task?.lane ?? '';
-    lanes.set(key, [...(lanes.get(key) ?? []), s]);
-  }
-  const all = [...lanes].map(([key, shown]) => ({
-    key,
-    title:
-      shown.find((s) => s.task)?.task?.lane_title ??
-      t({ id: 'sessions.residents.otherLane', defaultMessage: 'Other tasks' }),
-    workers: shown,
-    merged: shown.filter((s) => s.state === 'merged').length,
-    running: shown.filter(workerRunning).length,
-    failed: shown.filter((s) => s.state === 'failed' || gateFailed(s)).length,
-    finished: shown.every((s) => FINISHED.has(s.state)),
-  }));
-  return [...all.filter((lane) => !lane.finished), ...all.filter((lane) => lane.finished)];
-}
-
 /** `+a −d` of the worktree's changes; empty when nothing changed or the worktree is not in use. */
 export function changesText(changes: WorkbenchSession['changes']): string {
   return changes && changes.files > 0 ? `+${changes.additions} −${changes.deletions}` : '';

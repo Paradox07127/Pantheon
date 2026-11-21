@@ -205,8 +205,7 @@ beforeEach(() => {
   });
   vi.stubGlobal('document', { activeElement: null, hasFocus: () => pageFocused });
   openProjectSession = vi.fn<(projectId: string, sessionId: string) => void>();
-  // The board in front has drawn and lists no wait.
-  useShell.setState({ openProjectSession, screen: 'board', boardWaits: new Set() });
+  useShell.setState({ openProjectSession, screen: 'memory' });
   useBoard.setState({ board, events: [], resync: 0 } as Partial<SyncView>);
   cards = mountToastStore();
   props = {

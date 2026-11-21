@@ -60,7 +60,7 @@ async function open({
 afterEach(() => vi.unstubAllGlobals());
 
 describe('the main window opening', () => {
-  const left = { alpha: { screen: 'sessions', sessionId: 'alpha-1', sessionTask: null } };
+  const left = { alpha: { screen: 'sessions', sessionId: 'alpha-1' } };
 
   it('opens on the session it was left on once the list still has it', async () => {
     const { here, first, query, cachedQuery } = await open({
@@ -72,7 +72,6 @@ describe('the main window opening', () => {
       projectId: 'alpha',
       screen: 'sessions',
       sessionId: 'alpha-1',
-      sessionTask: null,
     });
     expect(query).toHaveBeenCalledWith('session.list', { project_id: 'alpha' });
     // The sessions page draws the list already read instead of reading it again first.
@@ -100,7 +99,7 @@ describe('the main window opening', () => {
     'opens a project left on the old %s screen on its sessions, on the session it showed',
     async (screen) => {
       const { here } = await open({
-        places: { alpha: { screen, sessionId: 'alpha-1', sessionTask: null } },
+        places: { alpha: { screen, sessionId: 'alpha-1' } },
         sessions: [{ id: 'alpha-1', archived_at: null }],
       });
       expect(here).toEqual({ screen: 'sessions', session: 'alpha-1' });
@@ -109,7 +108,7 @@ describe('the main window opening', () => {
 
   it('opens on the other page it was left on without reading the list', async () => {
     const { here, query, useShell } = await open({
-      places: { alpha: { screen: 'trace', sessionId: 'alpha-1', sessionTask: null } },
+      places: { alpha: { screen: 'trace', sessionId: 'alpha-1' } },
     });
     expect(here).toEqual({ screen: 'trace', session: 'alpha-1' });
     expect(useShell.getState().sessionRestored).toBe(true);

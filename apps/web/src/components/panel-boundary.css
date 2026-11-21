@@ -1,0 +1,33 @@
+.bd-sk {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.bd-ph {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  margin-bottom: 12px;
+  flex: none;
+}
+
+.bd-ph h2 {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.bd-ph .ib {
+  width: 24px;
+  height: 24px;
+}
+
+.bd-ph .ib svg {
+  width: 14px;
+  height: 14px;
+}

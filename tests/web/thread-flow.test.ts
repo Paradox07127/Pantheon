@@ -80,8 +80,8 @@ describe('timeline beside the thread', () => {
     turn,
   });
   const shown = [
-    node('task:a', 'task', at(10, 14), 'turn-1'),
-    node('milestone:m', 'milestone', at(10, 36), 'turn-2'),
+    node('goal:a', 'goal', at(10, 14), 'turn-1'),
+    node('turn:m', 'turn', at(10, 36), 'turn-2'),
     node('wait:w', 'wait', at(10, 39), null),
   ];
   /** A thread whose marks' targets start `tops` pixels into its content. */
@@ -113,8 +113,8 @@ describe('timeline beside the thread', () => {
   it('names each mark by its time and label, and marks the last one the visible thread has reached', () => {
     const tree = rail(300, 400);
     expect(marks(tree).map((n) => n.props['aria-label'])).toEqual([
-      '10:14 name of task:a',
-      '10:36 name of milestone:m',
+      '10:14 name of goal:a',
+      '10:36 name of turn:m',
       '10:39 name of wait:w',
     ]);
     expect(marks(tree).map((n) => n.props['aria-current'])).toEqual([undefined, 'true', undefined]);
@@ -178,20 +178,20 @@ describe('the turn as the thread shows it', () => {
     expect(crown.props['aria-label']).toBeUndefined();
   });
 
-  it('draws a finished task and a reached milestone as centred marks with their time', () => {
+  it('draws a goal and a wait as centred marks with their time', () => {
     const h = turnHost(buildTranscript([turn()], []).turns[0]!, {
       marks: [
         {
-          id: 'task:a',
-          kind: 'task',
+          id: 'goal:a',
+          kind: 'goal',
           at: at(10, 14),
           label: 'Sign the raw body',
           name: '任务完成：Sign the raw body',
           turn: 'turn-1',
         },
         {
-          id: 'milestone:m',
-          kind: 'milestone',
+          id: 'turn:m',
+          kind: 'wait',
           at: at(10, 36),
           label: 'Signatures checked',
           name: '里程碑：Signatures checked',

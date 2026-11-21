@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cellLabel } from '@/screens/board/intro-model';
+import { cellLabel } from '@/screens/memory/intro-model';
 
 describe('the label of a module cell', () => {
   it.each([

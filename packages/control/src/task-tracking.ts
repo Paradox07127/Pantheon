@@ -17,6 +17,7 @@ import {
 } from '@pantheon/domain';
 import { inputSchemas, type Command } from '@pantheon/protocol';
 import {
+  ownEntry,
   gitFolderAsync,
   projectAccess,
   userOnly,
@@ -48,7 +49,6 @@ import { usageLimitWaiting, usageResetAt } from './continuation.js';
 import {
   currentAcceptance,
   currentBinding,
-  ownEntry,
   planViews,
   retiredBinding,
   taskGeneration,
@@ -86,8 +86,6 @@ import { projectOverBudget, workflowPolicy } from './workflow-policy.js';
 import { wakeHold } from './agent-contract.js';
 import { advanceMergeReviews } from './merge-review.js';
 import { queueTurn } from './session-wake.js';
-
-export { queueTurn } from './session-wake.js';
 
 type Tracked = BoardPlan['notified'][string];
 type Alert = NonNullable<BoardPlan['alerted']>[string][number];

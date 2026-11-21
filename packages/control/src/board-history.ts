@@ -13,7 +13,8 @@ import {
 import type { BoardHistory, PendingReplan } from '@pantheon/protocol';
 import { projectAccess, type ControlContext } from './context.js';
 import { awaitingChange, boardTaskId, currentBinding, taskGeneration } from './board-plan.js';
-import { dayKey, midnight, planTaskState, type MergedPayload } from './board-view.js';
+import { dayKey, planTaskState, type MergedPayload } from './board-view.js';
+import { midnight } from './projects-summary.js';
 import { dispatchQueue } from './task-dispatch.js';
 import { milestoneView } from './project-facts.js';
 import { DECISIONS } from './retrospective.js';

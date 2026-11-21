@@ -21,7 +21,7 @@ import { offeredRuntimes, useRuntimeStatus } from '../../data/runtime-status';
 import { t } from '../../i18n';
 import { listText } from '../../lib/list-text';
 import { durationText } from '../../lib/time-text';
-import { sourceText } from '../board/intro-model';
+import { sourceText } from '../memory/intro-model';
 import { defaultModelFor, defaultRuntime } from '../sessions/model';
 import { ModelMenu, type ModelChoice } from '../sessions/ModelMenu';
 import { workstreamRows } from './facts';

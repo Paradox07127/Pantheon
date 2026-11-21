@@ -1,7 +1,0 @@
-{
-  "board.devices.title": "设备",
-  "board.devices.summary": "设备，{total} 台里 {online} 台在线",
-  "board.devices.sessions": "{count, plural, other {# 个会话}}",
-  "board.devices.sessionsOf": "会话 {used} / {max}",
-  "board.devices.resourceUse": "{device} 的 {resource}：{total} 个里占用 {used} 个"
-}

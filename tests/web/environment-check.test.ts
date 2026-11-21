@@ -17,7 +17,6 @@ import { Clip } from '@/components/Clip';
 import { EnvironmentCheck, type PlannedCommands } from '@/components/EnvironmentCheck';
 import { useBoard } from '@/data/board';
 import { durationText } from '@/lib/time-text';
-import { ProjectSetup } from '@/screens/board/ProjectSetup';
 import { ReviewBaseline } from '@/screens/projects/BaselineBlocks';
 import { Button } from '@/screens/projects/parts';
 import { ProjectGate } from '@/screens/settings/GatesPage';
@@ -515,51 +514,5 @@ describe('where the environment check is drawn', () => {
     );
     expect(confirm.props.busy).toBe(false);
     expect(confirm.props.state).toBeUndefined();
-  });
-
-  it('stays under the building baseline while its agent fixes a failed command', async () => {
-    const result = {
-      folders: [
-        {
-          root: ROOT,
-          stage: 'active',
-          gate: [{ ...test, sources: [] }],
-          commands: { build: { argv: build.argv, sources: [] } },
-        },
-      ],
-      workstreams: [],
-      contradictions: [],
-      findings: [],
-      questions: [],
-    };
-    const running = (environment?: ProjectBaseline['environment']) =>
-      ({
-        id: 'baseline-1',
-        revision: 5,
-        project_id,
-        state: 'running',
-        session_id: 'session-1',
-        dropped: 0,
-        facts_id: 'facts-1',
-        created_at: 1,
-        result,
-        ...(environment && { environment }),
-      }) as never as ProjectBaseline;
-    const draw = async (baseline: ProjectBaseline) => {
-      const h = mount(() =>
-        ProjectSetup({ setup: setupRead('running', { baseline }), onOpenSession: () => {} }),
-      );
-      await h.flush();
-      return nodes(tree(h)).filter((n) => n.type === EnvironmentCheck);
-    };
-    const fixing = running({
-      check_ids: ['c1'],
-      fix_requested_at: Date.now(),
-      commands: [{ root: ROOT, name: 'test', state: 'failed' }],
-    });
-    const [block] = await draw(fixing);
-    expect(block!.props.baseline).toBe(fixing);
-    expect(block!.props.planned).toEqual([{ root: ROOT, commands: [test, build] }]);
-    expect(await draw(running())).toEqual([]);
   });
 });

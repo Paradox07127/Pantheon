@@ -11,14 +11,12 @@ vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
 );
 import { RequestCard } from '../../apps/web/src/components/RequestCard.js';
 import { decisionRow } from '../../apps/web/src/data/decisions-for-user.js';
-import { NeedsStrip } from '../../apps/web/src/screens/board/BoardFrame.js';
-import type { BoardNeed, NeedItem } from '../../apps/web/src/screens/board/frame-model.js';
+import type { BoardNeed, NeedItem } from '../../apps/web/src/data/need-actions.js';
+import { durationText } from '../../apps/web/src/lib/time-text.js';
 import {
-  durationText,
   type RunBoardCommand,
   type SnapshotSession,
-} from '../../apps/web/src/screens/board/panels-model.js';
-import { TaskList } from '../../apps/web/src/screens/board/TaskList.js';
+} from '../../apps/web/src/lib/snapshot-types.js';
 
 const NOW = Date.UTC(2026, 10, 19, 12);
 const MIN = 60_000;
@@ -93,26 +91,6 @@ function card(item: NeedItem, who: string, run: RunBoardCommand = vi.fn(async ()
 const button = (tree: ReactNode, label: string) =>
   find(tree, (n) => n.type === 'button' && text(n) === label);
 
-/** The batch row a strip of these items draws, rendered in a host of its own. */
-function batchOf(items: BoardNeed[], run: RunBoardCommand) {
-  const strip = mount(() =>
-    NeedsStrip({
-      model: {
-        now: NOW,
-        needs: items,
-        lanes: [],
-        tasks: [],
-        milestones: [],
-      } as unknown as BoardModel,
-      sessions: [lead],
-      run,
-      onOpenSession() {},
-    }),
-  );
-  const el = named(strip.value, 'QuestionBatch');
-  return { strip, batch: mount(() => (el.type as (p: object) => ReactElement<any>)(el.props)) };
-}
-
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(NOW);
@@ -167,134 +145,6 @@ describe('a lead question with a default deadline', () => {
       'lead.question.keep_open',
       { project_id: 'project-a', lead_session_id: 'lead-1', question_id: 'q1' },
       null,
-    );
-  });
-});
-
-describe('the questions of one plan', () => {
-  it('are one row named by their count and plan, blocking the union of their tasks', () => {
-    const run = vi.fn<RunBoardCommand>(async () => null);
-    const { strip, batch } = batchOf([question('q1'), question('q2')], run);
-    expect(nodes(strip.value).filter((n) => n.type === RequestCard)).toHaveLength(0);
-    expect(batch.value.props['aria-label']).toBe(
-      zhf('components.questionBatch.title', { count: 2, plan: 'Refunds v2' }),
-    );
-    expect(text(batch.value)).toContain(zhf('data.attention.blocks', { count: 3 }));
-    const groups = nodes(batch.value).filter((n) => n.props.role === 'radiogroup');
-    expect(groups.map((g) => g.props['aria-label'])).toEqual([
-      'Which way for q1?',
-      'Which way for q2?',
-    ]);
-    // The recommended answer comes first and is picked.
-    for (const group of groups) {
-      const radios = nodes(group).filter((n) => n.props.role === 'radio');
-      expect(text(radios[0]!)).toBe(`Flag${zh('components.questionCard.recommended')}`);
-      expect(radios.map((r) => r.props['aria-checked'])).toEqual([true, false, false]);
-    }
-  });
-
-  it('sends every answer at once: the recommended one, another pick, or typed words', async () => {
-    const run = vi.fn<RunBoardCommand>(async () => null);
-    const { batch } = batchOf([question('q1'), question('q2'), question('q3')], run);
-    const group = (i: number) =>
-      nodes(batch.value).filter((n) => n.props.role === 'radiogroup')[i]!;
-    find(group(1), (n) => n.props.role === 'radio' && text(n) === 'Neither').props.onClick();
-    batch.render();
-    const others = nodes(batch.value).filter(
-      (n) => n.props['aria-label'] === zh('components.questionCard.otherAnswer'),
-    );
-    others[2]!.props.onChange({ target: { value: 'Ship both' } });
-    batch.render();
-    button(batch.value, zh('components.questionBatch.answerAll')).props.onClick();
-    await batch.flush();
-    expect(run).toHaveBeenCalledWith(
-      'lead.questions.answer_batch',
-      {
-        project_id: 'project-a',
-        lead_session_id: 'lead-1',
-        answers: [
-          { question_id: 'q1', answer: 'Flag' },
-          { question_id: 'q2', answer: 'Neither' },
-          { question_id: 'q3', answer: 'Ship both' },
-        ],
-      },
-      null,
-    );
-  });
-
-  it('says why the answers were not sent and keeps the choices', async () => {
-    const run = vi.fn<RunBoardCommand>(async () => 'the lead session is not running');
-    const { batch } = batchOf([question('q1'), question('q2')], run);
-    find(
-      nodes(batch.value).filter((n) => n.props.role === 'radiogroup')[0]!,
-      (n) => n.props.role === 'radio' && text(n) === 'Neither',
-    ).props.onClick();
-    batch.render();
-    button(batch.value, zh('components.questionBatch.answerAll')).props.onClick();
-    await batch.flush();
-    expect(text(find(batch.value, (n) => n.props.role === 'alert'))).toBe(
-      zhf('components.questionBatch.failed', {
-        count: 2,
-        error: 'the lead session is not running',
-      }),
-    );
-    const first = nodes(batch.value).filter((n) => n.props.role === 'radiogroup')[0]!;
-    expect(
-      find(first, (n) => n.props.role === 'radio' && text(n) === 'Neither').props['aria-checked'],
-    ).toBe(true);
-  });
-
-  it('keeps one question with a deadline open', async () => {
-    const run = vi.fn<RunBoardCommand>(async () => null);
-    const { batch } = batchOf([question('q1'), question('q2', { default_at: NOW + HOUR })], run);
-    expect(text(batch.value)).toContain(
-      zhf('components.requestCard.defaultAt', { duration: durationText(HOUR) }),
-    );
-    button(batch.value, zh('components.requestCard.keepOpen')).props.onClick();
-    await batch.flush();
-    expect(run).toHaveBeenCalledWith(
-      'lead.question.keep_open',
-      { project_id: 'project-a', lead_session_id: 'lead-1', question_id: 'q2' },
-      null,
-    );
-  });
-});
-
-describe('a task the paused plan holds', () => {
-  it('reads Paused in its row and its status glyph', () => {
-    const held = {
-      id: 'lead-1:report',
-      title: 'Reconcile report',
-      goal: '',
-      scope: [],
-      lane_id: null,
-      milestone_id: null,
-      status: 'todo',
-      state: 'todo',
-      dispatch_wait: 'paused',
-      blockers: [],
-      segments: [],
-      additions: null,
-      deletions: null,
-      checks: 'none',
-      started_at: null,
-      ended_at: null,
-      last_progress_at: null,
-      blocked_since: null,
-      turn_running: false,
-    } as unknown as BoardModel['tasks'][number];
-    const tree = mount(() =>
-      TaskList({ model: { tasks: [held], needs: [], now: NOW }, onOpenTask() {}, bar: null }),
-    ).value;
-    const row = find(tree, (n) => n.props.role === 'row' && n.key === held.id);
-    expect(row.props['aria-label']).toBe(
-      zhf('board.tasks.list.rowLabel', {
-        task: 'Reconcile report',
-        status: zh('board.taskState.paused'),
-      }),
-    );
-    expect(find(row, (n) => n.props.className === 'btk-st').props['aria-label']).toBe(
-      zh('board.taskState.paused'),
     );
   });
 });

@@ -95,5 +95,8 @@
   "settings.search.keywords.harnessKinds": "写代码, 审查, 文本, 能力",
   "settings.search.keywords.personalExport": "备份, 保存设置",
   "settings.search.keywords.personalImport": "恢复, 载入设置",
-  "settings.search.keywords.gateRunner": "门禁运行位置, daemon, 会话工作树"
+  "settings.search.keywords.gateRunner": "门禁运行位置, daemon, 会话工作树",
+  "settings.search.keywords.browser": "链接, 网页, Chrome, Safari, Firefox, Arc, Edge",
+  "settings.search.keywords.cloudflare": "wrangler, Workers, Pages, 账号, 登录",
+  "settings.search.keywords.huggingface": "hf, 模型, 数据集, 账号, 登录"
 }

@@ -29,7 +29,7 @@ import type {
   BoardWaiting,
   WorkbenchSession,
 } from '@pantheon/protocol';
-import { projectAccess, type ControlContext } from './context.js';
+import { ownEntry, projectAccess, type ControlContext } from './context.js';
 import { milestoneExtras, statusLineOf, taskExtras } from './board-view-task-extras.js';
 import { taskEvidenceLevel } from './evidence-level.js';
 import { effectiveDepth, laneHeld } from './lane-stops.js';
@@ -40,7 +40,6 @@ import {
   currentAcceptance,
   currentDirectMerge,
   currentBinding,
-  ownEntry,
   pendingProposals,
   taskGeneration,
   taskState,
@@ -61,6 +60,7 @@ import { ITERATION_DAYS } from './project-board.js';
 import { reviewExecutionReader, reviewTimeReader, reviewerVerdict } from './review.js';
 import { runGit } from './git.js';
 import { gateFailed } from './landing.js';
+import { midnight } from './projects-summary.js';
 import { doneReported } from './task-tracking.js';
 import { cacheReadShare } from './trace-view.js';
 import { gateFirstPass, latestRetrospectives } from './retrospective.js';
@@ -287,13 +287,6 @@ const pad = (n: number) => String(n).padStart(2, '0');
 export const dayKey = (at: number) => {
   const d = new Date(at);
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-};
-/** Local midnight `days` days after the day of `at`. */
-export const midnight = (at: number, days = 0) => {
-  const d = new Date(at);
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() + days);
-  return d.getTime();
 };
 
 function median(values: number[]): number | null {

@@ -205,10 +205,10 @@ describe('first-time setup checks', () => {
     const open = button(h.value, openProject);
     expect(open.props['aria-disabled']).toBe(true);
     useProjectsView.setState({ opening: false });
-    useShell.setState({ screen: 'board' });
+    useShell.setState({ screen: 'memory' });
     open.props.onClick();
     expect(useProjectsView.getState().opening).toBe(false);
-    expect(useShell.getState().screen).toBe('board');
+    expect(useShell.getState().screen).toBe('memory');
   });
 
   it('checks again and shows the rows as checking until the new read lands', () => {
@@ -258,12 +258,12 @@ describe('first-time setup checks', () => {
 
   it('finishes setup and opens the project dialog over the screen shown', () => {
     mock.read = { state: 'ready', statuses: [status('claude'), missing('codex')] };
-    useShell.setState({ screen: 'board' });
+    useShell.setState({ screen: 'memory' });
     useProjectsView.setState({ opening: false });
     const h = mount(() => SetupScreen());
     button(h.value, openProject).props.onClick();
     expect(getSetupDone()).toBe(true);
-    expect(useShell.getState().screen).toBe('board');
+    expect(useShell.getState().screen).toBe('memory');
     expect(useProjectsView.getState().opening).toBe(true);
   });
 });

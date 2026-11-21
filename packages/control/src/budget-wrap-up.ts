@@ -7,9 +7,9 @@ import {
   type WorkflowPolicy,
 } from '@pantheon/domain';
 import { insert, type ControlContext } from './context.js';
+import { queueTurn } from './session-wake.js';
 import { nextDepth } from './progress.js';
 import { acceptInput, queuedTurn } from './session.js';
-import { queueTurn } from './task-tracking.js';
 import { projectBudgetUse } from './workflow-policy.js';
 
 const WRAP_UP_TEXT =

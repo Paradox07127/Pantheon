@@ -5,7 +5,6 @@ import type { ProjectFactsRead } from '@pantheon/protocol';
 vi.mock('@/data/facts-read', () => ({ useFactsRead: () => ({ read: null }) }));
 vi.mock('@/data/intro-read', () => ({ useIntroRead: () => ({ read: null }) }));
 import { ReviewBaseline } from '@/screens/projects/BaselineBlocks';
-import { RepoPanels } from '@/screens/board/RepoCharts';
 import { zh } from './i18n-setup.js';
 
 const importer = {
@@ -80,51 +79,4 @@ it('shows the findings and the contradictions the baseline handed back', () => {
   expect(group(html, zh('projects.baseline.contradictions'))).toContain(
     'The README calls the exporter done',
   );
-});
-
-it('puts the workstream structure under the workstream bars on the board', () => {
-  const read: ProjectFactsRead = {
-    empty: false,
-    facts: {
-      collected_at: 1,
-      folders: [
-        {
-          root: '/work/app',
-          git: true,
-          commits_per_day: [],
-          hotspots: [],
-          recent_commits: [],
-          file_types: [],
-          directories: [],
-          manifests: [],
-          agent_instructions: [],
-          docs: [],
-          checklists: [],
-          tests: { files: 0, configs: [] },
-          ci: [],
-          truncated: [],
-        },
-      ],
-    },
-    collected_at: 1,
-    workstreams: [
-      { id: 'importer', title: 'Importer', status: 'done', done: 2, open: 0, missing: 0 },
-      {
-        id: 'exporter',
-        title: 'Exporter',
-        status: 'running',
-        done: 0,
-        open: 1,
-        missing: 0,
-        modules: ['src/export'],
-        depends_on: ['importer'],
-        risks: ['Large files run out of memory'],
-      },
-    ],
-  };
-  const html = renderToStaticMarkup(createElement(RepoPanels, { read, now: 1 }));
-  const stream = group(group(html, zh('projects.baseline.structure')), 'Exporter');
-  expect(stream).toContain('src/export');
-  expect(stream).toContain('Large files run out of memory');
-  expect(stream).toContain('Importer');
 });

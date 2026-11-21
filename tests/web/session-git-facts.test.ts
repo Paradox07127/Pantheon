@@ -312,7 +312,6 @@ describe('timeline goal node', () => {
   it('places the goal at its time, pointing to the turn running by then', () => {
     const shown = timelineNodes({
       sessionId: 'session-a',
-      history: null,
       turns,
       waits: [{ id: 'approval-1', at: at(10, 10).getTime(), turn: 'turn-1', question: false }],
       goal: { text: 'Check raw body signatures', at: at(10, 25).toISOString() },
@@ -337,7 +336,7 @@ describe('timeline goal node', () => {
   });
 
   it('has no goal node without a goal', () => {
-    expect(timelineNodes({ sessionId: 'session-a', history: null, turns, waits: [] })).toEqual([]);
+    expect(timelineNodes({ sessionId: 'session-a', turns, waits: [] })).toEqual([]);
   });
 });
 

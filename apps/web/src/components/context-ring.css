@@ -1,0 +1,15 @@
+.bd-nctx {
+  flex: none;
+  fill: none;
+  stroke-width: 5;
+}
+.bd-nctx circle:first-child {
+  stroke: var(--bd);
+}
+.bd-nctx circle + circle {
+  stroke: var(--run);
+  transition: stroke var(--dur-2) var(--ease-std);
+}
+.bd-nctx[data-high] circle + circle {
+  stroke: var(--wait);
+}

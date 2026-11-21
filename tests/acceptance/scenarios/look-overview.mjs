@@ -910,17 +910,6 @@ try {
     escape,
   );
 
-  for (const [key, label] of await labelled('screens/insights/InsightsScreen.tsx', 'key'))
-    await visit(`insights-${key}`, async () => {
-      await nav('工程看板');
-      await click({ role: 'tab', name: label, exact: true });
-      await wait(
-        `[...document.querySelectorAll('[role="tab"][aria-selected="true"]')].some((t) => t.textContent.includes(${JSON.stringify(label)}))`,
-        `the ${label} tab`,
-      );
-      await delay(1500);
-    });
-
   for (const [key, label] of await labelled('screens/trace/TraceScreen.tsx', 'tab')) {
     await visit(`trace-${key}`, async () => {
       await nav('轨迹');

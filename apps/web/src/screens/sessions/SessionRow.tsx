@@ -33,7 +33,7 @@ import { currentLocale, t } from '../../i18n';
 import { listText } from '../../lib/list-text';
 import { shortcutMatches } from '../../lib/shortcuts';
 import { useShell } from '../../store';
-import { tokenText } from '../board/panels-model';
+import { tokenText } from '../../lib/number-text';
 import {
   EFFORT_LABEL,
   needsAttention,

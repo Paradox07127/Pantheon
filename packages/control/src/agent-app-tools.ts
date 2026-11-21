@@ -3,6 +3,7 @@ import { inputSchemas, type WorkbenchSession } from '@pantheon/protocol';
 import { projectAccess, sessionPrincipal, type ControlContext, type Preparers } from './context.js';
 import { githubItems, githubPullDetail } from './github.js';
 import { sessionList } from './workbench-session.js';
+import { finalOutput } from './review.js';
 
 const TEXT_LIMIT = 1500;
 const READ_LIMIT = 12000;
@@ -54,18 +55,6 @@ const sessionType = (session: Session): AgentSessionListItem['type'] =>
 
 const cut = (text: string) =>
   text.length > TEXT_LIMIT ? `${text.slice(0, TEXT_LIMIT - 1)}…` : text;
-
-/** The text the agent wrote after its last tool call in the turn. */
-export function finalOutput(ctx: ControlContext, sessionId: string, turnId: string): string {
-  const rows = ctx.store.db
-    .prepare(
-      "SELECT kind, payload ->> '$.text' AS text FROM events WHERE aggregate_id=? AND kind IN ('agent.message.delta', 'agent.tool.started') AND payload ->> '$.turn_id'=? ORDER BY sequence",
-    )
-    .all(sessionId, turnId) as { kind: string; text: string | null }[];
-  let reply = '';
-  for (const row of rows) reply = row.kind === 'agent.tool.started' ? '' : reply + (row.text ?? '');
-  return reply.trim();
-}
 
 export const agentAppToolPreparers: Preparers = {
   'agent.sessions': (ctx, p, c) => {

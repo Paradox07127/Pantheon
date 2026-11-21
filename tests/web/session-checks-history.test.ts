@@ -7,7 +7,7 @@ const shell = vi.hoisted(() => ({ sessionRun: null as string | null }));
 vi.mock('@/store', () => ({
   useShell: (selector: any) => selector({ openSession() {}, sessionRun: shell.sessionRun }),
 }));
-import { GateTracker } from '@/screens/board/QualityCharts';
+import { GateTracker } from '@/screens/sessions/GateTracker';
 import { GateResults } from '@/screens/sessions/GateResults';
 import { ChecksTab } from '@/screens/sessions/panel';
 

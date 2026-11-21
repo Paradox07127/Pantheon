@@ -1,10 +1,18 @@
 import type { Principal, Project } from '@pantheon/domain';
 import type { ProjectSummary } from '@pantheon/protocol';
 import { projectAccess, type ControlContext } from './context.js';
-import { boardView, midnight } from './board-view.js';
+import { boardView } from './board-view.js';
 import { needsYou } from './needs-you.js';
 import { cursorId, projectBrief, type SeenCursor } from './project-brief.js';
 import { sessionList } from './workbench-session.js';
+
+/** Local midnight `days` days after the day of `at`. */
+export const midnight = (at: number, days = 0) => {
+  const d = new Date(at);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + days);
+  return d.getTime();
+};
 
 const COUNTED: Record<string, keyof ProjectSummary['counts']> = {
   starting: 'running',

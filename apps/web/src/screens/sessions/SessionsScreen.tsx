@@ -8,7 +8,6 @@ import { PantheonField } from '../../components/PantheonField';
 import { SessionStateIcon } from '../../components/SessionStateIcon';
 import { Splitter } from '../../components/Splitter';
 import { Tip } from '../../components/Tip';
-import { showAgentProfile, useAgentProfileShown } from '../../data/agents';
 import { useBoard } from '../../data/board';
 import {
   inspectorIsSheet,
@@ -61,7 +60,6 @@ import {
   useSessionMenu,
 } from './shared';
 import { DiscardDialog } from './parts';
-import { AgentProfilePanel } from './AgentProfile';
 import { SessionCard, SessionInspector } from './SessionCard';
 import { MoreMenu, PANELS, parentLink, type TerminalToggle } from './SessionHeader';
 import { parentOf } from './session-groups';
@@ -111,7 +109,6 @@ export function SessionsScreen({ projectId, needs, list }: SessionsScreenProps) 
   const sessionId = useShell((s) => s.sessionId);
   const restored = useShell((s) => s.sessionRestored);
   const openTab = useShell((s) => s.sessionTab);
-  const sessionTask = useShell((s) => s.sessionTask);
   const [places, setPlaces] = useState<Readonly<Record<string, InspectorPlace>>>({});
   const opened = useShell((s) => s.sessionOpened);
   const [widths, setWidths] = useState(storedWidths);
@@ -120,7 +117,6 @@ export function SessionsScreen({ projectId, needs, list }: SessionsScreenProps) 
   const [terminalHeight, setTerminalHeight] = useState(storedTerminalHeight);
   const { inspector: opening } = useAppearance();
   const folds = useFolds();
-  const profileOf = useAgentProfileShown();
   // The main area is never wider or taller than the window; measured once mounted.
   const [main, setMain] = useState(() => window.innerWidth);
   const [tall, setTall] = useState(() => window.innerHeight);
@@ -426,14 +422,13 @@ export function SessionsScreen({ projectId, needs, list }: SessionsScreenProps) 
   const cardDocked = !!card && !narrow;
   const composer = (projectId: string) => (
     <NewSession
-      key={`${projectId}:${sessionTask?.id ?? NEW}`}
+      key={`${projectId}:${NEW}`}
       projectId={projectId}
       defaults={effectiveSessionDefaults(
         board?.projects.find((p) => p.id === projectId),
         globalDefaults,
       )}
       focus={opened}
-      task={sessionTask}
       recent={referable}
       needs={needs.items}
       onCreated={(id) => {
@@ -507,17 +502,7 @@ export function SessionsScreen({ projectId, needs, list }: SessionsScreenProps) 
       </div>
     );
   }
-  // An agent's profile takes the dock while it shows.
-  const profile = profileOf && projectId && (
-    <AgentProfilePanel
-      key={profileOf}
-      projectId={projectId}
-      agentId={profileOf}
-      onClose={() => showAgentProfile(null)}
-    />
-  );
-  const dockShown =
-    (inspector && !narrow && panels.length > 0) || appDocked || cardDocked || !!profile;
+  const dockShown = (inspector && !narrow && panels.length > 0) || appDocked || cardDocked;
   return (
     <div
       ref={measure}
@@ -525,11 +510,9 @@ export function SessionsScreen({ projectId, needs, list }: SessionsScreenProps) 
       style={
         {
           // The overview's column takes its own width, none while it has nothing to show.
-          '--ss-pw': profile
-            ? `${PROFILE_WIDTH}px`
-            : cardDocked
-              ? 'auto'
-              : `${(narrow ? 0 : docked) + (appDocked ? APP_DOCK_WIDTH : 0)}px`,
+          '--ss-pw': cardDocked
+            ? 'auto'
+            : `${(narrow ? 0 : docked) + (appDocked ? APP_DOCK_WIDTH : 0)}px`,
           ...terminalStyle,
         } as CSSProperties
       }
@@ -591,9 +574,6 @@ export function SessionsScreen({ projectId, needs, list }: SessionsScreenProps) 
                 : {})}
               sessions={referable}
               {...(terminable ? { terminal: terminalToggle } : {})}
-              {...(current?.resident
-                ? { workers: (list.data ?? []).filter((s) => s.lead === current.id) }
-                : {})}
             />
           </section>
         )}
@@ -640,13 +620,9 @@ export function SessionsScreen({ projectId, needs, list }: SessionsScreenProps) 
           data-debug-region="sessions.inspector"
           aria-label={t({ id: 'sessions.header.panels', defaultMessage: 'Panels' })}
         >
-          {profile || (
-            <>
-              {!narrow && panels.length > 0 && inspector}
-              {cardDocked && card}
-              {appHost && appDocked && <AppDock sessionId={appHost} call={appDocked} />}
-            </>
-          )}
+          {!narrow && panels.length > 0 && inspector}
+          {cardDocked && card}
+          {appHost && appDocked && <AppDock sessionId={appHost} call={appDocked} />}
         </aside>
       )}
       {appHost && appFull && current && (
@@ -686,8 +662,6 @@ export function SessionsScreen({ projectId, needs, list }: SessionsScreenProps) 
 
 /** The terminal's height in px; the thread above keeps room. */
 const TERMINAL_HEIGHT = { initial: 240, min: 120, room: 200 } as const;
-
-const PROFILE_WIDTH = 400;
 
 /** The listed states of a session that closed, merged or was discarded; its terminal starts in the project. */
 const ENDED: ReadonlySet<WorkbenchSession['state']> = new Set(['merged', 'discarded', 'failed']);

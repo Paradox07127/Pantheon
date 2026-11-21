@@ -21,6 +21,11 @@ import { Menu } from '../../apps/web/node_modules/@base-ui/react/menu/index.mjs'
 import { t } from '@/i18n';
 import { zh } from './i18n-setup.js';
 
+function write(h: HookHost<any>, input: string) {
+  find(h.value, (n) => n.type === 'textarea').props.onChange({ target: { value: input } });
+  h.render();
+}
+
 const model = (id: string, extra: Partial<RuntimeModel> = {}): RuntimeModel => ({
   id,
   label: `label of ${id}`,
@@ -625,14 +630,13 @@ describe('composer backends', () => {
 
   it('creates a new session on the picked backend and leaves the field out without one', async () => {
     stub({ 'runtime.models': [model('model-a')], 'backend.list': [backend('router')] });
-    const created = async (taskId: string, pick: boolean) => {
+    const created = async (pick: boolean) => {
       const h = mount(() =>
         NewSession({
           projectId: 'project-b',
           defaults: undefined,
           focus: 0,
           onCreated: () => {},
-          task: { id: taskId, title: 'Add the API', goal: 'Serve the board' },
           recent: [],
           onOpen: () => {},
           onClose: () => {},
@@ -646,15 +650,16 @@ describe('composer backends', () => {
         shown.onChange({ ...shown.value, backend: 'router' });
         h.render();
       }
+      write(h, 'Add the API');
       named(h.value, 'SendButton').props.onPress();
       await h.flush();
       return sent().at(-1).input;
     };
-    expect(await created('lead-1:on-backend', true)).toMatchObject({
+    expect(await created(true)).toMatchObject({
       runtime: 'claude',
       backend: 'router',
     });
-    expect(await created('lead-1:on-runtime', false)).not.toHaveProperty('backend');
+    expect(await created(false)).not.toHaveProperty('backend');
   });
 
   const listed = (extra: Partial<WorkbenchSession> = {}): WorkbenchSession => ({
@@ -757,17 +762,6 @@ describe('composer backends', () => {
     });
   });
 
-  it("changes a resident's model through its agent profile at the profile's revision", async () => {
-    const h = await composer(
-      listed({ workspace_id: null, resident: { kind: 'assistant', agent_id: 'agent-a' } }),
-    );
-    expect(named(h.value, 'ModelMenu').props.disabled).toBe(false);
-    expect(await change(h, { model: 'model-b' })).toMatchObject({
-      type: 'agent.update',
-      input: { agent_id: 'agent-a', revision: 3, model: 'model-b' },
-    });
-  });
-
   it('creates a new session in fast mode only while its model has fast mode', async () => {
     stub({
       'runtime.models': [model('model-a', { fast: true, default: true }), model('model-b')],
@@ -779,7 +773,6 @@ describe('composer backends', () => {
         defaults: undefined,
         focus: 0,
         onCreated: () => {},
-        task: { id: 'lead-1:fast', title: 'Add the API', goal: 'Serve the board' },
         recent: [],
         onOpen: () => {},
         onClose: () => {},
@@ -791,6 +784,7 @@ describe('composer backends', () => {
     shown().onFast(true);
     h.render();
     const create = async () => {
+      write(h, 'Add the API');
       named(h.value, 'SendButton').props.onPress();
       await h.flush();
       return sent().at(-1).input;
@@ -868,7 +862,6 @@ describe('new session composer', () => {
         defaults: undefined,
         focus: 0,
         onCreated: () => {},
-        task: { id: 'lead-1:api', title: 'Add the API', goal: 'Serve the board' },
         recent: [recent],
         onOpen,
         onClose: () => {},
@@ -884,13 +877,13 @@ describe('new session composer', () => {
     const at = (className: string) => text(find(h.value, (n) => n.props.className === className));
     expect(at('cr-pk')).toBe('Pantheon');
     expect(at('cr-head')).toBe('mainabcdef1Fix the board');
-    expect(at('cr-card')).toBe('Add the API');
     expect(named(h.value, 'ModelMenu').props.value).toEqual({
       runtime: 'claude',
       backend: null,
       model: 'model-b',
       effort: 'medium',
     });
+    write(h, 'Add the API');
     named(h.value, 'SendButton').props.onPress();
     await h.flush();
     expect(command).toHaveBeenCalledTimes(1);

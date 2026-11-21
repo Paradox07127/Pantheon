@@ -1,5 +1,5 @@
 import { t } from '../i18n';
-import type { NeedActionKey } from '../screens/board/frame-model';
+import type { NeedActionKey } from './need-actions';
 import type { NeedsYouItem } from './needs-you';
 
 /** The short name of what the user decides; none for the kinds the item's reason names better. */

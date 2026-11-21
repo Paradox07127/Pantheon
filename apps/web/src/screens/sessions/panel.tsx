@@ -30,8 +30,8 @@ import { listText } from '../../lib/list-text';
 import { ageParts } from '../../lib/time-text';
 import { scrimFlag } from '../../lib/root-flag';
 import { useShell } from '../../store';
-import { GateTracker } from '../board/QualityCharts';
-import { GATE_STATES, gateState } from '../board/quality-model';
+import { GateTracker } from './GateTracker';
+import { GATE_STATES, gateState } from '../../lib/gate-model';
 import {
   anchorFinding,
   findingItem,

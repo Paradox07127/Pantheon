@@ -14,12 +14,15 @@ import {
 } from '@pantheon/domain';
 import { inputSchemas, type DeviceListItem, type DeviceStatus } from '@pantheon/protocol';
 import {
+  ownEntry,
   projectAccess,
   userOnly,
   sessionAdapter,
   type ControlContext,
   type Handlers,
 } from './context.js';
+import { overlaps } from './landing.js';
+import { queueTurn } from './session-wake.js';
 import { admitWriterChoice, runtime } from './admission.js';
 import {
   awaitingChange,
@@ -28,7 +31,6 @@ import {
   currentAcceptance,
   currentBinding,
   currentDirectMerge,
-  ownEntry,
   planUnfinished,
   retiredBinding,
   sessionPlanTask,
@@ -45,7 +47,7 @@ import {
 } from './workbench-session.js';
 import { appendNote, recordNote } from './lead-inbox.js';
 import { interruptSession, stopBackground } from './session.js';
-import { continueInterruptedLead, queueTurn } from './task-tracking.js';
+import { continueInterruptedLead } from './task-tracking.js';
 import { backgroundTasks, nextDepth } from './progress.js';
 import { runningPlanReview } from './review.js';
 import { laneHeld } from './lane-stops.js';
@@ -83,17 +85,6 @@ const priorityOrder = (task: PlanTask) => PRIORITY_ORDER[task.priority ?? 'norma
 /** When a task whose session failed to open may try again: 30 seconds, doubling, at most 10 minutes. */
 const retryAt = (error: { at: number; attempts: number }) =>
   error.at + Math.min(30_000 * 2 ** (error.attempts - 1), 10 * 60_000);
-
-export const segments = (target: string) =>
-  target.split('/').filter((segment) => segment && segment !== '.');
-/** True when one path equals the other or contains it, compared by path segment. */
-export function overlaps(a: string, b: string): boolean {
-  const left = segments(a),
-    right = segments(b);
-  return left
-    .slice(0, Math.min(left.length, right.length))
-    .every((segment, index) => segment === right[index]);
-}
 
 /** Pantheon's runtime switch of the task's current generation, while the task names no runtime. */
 export function runtimeSwitch(plan: BoardPlan, task: PlanTask): RuntimeChoice | undefined {

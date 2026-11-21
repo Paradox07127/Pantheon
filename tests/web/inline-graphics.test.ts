@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BoardModel, ProjectGatesHistory } from '@pantheon/protocol';
 import { nodes, text } from './web-hook-host.js';
-import { bannerSegments } from '@/screens/board/progress-model';
-import { TaskProgressStrip } from '@/screens/board/ProgressCharts';
-import { gateTracker } from '@/screens/board/quality-model';
+import { gateTracker } from '@/lib/gate-model';
 import { zh } from './i18n-setup.js';
 
 type GateRun = ProjectGatesHistory['runs'][number];
@@ -80,44 +78,4 @@ const totals = (patch: Partial<Totals>): Totals => ({
   discarded: 0,
   not_started: 0,
   ...patch,
-});
-
-describe('task progress strip', () => {
-  it('folds the states outside done, running, waiting and failed into other', () => {
-    expect(
-      bannerSegments(totals({ done: 3, running: 2, idle: 2, ready: 1, not_started: 4 })).map(
-        (s) => [s.label, s.count],
-      ),
-    ).toEqual([
-      [zh('board.taskTotals.done'), 3],
-      [zh('board.taskTotals.running'), 2],
-      [zh('board.taskTotals.other'), 7],
-    ]);
-  });
-
-  it('keeps at most four parts, folding the smallest open state into other', () => {
-    const parts = bannerSegments(
-      totals({ done: 5, running: 3, waiting: 1, failed: 2, discarded: 1 }),
-    );
-    expect(parts.map((s) => [s.key, s.count])).toEqual([
-      ['done', 5],
-      ['running', 3],
-      ['failed', 2],
-      ['other', 2],
-    ]);
-    expect(bannerSegments(totals({ done: 1, running: 1, waiting: 1, failed: 1 }))).toHaveLength(4);
-    expect(bannerSegments(totals({}))).toEqual([]);
-  });
-
-  it('labels each part with its count and draws no legend', () => {
-    const strip = TaskProgressStrip({ totals: totals({ done: 3, waiting: 1 }) })!;
-    expect(strip.props['aria-label']).toBe('任务进度：已完成 3，待处理 1');
-    expect(
-      nodes(strip)
-        .filter((n) => n.type === 'i')
-        .map((n) => n.props.className),
-    ).toEqual(['bd-tpb bd-tp-done', 'bd-tpb bd-tp-waiting']);
-    expect(text(strip)).toBe('31');
-    expect(TaskProgressStrip({ totals: totals({}) })).toBeNull();
-  });
 });

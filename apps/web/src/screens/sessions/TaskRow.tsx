@@ -5,7 +5,7 @@ import { AgentTypeIcon } from '../../components/AgentTypeIcon';
 import { RuntimeGlyph } from '../../components/RuntimeGlyph';
 import type { ToolState } from '../../data/transcript';
 import { t } from '../../i18n';
-import { tokenText } from '../board/panels-model';
+import { tokenText } from '../../lib/number-text';
 import { CALL_STATE, StateMark } from './items';
 import './thread.css';
 import './task-row.css';

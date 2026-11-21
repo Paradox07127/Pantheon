@@ -1,0 +1,54 @@
+.bp-ib {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: var(--hair) solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--mu);
+}
+.bp-ib:hover,
+.bp-ib[aria-pressed='true'] {
+  background: var(--sf2);
+  color: var(--tx);
+}
+.bp-ib svg {
+  width: 14px;
+  height: 14px;
+}
+/* Floating tooltip */
+.bp-tip {
+  position: fixed;
+  z-index: 50;
+  pointer-events: none;
+  min-width: 140px;
+  max-width: 300px;
+  padding: 8px 10px;
+  background: var(--ov);
+  border: var(--hair) solid var(--bd-ov);
+  border-radius: var(--r-lg);
+  backdrop-filter: blur(var(--blur-md));
+  font-size: var(--fs-xs);
+  line-height: 18px;
+  color: var(--tx);
+  font-variant-numeric: tabular-nums;
+}
+.bp-tip .h {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.bp-tip .r {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.bp-tip .r .k {
+  color: var(--mu);
+}
+.bp-tip .r .v {
+  margin-left: auto;
+  padding-left: 16px;
+  white-space: nowrap;
+}

@@ -17,7 +17,7 @@ vi.mock('@/store', () => ({
 }));
 import { runShortcut } from '@/lib/shortcuts';
 import { SessionHeader } from '@/screens/sessions/SessionsScreen';
-import { tokenText } from '@/screens/board/panels-model';
+import { tokenText } from '@/lib/number-text';
 import type { Panel } from '@/screens/sessions/inspector-model';
 import { zh, zhf } from './i18n-setup.js';
 

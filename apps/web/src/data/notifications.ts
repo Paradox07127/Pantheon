@@ -12,7 +12,7 @@ import {
   type WorkbenchSession,
 } from '@pantheon/protocol';
 import { waitingSessions } from '../components/NeedsYou';
-import { needKey } from '../screens/board/frame-model';
+import { needKey } from './need-actions';
 import { pendingPermissions, sessionRow } from '../screens/sessions/model';
 import { t, type Message } from '../i18n';
 import { listText } from '../lib/list-text';

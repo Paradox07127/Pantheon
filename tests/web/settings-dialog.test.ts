@@ -53,10 +53,9 @@ beforeEach(() => {
   });
   useCurrentProject.setState({ projectId: 'alpha' });
   useShell.setState({
-    screen: 'board',
+    screen: 'memory',
     sessionId: null,
-    sessionTask: null,
-    history: [{ projectId: 'alpha', screen: 'board', sessionId: null, sessionTask: null }],
+    history: [{ projectId: 'alpha', screen: 'memory', sessionId: null }],
     historyIndex: 0,
   });
   useSettingsView.setState({ open: false, page: 'general', detail: null });
@@ -69,7 +68,7 @@ afterEach(() => {
 
 it('opens the settings over the current screen without a step in history', () => {
   shell().openSettings('alpha');
-  expect(shell().screen).toBe('board');
+  expect(shell().screen).toBe('memory');
   expect(shell().history).toHaveLength(1);
   expect(useSettingsView.getState()).toMatchObject({
     open: true,
@@ -85,7 +84,7 @@ it('opens the settings over the current screen without a step in history', () =>
   expect(shell().history).toHaveLength(1);
   useSettingsView.getState().close();
   expect(useSettingsView.getState().open).toBe(false);
-  expect(shell().screen).toBe('board');
+  expect(shell().screen).toBe('memory');
 });
 
 it('opens the settings on the settings keys and closes them on the next press', () => {
@@ -98,16 +97,13 @@ it('opens the settings on the settings keys and closes them on the next press', 
   });
   pressSettingsKeys();
   expect(useSettingsView.getState().open).toBe(false);
-  expect(shell().screen).toBe('board');
+  expect(shell().screen).toBe('memory');
 });
 
 it.each(['settings', 'board', 'insights', 'automations', 'personal'])(
   'reads a project left on the old %s screen back as its sessions',
   (screen) => {
-    items.set(
-      PLACES_KEY,
-      JSON.stringify({ alpha: { screen, sessionId: 'alpha-1', sessionTask: null } }),
-    );
+    items.set(PLACES_KEY, JSON.stringify({ alpha: { screen, sessionId: 'alpha-1' } }));
     shell().openProject('alpha');
     expect(shell()).toMatchObject({ screen: 'sessions', sessionId: 'alpha-1' });
   },

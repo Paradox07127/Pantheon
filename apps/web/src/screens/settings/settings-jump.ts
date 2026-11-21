@@ -1,8 +1,6 @@
 import { create } from 'zustand';
-import { useCurrentProject } from '../../data/current-project';
 import { reducedMotion } from '../../lib/motion';
 import { useShell } from '../../store';
-import { pickInsightsSection, type InsightsSection } from '../insights/InsightsScreen';
 import { searchSettings, type SettingHit } from './settings-search';
 import { navPage, useSettingsView, type SettingsPage } from './view';
 
@@ -25,18 +23,6 @@ export function revealSetting(id: string, block: 'center' | 'start'): HTMLElemen
   const target = block === 'start' ? (anchor?.closest<HTMLElement>('.ps-sec') ?? anchor) : anchor;
   target?.scrollIntoView({ block, behavior: reducedMotion() ? 'auto' : 'smooth' });
   return anchor;
-}
-
-/** Closes the settings and opens the project's engineering board on the tab. */
-export function openBoardTab(section: InsightsSection) {
-  const view = useSettingsView.getState();
-  const projectId = view.detail ?? useCurrentProject.getState().projectId;
-  view.close();
-  if (!projectId) return;
-  pickInsightsSection(projectId, section);
-  // The project is chosen before the one navigation, which would drop a navigation still owed.
-  useCurrentProject.getState().choose(projectId);
-  useShell.getState().setScreen('insights');
 }
 
 /** Opens the settings on the page; a part of one project's page opens on that project. */

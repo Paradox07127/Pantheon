@@ -2415,24 +2415,14 @@ describe('tray popover', () => {
     await call(popover, 'pantheon:revealMain');
     expect([main.shown, main.focused]).toEqual([2, 2]);
     expect(main.webContents.sent).toHaveLength(1);
-    expect(await call(popover, 'pantheon:revealMain', 'quit')).toMatchObject({
-      ok: false,
-      error: { code: 'invalid_input' },
-    });
+    for (const action of ['quit', 'personal-agent'])
+      expect(await call(popover, 'pantheon:revealMain', action)).toMatchObject({
+        ok: false,
+        error: { code: 'invalid_input' },
+      });
     click('设置…');
     expect(main.webContents.sent.at(-1)).toEqual(['pantheon:menu', 'settings']);
     expect(popover.webContents.sent).toEqual([]);
-  });
-
-  it('reveals the main window on the personal agent from the popover', async () => {
-    const { popover, main, call, focus } = await startMain('darwin');
-    focus(popover);
-    expect(await call(popover, 'pantheon:revealMain', 'personal-agent')).toEqual({
-      ok: true,
-      value: null,
-    });
-    expect([main.shown, popover.hidden]).toEqual([1, 1]);
-    expect(main.webContents.sent).toEqual([['pantheon:menu', 'personal-agent']]);
   });
 
   it('reports focus for main, session and project windows but ignores the popover', async () => {

@@ -27,7 +27,6 @@ import { useBoard } from '../data/board';
 import { runCommand } from '../data/commands';
 import { saveLayout, setLayout, SIDEBAR, sidebarDrag, useLayout } from '../data/layout';
 import { failureText, useNow, type NeedsYouState } from '../data/needs-you';
-import { crossProjectWaiting } from '../data/personal-agent';
 import { projectIdle, sortProjects, useProjectsSummary } from '../data/projects-summary';
 import { useRuntimeModels } from '../data/runtime-models';
 import { markRead, markUnread, useUnread } from '../data/unread';
@@ -603,10 +602,7 @@ export function Sidebar({
   const [view, setView] = useSessionView(currentProjectId);
   const all = list.data ?? [];
   const runtimes = [
-    ...new Set([
-      ...all.filter((s) => !s.resident).map((s) => s.runtime),
-      ...(view.hiddenRuntimes ?? []),
-    ]),
+    ...new Set([...all.map((s) => s.runtime), ...(view.hiddenRuntimes ?? [])]),
   ].sort(compareRuntimes);
   // The project whose list shows only the sessions that need the user; null when none does.
   const [waitingIn, setWaitingIn] = useState<string | null>(null);
@@ -626,7 +622,7 @@ export function Sidebar({
   const fresh = useMemo(
     () =>
       sidebarGroups(
-        (list.data ?? []).filter((s) => !s.resident && keptByView(s, view)),
+        (list.data ?? []).filter((s) => keptByView(s, view)),
         view,
         unread,
         now,
@@ -950,10 +946,8 @@ export function Sidebar({
   // The count of the visible projects' needs-you items; null when the read failed.
   const attention = allNeeds.error
     ? null
-    : crossProjectWaiting(
-        allNeeds.items ?? [],
-        projects.map((p) => p.id),
-      ).length;
+    : (allNeeds.items ?? []).filter((item) => projects.some((p) => p.id === item.project_id))
+        .length;
   const menu = { projects, currentProjectId, onChooseProject, attention };
   // A failed read keeps the last list, so the error goes below it rather than in its place.
   const listError = list.error && <LoadError message={list.error} onRetry={list.reload} />;

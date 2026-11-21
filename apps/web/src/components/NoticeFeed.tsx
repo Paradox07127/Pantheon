@@ -15,7 +15,6 @@ import {
   stoppedWaiting,
   turnEndHold,
   waitInView,
-  BOARD_LIST_HOLD_MS,
   WATCH_CHANNEL,
   type Decision,
   type NoticeWatch,
@@ -99,18 +98,9 @@ export function NoticeFeed({
   // By project and kind.
   const piles = useRef(new Map<string, Pile>());
   const hold = useRef(turnEndHold());
-  const heldNeeds = useRef(new Map<string, ReturnType<typeof setTimeout>>());
-  // Approvals whose hold ran out before the board in front listed its waits; each shows its card if still due.
-  const overdueNeeds = useRef(new Map<string, () => void>());
   // The session each session window shows while it has focus, by window.
   const elsewhere = useRef(new Map<string, string>());
-  useEffect(
-    () => () => {
-      hold.current.stop();
-      for (const timer of heldNeeds.current.values()) clearTimeout(timer);
-    },
-    [],
-  );
+  useEffect(() => () => hold.current.stop(), []);
   useEffect(() => {
     const channel = new BroadcastChannel(WATCH_CHANNEL);
     channel.onmessage = ({ data }: MessageEvent<WatchWord>) => {
@@ -130,16 +120,9 @@ export function NoticeFeed({
       state.screen === 'trace' && state.traceTab === 'runs' && state.runsView === 'now'
         ? projectId
         : null,
-    // The board lists a wait on its chart or in its needs-you list.
-    listed:
-      state.screen === 'board' && state.boardWaits
-        ? new Set([...state.boardWaits, ...(state.stripWaits ?? [])])
-        : null,
     focused: document.hasFocus(),
     elsewhere: new Set(elsewhere.current.values()),
   });
-  const boardPending = (state = useShell.getState()) =>
-    state.screen === 'board' && state.boardWaits === null;
   const close = (id: string) => {
     closeNotice(id);
     openNeeds.current.delete(id);
@@ -171,39 +154,11 @@ export function NoticeFeed({
         approval: item.kind === 'permission',
         strip: answeredInStrip(item),
       };
-      const show = () => {
-        noticeNeeds(card.options);
-        openNeeds.current.set(key, wait);
-      };
-      const settle = () => {
-        if (!waitInView(watch(), { id: key, ...wait })) show();
-      };
-      // The board reads its own list, which can land after this one.
-      if (
-        (wait.approval || wait.strip) &&
-        view.focused &&
-        useShell.getState().screen === 'board' &&
-        item.project_id === projectId
-      )
-        heldNeeds.current.set(
-          key,
-          setTimeout(() => {
-            heldNeeds.current.delete(key);
-            if (boardPending()) overdueNeeds.current.set(key, settle);
-            else settle();
-          }, BOARD_LIST_HOLD_MS),
-        );
-      else show();
+      noticeNeeds(card.options);
+      openNeeds.current.set(key, wait);
     }
     for (const key of [...seenNeeds.current]) if (!present.has(key)) seenNeeds.current.delete(key);
     for (const key of [...openNeeds.current.keys()]) if (!present.has(key)) close(key);
-    for (const key of [...overdueNeeds.current.keys()])
-      if (!present.has(key)) overdueNeeds.current.delete(key);
-    for (const [key, timer] of [...heldNeeds.current]) {
-      if (present.has(key)) continue;
-      clearTimeout(timer);
-      heldNeeds.current.delete(key);
-    }
   }, [allNeeds, board, sessions]);
 
   // Arriving where a wait can be answered takes its card away; a session window coming to the front leaves it.
@@ -211,11 +166,6 @@ export function NoticeFeed({
     const { elsewhere: _, ...view } = watch(shell);
     for (const [key, wait] of [...openNeeds.current])
       if (waitInView(view, { id: key, ...wait })) close(key);
-    if (boardPending(shell)) return;
-    for (const [key, settle] of [...overdueNeeds.current]) {
-      overdueNeeds.current.delete(key);
-      settle();
-    }
   }, [shell, projectId, sessions]);
 
   useEffect(() => {

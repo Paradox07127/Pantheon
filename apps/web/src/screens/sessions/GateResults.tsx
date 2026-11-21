@@ -5,7 +5,7 @@ import { Tip } from '../../components/Tip';
 import type { FeedbackItem } from '../../data/feedback';
 import { elapsedText } from '../../data/transcript';
 import { t } from '../../i18n';
-import { GATE_STATES } from '../board/quality-model';
+import { GATE_STATES } from '../../lib/gate-model';
 import { checkItem, failedTests, gateOutcome, plainLog as plain } from './model';
 import './gate-results.css';
 

@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Sidebar } from '@/components/Sidebar';
-import { readBoardPage } from '@/data/board-page';
 import { zh } from './i18n-setup.js';
 
 // With no stored project the shell starts on all projects; the sidebar here shows a project.
@@ -43,16 +42,9 @@ describe('project page entries', () => {
     const rail = render(true);
     const icons = [...rail.matchAll(/class="ib" aria-label="([^"]*)"/g)].map((m) => m[1]);
     expect(icons.slice(0, 2)).toEqual(PAGES);
-    for (const gone of ['flow', 'board', 'insights'].map((s) => zh(`app.screenName.${s}`))) {
+    for (const gone of ['flow'].map((s) => zh(`app.screenName.${s}`))) {
       expect(open).not.toContain(`>${gone}</button>`);
       expect(rail).not.toContain(`aria-label="${gone}"`);
     }
-  });
-});
-
-describe('stored places', () => {
-  it('opens a board left on the introduction or memory view on its overview', () => {
-    expect(readBoardPage('intro')).toBe('overview');
-    expect(readBoardPage('memory')).toBe('overview');
   });
 });

@@ -6,12 +6,6 @@ export const SCREEN_NAMES: Record<Screen | 'settings', string> = {
   get sessions() {
     return t({ id: 'app.screenName.sessions', defaultMessage: 'Sessions' });
   },
-  get board() {
-    return t({ id: 'app.screenName.board', defaultMessage: 'Project board' });
-  },
-  get insights() {
-    return t({ id: 'app.screenName.insights', defaultMessage: 'Engineering board' });
-  },
   get flow() {
     return t({ id: 'app.screenName.flow', defaultMessage: 'Flow chart' });
   },
@@ -21,14 +15,8 @@ export const SCREEN_NAMES: Record<Screen | 'settings', string> = {
   get memory() {
     return t({ id: 'app.screenName.memory', defaultMessage: 'Memory' });
   },
-  get automations() {
-    return t({ id: 'app.screenName.automations', defaultMessage: 'Automations' });
-  },
   get projects() {
     return t({ id: 'app.screenName.projects', defaultMessage: 'All projects' });
-  },
-  get personal() {
-    return t({ id: 'app.screenName.personal', defaultMessage: 'Personal agent' });
   },
   get settings() {
     return t({ id: 'app.screenName.settings', defaultMessage: 'Settings' });

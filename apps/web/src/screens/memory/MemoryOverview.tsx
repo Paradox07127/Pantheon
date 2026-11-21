@@ -5,7 +5,7 @@ import { useBoard } from '../../data/board';
 import { useIntroRead } from '../../data/intro-read';
 import { useNow } from '../../data/needs-you';
 import { useProjectHead } from '../../data/runtime-models';
-import { IntroView } from '../board/IntroView';
+import { IntroView } from './IntroView';
 import { ProjectProfile } from './ProjectProfile';
 import './memory-overview.css';
 

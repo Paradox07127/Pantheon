@@ -21,7 +21,7 @@ import {
   type VisualWidth,
 } from '../../data/visuals';
 import { t } from '../../i18n';
-import { moveBefore, stepKey } from '../board/panel-layout';
+import { moveBefore, stepKey } from '../../lib/key-order';
 import './memory-diagrams.css';
 
 /** The project's pinned visuals, their redraws and the layout editing. */

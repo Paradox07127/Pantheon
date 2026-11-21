@@ -18,9 +18,9 @@ import { useBoard } from '../../data/board';
 import { currentProject, useCurrentProject } from '../../data/current-project';
 import { useSessionTrace } from '../../data/trace';
 import { t } from '../../i18n';
-import { clockText } from '../../lib/time-text';
+import { clockText, durationText } from '../../lib/time-text';
 import { useShell } from '../../store';
-import { durationText } from '../board/panels-model';
+
 import './diagnose.css';
 import './finding-detail.css';
 

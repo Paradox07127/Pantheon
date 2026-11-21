@@ -52,7 +52,7 @@ import { revealText } from '../../lib/platform-text';
 import { shortcutKeys, useShortcut } from '../../lib/shortcuts';
 import { durationText } from '../../lib/time-text';
 import { useShell } from '../../store';
-import { tokenText } from '../board/panels-model';
+import { tokenText } from '../../lib/number-text';
 import { laneStats } from '../trace/model';
 import {
   gateFailing,

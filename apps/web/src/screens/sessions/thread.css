@@ -74,16 +74,13 @@
   height: 12px;
   stroke-width: 2;
 }
-.ss-gok {
-  color: var(--ok);
-}
 .ss-ggoal {
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: currentColor;
 }
-/* A turn's key point: lighter than the goal, task and milestone marks. */
+/* A turn's key point: lighter than the goal mark. */
 .ss-tlg > svg.ss-gturn {
   width: 10px;
   stroke-width: 1.5;

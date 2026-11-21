@@ -12,10 +12,9 @@ import type {
   SessionTurn,
   TaskThreadEntry,
 } from '@pantheon/domain';
-import { projectAccess, type ControlContext } from './context.js';
+import { ownEntry, projectAccess, type ControlContext } from './context.js';
 import { ensureAgents } from './agents.js';
 import { residentPlan } from './agent-always-on.js';
-import { ownEntry } from './board-plan.js';
 import { appendNote, planLineage } from './lead-inbox.js';
 import { openOf } from './resident.js';
 

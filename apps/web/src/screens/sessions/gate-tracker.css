@@ -1,0 +1,75 @@
+/* Gate tracker: command names, the cells of each run, then each command's pass rate */
+
+.ql-gt {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  column-gap: var(--sp-2);
+  font-size: var(--fs-xs);
+}
+.ql-gtn span,
+.ql-gtp span {
+  display: block;
+  height: 20px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+.ql-gtn span {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--tx);
+}
+.ql-gtp span {
+  min-width: 4ch;
+  text-align: right;
+  color: var(--tx2);
+  font-variant-numeric: tabular-nums;
+}
+.ql-gts {
+  min-width: 0;
+  overflow-x: auto;
+}
+/* As wide as its cells and pushed right, so a few runs end at the newest and many scroll. */
+.ql-gtg {
+  width: max-content;
+  margin-left: auto;
+}
+.ql-gtr {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 20px;
+}
+.ql-tc {
+  flex: none;
+  width: 8px;
+  height: 14px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: transparent;
+  transition:
+    background-color var(--dur-2) var(--ease-std),
+    border-color var(--dur-2) var(--ease-std);
+}
+.ql-tc-ok {
+  background: var(--ok);
+}
+.ql-tc-bad {
+  background: var(--bad);
+}
+/* A command the run skipped or did not have leaves its cell empty. */
+.ql-tc-none {
+  border-color: var(--bd);
+}
+.ql-tc:hover {
+  border-color: var(--tx);
+}
+.ql-tc[aria-current='true'] {
+  outline: 1px solid var(--ink);
+  outline-offset: 1px;
+}
+.ql-tc:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}

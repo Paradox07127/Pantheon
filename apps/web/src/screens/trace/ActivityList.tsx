@@ -18,10 +18,10 @@ import {
 import { DiffCounts } from '../../components/DiffCounts';
 import { reasonText } from '../../data/needs-you';
 import { t } from '../../i18n';
-import { dayText } from '../../lib/time-text';
-import { Failure, Skeleton } from '../board/BoardScreen';
-import { Empty } from '../board/Charts';
-import { durationText } from '../board/panels-model';
+import { dayText, durationText } from '../../lib/time-text';
+import { Failure, Skeleton } from '../../components/PanelBoundary';
+import { Empty } from '../../components/ChartParts';
+
 import {
   dayOf,
   eventDays,

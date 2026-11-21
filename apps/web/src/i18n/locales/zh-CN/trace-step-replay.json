@@ -18,5 +18,6 @@
   "trace.stepReplay.files": "改过的文件",
   "trace.stepReplay.tests": "测试",
   "trace.stepReplay.previous": "上一步",
-  "trace.stepReplay.slider": "回放位置"
+  "trace.stepReplay.slider": "回放位置",
+  "board.plan.flow.context": "上下文已用 {percent}%"
 }

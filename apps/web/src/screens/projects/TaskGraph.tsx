@@ -2,7 +2,7 @@ import { useMemo, useState, type CSSProperties } from 'react';
 import type { BaselineTask, BaselineWorkstream } from '@pantheon/domain';
 import { t } from '../../i18n';
 import { listText } from '../../lib/list-text';
-import { archLayout, sourceText } from '../board/intro-model';
+import { archLayout, sourceText } from '../memory/intro-model';
 import { WORKSTREAM_STATUS } from './facts';
 import './task-graph.css';
 

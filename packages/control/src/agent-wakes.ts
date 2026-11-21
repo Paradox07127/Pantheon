@@ -8,9 +8,9 @@ import {
 } from '@pantheon/domain';
 import { inputSchemas, type AgentRoutineRow, type AgentWake } from '@pantheon/protocol';
 import { lastRoutineRun, ROUTINE, routineSubject, wakeAgent } from './agent-always-on.js';
-import { finalOutput } from './agent-app-tools.js';
 import { ensureAgents } from './agents.js';
 import { projectAccess, userOnly, type ControlContext, type Handlers } from './context.js';
+import { finalOutput } from './review.js';
 import { openOf } from './resident.js';
 import { projectOverBudget } from './workflow-policy.js';
 

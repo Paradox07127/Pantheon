@@ -118,17 +118,6 @@ it('keeps interface text unselectable except what the user copies', () => {
     expect(selectable, s).toContain(s);
 });
 
-it('keeps every task and edge of the flow chart at full opacity while one is hovered or focused', () => {
-  const flow = readFileSync(
-    fileURLToPath(new URL('../../apps/web/src/screens/board/flow.css', import.meta.url)),
-    'utf8',
-  ).replace(/\/\*[\s\S]*?\*\//g, '');
-  const faded = [...flow.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
-    .filter((m) => m[1]!.includes('.bd-fc.hov') && /opacity/.test(m[2]!))
-    .map((m) => m[1]!.trim());
-  expect(faded).toEqual([]);
-});
-
 it('gives no element a view transition name, so a screen switch never crossfades the main area', () => {
   expect(css).not.toMatch(/view-transition-name/);
   expect(css).not.toMatch(/::view-transition-[a-z-]+\(page\)/);

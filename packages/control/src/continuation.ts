@@ -6,9 +6,9 @@ import {
   type Timer,
 } from '@pantheon/domain';
 import type { ControlContext } from './context.js';
+import { queueTurn } from './session-wake.js';
 import { nextDepth } from './progress.js';
 import { acceptInput } from './session.js';
-import { queueTurn } from './task-tracking.js';
 
 /** Continuation turns one session may get within CONTINUATION_WINDOW_MS. */
 const CONTINUATION_LIMIT = 3;

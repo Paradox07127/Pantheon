@@ -8,11 +8,8 @@ import { toastManager } from '../../apps/web/src/components/Toast.js';
 import { useMemoryView } from '../../apps/web/src/data/memory-view.js';
 import { useShell } from '../../apps/web/src/store.js';
 import { useSettingsView } from '../../apps/web/src/screens/settings/view.js';
-import { needWho, type NeedItem } from '../../apps/web/src/screens/board/frame-model.js';
-import type {
-  RunBoardCommand,
-  SnapshotSession,
-} from '../../apps/web/src/screens/board/panels-model.js';
+import { type NeedItem } from '../../apps/web/src/data/need-actions.js';
+import type { RunBoardCommand, SnapshotSession } from '../../apps/web/src/lib/snapshot-types.js';
 
 const NOW = Date.UTC(2026, 10, 1, 12);
 
@@ -219,37 +216,6 @@ describe('request card details', () => {
       expect.objectContaining({ title: 'The task has no running turn' }),
     );
     expect(text(h.value)).not.toContain('The task has no running turn');
-  });
-
-  it('marks a lead plan proposal with the plan edit icon and decides it in place with Accept and Reject', async () => {
-    const leadSession = { ...worker, id: 'lead-1', title: 'Refunds lead', task: undefined };
-    const who = needWho(proposed, { tasks: [], milestones: [] }, [leadSession]);
-    expect(who).toBe('Refunds lead 提议改计划');
-    const { h, run } = mount({ item: proposed, who });
-    const head = find(h.value, (n) => n.props.className === 'rq-hd');
-    // The icon of the board's edit plan button.
-    expect((nodes(head.props.children)[0]!.type as { displayName?: string }).displayName).toBe(
-      'Pencil',
-    );
-    expect(text(find(h.value, (n) => n.props.className === 'rq-who'))).toBe(who);
-    expect(text(h.value)).toContain(zh('data.reason.planProposalAwaitingDecision'));
-    expect(labels(h.value)).toEqual([
-      zh('board.plan.proposal.accept'),
-      zh('board.plan.proposal.reject'),
-    ]);
-    run.mockResolvedValue(null);
-    button(h.value, zh('board.plan.proposal.accept')).props.onClick();
-    await h.flush();
-    expect(run).toHaveBeenCalledWith(
-      'board.plan.proposal.resolve',
-      {
-        project_id: 'project-a',
-        lead_session_id: 'lead-1',
-        proposal_id: 'proposal-1',
-        decision: 'accept',
-      },
-      null,
-    );
   });
 
   it('opens the settings on the page of the project over its budget', () => {

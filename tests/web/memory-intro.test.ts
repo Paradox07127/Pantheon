@@ -17,8 +17,8 @@ vi.mock('@/data/board', () => ({
   }),
 }));
 import { RunningFor } from '@/components/RunningFor';
-import { ArchDiagram, IntroView, SourceRef, Treemap } from '@/screens/board/IntroView';
-import { archLayout, commitShade, mergeEdges } from '@/screens/board/intro-model';
+import { ArchDiagram, IntroView, SourceRef, Treemap } from '@/screens/memory/IntroView';
+import { archLayout, commitShade, mergeEdges } from '@/screens/memory/intro-model';
 import { zh } from './i18n-setup.js';
 
 const NOW = Date.now();
@@ -157,7 +157,7 @@ const byClass = (tree: ReactNode, name: string) =>
 // The declarations of the intro stylesheet's rule for exactly this selector, space around punctuation taken out.
 const rule = (selector: string) => {
   const css = readFileSync(
-    path.resolve(import.meta.dirname, '../../apps/web/src/screens/board/intro.css'),
+    path.resolve(import.meta.dirname, '../../apps/web/src/screens/memory/intro.css'),
     'utf8',
   )
     .replace(/\s*([{}:;,])\s*/g, '$1')

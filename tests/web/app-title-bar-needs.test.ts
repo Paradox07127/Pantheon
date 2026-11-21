@@ -16,11 +16,8 @@ const { seen, list, needs } = vi.hoisted(() => ({
   },
 }));
 vi.mock('@/screens/sessions/SessionsScreen', () => ({ SessionsScreen: () => null }));
-vi.mock('@/screens/board/BoardScreen', async (actual) => ({
-  ...(await actual<object>()),
-  BoardScreen: () => null,
-}));
 vi.mock('@/screens/projects/ProjectsScreen', () => ({ ProjectsScreen: () => null }));
+vi.mock('@/screens/memory/MemoryScreen', () => ({ MemoryScreen: () => null }));
 vi.mock('@/components/Sidebar', () => ({
   Sidebar: () => null,
   useSidebarLayout: () => ({ collapsed: false, toggle() {} }),
@@ -99,7 +96,7 @@ beforeAll(async () => {
     } as never,
   });
   useCurrentProject.getState().choose('alpha');
-  useShell.setState({ screen: 'board' });
+  useShell.setState({ screen: 'memory' });
   const { createRoot } = await import('react-dom/client');
   root = createRoot(container as never);
   await act(() => root.render(createElement(App)));

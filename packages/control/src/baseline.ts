@@ -49,6 +49,7 @@ import {
   type Handlers,
   type Preparers,
 } from './context.js';
+import { queueTurn } from './session-wake.js';
 import { sessionDefaults } from './user-config.js';
 import {
   DISABLED,
@@ -63,7 +64,6 @@ import { runGit } from './git.js';
 import { collectFacts, type ProjectFacts } from './baseline-facts.js';
 import { renderScanSeed } from './baseline-brief.js';
 import { acceptInput } from './session.js';
-import { queueTurn } from './task-tracking.js';
 import { readAppSettings } from './app-settings.js';
 import { visualHandlers } from './visual.js';
 import { startEnvironmentCheck } from './environment-check.js';

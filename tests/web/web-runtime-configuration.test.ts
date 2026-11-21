@@ -8,7 +8,6 @@ import { useBoard } from '@/data/board';
 import { sessionKinds, useRuntimeStatus } from '@/data/runtime-status';
 import { HarnessPage } from '@/screens/settings/HarnessPage';
 import { SessionDefaults } from '@/screens/settings/SessionDefaultsPage';
-import { PublishBar } from '@/screens/board/PublishBar';
 import { zh } from './i18n-setup.js';
 
 const status = (runtime: string, enabled = true, writer = true) => ({
@@ -104,59 +103,4 @@ it('uses writer status for the session-default choices without reading capabilit
   const menu = named(h.value, 'ModelMenu');
   expect(menu.props.runtimes).toEqual(['claude', 'codex', 'grok']);
   expect(Object.keys(menu.props.unavailable).sort()).toEqual(['claude', 'grok']);
-});
-
-it('creates a lead on an enabled writer from status without reading capabilities', async () => {
-  const run = vi.fn(async () => ({ ok: true as const, value: { id: 'lead-created' } }));
-  const h = await mount(() =>
-    PublishBar({
-      projectId: 'alpha',
-      leads: undefined,
-      sessions: [],
-      tasks: [],
-      defaults: { runtime: 'grok', permission_mode: 'ask' },
-      run,
-    }),
-  );
-  named(h.value, 'MenuRadioGroup').props.onChange('create');
-  h.render();
-  find(h.value, (n) => n.type === 'textarea').props.onChange({
-    target: { value: 'Ship the importer' },
-  });
-  await h.flush();
-  find(h.value, (n) => n.type === 'form').props.onSubmit({ preventDefault() {} });
-  await h.flush();
-  expect(run).toHaveBeenCalledWith(
-    'session.create',
-    expect.objectContaining({ runtime: 'codex' }),
-    null,
-  );
-  expect(query.mock.calls.map(([method]) => method)).not.toContain('capabilities');
-});
-
-it('cannot publish a new lead when every reported runtime is turned off', async () => {
-  statuses = [status('claude', false)];
-  const run = vi.fn(async () => ({ ok: true as const, value: { id: 'lead-created' } }));
-  const h = await mount(() =>
-    PublishBar({
-      projectId: 'alpha',
-      leads: undefined,
-      sessions: [],
-      tasks: [],
-      defaults: undefined,
-      run,
-    }),
-  );
-  named(h.value, 'MenuRadioGroup').props.onChange('create');
-  h.render();
-  find(h.value, (n) => n.type === 'textarea').props.onChange({
-    target: { value: 'Ship the importer' },
-  });
-  await h.flush();
-  expect(
-    find(h.value, (n) => n.type === 'button' && n.props.type === 'submit').props.disabled,
-  ).toBe(true);
-  find(h.value, (n) => n.type === 'form').props.onSubmit({ preventDefault() {} });
-  await h.flush();
-  expect(run).not.toHaveBeenCalled();
 });

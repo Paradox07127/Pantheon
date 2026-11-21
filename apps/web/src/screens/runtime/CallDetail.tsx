@@ -24,7 +24,7 @@ import { toolLabel, toolOutputText } from '../../data/tool-calls';
 import { elapsedText } from '../../data/transcript';
 import { currentLocale, t } from '../../i18n';
 import { useShell } from '../../store';
-import { tokenText, usdText } from '../board/panels-model';
+import { tokenText, usdText } from '../../lib/number-text';
 import { json } from '../sessions/parts';
 import { callVerb, type CallVerb } from './call-rows';
 import type { RunCall } from './run-tree';

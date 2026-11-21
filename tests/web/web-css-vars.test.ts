@@ -23,6 +23,7 @@ const sheets = cssFiles(src).map((file) => ({
 const runtime = [
   /^--tw-/,
   /^--v$/,
+  /^--n$/,
   /^--main-x$/,
   /^--transform-origin$/,
   /^--anchor-width$/,

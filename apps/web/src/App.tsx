@@ -40,7 +40,6 @@ import {
   type Look,
 } from './data/layout';
 import { failureText, reasonText, useNeedsYou } from './data/needs-you';
-import { crossProjectWaiting } from './data/personal-agent';
 import { visibleProjects } from './data/projects';
 import { applySessionDisplay, useSessionDisplay } from './data/session-display';
 import { useSystemReducedMotion, windowColours } from './data/theme';
@@ -51,8 +50,8 @@ import { useHeldModifier } from './lib/held-keys';
 import { listText } from './lib/list-text';
 import { runShortcut, shortcutKeys, SHORTCUTS, useShortcut } from './lib/shortcuts';
 import { SCREEN_NAMES } from './screens';
-import { PanelBoundary } from './screens/board/BoardScreen';
-import { startBaseline } from './screens/board/project-setup';
+import { PanelBoundary } from './components/PanelBoundary';
+import { startBaseline } from './data/project-setup';
 import { MemoryScreen } from './screens/memory/MemoryScreen';
 import { ProjectsScreen } from './screens/projects/ProjectsScreen';
 import { useAppDisplay } from './screens/sessions/app-display';
@@ -75,7 +74,7 @@ const KEPT: readonly Screen[] = ['sessions', 'trace', 'memory', 'projects'];
 
 /** Whether the screen belongs to a project that is not there. */
 export function showsMissingProject(screen: Screen, current: string | null): boolean {
-  if (screen === 'projects' || screen === 'personal') return false;
+  if (screen === 'projects') return false;
   return current === null;
 }
 
@@ -337,11 +336,7 @@ function MainWindow({ kind }: { kind: 'main' | 'project' }) {
   const allNeeds = useNeedsYou(null);
   // The title bar counts what its popover lists, which leaves out the home's items.
   const shownNeeds = useMemo(
-    () =>
-      crossProjectWaiting(
-        allNeeds.items ?? [],
-        projects.map((p) => p.id),
-      ),
+    () => (allNeeds.items ?? []).filter((item) => projects.some((p) => p.id === item.project_id)),
     [allNeeds.items, projects],
   );
   const list = useSessionList(current);

@@ -32,10 +32,11 @@ import {
   type ControlContext,
   type Handlers,
 } from './context.js';
+import { queueTurn } from './session-wake.js';
 import { returnNotes } from './lead-inbox.js';
 import { personalHome } from './personal-agent.js';
 import { acceptInput, nativeTurnActive, releaseIdleConversation, unsnooze } from './session.js';
-import { queueTurn, syncBrief, TAKEOVER_TEXT } from './task-tracking.js';
+import { syncBrief, TAKEOVER_TEXT } from './task-tracking.js';
 import { sessionDefaults } from './user-config.js';
 import { afterCommit, changeModel } from './workbench-session.js';
 

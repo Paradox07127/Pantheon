@@ -243,8 +243,6 @@ describe('sidebar on the all projects screen', () => {
       .filter((n) => n.type === 'button')
       .map((n) => text(n.props.children));
     for (const page of PAGES) expect(labels).toContain(page);
-    for (const gone of ['board', 'insights', 'automations', 'personal'].map(screen))
-      expect(labels).not.toContain(gone);
     expect(find(tree, (n) => isFn(n, 'ProjectMenu')).props.current).toBeUndefined();
   });
 });

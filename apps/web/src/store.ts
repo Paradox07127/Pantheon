@@ -13,16 +13,7 @@ import type { PanelTab, SessionGroupKey } from './screens/sessions/model';
 import { navPage, useSettingsView } from './screens/settings/view';
 import { shownWindow } from './shell/window-kind';
 
-export type Screen =
-  | 'sessions'
-  | 'board'
-  | 'insights'
-  | 'flow'
-  | 'trace'
-  | 'memory'
-  | 'automations'
-  | 'projects'
-  | 'personal';
+export type Screen = 'sessions' | 'flow' | 'trace' | 'memory' | 'projects';
 
 export type TraceTab = 'timeline' | 'runs' | 'activity' | 'diagnose' | 'approved';
 export type MemoryTab = 'overview' | 'entries' | 'diagrams';
@@ -32,21 +23,13 @@ export type Theme = 'light' | 'dark' | 'system';
 /** One of the two panes of sessions side by side. */
 export type SplitPane = 'left' | 'right';
 
-export interface SessionTask {
-  id: string;
-  title: string;
-  goal: string;
-}
-
 /** A screen that belongs to one project. */
-export type ProjectScreen = Exclude<Screen, 'projects' | 'personal'>;
+export type ProjectScreen = Exclude<Screen, 'projects'>;
 
 /** Where the viewer last was in one project. */
 export interface ProjectPlace {
   screen: ProjectScreen;
   sessionId: string | null;
-  // The board task of the new-session composer; null when none.
-  sessionTask: SessionTask | null;
 }
 
 /** One step of back and forward. */
@@ -54,7 +37,6 @@ export interface ShellLocation {
   projectId: string | null;
   screen: Screen;
   sessionId: string | null;
-  sessionTask: SessionTask | null;
 }
 
 const THEME_KEY = 'pantheon.theme';
@@ -92,13 +74,6 @@ function readPlaces(): Record<string, ProjectPlace> {
   }
 }
 
-const isTask = (value: unknown): value is SessionTask => {
-  const task = value as Partial<SessionTask> | null;
-  return (
-    typeof task?.id === 'string' && typeof task.title === 'string' && typeof task.goal === 'string'
-  );
-};
-
 /** The project's remembered place; the sessions screen when there is none. */
 function readPlace(projectId: string): ProjectPlace {
   const place = readPlaces()[projectId];
@@ -106,7 +81,6 @@ function readPlace(projectId: string): ProjectPlace {
   return {
     screen: PROJECT_SCREENS.includes(place?.screen as string) ? place!.screen : 'sessions',
     sessionId,
-    sessionTask: sessionId === '' && isTask(place?.sessionTask) ? place.sessionTask : null,
   };
 }
 
@@ -135,8 +109,6 @@ interface ShellState {
   sessionGroup: SessionGroupKey | null;
   // Counts openings, so opening the same session or the composer again still moves to it.
   sessionOpened: number;
-  // The board task the new-session composer was opened for; null when none was.
-  sessionTask: SessionTask | null;
   // The session ⌘⌥R asked to rename: the thread header renames the shown one, its row any other.
   renaming: string | null;
   // The session shown in a right pane beside sessionId's, of the same project; null shows one.
@@ -157,18 +129,12 @@ interface ShellState {
   // The one session the trace's runs tab shows; null shows them all.
   runsSession: string | null;
   runsView: 'now' | 'history';
-  /** The approvals the board's needs-you strip lists, by notice card id; null until the board has drawn. */
-  boardWaits: ReadonlySet<string> | null;
-  /** The waits the rows of a needs-you list show, by notice card id; null before one has rendered. */
-  stripWaits: ReadonlySet<string> | null;
   /** The wait, by notice card id, that the needs-you strip brings into view and focuses once it lists it. */
   askedNeed: string | null;
   /** The type the approved-for-you list opens filtered by, once; null keeps its own. */
   approvedType: DecisionType | null;
   /** The time the asking page counted from, Unix milliseconds; the list opens on a range that reaches it. */
   approvedSince: number | null;
-  /** The task whose drawer is open on the board of the project it was picked in; null when none is. */
-  boardTask: { projectId: string | null; taskId: string; panel: 'flow' } | null;
   // Opens the trace's runs tab on the session, or on every session for null.
   showRuns: (sessionId: string | null) => void;
   setTraceTab: (tab: TraceTab) => void;
@@ -178,15 +144,11 @@ interface ShellState {
   openSessions: () => void;
   openSession: (sessionId: string, tab?: PanelTab, runId?: string) => void;
   openSessionGroup: (group: SessionGroupKey) => void;
-  openTaskSession: (task: SessionTask) => void;
   startNewSession: () => void;
   followFirstSession: () => void;
   follow: (sessionId: string | null) => void;
-  clearSessionTask: () => void;
   // null opens the app settings, or the only project's when there is exactly one.
   openSettings: (projectId: string | null) => void;
-  // Shows the personal agent's session over the current project, which stays current.
-  openPersonal: (sessionId: string) => void;
   // Makes the project current and returns to where the viewer was in it.
   openProject: (projectId: string) => void;
   // Makes the project current and opens one of its sessions, in one switch.
@@ -210,10 +172,7 @@ interface ShellState {
 type ShellPatch = Partial<ShellState> | ((state: ShellState) => Partial<ShellState>);
 
 const sameLocation = (a: ShellLocation | undefined, b: ShellLocation) =>
-  a?.projectId === b.projectId &&
-  a.screen === b.screen &&
-  a.sessionId === b.sessionId &&
-  a.sessionTask?.id === b.sessionTask?.id;
+  a?.projectId === b.projectId && a.screen === b.screen && a.sessionId === b.sessionId;
 
 // The project App shows: the stored one, or the only project when none is stored.
 function shownProjectId(): string | null {
@@ -228,19 +187,12 @@ function arrive(fromHistory: boolean) {
     projectId: shownProjectId(),
     screen: s.screen,
     sessionId: s.sessionId,
-    sessionTask: s.sessionId === '' ? s.sessionTask : null,
   };
   // The places are the main window's; a window of one project leaves them.
-  if (
-    here.screen !== 'projects' &&
-    here.screen !== 'personal' &&
-    here.projectId &&
-    !windowProjectId()
-  )
+  if (here.screen !== 'projects' && here.projectId && !windowProjectId())
     writePlace(here.projectId, {
       screen: here.screen,
       sessionId: here.sessionId,
-      sessionTask: here.sessionTask,
     });
   if (fromHistory || sameLocation(s.history[s.historyIndex], here)) return;
   // A session window steps only between the sessions opened in it.
@@ -279,7 +231,6 @@ function restore(location: ShellLocation): Partial<ShellState> {
     sessionTab: null,
     sessionRun: null,
     sessionGroup: null,
-    sessionTask: location.sessionTask,
   };
 }
 
@@ -299,10 +250,9 @@ async function startLocation(): Promise<ShellLocation> {
       projectId: shown.project_id,
       screen: 'sessions',
       sessionId: shown.session_id,
-      sessionTask: null,
     };
   const projectId = windowProjectId() ?? readCurrentProjectId();
-  const fresh = { projectId, screen: startScreen(projectId), sessionId: null, sessionTask: null };
+  const fresh = { projectId, screen: startScreen(projectId), sessionId: null };
   const kind = globalThis.window?.pantheon?.windowContext?.().kind ?? 'main';
   if (!projectId || kind !== 'main' || !readPlaces()[projectId]) return fresh;
   const place = readPlace(projectId);
@@ -331,7 +281,6 @@ export const useShell = create<ShellState>((set) => ({
   sessionRun: null,
   sessionGroup: null,
   sessionOpened: 0,
-  sessionTask: start.sessionTask,
   renaming: null,
   ...ONE_PANE,
   history: [start],
@@ -340,12 +289,9 @@ export const useShell = create<ShellState>((set) => ({
   memoryTab: 'overview',
   runsSession: null,
   runsView: 'now',
-  boardWaits: null,
-  stripWaits: null,
   askedNeed: null,
   approvedType: null,
   approvedSince: null,
-  boardTask: null,
   showRuns: (runsSession) =>
     navigate({
       screen: 'trace',
@@ -354,12 +300,11 @@ export const useShell = create<ShellState>((set) => ({
       sessionTab: null,
       sessionRun: null,
       sessionGroup: null,
-      sessionTask: null,
     }),
   setTraceTab: (traceTab) => set({ traceTab }),
   setMemoryTab: (memoryTab) => set({ memoryTab }),
   setScreen: (screen) =>
-    navigate({ screen, sessionTab: null, sessionRun: null, sessionGroup: null, sessionTask: null }),
+    navigate({ screen, sessionTab: null, sessionRun: null, sessionGroup: null }),
   openSessions: () =>
     navigate({
       screen: 'sessions',
@@ -368,7 +313,6 @@ export const useShell = create<ShellState>((set) => ({
       sessionTab: null,
       sessionRun: null,
       sessionGroup: null,
-      sessionTask: null,
     }),
   openSession: (sessionId, tab, runId) =>
     navigate((s) => ({
@@ -379,7 +323,6 @@ export const useShell = create<ShellState>((set) => ({
       sessionRun: runId ?? null,
       sessionGroup: null,
       sessionOpened: s.sessionOpened + 1,
-      sessionTask: null,
     })),
   openSessionGroup: (sessionGroup) =>
     navigate({
@@ -389,42 +332,18 @@ export const useShell = create<ShellState>((set) => ({
       sessionTab: null,
       sessionRun: null,
       sessionGroup,
-      sessionTask: null,
     }),
-  // '' is the Sessions screen's new-session composer.
-  openTaskSession: (sessionTask) =>
-    navigate((s) => ({
-      screen: 'sessions',
-      sessionId: '',
-      sessionRestored: false,
-      sessionTab: null,
-      sessionRun: null,
-      sessionGroup: null,
-      sessionOpened: s.sessionOpened + 1,
-      sessionTask,
-    })),
   startNewSession: () =>
     navigate((s) => ({
       screen: 'sessions',
       sessionId: '',
       sessionRestored: false,
-      sessionTask: null,
       sessionOpened: s.sessionOpened + 1,
     })),
   // With two panes the right one's session stays as the only one.
   followFirstSession: () =>
     set((s) => ({ sessionId: s.splitId, sessionRestored: false, ...ONE_PANE })),
   follow: (followed) => set((s) => (s.followed === followed ? s : { followed })),
-  // The composer's session was created, so its place no longer opens the task again.
-  clearSessionTask: () => {
-    set((s) => ({
-      sessionTask: null,
-      history: s.history.map((location, i) =>
-        i === s.historyIndex ? { ...location, sessionTask: null } : location,
-      ),
-    }));
-    arrive(true);
-  },
   // The settings open as a dialog over the current screen, outside history, the same whichever project is current.
   openSettings: (projectId) =>
     useSettingsView.setState((v) => {
@@ -435,16 +354,6 @@ export const useShell = create<ShellState>((set) => ({
         page,
         ...(projectId && navPage(page) === 'projects' && { detail: projectId }),
       };
-    }),
-  openPersonal: (sessionId) =>
-    navigate({
-      screen: 'personal',
-      sessionId,
-      sessionRestored: false,
-      sessionTab: null,
-      sessionRun: null,
-      sessionGroup: null,
-      sessionTask: null,
     }),
   openProject: (projectId) => navigate(restore({ projectId, ...readPlace(projectId) }), projectId),
   openProjectSession: (projectId, sessionId) =>
@@ -457,7 +366,6 @@ export const useShell = create<ShellState>((set) => ({
         sessionRun: null,
         sessionGroup: null,
         sessionOpened: s.sessionOpened + 1,
-        sessionTask: null,
       }),
       projectId,
     ),
@@ -470,7 +378,6 @@ export const useShell = create<ShellState>((set) => ({
         sessionTab: null,
         sessionRun: null,
         sessionGroup: null,
-        sessionTask: null,
       },
       projectId,
     ),
@@ -482,7 +389,6 @@ export const useShell = create<ShellState>((set) => ({
         sessionTab: null,
         sessionRun: null,
         sessionGroup: null,
-        sessionTask: null,
       },
       projectId,
     ),
@@ -497,7 +403,6 @@ export const useShell = create<ShellState>((set) => ({
         sessionTab: null,
         sessionRun: null,
         sessionGroup: null,
-        sessionTask: null,
       },
       projectId,
     ),
@@ -511,7 +416,6 @@ export const useShell = create<ShellState>((set) => ({
         sessionTab: null,
         sessionRun: null,
         sessionGroup: null,
-        sessionTask: null,
       },
       projectId,
     ),

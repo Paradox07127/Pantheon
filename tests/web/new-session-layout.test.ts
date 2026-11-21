@@ -44,7 +44,7 @@ const running = {
 } as const;
 
 let command: ReturnType<typeof vi.fn>;
-async function mount(extra: { task?: { id: string; title: string; goal: string } } = {}) {
+async function mount() {
   const onOpen = vi.fn();
   const h = mountHook(() =>
     NewSession({
@@ -55,7 +55,6 @@ async function mount(extra: { task?: { id: string; title: string; goal: string }
       recent: [running],
       onOpen,
       onClose: () => {},
-      ...extra,
     }),
   );
   await h.flush();
@@ -106,19 +105,14 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it('stacks the task, the message box and its row, with the sessions in progress under the box', async () => {
-  const { h } = await mount({
-    task: { id: 'lead-1:api', title: 'Add the API', goal: 'Serve the board' },
-  });
+it('stacks the message box and its row, with the sessions in progress under the box', async () => {
+  const { h } = await mount();
   const dialog = find(h.value, labelled(zh('sessions.composer.newSession')));
   expect(nodes(dialog)).toContain(box(h));
-  const task = at(h, (n) => n.props.children === 'Add the API');
   const message = at(h, labelled(zh('sessions.composer.firstMessage')));
   const add = at(h, labelled(zh('sessions.composer.addMenu')));
   const where = at(h, labelled(zh('sessions.composer.whereStarts')));
   const project = at(h, labelled(zh('sessions.composer.newSessionProject')));
-  expect(task).toBeGreaterThanOrEqual(0);
-  expect(task).toBeLessThan(message);
   expect(message).toBeLessThan(add);
   expect(add).toBeLessThan(where);
   expect(where).toBeLessThan(project);
@@ -160,9 +154,7 @@ it('puts the add menu, where it starts and the model in the row under the messag
 });
 
 it('creates the session with the same input as before', async () => {
-  const { h } = await mount({
-    task: { id: 'lead-1:api', title: 'Add the API', goal: 'Serve the board' },
-  });
+  const { h } = await mount();
   type(h, 'start the API');
   named(h.value, 'SendButton').props.onPress();
   await h.flush();
@@ -174,7 +166,6 @@ it('creates the session with the same input as before', async () => {
       runtime: 'claude',
       permission_mode: 'ask',
       input: 'start the API',
-      task_id: 'lead-1:api',
     },
   });
   expect(Object.keys((command.mock.calls[0] as any)[0].input).sort()).toEqual([
@@ -182,7 +173,6 @@ it('creates the session with the same input as before', async () => {
     'permission_mode',
     'project_id',
     'runtime',
-    'task_id',
     'workspace',
   ]);
 });

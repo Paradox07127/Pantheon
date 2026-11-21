@@ -53,6 +53,7 @@ import {
   type Handler,
   type Handlers,
 } from './context.js';
+import { queueTurn } from './session-wake.js';
 import { runtime } from './admission.js';
 import {
   finishReconciledWriteAudit,
@@ -105,7 +106,6 @@ import { daemonDriven, usageLimitWaiting } from './continuation.js';
 import { cancelTimer, scheduleTimer } from './timers.js';
 import { activeRuntimeReview, RUNTIME_REVIEW_CONTRACT } from './runtime-review.js';
 import { projectOverBudget } from './workflow-policy.js';
-import { queueTurn } from './task-tracking.js';
 import { backgroundTasks } from './progress.js';
 import { residentInstructions } from './agent-prompts.js';
 import { residentProfile } from './agent-templates.js';

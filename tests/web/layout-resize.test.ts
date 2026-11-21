@@ -40,7 +40,6 @@ import {
   setAppearance,
   setLayout,
 } from '@/data/layout';
-import { TaskDrawer } from '@/screens/board/TaskDrawer';
 import { SessionsScreen } from '@/screens/sessions/SessionsScreen';
 
 type Listener = (e: any) => void;
@@ -521,71 +520,6 @@ describe('inspector width', () => {
     stubWindow(1400);
     setAppearance({ inspector: 'never' });
     expect(column(screen())).toBeUndefined();
-  });
-});
-
-describe('drawer width', () => {
-  const task: BoardModel['tasks'][number] = {
-    id: 'task-a',
-    title: 'task a',
-    goal: '',
-    scope: [],
-    lane_id: null,
-    milestone_id: null,
-    status: 'running',
-    blockers: [],
-    segments: [],
-    checks: 'none',
-    additions: null,
-    deletions: null,
-    started_at: null,
-    ended_at: null,
-    last_progress_at: null,
-    blocked_since: null,
-    turn_running: false,
-  };
-  const model = {
-    now: 0,
-    tasks: [task],
-    lanes: [],
-    edges: [],
-    merges: [],
-    milestones: [],
-  } as never as BoardModel;
-  const drawer = () =>
-    mount(() =>
-      TaskDrawer({
-        model,
-        taskId: 'task-a',
-        onSelect() {},
-        onOpenSession() {},
-        onOpenStory() {},
-      }),
-    );
-
-  it('has a splitter on its left edge, from 360 to half the window', () => {
-    const h = drawer();
-    expect(h.value!.props.style.width).toBe(440);
-    expect(named(h.value, 'Splitter').props).toMatchObject({
-      label: zh('board.task.drawer.resize'),
-      value: 440,
-      min: 360,
-      max: 700,
-      edge: 'left',
-    });
-  });
-
-  it('keeps the drag in range and stores it on release', () => {
-    const h = drawer();
-    named(h.value, 'Splitter').props.onSize(1000);
-    h.render();
-    expect(h.value!.props.style.width).toBe(700);
-    named(h.value, 'Splitter').props.onSize(100);
-    h.render();
-    expect(h.value!.props.style.width).toBe(360);
-    expect(writes).toEqual([]);
-    named(h.value, 'Splitter').props.onCommit();
-    expect(JSON.parse(stored.get(LAYOUT_KEY)!).drawer).toBe(360);
   });
 });
 

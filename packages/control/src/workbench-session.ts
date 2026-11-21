@@ -121,6 +121,7 @@ import { runGit, type GitResult } from './git.js';
 import { mergePreview } from './merge-preview.js';
 import { repositoryInsights } from './repository-insights.js';
 import {
+  overlaps,
   afterSourceLandings,
   AGENT_CONFIGURATION,
   checkGates,
@@ -151,7 +152,7 @@ import {
   unsnooze,
 } from './session.js';
 import { notifySession } from './session-wake.js';
-import { openUserTaskSession, userTaskChoice, userTaskInput, overlaps } from './task-dispatch.js';
+import { openUserTaskSession, userTaskChoice, userTaskInput } from './task-dispatch.js';
 import { kindOfPaths } from './task-kind.js';
 import {
   autoMerge,

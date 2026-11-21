@@ -71,8 +71,8 @@ vi.mock('@/data/trace', async (actual) => ({
   useTurnSteps: () => ({ data: null, loading: false, error: null, reload() {} }),
 }));
 import { TraceScreen } from '@/screens/trace/TraceScreen';
-import { dayText } from '@/lib/time-text';
-import { durationText } from '@/screens/board/panels-model';
+import { dayText, durationText } from '@/lib/time-text';
+
 import { ROW_HEIGHT } from '@/screens/trace/model';
 import { useShell } from '@/store';
 

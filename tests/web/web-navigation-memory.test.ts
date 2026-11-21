@@ -32,13 +32,11 @@ beforeEach(() => {
     screen: 'projects',
     sessionId: null,
     sessionRestored: false,
-    sessionTask: null,
     history: [
       {
         projectId: null,
         screen: 'projects',
         sessionId: null,
-        sessionTask: null,
       },
     ],
     historyIndex: 0,
@@ -58,19 +56,9 @@ it('restores the screen and session each project was left on', () => {
   shell().openProject('beta');
   expect(here()).toEqual({ project: 'beta', screen: 'sessions', session: 'beta-1' });
   expect(JSON.parse(storage.items.get(PLACES_KEY)!)).toEqual({
-    alpha: { screen: 'trace', sessionId: 'alpha-1', sessionTask: null },
-    beta: { screen: 'sessions', sessionId: 'beta-1', sessionTask: null },
+    alpha: { screen: 'trace', sessionId: 'alpha-1' },
+    beta: { screen: 'sessions', sessionId: 'beta-1' },
   });
-});
-
-it('opens the personal agent over the current project without making it the project’s place', () => {
-  shell().openProject('alpha');
-  shell().setScreen('trace');
-  shell().openPersonal('personal-1');
-  expect(here()).toEqual({ project: 'alpha', screen: 'personal', session: 'personal-1' });
-  shell().openProject('beta');
-  shell().openProject('alpha');
-  expect(here()).toEqual({ project: 'alpha', screen: 'trace', session: null });
 });
 
 it('lands a project opened for the first time on its sessions', () => {
@@ -83,10 +71,7 @@ it('lands a project opened for the first time on its sessions', () => {
 it.each(['activity', 'board', 'insights', 'automations'])(
   'lands a project stored on the removed %s screen on its sessions',
   (screen) => {
-    storage.setItem(
-      PLACES_KEY,
-      JSON.stringify({ alpha: { screen, sessionId: 'alpha-1', sessionTask: null } }),
-    );
+    storage.setItem(PLACES_KEY, JSON.stringify({ alpha: { screen, sessionId: 'alpha-1' } }));
     shell().openProject('alpha');
     expect(here()).toEqual({ project: 'alpha', screen: 'sessions', session: 'alpha-1' });
   },
@@ -146,15 +131,15 @@ it('leaves a just opened session alone while the list does not name it yet', () 
 it('walks back and forward through places, across projects, and drops forward after a new step', () => {
   shell().openProject('alpha');
   shell().openSession('alpha-1');
-  shell().setScreen('board');
+  shell().setScreen('memory');
   shell().openProject('beta');
 
   shell().back();
-  expect(here()).toEqual({ project: 'alpha', screen: 'board', session: 'alpha-1' });
+  expect(here()).toEqual({ project: 'alpha', screen: 'memory', session: 'alpha-1' });
   shell().back();
   expect(here()).toEqual({ project: 'alpha', screen: 'sessions', session: 'alpha-1' });
   shell().forward();
-  expect(here()).toEqual({ project: 'alpha', screen: 'board', session: 'alpha-1' });
+  expect(here()).toEqual({ project: 'alpha', screen: 'memory', session: 'alpha-1' });
 
   shell().openSession('alpha-2');
   const length = shell().history.length;
@@ -162,7 +147,7 @@ it('walks back and forward through places, across projects, and drops forward af
   expect(here()).toEqual({ project: 'alpha', screen: 'sessions', session: 'alpha-2' });
   expect(shell().history).toHaveLength(length);
   shell().back();
-  expect(here()).toEqual({ project: 'alpha', screen: 'board', session: 'alpha-1' });
+  expect(here()).toEqual({ project: 'alpha', screen: 'memory', session: 'alpha-1' });
 });
 
 it('switches the screen at once, without a view transition', () => {
@@ -172,7 +157,7 @@ it('switches the screen at once, without a view transition', () => {
   vi.stubGlobal('document', { startViewTransition });
   shell().openSession('alpha-1');
   expect(here()).toEqual({ project: 'alpha', screen: 'sessions', session: 'alpha-1' });
-  shell().setScreen('board');
+  shell().setScreen('memory');
   shell().back();
   expect(here()).toEqual({ project: 'alpha', screen: 'sessions', session: 'alpha-1' });
   expect(startViewTransition).not.toHaveBeenCalled();
@@ -183,7 +168,7 @@ it('carries the gate run a session is opened for, and drops it on the next place
   shell().openSession('alpha-1', 'checks', 'run-2');
   expect(shell().sessionTab).toBe('checks');
   expect(shell().sessionRun).toBe('run-2');
-  shell().setScreen('board');
+  shell().setScreen('memory');
   expect(shell().sessionRun).toBeNull();
   shell().openSession('alpha-1', 'checks', 'run-2');
   shell().back();
@@ -231,14 +216,13 @@ it("leaves another project's session memory alone while its settings show", () =
   shell().openSession('beta-1');
   shell().openProject('alpha');
   shell().openSettings('beta');
-  shell().setScreen('board');
+  shell().setScreen('memory');
 
   shell().back();
   expect(here()).toEqual({ project: 'alpha', screen: 'sessions', session: 'alpha-1' });
   expect(JSON.parse(storage.items.get(PLACES_KEY)!).beta).toEqual({
     screen: 'sessions',
     sessionId: 'beta-1',
-    sessionTask: null,
   });
   shell().openProject('beta');
   expect(here()).toEqual({ project: 'beta', screen: 'sessions', session: 'beta-1' });
@@ -249,7 +233,7 @@ it('records the only project as the place when none was chosen', () => {
     board: { projects: [{ id: 'solo', name: 'Solo' }] } as unknown as BoardSnapshot,
   });
   try {
-    shell().setScreen('board');
+    shell().setScreen('memory');
     shell().openSession('solo-1');
     expect(shell().history.at(-1)!.projectId).toBe('solo');
     expect(JSON.parse(storage.items.get(PLACES_KEY)!).solo).toMatchObject({
@@ -262,31 +246,6 @@ it('records the only project as the place when none was chosen', () => {
   } finally {
     useBoard.setState({ board: null });
   }
-});
-
-it('keeps the board task of the new-session composer when coming back to it', () => {
-  const task = { id: 'task-1', title: 'Fix login', goal: 'Login works' };
-  shell().openProject('alpha');
-  shell().openTaskSession(task);
-  shell().setScreen('board');
-  shell().back();
-  expect(here()).toEqual({ project: 'alpha', screen: 'sessions', session: '' });
-  expect(shell().sessionTask).toEqual(task);
-
-  shell().openProject('beta');
-  shell().openProject('alpha');
-  expect(shell().sessionTask).toEqual(task);
-});
-
-it('drops the board task from the composer place once its session is created', () => {
-  const task = { id: 'task-1', title: 'Fix login', goal: 'Login works' };
-  shell().openProject('alpha');
-  shell().openTaskSession(task);
-  shell().clearSessionTask();
-  shell().openSession('alpha-new');
-  shell().back();
-  expect(here()).toEqual({ project: 'alpha', screen: 'sessions', session: '' });
-  expect(shell().sessionTask).toBeNull();
 });
 
 it('binds back and forward to ⌘[ and ⌘] app-wide', () => {

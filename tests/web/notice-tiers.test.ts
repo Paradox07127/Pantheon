@@ -22,7 +22,6 @@ import {
   needsCard,
   reviewCards,
   stoppedWaiting,
-  BOARD_LIST_HOLD_MS,
   TURN_END_HOLD_MS,
   WATCH_CHANNEL,
   type NoticeWatch,
@@ -33,7 +32,6 @@ import type { DaemonEvent } from '@/data/sync';
 import { useShell } from '@/store';
 import { zh } from './i18n-setup.js';
 import { find, HookHost, mount } from './web-hook-host.js';
-import { NeedsStrip } from '@/screens/board/BoardFrame';
 
 const NOW = new Date(2026, 10, 13, 9).getTime();
 
@@ -147,7 +145,6 @@ const session = (
 const away: NoticeWatch = {
   sessionId: 'beta-other',
   queue: null,
-  listed: new Set<string>(),
   focused: true,
 };
 const noRespond = () => {};
@@ -186,7 +183,7 @@ let openSessionGroup: Mock<(group: string) => void>;
 beforeEach(() => {
   openProjectSession = vi.fn<(projectId: string, sessionId: string) => void>();
   openSessionGroup = vi.fn<(group: string) => void>();
-  useShell.setState({ openProjectSession, openSessionGroup, screen: 'insights' });
+  useShell.setState({ openProjectSession, openSessionGroup, screen: 'memory' });
 });
 afterEach(() => {
   useShell.setState(shell);
@@ -326,89 +323,10 @@ describe('cards for what needs the user', () => {
     expect(titled?.options.heading).toBe('Docs lane');
   });
 
-  it('makes the asked question the current row of the needs-you strip, brings it into view and focuses its primary button, unfolding the strip for it', () => {
-    const asked = (n: number) => ({
-      ...leadQuestion,
-      source: { ...leadQuestion.source, id: `beta-lead-${n}` },
-      // One lead each: the questions of one lead are one row.
-      session_id: `beta-lead-${n}`,
-      unblocks: 0,
-    });
-    const needs = [1, 2, 3, 4].map(asked);
-    const h = mount(() =>
-      NeedsStrip({
-        model: { now: NOW, needs } as never,
-        sessions: [],
-        run: async () => null,
-        onOpenSession: () => {},
-      }),
-    );
-    const list = () => find(h.value, (n) => n.type === 'ul');
-    expect(list().props.children).toHaveLength(3);
-    const answer = { focus: vi.fn() };
-    const card = { scrollIntoView: vi.fn(), querySelector: vi.fn(() => answer) };
-    list().props.ref.current = { children: [{}, {}, {}, card] };
-    useShell.setState({ askedNeed: 'beta-lead-4:question-1' });
-    h.render();
-    expect(list().props.children).toHaveLength(4);
-    expect(card.scrollIntoView).toHaveBeenCalled();
-    expect(answer.focus).toHaveBeenCalled();
-    expect(useShell.getState().askedNeed).toBeNull();
-    const cards = () => list().props.children.map((li: ReactElement<any>) => li.props.children);
-    expect(cards().map((c: ReactElement<any>) => c.props.selected)).toEqual([
-      false,
-      false,
-      false,
-      true,
-    ]);
-    // Once the row has handed over its primary button, the jump focuses that one.
-    const primary = { focus: vi.fn() };
-    cards()[1].props.primaryRef(primary);
-    answer.focus.mockClear();
-    list().props.ref.current = { children: [{}, card, {}, {}] };
-    useShell.setState({ askedNeed: 'beta-lead-2:question-1' });
-    h.render();
-    expect(primary.focus).toHaveBeenCalled();
-    expect(answer.focus).not.toHaveBeenCalled();
-    expect(cards()[1].props.selected).toBe(true);
-  });
-
-  it('uncovers a strip the expanded chart hides before it jumps to the asked row, and not for a row it lacks', () => {
-    const needs = [{ ...leadQuestion, project_id: 'beta', unblocks: 0 }];
-    let hidden = true;
-    const onShow = vi.fn(() => {
-      hidden = false;
-    });
-    const h = mount(() =>
-      NeedsStrip({
-        model: { now: NOW, needs } as never,
-        sessions: [],
-        run: async () => null,
-        onOpenSession: () => {},
-        hidden,
-        onShow,
-      }),
-    );
-    const answer = { focus: vi.fn() };
-    const card = { scrollIntoView: vi.fn(), querySelector: vi.fn(() => answer) };
-    find(h.value, (n) => n.type === 'ul').props.ref.current = { children: [card] };
-    useShell.setState({ askedNeed: 'other-lead:question-1' });
-    h.render();
-    expect(onShow).not.toHaveBeenCalled();
-    useShell.setState({ askedNeed: 'beta-lead:question-1' });
-    h.render();
-    expect(onShow).toHaveBeenCalledTimes(1);
-    expect(answer.focus).not.toHaveBeenCalled();
-    h.render();
-    expect(answer.focus).toHaveBeenCalled();
-    expect(useShell.getState().askedNeed).toBeNull();
-  });
-
   it("gives no card for the session the user is looking at, nor for other needs, but one for a lead's question, which its thread does not answer", () => {
     const looking = {
       sessionId: 'beta-login',
       queue: null,
-      listed: new Set<string>(),
       focused: true,
     };
     expect(needsCard(approval('approval-1', 'beta-login'), board, looking, noRespond)).toBeNull();
@@ -418,7 +336,6 @@ describe('cards for what needs the user', () => {
     const behind = {
       sessionId: 'beta-login',
       queue: null,
-      listed: new Set<string>(),
       focused: false,
     };
     expect(
@@ -429,7 +346,7 @@ describe('cards for what needs the user', () => {
   });
 
   it('gives no card for an approval of the project whose approvals the screen answers, while the window has focus', () => {
-    const listing = { sessionId: null, queue: 'beta', listed: new Set<string>(), focused: true };
+    const listing = { sessionId: null, queue: 'beta', focused: true };
     expect(needsCard(approval('approval-1', 'beta-login'), board, listing, noRespond)).toBeNull();
     expect(needsCard(leadQuestion, board, listing, noRespond)).toBeNull();
     expect(needsCard(alphaApproval, board, listing, noRespond)).not.toBeNull();
@@ -444,7 +361,7 @@ describe('cards for what needs the user', () => {
   });
 
   it('gives no card for an external request of the project whose needs-you strip the screen shows, while the window has focus', () => {
-    const listing = { sessionId: null, queue: 'beta', listed: new Set<string>(), focused: true };
+    const listing = { sessionId: null, queue: 'beta', focused: true };
     for (const item of [externalRequest]) {
       expect(needsCard(item, board, listing, noRespond)).toBeNull();
       expect(needsCard(item, board, { ...listing, focused: false }, noRespond)).not.toBeNull();
@@ -531,7 +448,6 @@ describe('cards for results and failures', () => {
     const looking = {
       sessionId: 'beta-login',
       queue: null,
-      listed: new Set<string>(),
       focused: true,
     };
     expect(card(event('turn.completed', 'turn-login'), looking)).toBeNull();
@@ -568,7 +484,6 @@ describe('cards for results and failures', () => {
       reviewCards(before, after, 'beta', {
         sessionId: 'a',
         queue: null,
-        listed: new Set<string>(),
         focused: true,
       }),
     ).toEqual([]);
@@ -903,92 +818,6 @@ describe('the notice feed', () => {
     expect(mounted.shown()).toEqual(['Lead', 'Write docs', 'Alpha app']);
   });
 
-  it('gives no card for an approval the board lists, and a card for one its list folds away until the list shows it', () => {
-    useShell.setState({ screen: 'board', boardWaits: new Set(['approval-1']) });
-    render({
-      allNeeds: [
-        approval('approval-1', 'beta-login'),
-        approval('approval-3', 'beta-docs'),
-        leadQuestion,
-      ],
-    });
-    vi.advanceTimersByTime(BOARD_LIST_HOLD_MS);
-    expect([...mounted.shown()].sort()).toEqual(['Lead', 'Write docs']);
-    useShell.setState({ boardWaits: new Set(['approval-1', 'approval-3']) });
-    render();
-    expect(mounted.shown()).toEqual(['Lead']);
-  });
-
-  it('gives no card for an approval the needs-you list shows while the chart answers another', () => {
-    useShell.setState({
-      screen: 'board',
-      boardWaits: new Set(['approval-3']),
-      stripWaits: new Set(['approval-1']),
-    });
-    render({
-      allNeeds: [
-        approval('approval-1', 'beta-login'),
-        approval('approval-3', 'beta-docs'),
-        leadQuestion,
-      ],
-    });
-    vi.advanceTimersByTime(BOARD_LIST_HOLD_MS);
-    expect(mounted.shown()).toEqual(['Lead']);
-    useShell.setState({ stripWaits: null });
-  });
-
-  it('gives no card for a lead question the needs-you list shows', () => {
-    useShell.setState({
-      screen: 'board',
-      boardWaits: new Set(),
-      stripWaits: new Set(['beta-lead:question-1']),
-    });
-    render({ allNeeds: [leadQuestion, alphaApproval] });
-    vi.advanceTimersByTime(BOARD_LIST_HOLD_MS);
-    expect(mounted.shown()).toEqual(['Alpha app']);
-    useShell.setState({ stripWaits: null });
-  });
-
-  it('holds the card of an approval that arrives while the board shows, and gives none when the board lists it within the hold', () => {
-    useShell.setState({ screen: 'board', boardWaits: new Set() });
-    render({ allNeeds: [approval('approval-1', 'beta-login'), alphaApproval] });
-    expect(mounted.shown()).toEqual(['Alpha app']);
-    useShell.setState({ boardWaits: new Set(['approval-1']) });
-    render();
-    vi.advanceTimersByTime(BOARD_LIST_HOLD_MS);
-    expect(mounted.shown()).toEqual(['Alpha app']);
-  });
-
-  it('keeps holding an approval while the board in front has not listed its waits, then gives a card only if the list leaves it out', () => {
-    useShell.setState({ screen: 'board', boardWaits: null });
-    render({
-      allNeeds: [approval('approval-1', 'beta-login'), approval('approval-3', 'beta-docs')],
-    });
-    vi.advanceTimersByTime(BOARD_LIST_HOLD_MS * 2);
-    expect(mounted.shown()).toEqual([]);
-    useShell.setState({ boardWaits: new Set(['approval-1']) });
-    render();
-    expect(mounted.shown()).toEqual(['Write docs']);
-  });
-
-  it('drops an approval held past the hold once it is answered before the board lists its waits', () => {
-    useShell.setState({ screen: 'board', boardWaits: null });
-    render({ allNeeds: [approval('approval-1', 'beta-login')] });
-    vi.advanceTimersByTime(BOARD_LIST_HOLD_MS);
-    render({ allNeeds: [] });
-    useShell.setState({ boardWaits: new Set() });
-    render();
-    expect(mounted.shown()).toEqual([]);
-  });
-
-  it('drops a held card whose approval is answered within the hold', () => {
-    useShell.setState({ screen: 'board', boardWaits: new Set() });
-    render({ allNeeds: [approval('approval-1', 'beta-login')] });
-    render({ allNeeds: [] });
-    vi.advanceTimersByTime(BOARD_LIST_HOLD_MS);
-    expect(mounted.shown()).toEqual([]);
-  });
-
   it('takes a card away on arriving where its wait is in view, and does not show it again after', () => {
     const waits = [
       approval('approval-1', 'beta-login'),
@@ -1004,7 +833,7 @@ describe('the notice feed', () => {
     useShell.setState({ screen: 'trace', traceTab: 'runs', runsView: 'now' });
     render();
     expect(mounted.shown()).toEqual(['Alpha app']);
-    useShell.setState({ screen: 'insights' });
+    useShell.setState({ screen: 'memory' });
     render({ allNeeds: [...waits] });
     expect(mounted.shown()).toEqual(['Alpha app']);
   });

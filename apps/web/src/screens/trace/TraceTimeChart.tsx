@@ -15,7 +15,7 @@ import type { QueryState } from '../../data/workbench-sessions';
 import { currentLocale, t } from '../../i18n';
 import { listText } from '../../lib/list-text';
 import { durationText } from '../../lib/time-text';
-import { Failure } from '../board/BoardScreen';
+import { Failure } from '../../components/PanelBoundary';
 import { EmptyState } from '../../components/EmptyState';
 import './trace-time.css';
 

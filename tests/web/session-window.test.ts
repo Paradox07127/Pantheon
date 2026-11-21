@@ -164,7 +164,7 @@ beforeEach(() => {
   mock.bridge = undefined;
   vi.stubGlobal('navigator', { userAgent: 'Macintosh' });
   useCurrentProject.setState({ projectId: 'alpha' });
-  useShell.setState({ screen: 'board', sessionId: null });
+  useShell.setState({ screen: 'memory', sessionId: null });
 });
 afterEach(() => {
   unmountAll();
@@ -324,9 +324,7 @@ describe('a session window', () => {
     mock.list.data = [lead, { ...listed, lead: 'lead-0' }, agent];
     // The place the window starts on.
     useShell.setState({
-      history: [
-        { projectId: 'alpha', screen: 'sessions', sessionId: 'refund-1', sessionTask: null },
-      ],
+      history: [{ projectId: 'alpha', screen: 'sessions', sessionId: 'refund-1' }],
       historyIndex: 0,
     });
     const top = mount(() => App()).value as ReactElement<any>;

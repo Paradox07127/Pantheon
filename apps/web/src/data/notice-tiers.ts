@@ -16,8 +16,6 @@ export interface NoticeWatch {
   sessionId: string | null;
   /** The project whose runs going now the screen shows: their rows answer its approvals, its needs-you strip the rest. */
   queue: string | null;
-  /** The waits the board answers in the rows it shows, by card id; null off the board. */
-  listed: ReadonlySet<string> | null;
   focused: boolean;
   /** The sessions the session windows show while one of them has focus. */
   elsewhere?: ReadonlySet<string>;
@@ -74,9 +72,7 @@ export const waitInView = (
   },
 ) =>
   watching(view, wait.session) ||
-  ((wait.approval || wait.strip) &&
-    view.focused &&
-    (view.queue === wait.project || !!view.listed?.has(wait.id)));
+  ((wait.approval || wait.strip) && view.focused && view.queue === wait.project);
 
 const opener = (projectId: string, sessionId: string) => () =>
   useShell.getState().openProjectSession(projectId, sessionId);
@@ -381,9 +377,6 @@ export function reviewCards(
       },
     }));
 }
-
-/** How long an approval's card waits for the board in front of the user to list the approval, which then answers it. */
-export const BOARD_LIST_HOLD_MS = 1500;
 
 /** How long a turn's end waits for its session to become ready for review, which then tells it alone. */
 export const TURN_END_HOLD_MS = 1500;

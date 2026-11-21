@@ -176,7 +176,7 @@ beforeEach(() => {
     },
   });
   vi.stubGlobal('document', { hasFocus: () => focused });
-  useShell.setState({ screen: 'board' });
+  useShell.setState({ screen: 'memory' });
   mock.board = {
     board: {
       cursor: 0,

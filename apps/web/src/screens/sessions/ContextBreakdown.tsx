@@ -4,8 +4,8 @@ import type { ContextBreakdown as Breakdown } from '@pantheon/domain';
 import type { RuntimeStatus } from '@pantheon/protocol';
 import { ModelMark, RuntimeGlyph, runtimeColor, runtimeName } from '../../components/RuntimeGlyph';
 import { currentLocale, t } from '../../i18n';
-import { tokenText } from '../board/panels-model';
-import { quotaUsed, quotaWindowName, quotaWindowText } from '../board/usage-model';
+import { tokenText } from '../../lib/number-text';
+import { quotaUsed, quotaWindowName, quotaWindowText } from '../../lib/usage-quota';
 import './runtime-events.css';
 import './overview.css';
 

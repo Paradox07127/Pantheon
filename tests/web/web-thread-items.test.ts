@@ -31,7 +31,7 @@ import {
   type ToolItem,
   type TranscriptItem,
 } from '@/data/transcript';
-import { durationText } from '@/screens/board/panels-model';
+import { durationText } from '@/lib/time-text';
 import { Items } from '@/screens/sessions/parts';
 import { ThreadTurn } from '@/screens/sessions/SessionsScreen';
 import { TraceSection, traceRows } from '@/screens/sessions/trace';

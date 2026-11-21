@@ -36,8 +36,8 @@ import {
   needWhat,
   type NeedAction,
   type NeedItem,
-} from '../screens/board/frame-model';
-import { durationText } from '../screens/board/panels-model';
+} from '../data/need-actions';
+import { durationText } from '../lib/time-text';
 import { openSettingsPage } from '../screens/settings/settings-jump';
 import { runningSince, useProjectSessions } from '../shell/TrayPopover';
 import { useShell } from '../store';

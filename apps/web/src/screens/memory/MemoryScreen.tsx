@@ -9,7 +9,7 @@ import { EntriesTopControls } from './EntriesBar';
 import { EntriesPage } from './EntriesPage';
 import { MemoryOverview } from './MemoryOverview';
 import { OverviewMemory } from './OverviewMemory';
-import '../board/board.css';
+import './memory-frame.css';
 
 // Labels are getters, so each is read in the language loaded by then.
 const TABS: { key: MemoryTab; label: string }[] = [

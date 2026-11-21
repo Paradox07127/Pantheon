@@ -31,10 +31,6 @@ const { list, needs } = vi.hoisted(() => ({
 vi.mock('@/screens/sessions/SessionsScreen', async () => ({
   SessionsScreen: await screen('sessions')(),
 }));
-vi.mock('@/screens/board/BoardScreen', async (actual) => ({
-  ...(await actual<object>()),
-  BoardScreen: await screen('board')(),
-}));
 vi.mock('@/screens/memory/MemoryScreen', async () => ({
   MemoryScreen: await screen('memory')(),
 }));
@@ -179,7 +175,7 @@ it('keeps a visited screen mounted and hidden while another screen shows', async
 it.each(['board', 'insights', 'automations', 'personal'] as const)(
   'shows the sessions for the %s screen an older state may still hold',
   async (old) => {
-    await go(old);
+    await go(old as Parameters<typeof go>[0]);
     expect(useShell.getState().screen).toBe('sessions');
     expect(shown('sessions')?.style.display).toBe('');
     expect(shown(old)).toBeUndefined();

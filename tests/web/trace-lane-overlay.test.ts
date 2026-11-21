@@ -45,7 +45,7 @@ import { LaneLegend, LaneOverlay } from '@/screens/trace/LaneOverlay';
 import { EventTable } from '@/screens/trace/EventTable';
 import { TraceScreen } from '@/screens/trace/TraceScreen';
 import { traceEvents, type TraceEvent, type TraceRow } from '@/screens/trace/model';
-import { durationText } from '@/screens/board/panels-model';
+import { durationText } from '@/lib/time-text';
 import { useShell } from '@/store';
 import { zh } from './i18n-setup.js';
 

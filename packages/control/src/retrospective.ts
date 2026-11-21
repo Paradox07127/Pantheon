@@ -11,14 +11,13 @@ import {
   type TaskKind,
 } from '@pantheon/domain';
 import type { GateFirstPass } from '@pantheon/protocol';
-import type { ControlContext } from './context.js';
+import { ownEntry, type ControlContext } from './context.js';
 import {
   awaitingChange,
   boardTaskId,
   currentAcceptance,
   currentBinding,
   currentDirectMerge,
-  ownEntry,
   taskGeneration,
   taskState,
 } from './board-plan.js';

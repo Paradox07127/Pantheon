@@ -6,16 +6,12 @@ import {
   type PlanProposalView,
   type Session,
 } from '@pantheon/domain';
-import type { ControlContext } from './context.js';
+import { ownEntry, type ControlContext } from './context.js';
 import { moveTaskMemory } from './memory-access.js';
 import { dispatchQueue } from './task-dispatch.js';
 import { waitingStep } from './merge-review.js';
 
 export const boardTaskId = (lead: string, id: string): string => `${lead}:${id}`;
-
-/** The record's own entry for the key; task ids such as `constructor` name prototype properties. */
-export const ownEntry = <T>(record: Record<string, T> | undefined, key: string): T | undefined =>
-  record && Object.hasOwn(record, key) ? record[key] : undefined;
 
 /** The plan and task a global board task id names, within one project. */
 export function boardTask(

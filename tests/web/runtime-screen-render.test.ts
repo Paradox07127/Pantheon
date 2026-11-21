@@ -149,7 +149,6 @@ describe('runtime stats', () => {
     expect(
       text(find(h.value, (n) => n.props['aria-label'] === zh('runs.page.justEnded'))),
     ).toContain('title of worker-1');
-    expect(named(h.value, 'LeadStates').props.leads).toHaveLength(1);
     vi.advanceTimersByTime(15_000);
     h.render();
     expect(named(h.value, 'EmptyState').props.title).toBe(zh('runs.page.nowEmpty'));
@@ -284,7 +283,6 @@ describe('runs controls', () => {
       ),
     ).toBe(false);
     expect(table(h.value)).toBeTruthy();
-    expect(named(h.value, 'LeadStates')).toBeTruthy();
     expect(
       find(h.value, (n) => n.props['aria-label'] === zh('runs.page.followLabel')).props.checked,
     ).toBe(true);

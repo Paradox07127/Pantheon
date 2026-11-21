@@ -22,7 +22,6 @@ import {
   type ValidationResult,
 } from './validation-executor.js';
 import { retryingIndexLock, runGit } from './git.js';
-import { segments } from './task-dispatch.js';
 import { retiredBinding, taskGeneration, sessionPlanTask } from './board-plan.js';
 import { workflowPolicy } from './workflow-policy.js';
 import { onDevice } from './remote-workspace.js';
@@ -31,6 +30,17 @@ import { headerPath } from './landing-diff.js';
 
 type GateCommands = NonNullable<Project['gates']>[string];
 export type LandingProgress = NonNullable<NonNullable<Session['merge']>['landing']>;
+
+export const segments = (target: string) =>
+  target.split('/').filter((segment) => segment && segment !== '.');
+/** True when one path equals the other or contains it, compared by path segment. */
+export function overlaps(a: string, b: string): boolean {
+  const left = segments(a),
+    right = segments(b);
+  return left
+    .slice(0, Math.min(left.length, right.length))
+    .every((segment, index) => segment === right[index]);
+}
 
 /** What a landing belongs to; its key names the landing lease, refs and gate processes. */
 export interface LandingOwner {

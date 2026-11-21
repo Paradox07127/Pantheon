@@ -47,7 +47,7 @@ import { LastTurnMark } from '@/components/SessionStateIcon';
 import { t } from '@/i18n';
 import { RecentActivity } from '@/components/RecentActivity';
 import { RequestCard } from '@/components/RequestCard';
-import type { NeedItem } from '@/screens/board/frame-model';
+import type { NeedItem } from '@/data/need-actions';
 import { AttachmentStrip } from '@/screens/sessions/parts';
 import { ChecksTab, MergeBar } from '@/screens/sessions/panel';
 import { SessionInspector } from '@/screens/sessions/SessionsScreen';
@@ -147,14 +147,6 @@ describe('request card head', () => {
       kind: 'session.failed',
       reason: 'session_failed',
     },
-    acceptance: {
-      ...base,
-      source: { table: 'milestones', id: 'milestone-1', revision: 3 },
-      kind: 'milestone.ready_for_acceptance',
-      session_id: 'lead-1',
-      status: 'ready_for_acceptance',
-      reason: 'milestone_ready_for_acceptance',
-    },
   } as unknown as Record<string, NeedItem>;
   const head = (item: NeedItem) => {
     const card = html(
@@ -182,7 +174,6 @@ describe('request card head', () => {
     expect(shapeOf(head(items.reconciling!))).toBe('split-diamond');
     expect(shapeOf(head(items.gate_failed!))).toBe('shield-cross');
     expect(shapeOf(head(items.failed!))).toBe('octagon-cross');
-    expect(head(items.acceptance!)).toContain('data-state="awaiting_acceptance"');
   });
 });
 

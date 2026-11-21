@@ -3,7 +3,6 @@ import type { BoardBlocker, BoardModel } from '@pantheon/protocol';
 import { setLocaleSync } from '@/i18n';
 import { eventSummary } from '@/data/logs';
 import { blockerTexts, listedTitle, nextStepText } from '../../apps/web/src/lib/daemon-text.js';
-import { taskBadges } from '../../apps/web/src/screens/board/activity.js';
 import { zh, zhCatalog } from './i18n-setup.js';
 
 type Task = BoardModel['tasks'][number];
@@ -100,9 +99,6 @@ describe('board blockers the daemon writes', () => {
       '排队中：等待依赖（会话开不起来：no runtime）',
       '依赖任务「Parse」未完成',
       '合并受阻：改动冲突，1 个冲突文件',
-    ]);
-    expect(taskBadges(task(['Turn failed'], [{ code: 'turn_failed' }]))).toEqual([
-      { kind: 'blocked', label: '阻塞：回合失败' },
     ]);
     setLocaleSync('en', {});
     expect(blockerTexts(coded)).toEqual([

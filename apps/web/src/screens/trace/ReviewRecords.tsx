@@ -20,8 +20,8 @@ import { useMemoryView } from '../../data/memory-view';
 import { reasonText } from '../../data/needs-you';
 import { currentLocale, t } from '../../i18n';
 import { useShell } from '../../store';
-import { dayText } from '../../lib/time-text';
-import { durationText } from '../board/panels-model';
+import { dayText, durationText } from '../../lib/time-text';
+
 import { FINDING_ICONS, runtimeFindingTitle } from './FindingDetail';
 import './review-records.css';
 

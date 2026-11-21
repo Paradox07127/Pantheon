@@ -24,7 +24,7 @@ import {
 } from '../../data/workflow-policy';
 import { sendProjectCommand } from '../../data/project-read';
 import { t } from '../../i18n';
-import { parseUsageTarget, RING_RUNTIMES, type UsageTargets } from '../board/usage-model';
+import { parseUsageTarget, RING_RUNTIMES, type UsageTargets } from '../../lib/usage-quota';
 import { Overrides } from './Overrides';
 import { failureText, Loading, Section } from './ProjectSettingsScreen';
 import './usage-page.css';

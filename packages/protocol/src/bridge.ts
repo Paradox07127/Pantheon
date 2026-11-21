@@ -99,8 +99,7 @@ export type MenuAction =
   | 'toggle-overview'
   | 'back'
   | 'forward'
-  | 'shortcuts'
-  | 'personal-agent';
+  | 'shortcuts';
 /** The session a notification is about. */
 export interface NotificationTarget {
   project_id: string;

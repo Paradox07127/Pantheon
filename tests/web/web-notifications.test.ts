@@ -458,15 +458,14 @@ describe('notification click', () => {
     vi.stubGlobal('localStorage', memoryStorage());
     useCurrentProject.setState({ projectId: 'alpha' });
     useShell.setState({
-      screen: 'board',
+      screen: 'memory',
       sessionId: null,
       sessionRestored: false,
       history: [
         {
           projectId: 'alpha',
-          screen: 'board',
+          screen: 'memory',
           sessionId: null,
-          sessionTask: null,
         },
       ],
       historyIndex: 0,
@@ -493,7 +492,7 @@ describe('notification click', () => {
       session: 'beta-login',
     });
     expect(shell.history).toMatchObject([
-      { projectId: 'alpha', screen: 'board', sessionId: null },
+      { projectId: 'alpha', screen: 'memory', sessionId: null },
       { projectId: 'beta', screen: 'sessions', sessionId: 'beta-login' },
     ]);
   });

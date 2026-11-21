@@ -12,7 +12,6 @@ import {
   Folder,
   GitBranch,
   GitPullRequest,
-  ListTodo,
   Mic,
   Plus,
   Search,
@@ -57,7 +56,7 @@ import {
   shortcutMatches,
   useShortcut,
 } from '../../lib/shortcuts';
-import { useShell, type SessionTask } from '../../store';
+import { useShell } from '../../store';
 import { useSettingsView } from '../settings/view';
 import { refsInput } from './compose';
 import {
@@ -75,7 +74,6 @@ import {
   modelPermissionModes,
   newSessionInput,
   sessionRow,
-  taskPrompt,
 } from './model';
 import {
   AttachmentStrip,
@@ -155,8 +153,6 @@ export function NewSession(props: {
   defaults: BoardSnapshot['projects'][number]['session_defaults'];
   focus: number;
   onCreated: (id: string) => void;
-  /** The board task the new session is bound to. */
-  task?: SessionTask | null;
   /** The open sessions of the list, offered while the message is empty and in the add menu. */
   recent: WorkbenchSession[];
   /** The project's needs-you items, which say why an offered session waits. */
@@ -167,12 +163,10 @@ export function NewSession(props: {
 }) {
   // The session edits code in its own worktree, so it needs a runtime that can write in isolation.
   const { read: status, runtimes, unavailable, disconnected } = useRuntimeStatus('writer');
-  const key = draftKey(props.projectId, null, props.task?.id);
-  const prompt = props.task ? taskPrompt(props.task) : '';
-  // Kept with the draft, so leaving and opening the composer again keeps them like the text; a
-  // pick after a send starts the draft again from the task's prompt.
+  const key = draftKey(props.projectId, null);
+  // Kept with the draft, so leaving and opening the composer again keeps them like the text.
   const pick = (change: Partial<Draft>) => {
-    useDrafts.getState().start(key, prompt);
+    useDrafts.getState().start(key, '');
     useDrafts.getState().update(key, () => change);
   };
   const choice: ModelChoice | null = useDrafts((s) => s.drafts[key]?.model) ?? null;
@@ -183,11 +177,8 @@ export function NewSession(props: {
   const setFast = (on: boolean) => pick({ fast: on });
   const ultracode = useDrafts((s) => s.drafts[key]?.ultracode) ?? false;
   const setUltracode = (on: boolean) => pick({ ultracode: on });
-  const input = useDrafts((s) => s.drafts[key]?.text) ?? prompt;
+  const input = useDrafts((s) => s.drafts[key]?.text) ?? '';
   const setInput = (text: string) => useDrafts.getState().update(key, () => ({ text }));
-  useEffect(() => {
-    if (prompt) useDrafts.getState().start(key, prompt);
-  }, [key]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [allShown, setAllShown] = useState(false);
@@ -317,8 +308,7 @@ export function NewSession(props: {
         ? preferred
         : defaultPermissionMode(chosen, preferred);
   const fastOn = fast && pickedModel?.fast === true;
-  // A board task's session runs with workflows off.
-  const ultracodeOn = ultracode && chosen === 'claude' && !props.task;
+  const ultracodeOn = ultracode && chosen === 'claude';
   const empty = input.trim() === '';
   // An empty project offers a guided start.
   const fromScratch = useFactsRead(props.projectId).read?.empty === true;
@@ -400,7 +390,6 @@ export function NewSession(props: {
           runtime: chosen,
           permissionMode: picked,
           input: text,
-          taskId: props.task?.id,
           backend: model.backend,
           model: model.model,
           effort: model.effort,
@@ -439,7 +428,6 @@ export function NewSession(props: {
     });
     const id = (result.value as { id?: unknown } | null)?.id;
     if (typeof id !== 'string' || shown.current !== props.projectId) return;
-    useShell.getState().clearSessionTask();
     props.onCreated(id);
   }
 
@@ -790,18 +778,6 @@ export function NewSession(props: {
   const label = t({ id: 'sessions.composer.newSession', defaultMessage: 'New session' });
   const body = (
     <div className="cr-in" {...files.box}>
-      {props.task && (
-        <div className="cr-card">
-          <ListTodo
-            role="img"
-            aria-label={t({
-              id: 'sessions.composer.boardTask',
-              defaultMessage: 'Board task',
-            })}
-          />
-          <span className="cr-cdt">{props.task.title}</span>
-        </div>
-      )}
       {referred.map((s) => sessionRefCard(s, unrefer))}
       {githubRefs.map((r) => githubRefCard(r, unreferGithub))}
       <AttachmentStrip
@@ -941,7 +917,7 @@ export function NewSession(props: {
             onMode={setMode}
             fast={{ on: fastOn }}
             onFast={setFast}
-            ultracode={props.task ? null : ultracodeOn}
+            ultracode={ultracodeOn}
             onUltracode={setUltracode}
           />
           <span style={{ flex: 1 }} />

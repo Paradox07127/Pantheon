@@ -34,7 +34,7 @@ vi.mock('@/store', async (actual) => {
     ...real,
     useShell: Object.assign(
       (selector: (state: unknown) => unknown) =>
-        selector({ ...real.useShell.getState(), screen: 'board' }),
+        selector({ ...real.useShell.getState(), screen: 'flow' }),
       real.useShell,
     ),
   };
@@ -135,8 +135,6 @@ describe('sidebar zones', () => {
     const html = render({ sessions: [session('a', 'running')] });
     const project = section(html, side('currentProject'));
     for (const entry of ['trace', 'memory'].map(screen)) expect(project).toContain(entry);
-    for (const gone of ['board', 'insights', 'automations'].map(screen))
-      expect(project).not.toContain(gone);
     expect(project).toContain(`<nav class="ss-list" aria-label="${screen('sessions')}"`);
     expect(project).toContain('title of a');
     expect(project).not.toContain(screen('settings'));
@@ -178,8 +176,7 @@ describe('sidebar zones', () => {
     const html = render({ current: null });
     const project = section(html, side('currentProject'));
     expect(project).toContain(side('chooseProject'));
-    for (const entry of ['board', 'flow', 'trace'].map(screen))
-      expect(project).not.toContain(entry);
+    for (const entry of ['flow', 'trace'].map(screen)) expect(project).not.toContain(entry);
     expect(html).toContain(screen('settings'));
   });
 
@@ -195,8 +192,6 @@ describe('sidebar zones', () => {
       side('connectionConnecting'),
     ])
       expect(html).toContain(`aria-label="${label}"`);
-    for (const gone of ['board', 'insights', 'automations'].map(screen))
-      expect(html).not.toContain(`aria-label="${gone}"`);
     expect(html).not.toContain(side('switchProject'));
   });
 });

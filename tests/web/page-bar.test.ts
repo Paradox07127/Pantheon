@@ -10,7 +10,6 @@ import { TopBar } from '@/components/TopBar';
 import { useBoard } from '@/data/board';
 import { useCurrentProject } from '@/data/current-project';
 import { SCREEN_NAMES } from '@/screens';
-import { InsightsView } from '@/screens/insights/InsightsScreen';
 import { MemoryScreen } from '@/screens/memory/MemoryScreen';
 import { ProjectsScreen } from '@/screens/projects/ProjectsScreen';
 import { TraceScreen } from '@/screens/trace/TraceScreen';
@@ -40,7 +39,7 @@ const tabs = (html: string) => [...html.matchAll(/role="tab"[^>]*>([^<]*)</g)].m
 afterEach(() => {
   vi.unstubAllGlobals();
   useBoard.setState({ board: null });
-  useShell.setState({ screen: 'board', sessionId: null, traceTab: 'timeline' });
+  useShell.setState({ screen: 'memory', sessionId: null, traceTab: 'timeline' });
 });
 
 describe('page top bar', () => {
@@ -56,31 +55,6 @@ describe('page top bar', () => {
     expect(html).toContain('aria-label="2 个 agent 运行中"');
     expect(html).toContain('>2</span>');
     expect(html).toContain('<button type="button">go</button></header>');
-  });
-
-  it('holds the engineering board name, its section tabs and the time range', () => {
-    const { bar, body } = split(
-      createElement(InsightsView, {
-        model: null,
-        loading: true,
-        error: null,
-        onRetry() {},
-        days: 7,
-        onDays() {},
-        section: 'quality',
-        onSection() {},
-        onOpenSession() {},
-        onOpenStory() {},
-      }),
-    );
-    expect(bar).toContain(`<h1>${SCREEN_NAMES.insights}</h1>`);
-    expect(tabs(bar)).toEqual(
-      ['board.sections.quality', 'board.sections.usage'].map((id) => zh(id)),
-    );
-    expect(bar).toMatch(
-      new RegExp(`role="radiogroup"[^>]*aria-label="${zh('board.headline.range')}"`),
-    );
-    expect(tabs(body)).toEqual([]);
   });
 
   it('holds the trace name, its view tabs and the view switch', () => {
@@ -146,8 +120,7 @@ describe('app top bar', () => {
   it('draws no location path on any screen', () => {
     vi.stubGlobal('window', { innerWidth: 1440 });
     for (const [screen, sessionId] of [
-      ['board', null],
-      ['insights', null],
+      ['memory', null],
       ['sessions', ''],
       ['projects', null],
     ] as const)

@@ -56,7 +56,7 @@ import { keyText, shortcutKeys } from '../../lib/shortcuts';
 import { scrimFlag } from '../../lib/root-flag';
 import { SCREEN_NAMES } from '../../screens';
 import { useShell } from '../../store';
-import { durationText } from '../board/panels-model';
+import { durationText } from '../../lib/time-text';
 import { groupWorkbenchSessions, type SessionGroupKey } from '../sessions/model';
 import { ImportDialog } from './ImportFolders';
 import { useProjectsView } from './view';

@@ -1,4 +1,4 @@
-import type { ProjectSetupRead, SetupState } from '@/screens/board/project-setup';
+import type { ProjectSetupRead, SetupState } from '@/data/project-setup';
 
 /** A project's setup read in one state, starting nothing unless `start` is given. */
 export const setupRead = (

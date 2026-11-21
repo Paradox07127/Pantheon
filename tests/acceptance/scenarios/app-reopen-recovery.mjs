@@ -58,16 +58,6 @@ const SESSION_LABEL = {
   done: '已完成',
 };
 const WAITING_LABEL = { approval: '待批准', question: '待回答', baseline_review: '待确认' };
-const TASK_STATUS_LABEL = {
-  running: '进行中',
-  waiting: '待处理',
-  idle: '空闲',
-  ready: '待合并',
-  done: '已完成',
-  failed: '失败',
-  todo: '未开始',
-  discarded: '已丢弃',
-};
 // The app draws no connection mark while it is connected.
 const CONNECTION_LABELS = ['连接中', '已断开'];
 const sessionLabel = (row) =>
@@ -104,13 +94,6 @@ const sessionShown = (sessionTitle) => `(() => {
     last_turn: row.getAttribute('aria-label').split('，').find((part) => part.startsWith('上回合')) ?? null,
     turns: document.querySelectorAll('[data-turn]').length,
   };
-})()`;
-/** The status the task list's row of this task title names, as the board shows it. */
-const rowShown = (taskTitle) => `(() => {
-  const row = [...document.querySelectorAll('[role="table"][aria-label="任务列表"] [role="row"][aria-label]')].find(
-    (el) => el.getAttribute('aria-label').startsWith(${JSON.stringify(`${taskTitle}，`)}),
-  );
-  return row ? { status: row.getAttribute('aria-label').slice(${JSON.stringify(`${taskTitle}，`)}.length) } : null;
 })()`;
 const connectionState = `[...document.querySelectorAll('[role="img"]')].find((el) => ${JSON.stringify(CONNECTION_LABELS)}.includes(el.getAttribute('aria-label')) && el.getClientRects().length > 0)?.getAttribute('aria-label') ?? null`;
 /** Records every change of the connection mark from now on. */
@@ -228,7 +211,6 @@ export async function run({ workspace, evidenceDir }) {
   };
   const board = () => get('board', { project_id: projectId });
   const sessionList = () => get('session.list', { project_id: projectId });
-  const boardView = () => get('board.view', { project_id: projectId, days: '14' });
   const events = async (until = deadline) => {
     const all = [];
     for (let after = 0; ;) {
@@ -663,29 +645,6 @@ export async function run({ workspace, evidenceDir }) {
       await compareSession('ended');
       await shot('ended');
 
-      await click(button('项目看板', { within: NAV }));
-      const tasks = { role: 'radio', name: '任务', exact: true };
-      await appear(tasks);
-      await click(tasks);
-      await click({ role: 'radio', name: '列表', exact: true });
-      await click({ role: 'radio', name: '全部', exact: true });
-      const until = Math.min(deadline, Date.now() + 15000);
-      let row, shown, expected;
-      for (;;) {
-        row = (await boardView()).tasks.find((task) => task.id === sessionId) ?? null;
-        expected = row ? { status: TASK_STATUS_LABEL[row.status] } : null;
-        shown = await read(rowShown(row?.title ?? sessionTitle), 'the task list row status');
-        if ((expected && isDeepStrictEqual(shown, expected)) || Date.now() >= until) break;
-        await delay(200);
-      }
-      checks.push({
-        moment: 'ended',
-        kind: 'board',
-        daemon: row && { id: row.id, title: row.title, status: row.status, expected },
-        ui: shown,
-        matched: !!expected && isDeepStrictEqual(shown, expected),
-      });
-      await shot('ended-board');
       await probe('final');
     });
 
@@ -866,7 +825,6 @@ export async function run({ workspace, evidenceDir }) {
   observations.ui = {
     matches_authoritative_state:
       checks.some((c) => c.moment === 'ended' && c.kind === 'session') &&
-      checks.some((c) => c.moment === 'ended' && c.kind === 'board') &&
       checks.some((c) => c.moment === 'app-daemon-reopened' && c.kind === 'session') &&
       checks.some((c) => c.moment === 'app-daemon-ended' && c.kind === 'session') &&
       checks.every((c) => c.matched),

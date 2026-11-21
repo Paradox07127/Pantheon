@@ -64,12 +64,6 @@
 .rq-l2 > .rq-blk {
   margin-left: 0;
 }
-.rq-why {
-  display: flex;
-  flex: 0 1 auto;
-  min-width: 0;
-  color: var(--tx2);
-}
 /* How long the row has waited, on the scale of the list's longest wait. */
 .rq-wt {
   display: flex;
@@ -218,14 +212,6 @@
 }
 .rq-err {
   display: block;
-}
-.rq-ms {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-3);
-}
-.rq-ms .bms-cell {
-  cursor: default;
 }
 /* The lead's reassessment of a paused plan, side by side. */
 .rq-ra {

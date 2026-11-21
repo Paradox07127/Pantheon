@@ -566,3 +566,7 @@ export function insert<T extends Entity>(
   ctx.store.event(kind, value, project, value, cause);
   return value;
 }
+
+/** The record's own entry for the key; task ids such as `constructor` name prototype properties. */
+export const ownEntry = <T>(record: Record<string, T> | undefined, key: string): T | undefined =>
+  record && Object.hasOwn(record, key) ? record[key] : undefined;

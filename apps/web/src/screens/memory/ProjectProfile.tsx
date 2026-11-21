@@ -5,8 +5,8 @@ import { Tip } from '../../components/Tip';
 import { ageText } from '../../data/needs-you';
 import { currentLocale, t } from '../../i18n';
 import { listText } from '../../lib/list-text';
-import { SourceRef } from '../board/IntroView';
-import { languageParts } from '../board/intro-model';
+import { SourceRef } from './IntroView';
+import { languageParts } from './intro-model';
 import './memory-overview.css';
 
 const percent = (share: number) =>

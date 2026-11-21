@@ -3,7 +3,7 @@ import { PreviewCard } from '@base-ui/react/preview-card';
 import { t } from '../../i18n';
 import { listText } from '../../lib/list-text';
 import { clockText, dayText } from '../../lib/time-text';
-import { tokenText, usdText } from '../board/panels-model';
+import { tokenText, usdText } from '../../lib/number-text';
 import { eventText } from './ActivityList';
 import {
   ROW_HEIGHT,

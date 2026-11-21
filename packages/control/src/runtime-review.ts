@@ -16,9 +16,9 @@ import { inputSchemas } from '@pantheon/protocol';
 import { memoryHandlers } from './memory.js';
 import { runtime } from './admission.js';
 import { insert, projectAccess, userOnly, type ControlContext, type Handlers } from './context.js';
+import { queueTurn } from './session-wake.js';
 import { sessionDefaults } from './user-config.js';
 import { runtimeDiagnostics } from './runtime-findings.js';
-import { queueTurn } from './task-tracking.js';
 import { workflowPolicy, projectOverBudget } from './workflow-policy.js';
 
 const DAY = 86_400_000;

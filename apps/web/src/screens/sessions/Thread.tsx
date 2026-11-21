@@ -16,23 +16,19 @@ import { Collapsible } from '@base-ui/react/collapsible';
 import { Tooltip } from '@base-ui/react/tooltip';
 import {
   AppWindow,
-  Bell,
   Bot,
-  CheckIcon,
   ChevronRight,
   Crown,
   KeyRound,
   Minus,
   RefreshCw,
   Undo2,
-  User,
 } from 'lucide-react';
-import type { BoardHistory, BoardSnapshot, WorkbenchSession } from '@pantheon/protocol';
+import type { BoardSnapshot, WorkbenchSession } from '@pantheon/protocol';
 import { MarkdownBaseProvider } from '../../components/Markdown';
 import { Skeleton } from '../../components/Skeleton';
 import { RuntimeGlyph } from '../../components/RuntimeGlyph';
 import { useBoard } from '../../data/board';
-import { useBoardHistory } from '../../data/board-history';
 import { runCommand } from '../../data/commands';
 import { useLook } from '../../data/layout';
 import { useSessionDisplay } from '../../data/session-display';
@@ -41,12 +37,6 @@ import { supports, useRuntimeStatus } from '../../data/runtime-status';
 import { useMemorySessionTurns } from '../../data/memory';
 import { reducedMotion } from '../../lib/motion';
 import { failureText, type NeedsYouState } from '../../data/needs-you';
-import {
-  personalCall,
-  personalHomeOf,
-  useBuiltInPersonalKey,
-  type PersonalCall,
-} from '../../data/personal-agent';
 import type { DaemonEvent } from '../../data/sync';
 import {
   buildTranscript,
@@ -57,12 +47,10 @@ import {
   type RequestItem,
   type Session,
   type SessionTurn,
-  type ToolItem,
   type TranscriptItem,
   type TurnView,
 } from '../../data/transcript';
 import { t } from '../../i18n';
-import { SCREEN_NAMES } from '../../screens';
 import { useShortcut } from '../../lib/shortcuts';
 import { clockText } from '../../lib/time-text';
 import {
@@ -85,7 +73,6 @@ import type { Panel } from './inspector-model';
 import { shownInput, statusTicks, timelineNodes, type TimelineNode } from './thread-model';
 import { ThreadFind, useThreadFind } from './ThreadFind';
 import { MemoryUsed } from './MemoryUsed';
-import { PersonalNeedsList, PersonalSentLine } from './PersonalNeedsList';
 import { ChapterMark, Items, ResolveButtons, ThreadMark, TurnWork } from './parts';
 import { showThreadTurns } from './trace';
 import { BaselineReview, PendingQuestions, RequestCard, RequestSlot } from './RequestCards';
@@ -96,11 +83,9 @@ import {
   type SplitEntry,
   type TerminalToggle,
 } from './SessionHeader';
-import { RoutingLine } from '../board/PublishBar';
 import { SessionCompose } from './SessionCompose';
 import { fail, useSecondTick } from './shared';
 import { CheckpointBack, ReplyActions, TurnActions } from './TurnMenu';
-import { RESIDENTS, WorkerStrip } from './WorkerStrip';
 import '../../components/state-icon.css';
 
 /** The session's worktree and its project's folders; tool call paths are shown relative to them. */
@@ -148,8 +133,6 @@ export function Thread(props: {
   sessions?: readonly WorkbenchSession[];
   /** The session bar's terminal switch. */
   terminal?: TerminalToggle;
-  /** The listed sessions working on tasks this one dispatched. */
-  workers?: readonly WorkbenchSession[];
 }) {
   const { board, sessionId, listed, active = true } = props;
   // Read when asked, so a new list read does not render every turn again.
@@ -171,11 +154,6 @@ export function Thread(props: {
     return next;
   }, [board, sessionId]);
   const turnIds = useMemo(() => new Set(turns.map((t) => t.id)), [turns]);
-  // Asked for only by a thread holding a turn a personal key sent.
-  const sentByKey = useMemo(() => turns.some((t) => t.via), [turns]);
-  const personalKey = useBuiltInPersonalKey(
-    sentByKey ? (personalHomeOf(board.projects)?.id ?? null) : null,
-  );
   const keep = (e: DaemonEvent) =>
     isSessionEvent(e, sessionId, turnIds) || isSessionApproval(e, sessionId);
   const history = useEventHistory({
@@ -324,7 +302,6 @@ export function Thread(props: {
     return [{ id: p.id, at, turn: turn?.turn.id ?? null, question: !!p.questions?.length }];
   });
   const retryable = !!session && composeState(session).send.enabled;
-  const planHistory = useBoardHistory(session?.project_id ?? null).data ?? null;
   const memoryTurns = useMemorySessionTurns(sessionId).data?.turns;
   const memoryCounts = new Map(memoryTurns?.map((m) => [m.turn_id, m.count]));
   // Held by content: `turnTimes` is new on every render, and each turn row takes its marks.
@@ -333,14 +310,13 @@ export function Thread(props: {
     const byTurn = new Map<string | null, TimelineNode[]>();
     for (const node of timelineNodes({
       sessionId,
-      history: planHistory,
       turns: JSON.parse(times),
       waits: [],
     }))
       // A key point names its turn only on the timeline.
       if (node.kind !== 'turn') byTurn.set(node.turn, [...(byTurn.get(node.turn) ?? []), node]);
     return byTurn;
-  }, [sessionId, planHistory, times]);
+  }, [sessionId, times]);
   // Each turn's next turn that is not a steer or compaction turn.
   const afters = useMemo(() => {
     const turns = view?.turns ?? [];
@@ -373,13 +349,11 @@ export function Thread(props: {
             {...(props.terminal ? { terminal: props.terminal } : {})}
           />
         ))}
-      {listed?.resident && !props.head && <WorkerStrip workers={props.workers ?? []} />}
       {finding && view && <ThreadFind turns={view.turns} scroller={flow} />}
       <div className="ss-flow" data-debug-region="sessions.transcript">
         {!props.head && timeline !== 'off' && (
           <MemoSessionTimeline
             sessionId={sessionId}
-            history={planHistory}
             turns={turnTimes}
             waits={waits}
             goal={listed?.goal ?? null}
@@ -419,24 +393,6 @@ export function Thread(props: {
                 {spoken}
               </div>
               {history.error && <LoadError message={history.error} onRetry={history.reload} />}
-              {listed?.resident &&
-                listed.resident.kind !== 'personal' &&
-                view?.turns.length === 0 && (
-                  <p className="ss-emp">
-                    {t(
-                      {
-                        id: 'sessions.residents.empty',
-                        defaultMessage: 'Tell {name} what {project} should do next.',
-                      },
-                      {
-                        name:
-                          RESIDENTS.find((r) => r.kind === listed.resident!.kind)?.name ?? title,
-                        project:
-                          board.projects.find((p) => p.id === session?.project_id)?.name ?? '',
-                      },
-                    )}
-                  </p>
-                )}
               {view?.chapter && <ChapterMark event={view.chapter} />}
               {!view
                 ? !history.error && (
@@ -467,7 +423,6 @@ export function Thread(props: {
                       statusInCompose={session?.state === 'running' && t === runningTurn}
                       forkSteps={forkSteps}
                       sessions={listedSessions}
-                      personalKey={personalKey}
                     />
                   ))}
               {(expanded ? (view?.loose.items ?? []) : loose).length > 0 && (
@@ -522,13 +477,6 @@ const checkpointAfter = (next: TurnView | undefined) =>
     ? next.turn.id
     : null;
 
-/** The one line a resident's turn woken by its workers, an outside event or a plan sync folds to. */
-const WAKE: Partial<Record<NonNullable<SessionTurn['origin']>, () => string>> = {
-  tracker: () => t({ id: 'sessions.residents.wake.tracker', defaultMessage: 'Workers reported' }),
-  external: () => t({ id: 'sessions.residents.wake.external', defaultMessage: 'Outside event' }),
-  sync: () => t({ id: 'sessions.residents.wake.sync', defaultMessage: 'Plan synced' }),
-};
-
 /** foldTurn, with what tell_user calls told the user kept outside the folded work. */
 function foldTold(items: TranscriptItem[], told: ReadonlySet<TranscriptItem>) {
   const fold = foldTurn(items);
@@ -570,8 +518,6 @@ export function ThreadTurn(props: {
   forkSteps?: boolean;
   /** The project's listed sessions, read when a rewrite puts the turn's references back. */
   sessions?: () => readonly WorkbenchSession[];
-  /** The built-in personal agent's key; a turn it sent names the personal agent. */
-  personalKey?: string | null;
 }) {
   const { view, listed } = props;
   const { turn } = view;
@@ -588,21 +534,10 @@ export function ThreadTurn(props: {
     (s) => s.board?.sessions.find((k) => k.id === turn.session_id)?.runtime ?? '',
   );
   const told = new Set<TranscriptItem>();
-  // Only the personal agent's own thread looks for its needs-you reads and sent requests.
-  const personal: { item: ToolItem; call: PersonalCall }[] = [];
-  if (listed?.resident?.kind === 'personal')
-    for (const item of view.items)
-      if (item.kind === 'tool') {
-        const call = personalCall(item);
-        if (call) personal.push({ item, call });
-      }
   // Items counts ids in `all`, which keeps view.items' places so the ids match threadIds.
   const all = view.items.map(toldItem);
   all.forEach((item, i) => item !== view.items[i] && told.add(item));
-  const shown = personal.length
-    ? all.filter((_, i) => personal.every((p) => p.item !== view.items[i]))
-    : all;
-  const reply = shown.flatMap((item) => (item.kind === 'text' ? [item.text] : []));
+  const reply = all.flatMap((item) => (item.kind === 'text' ? [item.text] : []));
   const model = turn.reported_model ?? turn.model ?? null;
   const spoke = view.started_at ?? view.at;
   // Kept after streaming stops so the caret can fade out.
@@ -610,14 +545,6 @@ export function ThreadTurn(props: {
   useEffect(() => {
     if (streaming) setCaret(true);
   }, [streaming]);
-  // A wake turn of a resident shows its input only once opened.
-  const [wakeOpen, setWakeOpen] = useState(false);
-  const wake =
-    listed?.resident && turn.origin
-      ? turn.wake?.causes.length && turn.wake.causes.every((cause) => cause === 'signal')
-        ? () => t({ id: 'sessions.residents.wake.signals', defaultMessage: 'Signals' })
-        : WAKE[turn.origin]
-      : undefined;
   // A compaction is drawn as a mark, not as a message.
   const compaction = turn.origin === 'compaction';
   // Every origin but lead is Pantheon writing to the session.
@@ -638,7 +565,7 @@ export function ThreadTurn(props: {
   const entering = props.fresh.has(`turn:${turn.id}`) ? ' tr-in' : '';
   const expanded = useLook().transcript === 'expanded';
   // An expanded transcript shows the whole turn.
-  const fold = working || expanded || compaction ? null : foldTold(shown, told);
+  const fold = working || expanded || compaction ? null : foldTold(all, told);
   const items = (shown: TranscriptItem[]) => (
     <Items
       items={shown}
@@ -674,25 +601,6 @@ export function ThreadTurn(props: {
             )}
           </ThreadMark>
         )
-      ) : wake ? (
-        <>
-          <button
-            type="button"
-            className="ss-ev"
-            aria-expanded={wakeOpen}
-            onClick={() => setWakeOpen((was) => !was)}
-          >
-            <Bell className="ic-sm" aria-hidden="true" />
-            <span className="ss-ttl">{wake()}</span>
-            {sent && <span className="ss-evt">{sent}</span>}
-            <ChevronRight className="ic-sm ss-evc" aria-hidden="true" />
-          </button>
-          {wakeOpen && (
-            <div className="ss-evn" data-find="input">
-              {shownInput(turn)}
-            </div>
-          )}
-        </>
       ) : (
         <div className="ss-uh" data-from={from ?? undefined}>
           <div className="ss-uc">
@@ -749,34 +657,18 @@ export function ThreadTurn(props: {
                     <span className="mono">{view.app.server}</span>
                   </span>
                 )}
-                {turn.via &&
-                  (turn.via.key_id === props.personalKey ? (
-                    <span
-                      className="apd-from"
-                      role="group"
-                      aria-label={t({
-                        id: 'sessions.personalAgent.sentBy',
-                        defaultMessage: 'Sent by Personal agent',
-                      })}
-                    >
-                      <User aria-hidden="true" />
-                      {SCREEN_NAMES.personal}
-                    </span>
-                  ) : (
-                    <span className="apd-from">
-                      <KeyRound aria-hidden="true" />
-                      {t({
-                        id: 'sessions.thread.viaPersonal',
-                        defaultMessage: 'Personal agent key',
-                      })}
-                    </span>
-                  ))}
+                {turn.via && (
+                  <span className="apd-from">
+                    <KeyRound aria-hidden="true" />
+                    {t({
+                      id: 'sessions.thread.viaPersonal',
+                      defaultMessage: 'Personal agent key',
+                    })}
+                  </span>
+                )}
                 <div className={`ss-user${entering}`} data-find="input">
                   {turn.input}
                 </div>
-                {turn.routing && (
-                  <RoutingLine turn={{ ...turn, routing: turn.routing }} run={runCommand} />
-                )}
               </>
             )}
             {turn.handoff && (
@@ -815,12 +707,6 @@ export function ThreadTurn(props: {
           {spoke !== null && <span className="ss-whot">{clockText(spoke)}</span>}
         </div>
       )}
-      {personal.map(
-        ({ item, call }) =>
-          call.kind === 'sent' && (
-            <PersonalSentLine key={`sent-${item.id}`} call={call} at={item.completed_at} />
-          ),
-      )}
       {fold ? (
         <>
           {items(fold.head)}
@@ -836,13 +722,7 @@ export function ThreadTurn(props: {
           {items(fold.tail)}
         </>
       ) : (
-        items(shown)
-      )}
-      {personal.map(
-        ({ item, call }) =>
-          call.kind === 'needs' && (
-            <PersonalNeedsList key={`needs-${item.id}`} items={call.items} at={call.at} />
-          ),
+        items(all)
       )}
       {(streaming || caret) && (
         <span
@@ -1024,8 +904,6 @@ function TurnStatusLine({ status }: { status: TurnStatus }) {
 
 const TIMELINE_GLYPH: Record<TimelineNode['kind'], ReactNode> = {
   goal: <span className="ss-ggoal" />,
-  task: <CheckIcon className="ss-gok" aria-hidden="true" />,
-  milestone: <span className="ss-gmile" />,
   wait: <span className="ss-gwait" />,
   turn: <Minus className="ss-gturn" aria-hidden="true" />,
 };
@@ -1183,10 +1061,9 @@ export function RequestIndex({
   );
 }
 
-/** The timeline of the session: its goal, its tasks and milestones from the board history, and its waits. */
+/** The timeline of the session: its goal, its key points and its waits. */
 function SessionTimeline(props: {
   sessionId: string;
-  history: BoardHistory | null;
   turns: readonly { id: string; at: number | null }[];
   waits: readonly { id: string; at: number; turn: string | null; question: boolean }[];
   goal: { text: string; at: string } | null;
@@ -1198,7 +1075,6 @@ function SessionTimeline(props: {
     <RequestIndex
       nodes={timelineNodes({
         sessionId: props.sessionId,
-        history: props.history,
         turns: props.turns,
         waits: props.waits,
         goal: props.goal,
@@ -1215,7 +1091,6 @@ const MemoSessionTimeline = memo(
   SessionTimeline,
   (a, b) =>
     a.sessionId === b.sessionId &&
-    a.history === b.history &&
     a.scroller === b.scroller &&
     a.slim === b.slim &&
     a.title === b.title &&

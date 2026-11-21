@@ -83,8 +83,8 @@ vi.mock('@/data/trace', async (actual) => ({
 }));
 import { TraceScreen } from '@/screens/trace/TraceScreen';
 import { listText } from '@/lib/list-text';
-import { dayText } from '@/lib/time-text';
-import { durationText } from '@/screens/board/panels-model';
+import { dayText, durationText } from '@/lib/time-text';
+
 import { eventClock } from '@/screens/trace/LaneOverlay';
 import { presetWindow } from '@/screens/trace/model';
 import { useShell } from '@/store';

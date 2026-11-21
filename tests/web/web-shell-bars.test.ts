@@ -23,17 +23,13 @@ describe('shell', () => {
     expect(startScreen(null)).toBe('projects');
   });
 
-  it('has the sessions, board, insights, flow, trace, memory, automations, projects, personal and settings screens only', () => {
+  it('has the sessions, flow, trace, memory, projects and settings screens only', () => {
     expect(Object.keys(SCREEN_NAMES)).toEqual([
       'sessions',
-      'board',
-      'insights',
       'flow',
       'trace',
       'memory',
-      'automations',
       'projects',
-      'personal',
       'settings',
     ]);
   });
@@ -41,7 +37,7 @@ describe('shell', () => {
   it('opens one session on the sessions screen, and the list again without one', () => {
     useShell.getState().openSession('session-a');
     expect(useShell.getState()).toMatchObject({ screen: 'sessions', sessionId: 'session-a' });
-    useShell.getState().setScreen('board');
+    useShell.getState().setScreen('memory');
     useShell.getState().openSessions();
     expect(useShell.getState()).toMatchObject({ screen: 'sessions', sessionId: null });
   });
@@ -53,7 +49,7 @@ describe('shell', () => {
     useShell.getState().openProject('beta');
     expect(useShell.getState().runsSession).toBeNull();
     useShell.getState().showRuns('beta-1');
-    useShell.getState().setScreen('board');
+    useShell.getState().setScreen('memory');
     expect(useShell.getState().runsSession).toBe('beta-1');
   });
 

@@ -146,7 +146,7 @@ describe('modal scrims under the toast stack', () => {
           .filter((tag) => /className="[\w-]+-scrim"/.test(tag))
           .map((tag) => `${file}: ${tag}`),
       );
-    expect(backdrops.length).toBeGreaterThan(30);
+    expect(backdrops.length).toBeGreaterThan(20);
     expect(backdrops.filter((tag) => !tag.includes('ref={scrimFlag}'))).toEqual([]);
   });
 });

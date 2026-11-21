@@ -19,7 +19,6 @@ import {
   useNow,
   type NeedsYouItem,
 } from '../data/needs-you';
-import { crossProjectWaiting } from '../data/personal-agent';
 import { visibleProjects } from '../data/projects';
 import { useRuntimeStatus } from '../data/runtime-status';
 import type { DaemonEvent } from '../data/sync';
@@ -27,7 +26,7 @@ import { sessionTitle } from '../data/transcript';
 import { readQuery, useFocusTick, useRefetchTick } from '../data/workbench-sessions';
 import { t } from '../i18n';
 import { keyText, shortcutKeys } from '../lib/shortcuts';
-import { durationText } from '../screens/board/panels-model';
+import { durationText } from '../lib/time-text';
 import { resolveTheme, useShell } from '../store';
 import { readyAfterPaint } from './window-kind';
 import { EmptyState } from '../components/EmptyState';
@@ -209,8 +208,11 @@ export function TrayPopover() {
     return row?.title || (board?.projects.find((p) => p.id === project_id)?.name ?? '');
   };
 
-  const waiting = crossProjectWaiting(needs.items ?? [], [...shownProjects]).filter(
-    (item) => WAITING.includes(item.reason) && !answered.has(item.source.id),
+  const waiting = (needs.items ?? []).filter(
+    (item) =>
+      shownProjects.has(item.project_id) &&
+      WAITING.includes(item.reason) &&
+      !answered.has(item.source.id),
   );
   const reviewable = listed.filter(({ session }) => session.state === 'ready');
   const running = (board?.sessions ?? []).filter(

@@ -75,8 +75,8 @@ import { MonitorPanel } from './MonitorPanel';
 import { discardKind, fail, NO_FEEDBACK, readFailed } from './shared';
 import { useTurnScope } from './TurnMenu';
 import { checkpointed, MoreMenu, OpenMenu, PANELS } from './SessionHeader';
-import { PanelBoundary } from '../board/BoardScreen';
-import { tokenText } from '../board/panels-model';
+import { PanelBoundary } from '../../components/PanelBoundary';
+import { tokenText } from '../../lib/number-text';
 import { ContextBreakdown } from './ContextBreakdown';
 import { CALL_STATE, StateMark } from './items';
 import {

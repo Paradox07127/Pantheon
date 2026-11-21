@@ -11,13 +11,6 @@ import {
   lastTurnLabel,
   recapLine,
 } from '../../apps/web/src/components/SessionStateIcon.js';
-import {
-  STATE,
-  STATUS,
-  StateIcon,
-  StatusIcon,
-  runtimeName,
-} from '../../apps/web/src/screens/board/status.js';
 import { SessionListRow } from '../../apps/web/src/screens/sessions/SessionsScreen.js';
 import {
   SessionPreview,
@@ -358,75 +351,6 @@ describe('merge blocked mark', () => {
   it('renders nothing unless the merge is blocked', () => {
     expect(blocked(null)).toBe('');
     expect(blocked({ state: 'running' })).toBe('');
-  });
-});
-
-describe('board status icon', () => {
-  const icon = (status: BoardTaskStatus) =>
-    renderToStaticMarkup(createElement(StatusIcon, { status }));
-
-  it('paints running with the running colour, not the accent', () => {
-    expect(icon('running')).toContain('var(--run)');
-    expect(icon('running')).not.toContain('var(--ac)');
-  });
-
-  it('draws ready as the purple diamond the session list uses', () => {
-    const html = icon('ready');
-    expect(html).toContain('stroke:var(--ready)');
-    expect(html).not.toContain('var(--ok)');
-    expect(html).toMatch(/<path d="M6 1\.3 10\.7 6 6 10\.7 1\.3 6Z"/);
-  });
-
-  it('draws an idle session as a grey ring named 空闲, apart from the orange waiting dot', () => {
-    expect(STATUS.idle.label).toBe(zh('board.task.status.idle'));
-    expect(STATUS.waiting.label).toBe(zh('board.task.status.waiting'));
-    expect(icon('idle')).toMatch(/<circle[^>]*fill="none"[^>]*stroke:var\(--idle\)/);
-    expect(icon('waiting')).toContain('fill:var(--wait)');
-  });
-});
-
-describe('board runtime name', () => {
-  it('names each runtime of a segment and keeps an unknown one as given', () => {
-    expect(['claude', 'codex', 'agy', 'grok', 'fixture', null].map(runtimeName)).toEqual([
-      'Claude',
-      'Codex',
-      'agy',
-      'grok',
-      'fixture',
-      zh('components.runtime.unknown'),
-    ]);
-  });
-});
-
-describe('board task state icon', () => {
-  const icon = (state: BoardTaskState) => renderToStaticMarkup(createElement(StateIcon, { state }));
-  const states = Object.keys(STATE) as BoardTaskState[];
-
-  it('draws each of the twelve task states with a glyph of its own', () => {
-    expect(states).toHaveLength(12);
-    expect(new Set(states.map((state) => inner(icon(state)))).size).toBe(12);
-  });
-
-  it('gives waiting on upstream and awaiting acceptance icons no session status has', () => {
-    expect(STATE.waiting_upstream.label).toBe(zh('board.task.state.waitingUpstream'));
-    expect(STATE.awaiting_acceptance.label).toBe(zh('board.task.state.awaitingAcceptance'));
-    const statuses = (Object.keys(STATUS) as BoardTaskStatus[]).map((status) =>
-      inner(renderToStaticMarkup(createElement(StatusIcon, { status }))),
-    );
-    for (const state of ['waiting_upstream', 'awaiting_acceptance'] as const)
-      expect(statuses).not.toContain(inner(icon(state)));
-    expect(icon('waiting_upstream')).toMatch(/stroke:var\(--idle\)[^>]*stroke-dasharray/);
-    expect(icon('awaiting_acceptance')).toContain('stroke:var(--wait)');
-  });
-
-  it('draws awaiting merge as the ready diamond', () => {
-    expect(STATE.awaiting_merge.label).toBe(zh('board.task.state.awaitingMerge'));
-    expect(icon('awaiting_merge')).toContain('stroke:var(--ready)');
-  });
-
-  it('draws needs attention in the idle colour', () => {
-    expect(STATE.needs_attention.label).toBe(zh('board.task.state.needsAttention'));
-    expect(icon('needs_attention')).toContain('stroke:var(--idle)');
   });
 });
 

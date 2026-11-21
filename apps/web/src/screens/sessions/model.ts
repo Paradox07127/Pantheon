@@ -17,8 +17,6 @@ export {
   sessionRow,
   sessionType,
   keptByView,
-  workerCounts,
-  workerLanes,
   SESSION_TYPES,
 } from './session-groups';
 export type {
@@ -31,8 +29,6 @@ export type {
   TreeLine,
   SessionRow,
   SessionType,
-  WorkerCounts,
-  WorkerLane,
 } from './session-groups';
 export {
   turnErrorText,
@@ -46,7 +42,6 @@ export {
   defaultModel,
   defaultModelFor,
   modelText,
-  taskPrompt,
   newSessionInput,
   isSessionApproval,
   pendingPermissions,

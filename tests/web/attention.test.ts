@@ -25,8 +25,7 @@ import { NeedsPopover } from '@/components/NeedsPopover';
 import { RequestCard } from '@/components/RequestCard';
 import { nextKey } from '@/data/attention';
 import { runCommand } from '@/data/commands';
-import { NeedsStrip } from '@/screens/board/BoardFrame';
-import type { BoardNeed } from '@/screens/board/frame-model';
+import type { BoardNeed } from '@/data/need-actions';
 import { zh, zhf } from './i18n-setup.js';
 
 const NOW = Date.now();
@@ -271,36 +270,5 @@ describe('the board strip', () => {
     expect(text(card(strip(asked)).value)).toContain(zh('data.attention.decision.permission'));
     expect(text(card(strip(asked)).value)).toContain(blocks(1));
     expect(text(card(strip(allowed)).value)).not.toContain(blocks(0));
-  });
-
-  it('moves to the next row after the primary action of the first', async () => {
-    const acted = vi.fn();
-    const first = card(strip(asked), { onActed: acted });
-    find(
-      first.value,
-      (n) => n.type === 'button' && text(n) === zh('board.needs.actions.approve'),
-    ).props.onClick();
-    await first.flush();
-    expect(acted).toHaveBeenCalled();
-
-    const needs = [strip(asked), strip(allowed)];
-    const h = mount(() =>
-      NeedsStrip({
-        model: { now: NOW, needs, tasks: [], milestones: [] } as unknown as BoardModel,
-        sessions: [],
-        run: async () => null,
-        onOpenSession: () => {},
-      }),
-    );
-    const cards = () => nodes(h.value).filter((n) => n.type === RequestCard);
-    expect(cards().map((c) => !!c.props.selected)).toEqual([true, false]);
-    const next = { focus: vi.fn() };
-    find(h.value, (n) => n.type === 'ul').props.ref.current = {
-      children: [{}, { scrollIntoView: () => {}, querySelector: () => next }],
-    };
-    cards()[0]!.props.onActed();
-    h.render();
-    expect(next.focus).toHaveBeenCalled();
-    expect(cards().map((c) => !!c.props.selected)).toEqual([false, true]);
   });
 });

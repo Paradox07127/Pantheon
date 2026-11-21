@@ -370,12 +370,9 @@ describe('new session drafts', () => {
     await h.flush();
     projectId = 'project-b';
     h.render();
-    const otherTask = { id: 'task-b', title: 'Task of project b', goal: 'Ship b' };
-    useShell.setState({ sessionTask: otherTask });
     created.resolve({ ok: true, value: { id: 'session-new' } });
     await h.flush();
     expect(opened).toEqual([]);
-    expect(useShell.getState().sessionTask).toEqual(otherTask);
 
     projectId = 'project-a';
     h.render();

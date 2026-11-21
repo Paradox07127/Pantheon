@@ -23,79 +23,15 @@ afterEach(() => {
 
 const at = (hour: number, minute: number) => new Date(2026, 10, 12, hour, minute).getTime();
 
-const task = (id: string, extra: object) => ({
-  id,
-  owner_session_id: 'lead-a',
-  session_id: `worker-${id}`,
-  title: `title of ${id}`,
-  lane_id: 'lane',
-  milestone_id: null,
-  state: 'merged',
-  created_at: 0,
-  started_at: 0,
-  merged_at: null,
-  commit: null,
-  additions: null,
-  deletions: null,
-  attempts: 1,
-  handbacks: 0,
-  ...extra,
-});
-
 describe('timeline nodes', () => {
   const turns = [
     { id: 'turn-1', at: at(10, 0) },
     { id: 'turn-2', at: at(10, 20) },
   ];
 
-  it('keeps only completed tasks, reached milestones and waits, in time order', () => {
-    const shown = timelineNodes({
-      sessionId: 'lead-a',
-      history: {
-        tasks: [
-          task('done', { merged_at: at(10, 14), milestone_id: 'm1' }),
-          task('open', { state: 'running', merged_at: null }),
-          task('gone', { state: 'removed', merged_at: at(10, 5) }),
-          task('other', { owner_session_id: 'lead-b', merged_at: at(10, 6) }),
-        ] as any,
-        milestones: [
-          { id: 'm1', title: 'Signatures checked', state: 'reached', reached_at: at(10, 36) },
-          { id: 'm2', title: 'Not ours', state: 'reached', reached_at: at(10, 37) },
-          { id: 'm3', title: 'Later', state: 'open', reached_at: null },
-        ] as any,
-      },
-      turns,
-      waits: [{ id: 'approval-1', at: at(10, 39), turn: 'turn-2', question: false }],
-    });
-    expect(shown.map((n) => [n.kind, n.label, n.name, n.turn])).toEqual([
-      ['task', 'title of done', '任务完成：title of done', 'turn-1'],
-      ['milestone', 'Signatures checked', '里程碑：Signatures checked', 'turn-2'],
-      [
-        'wait',
-        zh('sessions.thread.status.approval'),
-        zh('sessions.thread.status.approval'),
-        'turn-2',
-      ],
-    ]);
-  });
-
-  it("takes a worker session's own task and names a waiting question apart", () => {
-    const shown = timelineNodes({
-      sessionId: 'worker-done',
-      history: { tasks: [task('done', { merged_at: at(10, 14) })] as any, milestones: [] },
-      turns,
-      waits: [{ id: 'approval-2', at: at(10, 1), turn: null, question: true }],
-    });
-    expect(shown.map((n) => [n.kind, n.label, n.turn])).toEqual([
-      ['wait', zh('sessions.thread.status.question'), null],
-      ['task', 'title of done', 'turn-1'],
-    ]);
-  });
-
   it('gives each turn with a key point a node at its time, numbered by its place', () => {
     const shown = timelineNodes({
       sessionId: 'lead-a',
-      history: null,
       turns: [
         { id: 'turn-1', at: at(10, 0) },
         { id: 'turn-2', at: at(10, 20), summary: '修好登录后的跳转' },
@@ -108,7 +44,7 @@ describe('timeline nodes', () => {
   });
 
   it('has no nodes before the history arrives and nothing waits', () => {
-    expect(timelineNodes({ sessionId: 'lead-a', history: null, turns, waits: [] })).toEqual([]);
+    expect(timelineNodes({ sessionId: 'lead-a', turns, waits: [] })).toEqual([]);
   });
 });
 
@@ -139,21 +75,21 @@ function index(shown: TimelineNode[], scroller: unknown = { current: null }, sli
 describe('session timeline', () => {
   it('names each node by its time and name, shows its label, and draws only the three kinds of mark', () => {
     const tree = index([
-      node('task:a', 'task', at(10, 14), 'turn-1'),
-      node('milestone:m', 'milestone', at(10, 36), 'turn-2'),
+      node('goal:a', 'goal', at(10, 14), 'turn-1'),
+      node('turn:m', 'turn', at(10, 36), 'turn-2'),
       node('wait:w', 'wait', at(10, 39), null),
     ]);
     expect(marks(tree).map((n) => n.props['aria-label'])).toEqual([
-      '10:14 name of task:a',
-      '10:36 name of milestone:m',
+      '10:14 name of goal:a',
+      '10:36 name of turn:m',
       '10:39 name of wait:w',
     ]);
     expect(
       all(tree)
         .filter((n) => n.props.className === 'ss-tlg')
         .map((n) => n.props['data-kind']),
-    ).toEqual(['task', 'milestone', 'wait']);
-    expect(text(marks(tree)[0]!)).toBe('label of task:a');
+    ).toEqual(['goal', 'turn', 'wait']);
+    expect(text(marks(tree)[0]!)).toBe('label of goal:a');
   });
 
   it('draws the line between two nodes as long as the distance between them in the thread', () => {
@@ -164,9 +100,9 @@ describe('session timeline', () => {
     };
     const tree = index(
       [
-        node('task:a', 'task', at(10, 0), 'turn-1'),
-        node('task:b', 'task', at(10, 1), 'turn-2'),
-        node('task:c', 'task', at(10, 50), 'turn-3'),
+        node('goal:a', 'goal', at(10, 0), 'turn-1'),
+        node('goal:b', 'goal', at(10, 1), 'turn-2'),
+        node('goal:c', 'goal', at(10, 50), 'turn-3'),
       ],
       {
         current: {
@@ -189,7 +125,7 @@ describe('session timeline', () => {
     const tops: Record<string, number> = { '[data-turn="turn-1"]': 0, '[data-turn="turn-2"]': 100 };
     const onScreen = (scrollTop: number) => {
       const tree = index(
-        [node('goal', 'goal', at(10, 0), 'turn-1'), node('task:a', 'task', at(10, 5), 'turn-2')],
+        [node('goal', 'goal', at(10, 0), 'turn-1'), node('goal:a', 'goal', at(10, 5), 'turn-2')],
         {
           current: {
             scrollTop,
@@ -233,7 +169,6 @@ describe('session timeline', () => {
       const tree = index(
         timelineNodes({
           sessionId: 'lead-a',
-          history: null,
           turns: [{ id: 'turn-1', at: at(10, 0) }],
           waits: [{ id: 'approval-1', at: at(10, 5), turn: null, question: false }],
           goal: { text: text_, at: new Date(at(10, 0)).toISOString() },
@@ -273,8 +208,8 @@ describe('session timeline', () => {
       removeEventListener() {},
     };
     const shown = [
-      node('task:a', 'task', at(10, 0), 'turn-1'),
-      node('task:b', 'task', at(10, 1), 'turn-2'),
+      node('goal:a', 'goal', at(10, 0), 'turn-1'),
+      node('goal:b', 'goal', at(10, 1), 'turn-2'),
     ];
     const scroller = { current: thread as any };
     const h = mount(() => RequestIndex({ nodes: shown, scroller }));
@@ -291,8 +226,8 @@ describe('session timeline', () => {
 
   it('keeps only the marks when slim', () => {
     const shown = [
-      node('task:a', 'task', at(10, 0), 'turn-1'),
-      node('task:b', 'task', at(10, 5), 'turn-2'),
+      node('goal:a', 'goal', at(10, 0), 'turn-1'),
+      node('goal:b', 'goal', at(10, 5), 'turn-2'),
     ];
     const [slim] = all(index(shown, { current: null }, true));
     expect(slim!.props['data-slim']).toBe(true);
@@ -308,7 +243,7 @@ describe('session timeline', () => {
     vi.stubGlobal('window', { matchMedia: () => ({ matches: false }) });
     const shown = marks(
       index(
-        [node('task:a', 'task', at(10, 0), 'turn-2'), node('wait:w', 'wait', at(10, 9), null)],
+        [node('goal:a', 'goal', at(10, 0), 'turn-2'), node('wait:w', 'wait', at(10, 9), null)],
         {
           current: {
             querySelector,
@@ -335,7 +270,6 @@ describe('session timeline', () => {
     const tree = index(
       timelineNodes({
         sessionId: 'lead-a',
-        history: null,
         turns: [{ id: 'turn-2', at: at(10, 20), summary: '修好登录后的跳转' }],
         waits: [{ id: 'approval-1', at: at(10, 25), turn: null, question: false }],
       }),
@@ -359,7 +293,7 @@ describe('session timeline', () => {
     vi.stubGlobal('window', { matchMedia: () => ({ matches: false }) });
     const [mark] = marks(
       index(
-        [node('task:a', 'task', at(10, 0), 'turn-1'), node('wait:w', 'wait', at(10, 9), null)],
+        [node('goal:a', 'goal', at(10, 0), 'turn-1'), node('wait:w', 'wait', at(10, 9), null)],
         {
           current: {
             querySelector: () => target,
@@ -381,7 +315,7 @@ describe('session timeline', () => {
     const lone = all(index([node('goal', 'goal', at(10, 0), 'turn-1')], { current: null }, true));
     const [filled] = all(
       index(
-        [node('goal', 'goal', at(10, 0), 'turn-1'), node('task:a', 'task', at(10, 5), 'turn-1')],
+        [node('goal', 'goal', at(10, 0), 'turn-1'), node('goal:a', 'goal', at(10, 5), 'turn-1')],
         { current: null },
         true,
       ),

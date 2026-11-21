@@ -10,8 +10,6 @@ vi.mock('@/data/board', () => ({
     getState: () => mock.board,
   }),
 }));
-import { useAgents } from '@/data/agents';
-import { useAgentWakes, useRoutines } from '@/data/automations';
 import { useFactsRead } from '@/data/facts-read';
 import { useProjectQuery } from '@/data/project-read';
 import { useProjectHead } from '@/data/runtime-models';
@@ -289,9 +287,6 @@ it.each([
     gitAnswer,
     (project: string) => useProjectHead(project),
   ],
-  ['agent.list', 'agent_profile.updated', [], (project: string) => useAgents(project)],
-  ['agent.routines', 'agent.routine_skipped', [], (project: string) => useRoutines(project)],
-  ['agent.routines', 'agent.wake_held', [], (project: string) => useRoutines(project)],
   [
     'project.facts.read',
     'project.facts_collected',
@@ -410,14 +405,4 @@ it('sends one read for two queries of the same input when the board moves', asyn
   await a.flush();
   await b.flush();
   expect(reads.map((r) => r.method)).toEqual(['session.reviews', 'session.reviews']);
-});
-
-it("asks for one routine's wakes when given its routine", async () => {
-  const { sync } = await connected();
-  const h = mount(() => useAgentWakes('project-wakes', 'agent-a', 'routine-a'));
-  await h.flush();
-  expect((window as any).pantheon.query.mock.calls).toEqual([
-    ['agent.wakes', { agent_id: 'agent-a', limit: '50', routine_id: 'routine-a' }],
-  ]);
-  sync.stop();
 });

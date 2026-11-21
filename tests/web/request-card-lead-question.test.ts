@@ -11,8 +11,8 @@ vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
 import { QuestionCard } from '../../apps/web/src/components/QuestionCard.js';
 import { RequestCard } from '../../apps/web/src/components/RequestCard.js';
 import { useDrafts } from '../../apps/web/src/data/drafts.js';
-import type { NeedItem } from '../../apps/web/src/screens/board/frame-model.js';
-import type { RunBoardCommand } from '../../apps/web/src/screens/board/panels-model.js';
+import type { NeedItem } from '../../apps/web/src/data/need-actions.js';
+import type { RunBoardCommand } from '../../apps/web/src/lib/snapshot-types.js';
 
 const NOW = Date.UTC(2026, 10, 1, 12);
 

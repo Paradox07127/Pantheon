@@ -20,6 +20,7 @@ import {
 } from '@pantheon/domain';
 import { inputSchemas } from '@pantheon/protocol';
 import {
+  ownEntry,
   actsAsUser,
   projectAccess,
   sessionWorkspaceKind,
@@ -31,7 +32,7 @@ import {
 import { personalAnswer, personalCalled, personalKeyId } from './personal-scope.js';
 import { sessionDefaults } from './user-config.js';
 import { runtime } from './admission.js';
-import { ownEntry, planUnfinished, planViews, retiredBinding } from './board-plan.js';
+import { planUnfinished, planViews, retiredBinding } from './board-plan.js';
 import { residentPlan } from './agent-always-on.js';
 import { deviceHasLabel, listDevices } from './devices.js';
 import { history } from './project-facts.js';

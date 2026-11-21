@@ -12,9 +12,7 @@ const CONVERTED: string[] = [];
 // A language's own name, the same in every catalog.
 const ENDONYMS = ['简体中文'];
 // Han characters in code that judge data rather than show text, as file:line.
-const DATA_HAN = [
-  'screens/board/progress-model.ts:[...text].reduce((w, c) => w + (/[　-鿿]/.test(c) ? 12 : 7), 0);',
-];
+const DATA_HAN: string[] = [];
 
 const SOURCES = (readdirSync(SRC, { recursive: true }) as string[])
   .filter((file) => /\.tsx?$/.test(file) && !file.endsWith('.d.ts'))

@@ -54,10 +54,12 @@ import { useShortcut } from '../../lib/shortcuts';
 import { useDelayed } from '../../lib/use-delayed';
 import { SCREEN_NAMES } from '../../screens';
 import { BREAK_SHARE } from '../../lib/time-axis';
-import { Failure, Skeleton } from '../board/BoardScreen';
-import { Empty, useSize } from '../board/Charts';
-import { dayText } from '../../lib/time-text';
-import { durationText, runtimeName, tokenText } from '../board/panels-model';
+import { Failure, Skeleton } from '../../components/PanelBoundary';
+import { Empty, useSize } from '../../components/ChartParts';
+import { dayText, durationText } from '../../lib/time-text';
+
+import { runtimeName } from '../../components/RuntimeGlyph';
+import { tokenText } from '../../lib/number-text';
 import { ActivityList, eventText, eventTone, KIND_TEXT } from './ActivityList';
 import {
   dayLabel,
@@ -114,7 +116,6 @@ import {
   type ReplayTick,
 } from './Replay';
 import { StepReplay } from './StepReplay';
-import '../board/board.css';
 import { AnalyzeMenu } from './AnalyzeMenu';
 import { ApprovedForYou } from './ApprovedForYou';
 import { RuntimePanel } from './RuntimeDiagnostics';

@@ -5,8 +5,8 @@ import {
   type LaneStop,
   type Principal,
 } from '@pantheon/domain';
-import type { ControlContext } from './context.js';
-import { ownEntry, taskSessions, taskState } from './board-plan.js';
+import { ownEntry, type ControlContext } from './context.js';
+import { taskSessions, taskState } from './board-plan.js';
 import { appendNote } from './lead-inbox.js';
 import { personalKeyId } from './personal-scope.js';
 import { wakeLead } from './task-tracking.js';

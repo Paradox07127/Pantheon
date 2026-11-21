@@ -268,5 +268,7 @@
   "sessions.panel.monitor.finishedGroup": "已结束",
   "sessions.panel.monitor.openRuns": "在运行页打开",
   "sessions.panel.monitor.clearFinished": "清除已结束",
-  "repo.changes.storyBy": "{runtime} 解读于{unit, select, now {刚刚} minute {{count, plural, other { # 分钟前}}} hour {{count, plural, other { # 小时前}}} other {{count, plural, other { # 天前}}}}"
+  "repo.changes.storyBy": "{runtime} 解读于{unit, select, now {刚刚} minute {{count, plural, other { # 分钟前}}} hour {{count, plural, other { # 小时前}}} other {{count, plural, other { # 天前}}}}",
+  "insights.quota.resets": "{window}窗口，{hours, plural, =0 {} other {# 小时 }}{minutes} 分后重置",
+  "insights.quota.window": "{window}窗口"
 }

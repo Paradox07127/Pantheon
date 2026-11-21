@@ -4,7 +4,7 @@ import type { ApprovalQuestion, BaselinePreview } from '@pantheon/domain';
 import { useDrafts, type Answers } from '../data/drafts';
 import { t } from '../i18n';
 import { listText } from '../lib/list-text';
-import { archLayout } from '../screens/board/intro-model';
+import { archLayout } from '../screens/memory/intro-model';
 import { Clip } from './Clip';
 import { StateGlyph } from './SessionStateIcon';
 import { Tip } from './Tip';

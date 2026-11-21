@@ -7,10 +7,10 @@ import {
 } from 'react';
 import type { SessionActivity } from '@pantheon/protocol';
 import { elapsedText, type TurnView } from '../../data/transcript';
-import { useFloatTip, type TipContent } from '../board/Charts';
+import { useFloatTip, type TipContent } from '../../components/ChartParts';
 import { t } from '../../i18n';
 import { dayText } from '../../lib/time-text';
-import { tokenText } from '../board/panels-model';
+import { tokenText } from '../../lib/number-text';
 import {
   BREAK_SHARE,
   callResult,

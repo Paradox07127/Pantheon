@@ -24,7 +24,7 @@ import { t } from '../../i18n';
 import { dayText } from '../../lib/time-text';
 import { SCREEN_NAMES } from '../../screens';
 import { useShell } from '../../store';
-import { Failure, Skeleton } from '../board/BoardScreen';
+import { Failure, Skeleton } from '../../components/PanelBoundary';
 import { decisionDeliveryRows } from '../settings/NotificationsPage';
 import './approved-for-you.css';
 

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ReactElement, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import type { ApprovalQuestion } from '@pantheon/domain';
 import { find, mount as host, named, nodes, text, unmountAll } from './web-hook-host.js';
 vi.mock('react', async (actual) =>
@@ -8,18 +8,11 @@ vi.mock('react', async (actual) =>
 vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
   (await import('./web-live-stores.js')).liveStores(actual as never),
 );
-import { Clip } from '../../apps/web/src/components/Clip.js';
 import { QuestionCard } from '../../apps/web/src/components/QuestionCard.js';
 import { RequestCard } from '../../apps/web/src/components/RequestCard.js';
 import { useDrafts } from '../../apps/web/src/data/drafts.js';
-import type { NeedItem } from '../../apps/web/src/screens/board/frame-model.js';
-import type {
-  BoardMilestone,
-  BoardTask,
-  RunBoardCommand,
-  SnapshotMilestone,
-  SnapshotSession,
-} from '../../apps/web/src/screens/board/panels-model.js';
+import type { NeedItem } from '../../apps/web/src/data/need-actions.js';
+import type { RunBoardCommand, SnapshotSession } from '../../apps/web/src/lib/snapshot-types.js';
 import { zh } from './i18n-setup.js';
 
 const NOW = Date.UTC(2026, 10, 1, 12);
@@ -53,19 +46,6 @@ const question: NeedItem = {
       multiSelect: false,
     },
   ],
-};
-
-const milestoneItem: NeedItem = {
-  source: { table: 'milestones', id: 'milestone-1', revision: 3 },
-  kind: 'milestone.ready_for_acceptance',
-  project_id: 'project-a',
-  session_id: 'lead-1',
-  status: 'ready_for_acceptance',
-  created_at: NOW - 30_000,
-  reason: 'milestone_ready_for_acceptance',
-  decision: 'milestone_accept',
-  blocks: 0,
-  actions: [{ command: 'milestone.accept', allowed: true }],
 };
 
 const blockedItem: NeedItem = {
@@ -106,31 +86,6 @@ const lead = {
   turn_count: 3,
   title: 'Plan exports',
 } as unknown as SnapshotSession;
-
-const milestoneView = {
-  id: 'milestone-1',
-  title: 'Search and redirects',
-  session_ids: ['worker-1'],
-  merged: 1,
-  status: 'ready_for_acceptance',
-  criteria: [{ text: 'Old links redirect', accepted: false }],
-  owner_session_id: 'lead-1',
-  tasks: { done: 2, total: 2 },
-} as BoardMilestone;
-
-const stored = {
-  id: 'milestone-1',
-  revision: 3,
-  project_id: 'project-a',
-  title: 'Search and redirects',
-  required_sessions: ['worker-1'],
-  criteria: ['Old links redirect'],
-} as unknown as SnapshotMilestone;
-
-const cells = [
-  { id: 'lead-1:a', title: 'Redirect map', status: 'done', milestone_id: 'milestone-1' },
-  { id: 'lead-1:b', title: 'Search index', status: 'done', milestone_id: 'milestone-1' },
-] as unknown as BoardTask[];
 
 type Props = Parameters<typeof RequestCard>[0];
 
@@ -375,51 +330,6 @@ describe('request card', () => {
       },
       null,
     );
-  });
-
-  it('accepts a ready milestone through the acceptance dialog, with its criteria and cells', async () => {
-    const evidence = [{ ref: 'session:worker-1', label: 'Serve exports' }];
-    const { h, run } = mount({
-      item: milestoneItem,
-      who: 'Search and redirects',
-      milestone: { milestone: milestoneView, stored, cells, evidence },
-    });
-    expect(buttons(h.value)).toContain(zh('board.needs.actions.accept'));
-    expect(buttons(h.value)).not.toContain(zh('board.needs.actions.open'));
-    expect(text(h.value)).toContain('Old links redirect');
-    expect(nodes(h.value).filter((n) => n.props.className === 'bms-cell')).toHaveLength(2);
-    button(h.value, zh('board.needs.actions.accept')).props.onClick();
-    h.render();
-    const dialog = named(h.value, 'AcceptDialog');
-    expect(dialog.props.stored).toBe(stored);
-    expect(dialog.props.evidence).toBe(evidence);
-    const accept = host(() => (dialog.type as (props: unknown) => ReactElement<any>)(dialog.props));
-    accept.value.props.onSubmit();
-    await accept.flush();
-    expect(run).toHaveBeenCalledWith(
-      'milestone.accept',
-      { milestone_id: 'milestone-1', evidence_refs: ['session:worker-1'], criteria_checked: [0] },
-      3,
-    );
-  });
-
-  it('keeps each criterion of a milestone whole behind a three-line clip', () => {
-    const { h } = mount({
-      item: milestoneItem,
-      who: 'Search and redirects',
-      milestone: { milestone: milestoneView, stored, cells, evidence: [] },
-    });
-    const items = nodes(
-      find(h.value, (n) => n.props['aria-label'] === zh('components.requestCard.criteria')),
-    ).filter((n) => n.type === 'li');
-    expect(items.map((li) => find(li, (n) => n.type === Clip).props)).toEqual([
-      { text: 'Old links redirect', lines: 3 },
-    ]);
-  });
-
-  it('turns the acceptance off until the board names the milestone', () => {
-    const { h } = mount({ item: milestoneItem, who: 'Search and redirects' });
-    expect(button(h.value, zh('board.needs.actions.accept')).props['aria-disabled']).toBe(true);
   });
 
   it('retries a blocked merge or hands it to the lead, with the conflicting files and next step', async () => {

@@ -48,3 +48,28 @@
 .sb-pj-nm {
   font-weight: 600;
 }
+
+/* The title of the session list, with the new session button and the view menu at its end. */
+.ss-zh {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: none;
+  height: var(--row);
+  margin-top: var(--sp-2);
+  padding: 0 7px;
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  color: var(--mu);
+}
+.ss-zh > span {
+  flex: 1;
+}
+.ss-zh .ib {
+  width: 22px;
+  height: 22px;
+}
+.ss-zh .ib[aria-current] {
+  background: var(--sel);
+  color: var(--tx);
+}

@@ -1,7 +1,6 @@
 import { requireThat, type BoardPlan, type ExternalEvent, type LeadNote } from '@pantheon/domain';
 import { inputSchemas } from '@pantheon/protocol';
-import { ownEntry } from './board-plan.js';
-import { projectAccess, type ControlContext, type Handlers } from './context.js';
+import { ownEntry, projectAccess, type ControlContext, type Handlers } from './context.js';
 import { appendNote } from './lead-inbox.js';
 import { wakeLead } from './task-tracking.js';
 

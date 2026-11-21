@@ -5,7 +5,7 @@ import { expect, it, vi } from 'vitest';
 import { DomainError, type Session, type SessionTurn, type Workspace } from '@pantheon/domain';
 import type { ControlContext } from '../../packages/control/dist/context.js';
 import { releaseIdleConversation } from '../../packages/control/dist/session.js';
-import { queueTurn } from '../../packages/control/dist/task-tracking.js';
+import { queueTurn } from '../../packages/control/dist/session-wake.js';
 import { eventually, settle } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 

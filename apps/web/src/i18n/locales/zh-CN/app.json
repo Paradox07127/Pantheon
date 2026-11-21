@@ -1,11 +1,9 @@
 {
   "app.screenName.sessions": "会话",
-  "app.screenName.board": "项目看板",
   "app.screenName.flow": "流程图",
   "app.screenName.trace": "轨迹",
   "app.screenName.memory": "记忆",
   "app.screenName.projects": "全部项目",
-  "app.screenName.personal": "个人级智能体",
   "app.screenName.settings": "设置",
   "app.palette.newSession": "新会话",
   "app.palette.expandSidebar": "展开侧栏",
@@ -28,6 +26,5 @@
   "app.palette.colorblindColours": "使用色盲友好配色",
   "app.palette.standardColours": "使用标准配色",
   "app.palette.reduceMotion": "减少动效",
-  "app.palette.standardMotion": "标准动效",
-  "app.screenName.automations": "自动化"
+  "app.palette.standardMotion": "标准动效"
 }

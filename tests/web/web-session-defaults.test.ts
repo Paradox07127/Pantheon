@@ -65,40 +65,4 @@ describe('new session defaults', () => {
     const html = render();
     expect(modelButton(html)).toBe(`claude，${zh('sessions.composer.defaultModel')}，逐条审批`);
   });
-
-  it('prefills the composer from a board task', () => {
-    const task = { id: 'lead-1:api', title: 'Add the API', goal: 'Serve the board over HTTP' };
-    const html = renderToStaticMarkup(
-      createElement(NewSession, {
-        projectId: 'project',
-        defaults: undefined,
-        focus: 0,
-        onCreated: () => {},
-        task,
-        recent: [],
-        onOpen: () => {},
-        onClose: () => {},
-      }),
-    );
-    expect(html).toMatch(
-      new RegExp(
-        `aria-label="${zh('sessions.composer.boardTask')}"[^>]*>.*<span[^>]*>Add the API</span>`,
-      ),
-    );
-    expect(html).toMatch(/<textarea[^>]*>\n?Add the API\n\nServe the board over HTTP<\/textarea>/);
-    const base = {
-      projectId: 'project',
-      runtime: 'claude',
-      permissionMode: 'ask' as const,
-      input: 'go',
-    };
-    expect(newSessionInput({ ...base, taskId: task.id })).toEqual({
-      project_id: 'project',
-      runtime: 'claude',
-      permission_mode: 'ask',
-      input: 'go',
-      task_id: 'lead-1:api',
-    });
-    expect(newSessionInput(base)).not.toHaveProperty('task_id');
-  });
 });
