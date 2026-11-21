@@ -30,8 +30,6 @@ const KINDS: Record<Kind, () => string> = {
   turn_queue: () => t({ id: 'trace.diagnose.kind.turnQueue', defaultMessage: 'Long turn queue' }),
   turn_prepare: () =>
     t({ id: 'trace.diagnose.kind.turnPrepare', defaultMessage: 'Slow turn start' }),
-  dispatch_queue: () =>
-    t({ id: 'trace.diagnose.kind.dispatch', defaultMessage: 'Long dispatch queue' }),
   approval: () => t({ id: 'trace.diagnose.kind.approval', defaultMessage: 'Long approval wait' }),
   permission_delivery: () =>
     t({ id: 'trace.diagnose.kind.delivery', defaultMessage: 'Slow approval delivery' }),
@@ -51,7 +49,6 @@ export const runtimeFindingTitle = (finding: RuntimeFinding) => KINDS[finding.ki
 export const FINDING_ICONS: Record<Kind, LucideIcon> = {
   turn_queue: ListOrdered,
   turn_prepare: Hourglass,
-  dispatch_queue: ListOrdered,
   approval: KeyRound,
   permission_delivery: KeyRound,
   gate: ShieldCheck,
@@ -63,28 +60,6 @@ export const FINDING_ICONS: Record<Kind, LucideIcon> = {
   context_compaction: Gauge,
 };
 
-const WAIT: Record<string, () => string> = {
-  upstream: () => t({ id: 'trace.runtime.wait.upstream', defaultMessage: 'Upstream dependency' }),
-  scope: () => t({ id: 'trace.runtime.wait.scope', defaultMessage: 'Overlapping scope' }),
-  plan_review: () => t({ id: 'trace.runtime.wait.review', defaultMessage: 'Plan review' }),
-  step: () => t({ id: 'trace.runtime.wait.step', defaultMessage: 'Workflow step' }),
-  retry: () => t({ id: 'trace.runtime.wait.retry', defaultMessage: 'Retry backoff' }),
-  budget: () => t({ id: 'trace.runtime.wait.budget', defaultMessage: 'Project budget' }),
-  capacity: () =>
-    t({ id: 'trace.runtime.wait.capacity', defaultMessage: 'Project concurrency limit' }),
-  runtime_limited: () => t({ id: 'trace.runtime.wait.quota', defaultMessage: 'Runtime quota' }),
-  runtime_capacity: () =>
-    t({ id: 'trace.runtime.wait.runtimeCapacity', defaultMessage: 'Runtime concurrency limit' }),
-  device_offline: () =>
-    t({ id: 'trace.runtime.wait.deviceOffline', defaultMessage: 'Device offline' }),
-  device_capacity: () =>
-    t({ id: 'trace.runtime.wait.deviceCapacity', defaultMessage: 'Device concurrency limit' }),
-  device_resource: () =>
-    t({ id: 'trace.runtime.wait.deviceResource', defaultMessage: 'Device resource limit' }),
-  paused: () => t({ id: 'trace.runtime.wait.paused', defaultMessage: 'Dispatch paused' }),
-  answer: () => t({ id: 'trace.runtime.wait.answer', defaultMessage: 'Awaiting answer' }),
-};
-
 const CATEGORY: Record<NonNullable<RuntimeFinding['tool_category']>, () => string> = {
   shell: () => t({ id: 'trace.diagnose.category.shell', defaultMessage: 'Command' }),
   poll: () => t({ id: 'trace.diagnose.category.poll', defaultMessage: 'Polling' }),
@@ -94,11 +69,8 @@ const CATEGORY: Record<NonNullable<RuntimeFinding['tool_category']>, () => strin
   other: () => t({ id: 'trace.diagnose.category.other', defaultMessage: 'Other' }),
 };
 
-/** Why the finding waited, else why its turn failed, else the category of its tool. */
+/** Why its turn failed, else the category of its tool. */
 export function findingReason(finding: RuntimeFinding): string | null {
-  const longest = Object.entries(finding.wait_ms_by_reason ?? {}).sort(([, a], [, b]) => b - a)[0];
-  const reason = finding.wait_reason ?? longest?.[0];
-  if (reason && Object.hasOwn(WAIT, reason)) return WAIT[reason]!();
   if (finding.error) return finding.error;
   return finding.tool_category ? CATEGORY[finding.tool_category]() : null;
 }
@@ -126,7 +98,7 @@ function summary(finding: RuntimeFinding, slowToolMs: number | undefined): strin
           {
             id: 'trace.diagnose.detail.took',
             defaultMessage:
-              '{kind, select, approval {Waited {duration} for your approval.} permission_delivery {The decision took {duration} to reach the runtime.} dispatch_queue {The task waited {duration} to be dispatched.} turn_queue {The turn waited {duration} in the queue.} turn_prepare {The turn took {duration} to start.} gate {Gates ran for {duration}.} slow_tool {A tool call ran for {duration}.} tool_failure {A tool call failed after {duration}.} turn_failure {The turn failed after {duration}.} background_task {A background task ran for {duration}.} workflow_step {A workflow step took {duration}.} context_compaction {Compacting the context took {duration}.} other {It took {duration}.}}',
+              '{kind, select, approval {Waited {duration} for your approval.} permission_delivery {The decision took {duration} to reach the runtime.} turn_queue {The turn waited {duration} in the queue.} turn_prepare {The turn took {duration} to start.} gate {Gates ran for {duration}.} slow_tool {A tool call ran for {duration}.} tool_failure {A tool call failed after {duration}.} turn_failure {The turn failed after {duration}.} background_task {A background task ran for {duration}.} workflow_step {A workflow step took {duration}.} context_compaction {Compacting the context took {duration}.} other {It took {duration}.}}',
           },
           { kind: finding.kind, duration: durationText(finding.duration_ms) },
         );

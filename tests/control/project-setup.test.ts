@@ -96,9 +96,8 @@ it('has the setup guide settle requirements a few questions at a time and build 
   expect(projectSetupSkill).toMatch(/Do not create or change any file before the user confirms/);
   for (const part of ['README', 'package manager', 'entry point', 'test framework'])
     expect(projectSetupSkill).toContain(part);
-  expect(projectSetupSkill).toMatch(/run the baseline/);
   expect(projectSetupSkill).toMatch(/Do not draw in the conversation/);
-  expect(projectSetupSkill).toMatch(/board/);
+  expect(projectSetupSkill).not.toMatch(/\bboard\b|\blead\b|baseline/);
 });
 
 it('reads a project folder with fewer than three files as empty, as the baseline does', async () => {

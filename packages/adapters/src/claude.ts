@@ -378,8 +378,6 @@ export function buildClaudeOptions(
   readOnly: () => boolean = () => false,
   /** Read on every tool call: whether a user turn is running on this query. */
   turnActive: () => boolean = () => true,
-  /** Shared by every SDK query opened for this adapter session. */
-  subagents: { launches: number } = { launches: 0 },
   /** Whether the sandbox can name a protected path that lies outside the writable roots. */
   mounted: (target: string) => boolean = (target) =>
     process.platform !== 'linux' || existsSync(target),
@@ -1252,7 +1250,6 @@ async function stoppedProcesses(
 
 interface ClaudeSession {
   spec: SessionSpec;
-  subagents: { launches: number };
   emit: AgentEventSink;
   sequence: number;
   started: boolean;
@@ -2287,7 +2284,6 @@ export class ClaudeAdapter implements HarnessAdapter {
           () => session.spec.allowed_rules,
           () => session.turn?.readOnly === true,
           () => !!session.turn && !abort.signal.aborted,
-          session.subagents,
           mounted,
         ),
       });
@@ -2391,7 +2387,6 @@ export class ClaudeAdapter implements HarnessAdapter {
     };
     const session: ClaudeSession = {
       spec,
-      subagents: { launches: 0 },
       emit,
       sequence: 0,
       started: false,

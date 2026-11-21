@@ -375,7 +375,7 @@ describe('project trace from the event log', () => {
     expect(await f.control.toolCalls(user, f.project.id, 'absent')).toEqual([]);
     await expect(
       f.control.toolCalls(
-        { id: 'foreign', role: 'lead', session_id: 'foreign', project_id: 'other' },
+        { id: 'foreign', role: 'writer', session_id: 'foreign', project_id: 'other' },
         f.project.id,
       ),
     ).rejects.toMatchObject({ code: 'permission_denied' });

@@ -101,8 +101,8 @@ it('refuses non-user callers and runtimes without manual compaction', async () =
   await settle(f, session);
   expect(() =>
     f.call('session.compact', { session_id: session.id }, current(f, session.id).revision, {
-      id: 'lead',
-      role: 'lead',
+      id: 'writer',
+      role: 'writer',
     }),
   ).toThrow(expect.objectContaining({ code: 'permission_denied' }));
   f.adapter.report.capabilities.manual_compaction = {

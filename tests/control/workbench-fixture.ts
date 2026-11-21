@@ -152,14 +152,10 @@ export async function workbenchFixture(
     name: 'Workbench project',
     roots: [source],
   });
-  const create = (
-    input = 'Rename the answer file and explain why',
-    principal: Principal = user,
-    purpose?: 'lead',
-  ) =>
+  const create = (input = 'Rename the answer file and explain why', principal: Principal = user) =>
     call<Promise<Session>>(
       'session.create',
-      { project_id: project.id, runtime: adapter.name, input, ...(purpose ? { purpose } : {}) },
+      { project_id: project.id, runtime: adapter.name, input },
       null,
       principal,
     );

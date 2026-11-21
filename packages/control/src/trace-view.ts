@@ -3,7 +3,6 @@ import {
   requireThat,
   canonical,
   type AgentEvent,
-  type LeadNote,
   type Event,
   type Principal,
   type Project,
@@ -31,7 +30,7 @@ import { runGit } from './git.js';
 import { stepFiles } from './step-diff.js';
 import type { TraceProject } from './trace-index.js';
 import { runtimeDiagnostics } from './runtime-findings.js';
-import { reflectionLeads, reflectionRuntimes, runtimeReviewHistory } from './runtime-review.js';
+import { reflectionRuntimes, runtimeReviewHistory } from './runtime-review.js';
 import { baselineStart, TURN_ENDS } from './workbench-session.js';
 import { allocationOf, laneEvents, TIME_EVENTS } from './trace-time.js';
 
@@ -702,7 +701,6 @@ export async function projectTrace(
     }),
     ...(p.role === 'user'
       ? {
-          reflection_leads: reflectionLeads(ctx, projectId),
           reflection_runtimes: reflectionRuntimes(ctx, projectId),
           runtime_reviews: runtimeReviewHistory(ctx, projectId),
         }
@@ -820,75 +818,17 @@ export async function projectCollab(
   await scan(ctx);
   const events = ctx.store.kindEvents(projectId, [
     'session.opened',
-    'turn.queued',
-    'session.turn.delivery',
-    'lead.note_added',
-    'task.reported',
-    'task.handed_back',
     'session.model_changed',
     'session.runtime_changed',
   ]);
-  const handbacks = new Set(
-    events.filter((event) => event.kind === 'task.handed_back').map((event) => event.causation_id),
-  );
-  const sessions = new Map(
-    ctx.store
-      .list<Session>('sessions')
-      .filter((session) => session.project_id === projectId)
-      .map((session) => [session.id, session]),
-  );
-  const turns = new Map<string, SessionTurn>();
-  const deliveries = new Map<string, SessionTurn['delivery']>();
-  const notes = new Map<string, { note: LeadNote; cause: string }[]>();
   const models = new Map<string, string | null>();
-  const result: ProjectCollab = { messages: [], in_flight: [], subagents: [], model_changes: [] };
-  const counts = new Map<string, ProjectCollab['messages'][number]>();
-  const sent: {
-    sender: string;
-    receiver: string;
-    at: number;
-    direction: ProjectCollab['messages'][number]['direction'];
-    turn?: string;
-    note?: string;
-  }[] = [];
+  const result: ProjectCollab = { subagents: [], model_changes: [] };
   for (const event of events) {
     if (event.kind === 'session.opened') {
       const session = event.payload as Session;
       // Purpose-only opening events do not identify a model selector.
-      if (session.runtime !== undefined) {
-        if (!sessions.has(event.aggregate_id)) sessions.set(event.aggregate_id, session);
+      if (session.runtime !== undefined)
         models.set(event.aggregate_id, session.requested_model ?? null);
-      }
-    } else if (event.kind === 'turn.queued') {
-      const turn = event.payload as SessionTurn;
-      turns.set(turn.id, turn);
-      deliveries.set(turn.id, turn.delivery);
-    } else if (event.kind === 'session.turn.delivery') {
-      deliveries.set(
-        event.aggregate_id,
-        (event.payload as { delivery: SessionTurn['delivery'] }).delivery,
-      );
-    } else if (event.kind === 'lead.note_added') {
-      const note = event.payload as LeadNote;
-      const key = JSON.stringify([event.aggregate_id, note.session_id, note.at, note.kind]);
-      notes.set(key, [...(notes.get(key) ?? []), { note, cause: event.causation_id }]);
-    } else if (event.kind === 'task.reported') {
-      const report = event.payload as LeadNote;
-      if (
-        !report.session_id ||
-        report.session_id === event.aggregate_id ||
-        handbacks.has(event.causation_id)
-      )
-        continue;
-      const key = JSON.stringify([event.aggregate_id, report.session_id, report.at, report.kind]);
-      const note = notes.get(key)?.find((entry) => entry.cause === event.causation_id)?.note;
-      sent.push({
-        sender: report.session_id,
-        receiver: event.aggregate_id,
-        at: event.created_at,
-        direction: 'worker_to_lead',
-        note: note?.id,
-      });
     } else if (event.kind === 'session.runtime_changed') {
       models.delete(event.aggregate_id);
     } else if (event.kind === 'session.model_changed') {
@@ -904,46 +844,6 @@ export async function projectCollab(
       models.set(event.aggregate_id, change.model);
     }
   }
-  for (const turn of ctx.store.list<SessionTurn>('session_turns'))
-    if (turn.project_id === projectId) {
-      turns.set(turn.id, turn);
-      deliveries.set(turn.id, turn.delivery);
-    }
-  const pendingNotes = new Set<string>();
-  for (const turn of turns.values())
-    if (deliveries.get(turn.id) === 'pending' || deliveries.get(turn.id) === 'queued')
-      for (const noteId of turn.lead_note_ids ?? []) pendingNotes.add(noteId);
-  const deliveredNotes = new Set(
-    [...turns.values()].flatMap((turn) =>
-      deliveries.get(turn.id) === 'delivered' ? (turn.lead_note_ids ?? []) : [],
-    ),
-  );
-  for (const message of sent) {
-    if (message.at >= since && message.at <= until) {
-      const key = JSON.stringify([message.sender, message.receiver]);
-      const count = counts.get(key) ?? {
-        sender: message.sender,
-        receiver: message.receiver,
-        direction: message.direction,
-        count: 0,
-      };
-      count.count += 1;
-      counts.set(key, count);
-    }
-    const delivery = message.turn === undefined ? undefined : deliveries.get(message.turn);
-    if (
-      (message.turn !== undefined && (delivery === 'pending' || delivery === 'queued')) ||
-      (message.note !== undefined &&
-        pendingNotes.has(message.note) &&
-        !deliveredNotes.has(message.note))
-    )
-      result.in_flight.push({
-        sender: message.sender,
-        receiver: message.receiver,
-        sent_at: message.at,
-      });
-  }
-  result.messages = [...counts.values()];
   for (const { lane, spans } of projectLanes(ctx, projectId)) {
     if (!lane.session_id) continue;
     for (const span of spans) {

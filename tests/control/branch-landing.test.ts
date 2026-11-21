@@ -248,7 +248,7 @@ it('blocks a queued landing whose root lost its gate commands before it ran', as
   expect(git(f.source, 'rev-parse', 'main')).toBe(base);
 });
 
-const lead: Principal = { id: 'some-lead', role: 'lead' };
+const writer: Principal = { id: 'some-writer', role: 'writer' };
 
 it.each<[string, (f: Fixture) => Promise<unknown>, string]>([
   [
@@ -278,7 +278,7 @@ it.each<[string, (f: Fixture) => Promise<unknown>, string]>([
     },
     'invalid_state',
   ],
-  ['a principal other than the user', (f) => land(f, {}, lead), 'permission_denied'],
+  ['a principal other than the user', (f) => land(f, {}, writer), 'permission_denied'],
   [
     'a branch already landing',
     async (f) => {

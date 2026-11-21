@@ -25,7 +25,6 @@ import { retryingIndexLock, runGit } from './git.js';
 import { workflowPolicy } from './workflow-policy.js';
 import { onDevice } from './remote-workspace.js';
 import { forgetWorktreeReads } from './workbench-session.js';
-import { headerPath } from './landing-diff.js';
 
 type GateCommands = NonNullable<Project['gates']>[string];
 export type LandingProgress = NonNullable<NonNullable<Session['merge']>['landing']>;
@@ -260,11 +259,6 @@ async function git(cwd: string, args: string[], env?: NodeJS.ProcessEnv): Promis
 /** Agent configuration a session cannot write in its worktree, as protection.ts lists it. */
 export const AGENT_CONFIGURATION = ['.claude', '.codex', '.mcp.json'];
 
-const testPath = (file: string) =>
-  /(?:^|\/)(?:__tests__|tests?|specs?)(?:\/|$)|(?:^|[._-])(?:test|spec)\.[^/]+$|(?:^|\/)test_[^/]+$/.test(
-    file,
-  );
-
 /** Paths the candidate adds, changes, deletes or renames since it forked from parent. */
 async function changedPaths(cwd: string, parent: string, candidate: string): Promise<string[]> {
   const fields = (
@@ -280,73 +274,6 @@ async function changedPaths(cwd: string, parent: string, candidate: string): Pro
     index += count;
   }
   return [...new Set(paths)];
-}
-
-/** Each file's patch since the candidate forked from parent, from one diff of them all. */
-async function filePatches(
-  cwd: string,
-  parent: string,
-  candidate: string,
-  files: string[],
-): Promise<Map<string, string>> {
-  if (!files.length) return new Map();
-  const lines = new Map<string, string[]>();
-  const patch = await git(cwd, [
-    '--literal-pathspecs',
-    'diff',
-    '--no-ext-diff',
-    '--no-textconv',
-    '--no-renames',
-    '--no-color',
-    '--src-prefix=a/',
-    '--dst-prefix=b/',
-    '--unified=0',
-    `${parent}...${candidate}`,
-    '--',
-    ...files,
-  ]);
-  let file: string | undefined;
-  for (const line of patch.split('\n')) {
-    // A file that changes type has two parts, each with its own header.
-    if (line.startsWith('diff --git ')) file = headerPath(line);
-    if (file === undefined) continue;
-    const own = lines.get(file);
-    if (own) own.push(line);
-    else lines.set(file, [line]);
-  }
-  return new Map([...lines].map(([name, own]) => [name, own.join('\n')]));
-}
-
-/** The files that name an object in commit, from one cat-file run. */
-async function presentIn(cwd: string, commit: string, files: string[]): Promise<Set<string>> {
-  // Batch input ends each name at a newline, so a path containing one counts as present.
-  const asked = files.filter((file) => !file.includes('\n'));
-  const present = new Set(files.filter((file) => file.includes('\n')));
-  if (!asked.length) return present;
-  const result = await runGit(
-    cwd,
-    ['cat-file', '--batch-check'],
-    Buffer.from(asked.map((file) => `${commit}:${file}\n`).join('')),
-    true,
-  );
-  if (result.exit_code !== 0) throw new Error(gitFailure(result));
-  const lines = result.stdout.toString().split('\n');
-  asked.forEach((file, index) => {
-    if (!/ (?:missing|ambiguous)$/.test(lines[index]!)) present.add(file);
-  });
-  return present;
-}
-
-/** Changed paths of the candidate outside every scope path. */
-async function outOfScope(
-  cwd: string,
-  parent: string,
-  candidate: string,
-  scope: string[],
-): Promise<string[]> {
-  return (await changedPaths(cwd, parent, candidate)).filter(
-    (file) => !scope.some((entry) => within(file, entry)),
-  );
 }
 
 /**

@@ -26,7 +26,7 @@ const queryTools = {
   },
   project_decisions: {
     method: 'project.decisions',
-    description: `List what a lead, a stored rule or a personal agent decided in one project without the user, newest first. ${DATA_NOT_INSTRUCTIONS}`,
+    description: `List what a stored permission rule decided in one project without the user, newest first. ${DATA_NOT_INSTRUCTIONS}`,
   },
 } as const;
 

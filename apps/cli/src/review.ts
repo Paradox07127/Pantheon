@@ -10,7 +10,7 @@ export interface Daemon {
   token: string;
 }
 
-export const reviewUsage = 'review [--base REF] [RANGE] [--runtime NAME]...';
+export const reviewUsage = 'review [--base REF] [RANGE] [--runtime NAME]... [--fallback NAME]...';
 const outcomes = ['fixed', 'intentional', 'not_worth_it', 'wrong'];
 export const resolveUsage = `review resolve REVIEW_ID FINDING_ID ${outcomes.join('|')} [--note TEXT]`;
 
@@ -144,7 +144,7 @@ const resolve = async (connect: () => Daemon, positionals: string[], note?: stri
 export const review = async (
   connect: () => Daemon,
   positionals: string[],
-  values: { base?: string; runtime?: string[]; note?: string },
+  values: { base?: string; runtime?: string[]; fallback?: string[]; note?: string },
 ) => {
   if (positionals[0] === 'resolve') return resolve(connect, positionals.slice(1), values.note);
   if (positionals.length > 1) usageError(`Usage: pantheon ${reviewUsage}`);
@@ -170,7 +170,13 @@ export const review = async (
     const sent = await sendCommand(
       daemon,
       'review.range',
-      { root, base, head, ...(values.runtime?.length ? { runtimes: values.runtime } : {}) },
+      {
+        root,
+        base,
+        head,
+        ...(values.runtime?.length ? { runtimes: values.runtime } : {}),
+        ...(values.fallback?.length ? { fallback: values.fallback } : {}),
+      },
       60_000,
     );
     if (!sent.ok) {
@@ -202,7 +208,12 @@ export const review = async (
     unlocated.forEach(printFinding);
   }
   const verdicts = result.verdicts ?? [];
-  for (const runtime of result.runtimes) {
+  for (const replaced of result.replacements ?? [])
+    console.log(`${replaced.runtime}: replaced by ${replaced.by} (${replaced.reason})`);
+  const reviewers = result.runtimes.filter(
+    (runtime) => !result.replacements?.some((replaced) => replaced.runtime === runtime),
+  );
+  for (const runtime of reviewers) {
     const mine = verdicts.filter((verdict) => verdict.runtime === runtime);
     if (!mine.length) console.log(`${runtime}: no verdict`);
     for (const verdict of mine) console.log(`${runtime}: ${verdict.verdict} — ${verdict.summary}`);
@@ -213,7 +224,7 @@ export const review = async (
     verdicts.some((verdict) => verdict.verdict === 'fail')
   )
     return 1;
-  const passed = result.runtimes.every((runtime) =>
+  const passed = reviewers.every((runtime) =>
     verdicts.some((verdict) => verdict.runtime === runtime && verdict.verdict === 'pass'),
   );
   return result.state === 'completed' && !result.incomplete && passed ? 0 : 2;

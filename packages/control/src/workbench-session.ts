@@ -3007,10 +3007,6 @@ async function completeMerge(ctx: ControlContext, sessionId: string, jobId: stri
         merge: {
           state: 'blocked' as const,
           reason,
-          // The merge retried after the gates pass keeps what this merge allowed.
-          ...(reason === 'gate_failed' && current.merge?.allowed_files
-            ? { allowed_files: current.merge.allowed_files }
-            : {}),
           ...(conflicts ? { conflicts } : {}),
           ...(conflict_commits ? { conflict_commits } : {}),
           ...(gate
@@ -3327,7 +3323,6 @@ export function admitMerge(
   session: Session,
   cause: string | undefined,
   reason: string | undefined,
-  allowedFiles: string[] | undefined,
   reads: MergeReads,
 ): Session {
   requireMergeReady(ctx, session, reads);
@@ -3349,7 +3344,6 @@ export function admitMerge(
         ...(session.merge?.reason === 'workflow_approval' && session.merge.landing
           ? { landing: session.merge.landing }
           : {}),
-        ...(allowedFiles ? { allowed_files: allowedFiles } : {}),
       },
     },
     session.revision,
@@ -3563,14 +3557,7 @@ function retryMergeAfterGates(
           const again = blocked();
           if (!again || reads.worktree(workspace)?.head !== commit) return;
           // A merge the daemon started stays its own, so the tracker still follows up a block.
-          admitMerge(
-            ctx,
-            again.session,
-            again.auto ? undefined : cause,
-            GATES_PASSED,
-            again.session.merge!.allowed_files,
-            reads,
-          );
+          admitMerge(ctx, again.session, again.auto ? undefined : cause, GATES_PASSED, reads);
         });
       } catch (error) {
         // A session no longer ready to merge keeps its blocked merge.
@@ -3602,7 +3589,7 @@ function mergeRequest(ctx: ControlContext, p: Principal, c: Command): MergeReque
   revision(ctx, c, session);
   return {
     session,
-    admit: (reads) => admitMerge(ctx, session, cause, undefined, undefined, reads),
+    admit: (reads) => admitMerge(ctx, session, cause, undefined, reads),
   };
 }
 
@@ -3630,7 +3617,7 @@ export function prepareReadyMerge(
     refuseAdopted(ctx, session, NO_MERGE_GATE);
     return {
       session,
-      admit: (reads) => admitMerge(ctx, session, c.command_id, undefined, undefined, reads),
+      admit: (reads) => admitMerge(ctx, session, c.command_id, undefined, reads),
     };
   });
 }

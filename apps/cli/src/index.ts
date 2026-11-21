@@ -28,6 +28,7 @@ try {
       param: { type: 'string', multiple: true },
       base: { type: 'string' },
       runtime: { type: 'string', multiple: true },
+      fallback: { type: 'string', multiple: true },
       message: { type: 'string' },
       note: { type: 'string' },
     },

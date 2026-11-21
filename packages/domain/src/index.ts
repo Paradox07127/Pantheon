@@ -43,7 +43,7 @@ export function requireThat(condition: unknown, code: string, message: string): 
   if (!condition) throw new DomainError(code, message);
 }
 /** A role older rows may also hold worker, which reads as a plain session. */
-export type Role = 'user' | 'planner' | 'writer' | 'reviewer' | 'lead' | 'personal' | 'conductor';
+export type Role = 'user' | 'planner' | 'writer' | 'reviewer' | 'personal' | 'conductor';
 export interface Principal {
   id: string;
   role: Role;
@@ -1077,6 +1077,10 @@ export interface Review extends Entity {
   input_hash?: string;
   round: number;
   runtimes: string[];
+  /** Runtimes that take over, in order, from a reviewer whose turn ends on its usage limit. */
+  fallback?: string[];
+  /** Each reviewer session a fallback runtime took over from; the taking runtime is also in runtimes. */
+  replacements?: { runtime: string; session_id: string; by: string; reason: 'usage_limit' }[];
   state: 'running' | 'completed' | 'failed';
   /** Set on a completed review that does not pass: why a reviewer gave no full result. */
   incomplete?: string;
@@ -1809,8 +1813,6 @@ export interface Retrospective extends Entity {
   recorded_at: number;
   /** The kind the plan gave the task; absent when it gave none. */
   planned_kind?: TaskKind;
-  /** The kind computed from the merged diff; absent when nothing merged. */
-  measured_kind?: TaskKind;
   path?: FlowPath;
   runtime?: string;
   /** The full model id the runtime reported. */

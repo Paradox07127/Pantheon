@@ -709,7 +709,7 @@ it('denies an approval response from an expired user principal', async () => {
   }
 });
 
-it.each(['planner', 'writer', 'reviewer', 'lead', 'personal'] as const)(
+it.each(['planner', 'writer', 'reviewer', 'personal'] as const)(
   'denies approval responses from a %s principal without changing pending state',
   async (role) => {
     const f = await approvalFixture();

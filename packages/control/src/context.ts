@@ -363,20 +363,6 @@ export function purposeSessionInstructions(
 
 export function sessionAction(ctx: ControlContext, principal: Principal, action: string): void {
   const session = sessionPrincipal(ctx, principal);
-  const reflection =
-    session.state === 'running' &&
-    principal.role === 'lead' &&
-    ctx.store.db
-      .prepare(
-        `SELECT 1 FROM session_turns WHERE data ->> '$.session_id'=? AND data ->> '$.origin'='reflection'
-         AND data ->> '$.state'='running' LIMIT 1`,
-      )
-      .get(session.id);
-  requireThat(
-    !reflection || action === 'project.read',
-    'permission_denied',
-    'Runtime reflection can read project facts only',
-  );
   const tools = sessionTools[principal.role as keyof typeof sessionTools];
   const purposeTools = purposeSessionTools(session);
   const permitted = purposeTools ? { ...tools, ...coordinationTools } : tools;

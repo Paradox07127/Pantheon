@@ -310,6 +310,38 @@ describe('pnpm cli review', () => {
     });
   });
 
+  it('sends each --fallback runtime in the order given', async () => {
+    await cli(
+      repo,
+      ['review', '--base', 'main', '--fallback', 'grok', '--fallback', 'claude'],
+      [{ body: { receipt: running } }, { body: reviewOf({}) }],
+    );
+    expect(sentInput().input).toMatchObject({ fallback: ['grok', 'claude'] });
+  });
+
+  it('prints each replacement and judges the review by the reviewer that took over', async () => {
+    const result = await cli(
+      repo,
+      ['review', '--base', 'main'],
+      [
+        started,
+        {
+          body: reviewOf({
+            runtimes: ['codex', 'grok'],
+            replacements: [
+              { runtime: 'codex', session_id: 'session-1', by: 'grok', reason: 'usage_limit' },
+            ],
+            verdicts: [{ runtime: 'grok', verdict: 'pass', summary: 'looks fine', at: 1 }],
+          }),
+        },
+      ],
+    );
+    expect(result.stdout).toBe(
+      ['codex: replaced by grok (usage_limit)', 'grok: pass — looks fine', ''].join('\n'),
+    );
+    expect(result.code).toBe(0);
+  });
+
   it('resolves a finding at the current review revision and prints its outcome', async () => {
     const resolved = reviewOf({
       revision: 4,

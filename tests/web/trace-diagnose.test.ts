@@ -58,13 +58,7 @@ const finding = (id: string, patch: Partial<RuntimeFinding> = {}): RuntimeFindin
 
 const FINDINGS = [
   finding('f-approval', { ongoing: true }),
-  finding('f-queue', {
-    kind: 'dispatch_queue',
-    layer: 'harness',
-    wait_reason: 'upstream',
-    duration_ms: 180_000,
-    ongoing: true,
-  }),
+  finding('f-gate', { kind: 'gate', layer: 'harness', duration_ms: 180_000, ongoing: true }),
   finding('f-slow', {
     kind: 'slow_tool',
     layer: 'tool',
@@ -112,8 +106,6 @@ function panel(extra: Partial<Parameters<typeof RuntimePanel>[0]> = {}) {
   const props: Parameters<typeof RuntimePanel>[0] = {
     overview: null,
     diagnostics: diagnostics(),
-    leads: [{ id: 'lead-a', title: 'lead' }],
-    lead: undefined,
     reviews: [REVIEW],
     stale: false,
     titleOf: (lane) => `session of ${lane}`,
@@ -169,9 +161,9 @@ describe('diagnose findings', () => {
       ],
       [
         '',
-        zh('trace.diagnose.kind.dispatch'),
-        'session of lane-f-queue',
-        zh('trace.runtime.wait.upstream'),
+        zh('trace.diagnose.kind.gate'),
+        'session of lane-f-gate',
+        '',
         '',
         '3 分钟',
         zh('trace.runtime.ongoing'),
@@ -268,7 +260,6 @@ describe('diagnose findings', () => {
     expect(records.props).toMatchObject({
       reviews: [REVIEW],
       findings: FINDINGS,
-      leadId: 'lead-a',
     });
     records.props.onFinding(FINDINGS[1]);
     h.render();
@@ -389,9 +380,6 @@ describe('analysis menu', () => {
       projectId: 'project-a',
       diagnostics: diagnostics(),
       runtimes: ['claude', 'codex'],
-      leads: [{ id: 'lead-a', title: 'lead' }],
-      lead: undefined,
-      onLead: vi.fn(),
       windowText: '09:00 – 10:39',
       stale: false,
       ...extra,
@@ -412,30 +400,25 @@ describe('analysis menu', () => {
   const trigger = (tree: unknown) =>
     find(tree as ReactElement, (n) => 'render' in n.props).props.render as ReactElement<any>;
 
-  it('opens from the bar as a menu of runtime and recipient, then a start with the window', () => {
+  it('opens from the bar as a menu of runtimes, then a start with the window', () => {
     const { h } = menu();
     expect(trigger(h.value).props.className).toBe('btn pri');
     expect(text(trigger(h.value))).toBe(zh('trace.diagnose.analyze'));
     expect(find(h.value, (n) => n.props.className === 'mn pop am').props['aria-label']).toBe(
       zh('trace.diagnose.analyze'),
     );
-    const [runtime, recipient] = groups(h.value);
+    const [runtime, ...rest] = groups(h.value);
+    expect(rest).toEqual([]);
     expect(runtime!.props.label).toBe(zh('trace.diagnose.runtime'));
     expect(radios(runtime!)).toEqual([
       ['claude', 'Claude'],
       ['codex', 'Codex'],
     ]);
     expect(choice(runtime!).props.value).toBe('claude');
-    expect(recipient!.props.label).toBe(zh('trace.diagnose.sendTo'));
-    expect(radios(recipient!)).toEqual([
-      ['lead-a', 'lead'],
-      ['', zh('trace.runtime.noLeadLink')],
-    ]);
-    expect(choice(recipient!).props.value).toBe('lead-a');
     expect(text(start(h.value))).toBe('开始分析09:00 – 10:39');
   });
 
-  it('starts an analysis of the window with the chosen runtime and lead, then opens it', async () => {
+  it('starts an analysis of the window with the chosen runtime, then opens it', async () => {
     const { h } = menu();
     root(h.value).props.onOpenChange(true);
     choice(groups(h.value)[0]!).props.onChange('codex');
@@ -448,7 +431,6 @@ describe('analysis menu', () => {
         {
           project_id: 'project-a',
           runtime: 'codex',
-          lead_session_id: 'lead-a',
           from: at(9, 0),
           to: at(10, 39),
         },
@@ -456,16 +438,6 @@ describe('analysis menu', () => {
     ]);
     expect(mock.shell.openSession).toHaveBeenCalledWith('analysis-b');
     expect(root(h.value).props.open).toBe(false);
-  });
-
-  it('sends the conclusion to the whole project when chosen', async () => {
-    const { h, props } = menu({ lead: null });
-    choice(groups(h.value)[1]!).props.onChange('');
-    expect(props.onLead).toHaveBeenCalledWith(null);
-    expect(choice(groups(h.value)[1]!).props.value).toBe('');
-    start(h.value).props.onClick();
-    await h.flush();
-    expect(command.mock.calls[0]![0].input).not.toHaveProperty('lead_session_id');
   });
 
   it('shows a failed start in the menu and keeps it open', async () => {

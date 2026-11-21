@@ -782,59 +782,6 @@ export function syncMemoryFiles(ctx: ControlContext, project: Project): void {
   if (gone.length) changed(ctx, project.id);
 }
 
-/** A decision Pantheon takes from a lead's plan, current at once and never confirmed by the user. */
-export interface PlanMemoryEntry {
-  project_id: string;
-  key: string;
-  title: string;
-  summary: string;
-  tags: string[];
-  text: string;
-  origin: NonNullable<MemoryRecord['origin']>;
-}
-
-/**
- * Writes the entry as the current version of its key, unless that version has the same text; one
- * that does not fit the decision budget is kept as a note. It never throws, so the plan write stands.
- */
-export function writePlanMemory(
-  ctx: ControlContext,
-  entry: PlanMemoryEntry,
-  commandId: string,
-): void {
-  const project = entry.project_id;
-  const same = current(ctx, project).filter((r) => r.key === entry.key && !r.task);
-  if (same.some((r) => r.body_hash === createHash('sha256').update(entry.text).digest('hex')))
-    return;
-  const r: MemoryRecord = {
-    id: id(),
-    revision: 1,
-    project_id: project,
-    key: entry.key,
-    title: entry.title,
-    summary: entry.summary,
-    tags: entry.tags,
-    kind: 'decision',
-    state: 'draft',
-    authority: 'agent_reported',
-    author: 'pantheon:plan',
-    body_hash: ctx.files.put(Buffer.from(entry.text)).hash,
-    dependencies: [],
-    based_on: signature(ctx, project),
-    created_at: ctx.store.now(),
-    origin: entry.origin,
-  };
-  const used = decisionBytes(ctx, project)
-    .filter(({ record }) => !same.some((old) => old.id === record.id))
-    .reduce((total, item) => total + item.bytes, 0);
-  const size = memoryItemBytes(ctx, { ...r, state: 'active', committed_at: ctx.store.now() });
-  if (used + size > DECISION_BUDGET) r.kind = 'note';
-  ctx.store.insert('memory_records', r);
-  // activate replaces only a version of the same kind.
-  for (const old of same) if (old.kind !== r.kind) archive(ctx, old, 'superseded', r.id);
-  activate(ctx, r, r.author, commandId);
-}
-
 const FILE_SYNC_MS = 60_000;
 const fileSyncs = new WeakMap<ControlContext, Map<string, number>>();
 
@@ -926,19 +873,4 @@ export function tickMemory(ctx: ControlContext): void {
       fresh.revision,
     );
   }
-}
-
-/** Gate control-plane completion against current memory; a user may still explicitly decide. */
-export function assertMemoryFresh(ctx: ControlContext, p: Principal, action: string): void {
-  if (!p.session_id || !['task.accept', 'milestone.accept', 'session.merge'].includes(action))
-    return;
-  const s = ctx.store.must<Session>('sessions', p.session_id);
-  if (!records(ctx, s.project_id).some((r) => r.committed_at !== undefined)) return;
-  const currentSignature = signature(ctx, s.project_id);
-  requireThat(
-    s.memory_delivery?.delivered_signature === currentSignature ||
-      s.memory_observed_signature === currentSignature,
-    'memory_refresh_required',
-    'Project memory changed. Read memory_context and recheck the decision before accepting or merging work',
-  );
 }

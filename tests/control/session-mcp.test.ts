@@ -585,7 +585,7 @@ it('refuses a credential role that does not match the session', async () => {
     input: 'Write a sentence',
   });
   expect(() => f.auth.issueSession(workbench, 'planner')).toThrow('Active session required');
-  expect(() => f.auth.issueSession(planner, 'lead')).toThrow('Active session required');
+  expect(() => f.auth.issueSession(planner, 'writer')).toThrow('Active session required');
 });
 
 it('mounts only the five conductor tools and their instructions on a conductor worktree session', async () => {

@@ -518,7 +518,6 @@ function TraceView({
   const runsView = useShell((s) => s.runsView);
   const runsSession = useShell((s) => s.runsSession);
   const [period, setPeriod] = useState<Period>('today');
-  const [analysisLead, setAnalysisLead] = useState<string | null>();
   const [mode, setMode] = useState<Mode>('timeline');
   // The session whose step replay shows in place of the timeline.
   const [replaying, setReplaying] = useState<string | null>(null);
@@ -1067,9 +1066,6 @@ function TraceView({
               projectId={projectId}
               diagnostics={shownTrace.diagnostics}
               runtimes={shownTrace.reflection_runtimes ?? []}
-              leads={shownTrace.reflection_leads ?? []}
-              lead={analysisLead}
-              onLead={setAnalysisLead}
               windowText={windowText}
               stale={!!trace.stale}
             />
@@ -1206,8 +1202,6 @@ function TraceView({
                   key={projectId}
                   overview={<TraceTimeChart query={time} titleOf={titleOf} />}
                   diagnostics={shownTrace.diagnostics}
-                  leads={shownTrace.reflection_leads ?? []}
-                  lead={analysisLead}
                   reviews={shownTrace.runtime_reviews ?? []}
                   stale={!!trace.stale}
                   titleOf={titleOf}

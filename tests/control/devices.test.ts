@@ -266,9 +266,14 @@ it('refuses the device list to an expired principal', async () => {
 });
 
 it('refuses to save a device for a session principal', () => {
-  const lead: Principal = { id: 'lead', role: 'lead', session_id: 'session', project_id: 'p' };
+  const writer: Principal = {
+    id: 'writer',
+    role: 'writer',
+    session_id: 'session',
+    project_id: 'p',
+  };
   expect(() =>
-    saveDevice(context(), lead, { id: 'build-box', ssh: 'build-box' }, unreachable),
+    saveDevice(context(), writer, { id: 'build-box', ssh: 'build-box' }, unreachable),
   ).toThrow(expect.objectContaining({ code: 'permission_denied' }));
 });
 

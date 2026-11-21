@@ -214,7 +214,10 @@ it('keeps story hunks bound to the explained range and flags later commits or ch
       ?.outdated,
   ).toBe(true);
   expect(() =>
-    w.control.changeStoryDiff({ id: 'other', role: 'lead', project_id: 'other-project' }, story.id),
+    w.control.changeStoryDiff(
+      { id: 'other', role: 'writer', project_id: 'other-project' },
+      story.id,
+    ),
   ).toThrow(expect.objectContaining({ code: 'permission_denied' }));
 });
 

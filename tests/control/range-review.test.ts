@@ -88,8 +88,8 @@ async function rangeFixture() {
         null,
         principal,
       ))();
-  const started = async () => {
-    const review = await request();
+  const started = async (input: Record<string, unknown> = {}) => {
+    const review = await request(input);
     await eventually(
       () => reviewer.starts[0]?.turn !== undefined,
       () => w.control.tick(),
@@ -209,7 +209,146 @@ it('reads a settled range review with its verdict and findings and tells no lead
   );
 });
 
-const lead: Principal = { id: 'some-lead', role: 'lead' };
+const usageLimitHit = {
+  kind: 'turn.completed',
+  status: 'failed',
+  error: 'Usage limit reached',
+  error_code: 'usage_limit',
+} as AgentEvent;
+const turnCompleted = { kind: 'turn.completed', status: 'completed' } as AgentEvent;
+
+function addReviewer(w: Awaited<ReturnType<typeof workbenchFixture>>, name: string) {
+  const reviewer = new ReviewerAdapter(name);
+  w.control.adapters.set(name, reviewer);
+  return reviewer;
+}
+
+const pass = (w: Awaited<ReturnType<typeof workbenchFixture>>, sessionId: string) =>
+  w.call('review.verdict', { verdict: 'pass', summary: 'Checked src/a.ts' }, null, {
+    id: `session:${sessionId}`,
+    role: 'reviewer',
+    session_id: sessionId,
+    project_id: w.project.id,
+    expires_at: Date.now() + 60000,
+  });
+
+it('hands a reviewer that hit its usage limit over to the next fallback runtime not yet reviewing', async () => {
+  const { w, reviewer, started, row } = await rangeFixture();
+  const spare = addReviewer(w, 'spare-reviewer');
+  addReviewer(w, 'last-reviewer');
+  const review = await started({ fallback: [reviewer.name, spare.name, 'last-reviewer'] });
+  reviewer.emit(usageLimitHit);
+  await eventually(
+    () => spare.starts[0]?.turn !== undefined,
+    () => w.control.tick(),
+  );
+  const replacing = row(review.id);
+  expect(replacing).toMatchObject({
+    state: 'running',
+    runtimes: [reviewer.name, spare.name],
+    replacements: [
+      {
+        runtime: reviewer.name,
+        session_id: review.session_ids[0],
+        by: spare.name,
+        reason: 'usage_limit',
+      },
+    ],
+  });
+  expect(replacing.session_ids).toHaveLength(2);
+  const { spec, turn } = spare.starts[0]!;
+  expect(readFileSync(path.join(spec.cwd, 'changes.diff'), 'utf8')).toContain(
+    '+export const c = 3;',
+  );
+  expect(turn!.input).toBe(reviewer.starts[0]!.turn!.input);
+  pass(w, replacing.session_ids[1]!);
+  spare.emit(turnCompleted);
+  await eventually(
+    () => row(review.id).state !== 'running',
+    () => w.control.tick(),
+  );
+  expect(row(review.id).state).toBe('completed');
+  expect(row(review.id)).not.toHaveProperty('incomplete');
+});
+
+it('leaves a review incomplete once its fallback runtimes also hit their usage limits', async () => {
+  const { w, reviewer, started, row } = await rangeFixture();
+  const steady = addReviewer(w, 'steady-reviewer');
+  const spare = addReviewer(w, 'spare-reviewer');
+  const review = await started({ runtimes: [reviewer.name, steady.name], fallback: [spare.name] });
+  await eventually(
+    () => steady.starts[0]?.turn !== undefined,
+    () => w.control.tick(),
+  );
+  reviewer.emit(usageLimitHit);
+  await eventually(
+    () => spare.starts[0]?.turn !== undefined,
+    () => w.control.tick(),
+  );
+  spare.emit(usageLimitHit);
+  pass(w, review.session_ids[1]!);
+  steady.emit(turnCompleted);
+  await eventually(
+    () => row(review.id).state !== 'running',
+    () => w.control.tick(),
+  );
+  expect(row(review.id)).toMatchObject({
+    state: 'completed',
+    incomplete: 'reviewer spare-reviewer failed',
+    runtimes: [reviewer.name, steady.name, spare.name],
+    replacements: [{ runtime: reviewer.name, by: spare.name, reason: 'usage_limit' }],
+  });
+});
+
+it('does not replace a reviewer whose turn failed for a reason other than its usage limit', async () => {
+  const { w, reviewer, started, row } = await rangeFixture();
+  const spare = addReviewer(w, 'spare-reviewer');
+  const review = await started({ fallback: [spare.name] });
+  reviewer.emit({ kind: 'turn.completed', status: 'failed', error: 'Model crashed' } as AgentEvent);
+  await eventually(
+    () => row(review.id).state !== 'running',
+    () => w.control.tick(),
+  );
+  expect(row(review.id)).toMatchObject({ state: 'failed', runtimes: [reviewer.name] });
+  expect(row(review.id)).not.toHaveProperty('replacements');
+  expect(spare.starts).toEqual([]);
+});
+
+it('skips the writer runtime among the fallback runtimes of a session review', async () => {
+  const w = await workbenchFixture();
+  const reviewer = addReviewer(w, 'session-reviewer');
+  const spare = addReviewer(w, 'spare-reviewer');
+  const session = await w.create();
+  const workspace = await awaitWorkspaceReady(w.control, session.workspace_id!);
+  await eventually(
+    () =>
+      w.turns(session.id)[0]!.state === 'completed' &&
+      w.store.must<Session>('sessions', session.id).state === 'open',
+    () => w.control.tick(),
+  );
+  writeFileSync(path.join(workspace.path, 'answer.txt'), 'reviewed answer\n');
+  git(workspace.path, 'commit', '--quiet', '-am', 'Update the answer');
+  const review = await w.call<Review>('review.request', {
+    session_id: session.id,
+    runtimes: [reviewer.name],
+    fallback: [session.runtime, spare.name],
+  });
+  await eventually(
+    () => reviewer.starts[0]?.turn !== undefined,
+    () => w.control.tick(),
+  );
+  reviewer.emit(usageLimitHit);
+  await eventually(
+    () => spare.starts[0]?.turn !== undefined,
+    () => w.control.tick(),
+  );
+  expect(w.store.must<Review>('reviews', review.id)).toMatchObject({
+    runtimes: [reviewer.name, spare.name],
+    replacements: [{ runtime: reviewer.name, by: spare.name, reason: 'usage_limit' }],
+  });
+});
+
+const writer: Principal = { id: 'some-writer', role: 'writer' };
 
 it.each<
   [
@@ -248,7 +387,13 @@ it.each<
     'not_found',
     undefined,
   ],
-  ['a principal other than the user', (f) => f.request({}, lead), 'permission_denied', undefined],
+  ['a principal other than the user', (f) => f.request({}, writer), 'permission_denied', undefined],
+  [
+    'a fallback runtime that is not available',
+    (f) => f.request({ fallback: ['no-such-runtime'] }),
+    'unsupported_capability',
+    /no-such-runtime/,
+  ],
   [
     'a ref that looks like an option',
     (f) => f.request({ base: `--output=${path.join(f.w.root, 'leaked')}` }),

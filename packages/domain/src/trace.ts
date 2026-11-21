@@ -108,7 +108,6 @@ export interface TraceTimeAllocation {
 export type RuntimeFindingKind =
   | 'turn_queue'
   | 'turn_prepare'
-  | 'dispatch_queue'
   | 'approval'
   | 'permission_delivery'
   | 'gate'
@@ -130,10 +129,6 @@ export interface RuntimeFinding {
   task_id?: string;
   duration_ms?: number;
   ongoing?: boolean;
-  /** Duration by reason observed by the scheduler. Missing time has unknown attribution. */
-  wait_ms_by_reason?: Record<string, number>;
-  /** Scheduler's current or last observed reason, when available. */
-  wait_reason?: string;
   /** Allowlisted category only. Commands and tool arguments stay in the source. */
   tool_category?: 'shell' | 'poll' | 'agent' | 'edit' | 'read' | 'other';
   /** The error of the turn.failed event, on a turn_failure. */
@@ -179,9 +174,7 @@ export interface RuntimeReview {
   to: number;
   evidence_hash: string;
   created_at: number;
-  lead_session_id?: string;
   report?: RuntimeReviewReport;
-  shared_at?: number;
   memory_id?: string;
   verification?: {
     outcome: 'improved' | 'unchanged' | 'regressed';
@@ -212,8 +205,6 @@ export interface RuntimeReviewHistory {
   created_at: number;
   state: 'running' | 'ready' | 'failed' | 'waiting';
   report?: RuntimeReviewReport;
-  lead_session_id?: string;
-  shared_at?: number;
   memory_id?: string;
   verification?: RuntimeReview['verification'];
 }

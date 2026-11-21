@@ -187,7 +187,7 @@ beforeEach(() => {
   mock.time = { by_lane: { 'session-a': { wall_ms: 42 * MIN } } };
   mock.events = [];
   mock.sessions = [session('session-a', 'waiting'), session('session-b', 'merged')];
-  mock.collab = { messages: [], in_flight: [], subagents: [], model_changes: [] };
+  mock.collab = { subagents: [], model_changes: [] };
   mock.spans = [];
   useShell.setState({ traceTab: 'timeline' });
   vi.stubGlobal('document', { activeElement: null, body: {} });

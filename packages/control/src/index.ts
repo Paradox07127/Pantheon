@@ -1,7 +1,6 @@
 import { permissionRules } from './approvals.js';
 import { projectBranches, projectDefaultsRead } from './project.js';
 import { prepareStalePrune, workspaceStale } from './workspace-stale.js';
-import { assertMemoryFresh } from './memory.js';
 import {
   memoryRead,
   memoryItem,
@@ -456,7 +455,6 @@ export class Control extends EventEmitter {
           const handler = prepared ?? handlers[command.type as CommandType];
           if (!handler)
             throw new DomainError('unsupported_command', `Not implemented: ${command.type}`);
-          assertMemoryFresh(this.ctx, principal, command.type);
           const receipt = handler(this.ctx, principal, command);
           if (!liveMemoryRead) {
             this.store.remember(key, digest, receipt);

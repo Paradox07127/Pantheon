@@ -11,7 +11,7 @@ const current = (f: Awaited<ReturnType<typeof workbenchFixture>>, id: string) =>
   f.store.must<Session>('sessions', id);
 const context = (f: Awaited<ReturnType<typeof workbenchFixture>>) =>
   (f.control as unknown as { ctx: ControlContext }).ctx;
-const lead: Principal = { id: 'lead', role: 'lead' };
+const writer: Principal = { id: 'writer', role: 'writer' };
 
 it.each([['codex', 'auto']] as const)(
   'refuses %s creation with %s',
@@ -40,11 +40,11 @@ it.each([
     const f = await workbenchFixture();
     f.control.adapters.set(runtime, f.adapter);
     const input = { project_id: f.project.id, runtime, permission_mode, input: 'Work' };
-    expect(() => f.call('session.create', input, null, lead)).toThrow(
+    expect(() => f.call('session.create', input, null, writer)).toThrow(
       expect.objectContaining({ code: 'unsupported_capability' }),
     );
     expect(() =>
-      openWorktreeSession(context(f), input, '', { git: true }, undefined, lead),
+      openWorktreeSession(context(f), input, '', { git: true }, undefined, writer),
     ).toThrow(expect.objectContaining({ code: 'unsupported_capability' }));
     const session = await f.call<Session>('session.create', input);
     expect(session.permission_mode).toBe(permission_mode);
@@ -53,7 +53,7 @@ it.each([
         'session.setPermissionMode',
         { session_id: session.id, permission_mode },
         session.revision,
-        lead,
+        writer,
       ),
     ).toThrow(expect.objectContaining({ code: 'unsupported_capability' }));
     expect(
@@ -182,9 +182,9 @@ it('refuses fast mode from a session principal', async () => {
   const session = await f.create();
   expect(() =>
     f.control.execute(
-      lead,
+      writer,
       command(
-        lead.id,
+        writer.id,
         'session.setFastMode',
         { session_id: session.id, fast: true },
         session.revision,
@@ -196,7 +196,7 @@ it('refuses fast mode from a session principal', async () => {
       'session.create',
       { project_id: f.project.id, runtime: f.adapter.name, fast: true, input: 'Work' },
       null,
-      lead,
+      writer,
     ),
   ).toThrow(expect.objectContaining({ code: 'unsupported_capability' }));
 });
@@ -225,7 +225,7 @@ it('turns ultracode on and off in a Claude session and passes it to the native s
       'session.setUltracode',
       { session_id: session.id, ultracode: false },
       current(f, session.id).revision,
-      lead,
+      writer,
     ),
   ).toThrow(expect.objectContaining({ code: 'unsupported_capability' }));
   const off = f.call<Session>(

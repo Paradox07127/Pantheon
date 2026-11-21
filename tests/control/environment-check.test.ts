@@ -322,7 +322,7 @@ it.skipIf(insideSandbox)('refuses a second check while one of the project runs',
 });
 
 it.each<[string, Principal]>([
-  ['a lead', { id: 'lead:planner', role: 'lead' }],
+  ['a writer', { id: 'session:writer', role: 'writer' }],
   ['a personal agent', { id: 'personal:k1', role: 'personal' }],
 ])('refuses the check and the list to %s', async (_, principal) => {
   const f = await workbenchFixture();

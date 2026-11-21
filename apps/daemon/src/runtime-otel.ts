@@ -18,25 +18,8 @@ const KINDS = new Set<string>([
   'retrospective.recorded',
   'trace.evidence_read',
   'session.runtime_reported',
-  'session.runtime_report_shared',
   'session.runtime_report_evaluated',
   'session.runtime_report_remembered',
-]);
-const DISPATCH_REASONS = new Set([
-  'upstream',
-  'scope',
-  'plan_review',
-  'step',
-  'retry',
-  'budget',
-  'capacity',
-  'runtime_limited',
-  'runtime_capacity',
-  'device_offline',
-  'device_capacity',
-  'device_resource',
-  'paused',
-  'answer',
 ]);
 const hashId = (value: string) => createHash('sha256').update(value).digest('hex').slice(0, 32);
 type Attribute = {
@@ -78,12 +61,6 @@ export function runtimeLogBatch(events: readonly Event[]) {
         if (typeof value === 'string' && /^[a-z0-9_.:-]{1,128}$/i.test(value))
           attrs.push(string(`pantheon.${key}`, value));
       }
-      if (
-        event.kind === 'task.dispatch_wait_changed' &&
-        typeof payload.wait === 'string' &&
-        DISPATCH_REASONS.has(payload.wait)
-      )
-        attrs.push(string('pantheon.dispatch.wait_reason', payload.wait));
       if (event.kind === 'agent.background.changed' && Array.isArray(payload.tasks))
         attrs.push(integer('pantheon.background.count', payload.tasks.length));
       if (event.kind === 'trace.evidence_read') {

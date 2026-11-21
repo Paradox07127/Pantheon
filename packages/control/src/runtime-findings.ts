@@ -1,6 +1,5 @@
 import type {
   Approval,
-  BoardPlan,
   Event,
   Session,
   StepRun,
@@ -30,10 +29,6 @@ export const RUNTIME_EVENT_KINDS = [
   'session.gate_started',
   'session.gate_checked',
   'session.gate_run_cancelled',
-  'task.start_requested',
-  'task.stop_requested',
-  'task.dispatched',
-  'task.dispatch_wait_changed',
   'approval.requested',
   'approval.approved',
   'approval.rejected',
@@ -48,13 +43,11 @@ export const RUNTIME_EVENT_KINDS = [
 ] as const;
 type Finding = Omit<RuntimeFinding, 'at' | 'id' | 'evidence_ids' | 'evidence'>;
 type NativeLane = { lane: { key: string }; spans: TraceSpan[] };
-type Scope = { leadId: string; taskId?: string; sessions: ReadonlySet<string> };
 
 const SLOW_TOOL_MS = 5 * SECOND;
 const MIN_MS: Partial<Record<RuntimeFindingKind, number>> = {
   turn_queue: 2 * SECOND,
   turn_prepare: 2 * SECOND,
-  dispatch_queue: 5 * SECOND,
   approval: 5 * SECOND,
   permission_delivery: 5 * SECOND,
   gate: 10 * SECOND,
@@ -90,7 +83,6 @@ export function runtimeDiagnostics(
   options: {
     native?: readonly NativeLane[];
     nativeState?: RuntimeDiagnostics['native'];
-    scope?: Scope;
     limit?: number;
     live?: boolean;
     excludeLanes?: readonly string[];
@@ -113,16 +105,6 @@ export function runtimeDiagnostics(
   const terminalTurns = new Set(
     events.filter((event) => END_TURN.has(event.kind)).map((event) => event.aggregate_id),
   );
-  const waits = new Map<string, Event[]>();
-  const waitBreakdown = (changes: Event[], end: number) => {
-    const totals: Record<string, number> = Object.create(null) as Record<string, number>;
-    for (const [index, change] of changes.entries()) {
-      const reason = text(payloadOf(change).wait);
-      const duration = elapsed(change.created_at, changes[index + 1]?.created_at ?? end);
-      if (reason && duration !== undefined) totals[reason] = (totals[reason] ?? 0) + duration;
-    }
-    return totals;
-  };
   const background = new Map<string, Event>();
   const turns = new Map<string, SessionTurn | undefined>();
   const observerLanes = new Set(options.excludeLanes ?? []);
@@ -131,9 +113,7 @@ export function runtimeDiagnostics(
     return turns.get(id);
   };
   const inScope = (lane?: string, turnId?: string) =>
-    (!lane || !observerLanes.has(lane)) &&
-    (!options.scope || (!!lane && options.scope.sessions.has(lane))) &&
-    (!turnId || turnOf(turnId)?.origin !== 'reflection');
+    (!lane || !observerLanes.has(lane)) && (!turnId || turnOf(turnId)?.origin !== 'reflection');
   const evidenceById = new Map<string, NonNullable<RuntimeFinding['evidence']>[number]>(
     events.map((event) => [
       event.event_id,
@@ -142,12 +122,7 @@ export function runtimeDiagnostics(
   );
   const add = (eventId: string, at: number, finding: Finding, evidence: string[]) => {
     if (at < from || at > to) return;
-    if (
-      finding.kind !== 'dispatch_queue' &&
-      finding.kind !== 'workflow_step' &&
-      !inScope(finding.lane_key, finding.turn_id)
-    )
-      return;
+    if (finding.kind !== 'workflow_step' && !inScope(finding.lane_key, finding.turn_id)) return;
     if (finding.kind === 'approval' && !finding.ongoing) pairedApprovals++;
     if (finding.kind === 'context_compaction') compactionCount++;
     if ((finding.duration_ms ?? 0) < (MIN_MS[finding.kind] ?? 0)) return;
@@ -187,8 +162,7 @@ export function runtimeDiagnostics(
   const nativeCompactions: { span: TraceSpan; lane: string }[] = [];
   const compactions = new Map<string, number[]>();
   for (const { lane, spans } of options.native ?? []) {
-    if (observerLanes.has(lane.key) || (options.scope && !options.scope.sessions.has(lane.key)))
-      continue;
+    if (observerLanes.has(lane.key)) continue;
     for (const span of spans) {
       const point = span.end ?? span.start;
       if (span.timing === 'native' && point !== null && point >= from && point <= to)
@@ -392,71 +366,6 @@ export function runtimeDiagnostics(
         else if (event.kind === 'session.gate_run_cancelled' && recorded.run_id === p.run_id)
           pending.delete(key);
       }
-    } else if (
-      event.kind === 'task.start_requested' ||
-      event.kind === 'task.stop_requested' ||
-      event.kind === 'task.dispatched' ||
-      event.kind === 'task.dispatch_wait_changed'
-    ) {
-      if (options.scope && options.scope.leadId !== id) continue;
-      const ids =
-        event.kind === 'task.start_requested' && Array.isArray(p.task_ids)
-          ? p.task_ids
-          : [p.task_id];
-      for (const task_id of ids) {
-        if (
-          typeof task_id !== 'string' ||
-          (options.scope?.taskId !== undefined && options.scope.taskId !== task_id)
-        )
-          continue;
-        const key = pairKey(id, task_id);
-        if (event.kind === 'task.start_requested')
-          begin(key, event, {
-            ...base,
-            layer: 'harness',
-            kind: 'dispatch_queue',
-            lane_key: id,
-            task_id,
-          });
-        else if (event.kind === 'task.dispatch_wait_changed') {
-          const changes = waits.get(key) ?? [];
-          const last = changes.at(-1);
-          if (last && payloadOf(last).requested_at !== p.requested_at) changes.length = 0;
-          changes.push(event);
-          waits.set(key, changes);
-        } else if (event.kind === 'task.stop_requested') {
-          pending.delete(key);
-          waits.delete(key);
-        } else {
-          const start = pending.get(key);
-          const changes = waits.get(key) ?? [];
-          const wait = changes.at(-1);
-          const observedAt =
-            start &&
-            Math.max(start.event.created_at, Number(wait && payloadOf(wait).requested_at) || 0);
-          if (start && wait && observedAt !== undefined && wait.created_at >= observedAt)
-            add(
-              event.event_id,
-              event.created_at,
-              {
-                ...start.finding,
-                lane_key: text(p.session_id) ?? id,
-                wait_reason: text(payloadOf(wait).wait),
-                wait_ms_by_reason: waitBreakdown(changes, event.created_at),
-                duration_ms: elapsed(observedAt, event.created_at),
-                started_at: observedAt,
-              },
-              [
-                start.event.event_id,
-                ...changes.slice(-3).map((change) => change.event_id),
-                event.event_id,
-              ],
-            );
-          else end(key, event, { lane_key: text(p.session_id) ?? id });
-          pending.delete(key);
-          waits.delete(key);
-        }
-      }
     } else if (event.kind === 'agent.tool.started' || event.kind === 'agent.tool.completed') {
       const tool = text(p.tool_call_id);
       if (!tool || !inScope(id, text(p.turn_id))) continue;
@@ -474,13 +383,7 @@ export function runtimeDiagnostics(
       if (p.state !== 'running') end(key, event);
       else {
         const step = ctx.store.get<StepRun>('workflow_step_runs', id);
-        if (
-          !step ||
-          (options.scope &&
-            (options.scope.leadId !== step.lead_session_id ||
-              (options.scope.taskId !== undefined && options.scope.taskId !== step.task_id)))
-        )
-          continue;
+        if (!step) continue;
         begin(key, event, {
           ...base,
           layer: 'harness',
@@ -532,7 +435,7 @@ export function runtimeDiagnostics(
     // Live rows must still be pending in the authoritative entities. A historical unmatched start
     // has no proven outcome and is omitted.
     if (!live) continue;
-    const { kind, lane_key, turn_id, task_id } = finding;
+    const { kind, turn_id } = finding;
     const open =
       ((kind === 'turn_queue' || kind === 'turn_prepare') &&
         !!turn_id &&
@@ -558,25 +461,18 @@ export function runtimeDiagnostics(
         })()) ||
       (kind === 'workflow_step' &&
         ctx.store.get<StepRun>('workflow_step_runs', event.aggregate_id)?.state === 'running');
-    if (open) {
-      const changes = task_id ? waits.get(pairKey(event.aggregate_id, task_id)) : undefined;
-      const wait = changes?.at(-1);
-      const observed = wait && payloadOf(wait).requested_at === undefined ? wait : undefined;
+    if (open)
       add(
         event.event_id,
         to,
         {
           ...finding,
-          lane_key,
           duration_ms: elapsed(event.created_at, to),
           started_at: event.created_at,
           ongoing: true,
-          wait_reason: observed && text(payloadOf(observed).wait),
-          ...(observed && changes ? { wait_ms_by_reason: waitBreakdown(changes, to) } : {}),
         },
-        observed ? [event.event_id, observed.event_id] : [event.event_id],
+        [event.event_id],
       );
-    }
   }
   for (const [key, start] of tools) {
     const turn_id = text(payloadOf(start).turn_id);

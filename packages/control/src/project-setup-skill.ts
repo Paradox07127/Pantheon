@@ -27,10 +27,8 @@ Guide them from the idea to a project skeleton that runs. Reply in the language 
    package manager manifest and its lock file; a minimal entry point that runs; and
    the test framework with one passing test. Add no features beyond it.
 8. Run the build, the entry point and the tests, and fix what fails. Commit the skeleton.
-9. End by saying what you built and asking the user to run the baseline from the
-   project board, so Pantheon reads the new project and plans its next tasks.
+9. End by saying what you built and the commands that build, run and test it.
 
 ## Conventions
 - Do not draw in the conversation: no mermaid, charts, tables or diagrams in your
-  messages. Put structured results, such as the confirmed requirements and the
-  skeleton's tasks, on the board through your board tools when you have them.`;
+  messages.`;

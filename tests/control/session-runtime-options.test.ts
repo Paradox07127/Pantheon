@@ -232,8 +232,8 @@ it('stores connector overrides with session revision checks and applies them on 
   });
   expect(() =>
     f.call('session.setConnectors', { session_id: session.id, enabled: [] }, current().revision, {
-      id: 'lead',
-      role: 'lead',
+      id: 'writer',
+      role: 'writer',
     }),
   ).toThrow(expect.objectContaining({ code: 'permission_denied' }));
 });

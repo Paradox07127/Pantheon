@@ -99,7 +99,6 @@ function card(
   const list = ReviewRecords({
     reviews: [record],
     findings,
-    leads: [{ id: 'lead-a', title: 'lead' }],
     stale: false,
     titleOf: (lane) => `session of ${lane}`,
     onFinding,
@@ -196,26 +195,15 @@ describe('analysis records', () => {
     expect(mock.shell.openSession).toHaveBeenCalledWith('analysis-a');
   });
 
-  it('sends the conclusion to the only lead, then shows it as sent', async () => {
-    const { h } = card(review());
-    button(h.value, zh('trace.reviews.share')).props.onClick();
-    await h.flush();
-    expect(sent()).toEqual([
-      ['trace.share', { session_id: 'analysis-a', lead_session_id: 'lead-a' }],
-    ]);
-    const shared = card(review({ shared_at: at(10, 30), lead_session_id: 'lead-a' })).h;
-    expect(button(shared.value, zh('trace.reviews.shared')).props.disabled).toBe(true);
-  });
-
   it('shows why a command failed on its card, not in a toast', async () => {
     command.mockResolvedValueOnce({ ok: false, error: { code: 'invalid_state', message: '' } });
-    const { h } = card(review());
-    button(h.value, zh('trace.reviews.share')).props.onClick();
+    const { h } = card(review({ verification: improved }));
+    button(h.value, zh('trace.reviews.remember')).props.onClick();
     await h.flush();
     const alert = find(h.value, (n) => n.props.role === 'alert');
     expect(text(alert)).toBe(reasonText('invalid_state'));
     expect(mock.toast).not.toHaveBeenCalled();
-    button(h.value, zh('trace.reviews.share')).props.onClick();
+    button(h.value, zh('trace.reviews.remember')).props.onClick();
     await h.flush();
     expect(nodes(h.value).some((n) => n.props.role === 'alert')).toBe(false);
   });

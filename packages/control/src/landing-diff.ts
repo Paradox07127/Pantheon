@@ -161,15 +161,6 @@ function patchPath(line: string): string | undefined {
   return name === '/dev/null' ? undefined : name.slice(2);
 }
 
-/** The path of a `diff --git a/… b/…` line, without renames, so both names are the same path. */
-export function headerPath(line: string): string {
-  const names = line.slice('diff --git '.length);
-  const first = names.startsWith('"')
-    ? /^"(?:[^"\\]|\\.)*"/.exec(names)![0]
-    : names.slice(0, (names.length - 1) / 2);
-  return unquoted(first).slice(2);
-}
-
 /** A null patch is a truncated one. */
 function landingResult(range: DiffRange, listing: string, patch: string | null): LandingDiff {
   const files = landingFiles(listing);

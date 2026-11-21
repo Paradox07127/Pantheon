@@ -42,7 +42,7 @@ async function intakeFixture(mode: 'approve' | 'auto') {
     });
   const as = (sessionId: string): Principal => ({
     id: `session:${sessionId}`,
-    role: 'lead',
+    role: 'writer',
     project_id: f.project.id,
     session_id: sessionId,
     expires_at: f.store.now() + 60000,

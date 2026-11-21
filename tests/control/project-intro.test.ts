@@ -340,7 +340,7 @@ it('limits submission to assessment and introduction sessions and shares their a
     expect.objectContaining({ code: 'permission_denied' }),
   );
   f.store.update('sessions', { ...baseline, baseline: undefined }, baseline.revision);
-  for (const role of ['planner', 'lead', 'reviewer'] as const)
+  for (const role of ['planner', 'writer', 'reviewer'] as const)
     await expect(() => f.submit({}, { ...f.principal, role })).rejects.toThrow(
       expect.objectContaining({ code: 'permission_denied' }),
     );

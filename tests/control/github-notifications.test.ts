@@ -321,7 +321,7 @@ it('lets only the user set how a project takes external events, and stores off a
         'project.externalEvents.set',
         { project_id: f.project.id, mode: 'approve' },
         project().revision,
-        { id: 'lead-session', role: 'lead' },
+        { id: 'writer-session', role: 'writer' },
       ),
     ).toThrow('Only user');
     f.call(

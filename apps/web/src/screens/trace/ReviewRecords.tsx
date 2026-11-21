@@ -4,7 +4,6 @@ import { RadioGroup } from '@base-ui/react/radio-group';
 import {
   BookOpen,
   Check,
-  Crown,
   FlaskConical,
   MessageSquare,
   Minus,
@@ -79,9 +78,6 @@ export interface ReviewRecordsProps {
   reviews: RuntimeReviewHistory[];
   /** The findings of the shown window; a cited finding outside it is left out. */
   findings: RuntimeFinding[];
-  leads: { id: string; title: string }[];
-  /** The lead picked for new analyses, used when a record has no lead of its own. */
-  leadId?: string;
   stale: boolean;
   titleOf: (lane: string) => string;
   onFinding: (finding: RuntimeFinding) => void;
@@ -105,8 +101,6 @@ function ReviewCard({
   review,
   index,
   findings,
-  leads,
-  leadId,
   stale,
   titleOf,
   onFinding,
@@ -117,13 +111,6 @@ function ReviewCard({
   const now = Date.now();
   const { report, verification } = review;
   const phase = verification?.outcome ?? review.state;
-  const lead =
-    review.lead_session_id ??
-    (leadId && leads.some((row) => row.id === leadId)
-      ? leadId
-      : leads.length === 1
-        ? leads[0]!.id
-        : undefined);
   const cited = (report?.finding_ids ?? []).flatMap((id) =>
     findings.filter((finding) => finding.id === id),
   );
@@ -237,27 +224,6 @@ function ReviewCard({
           <MessageSquare aria-hidden="true" />
           {t({ id: 'trace.reviews.open', defaultMessage: 'Open analysis session' })}
         </button>
-        {report &&
-          (review.shared_at ? (
-            <button type="button" className="btn" disabled>
-              <Check aria-hidden="true" />
-              {t({ id: 'trace.reviews.shared', defaultMessage: 'Sent to Lead' })}
-            </button>
-          ) : (
-            lead && (
-              <button
-                type="button"
-                className="btn"
-                disabled={stale || busy}
-                onClick={() =>
-                  void run('trace.share', { session_id: review.session_id, lead_session_id: lead })
-                }
-              >
-                <Crown aria-hidden="true" />
-                {t({ id: 'trace.reviews.share', defaultMessage: 'Send conclusion to Lead' })}
-              </button>
-            )
-          ))}
         {report?.disposition === 'experiment' && !review.memory_id && (
           <button
             type="button"

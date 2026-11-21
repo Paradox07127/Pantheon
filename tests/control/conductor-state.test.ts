@@ -221,7 +221,7 @@ it("lists the project's changes, their review and to-dos to a conductor session 
   expect(rows.has(`session:${foreign.id}`)).toBe(false);
   expect(rows.has(`landing:${foreignLanding.id}`)).toBe(false);
 
-  for (const principal of [user, credential(quiet, 'lead'), credential(running, 'writer')])
+  for (const principal of [user, credential(quiet, 'planner'), credential(running, 'writer')])
     expect(await refusal(f, principal), principal.role).toBe('permission_denied');
 });
 

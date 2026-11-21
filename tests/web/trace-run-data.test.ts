@@ -476,8 +476,6 @@ describe('finding threshold and evidence', () => {
         RuntimePanel({
           overview: null,
           diagnostics,
-          leads: [],
-          lead: undefined,
           reviews: [],
           stale: false,
           titleOf: () => 'lead',

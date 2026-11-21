@@ -7,7 +7,6 @@ import { EmptyState } from '../../components/EmptyState';
 import { t } from '../../i18n';
 import { shortcutKeys } from '../../lib/shortcuts';
 import { clockText, durationText } from '../../lib/time-text';
-import { analysisLead } from './AnalyzeMenu';
 import { FINDING_ICONS, FindingDetail, findingReason, runtimeFindingTitle } from './FindingDetail';
 import { ReviewRecords } from './ReviewRecords';
 import './diagnose.css';
@@ -19,8 +18,6 @@ type View = 'findings' | 'records';
 export function RuntimePanel({
   overview,
   diagnostics,
-  leads,
-  lead,
   reviews,
   stale,
   titleOf,
@@ -29,9 +26,6 @@ export function RuntimePanel({
 }: {
   overview: ReactNode;
   diagnostics: RuntimeDiagnostics;
-  leads: { id: string; title: string }[];
-  /** The lead chosen in the analysis menu; see analysisLead. */
-  lead: string | null | undefined;
   reviews: RuntimeReviewHistory[];
   stale: boolean;
   titleOf: (lane: string) => string;
@@ -73,8 +67,6 @@ export function RuntimePanel({
           <ReviewRecords
             reviews={reviews}
             findings={findings}
-            leads={leads}
-            leadId={analysisLead(leads, lead)}
             stale={stale}
             titleOf={titleOf}
             onFinding={pick}

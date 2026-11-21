@@ -202,7 +202,7 @@ it('serves the trace queries over HTTP and keeps the trace cache in the data dir
     });
     expect(collab).toEqual({
       status: 200,
-      body: { messages: [], in_flight: [], subagents: [], model_changes: [] },
+      body: { subagents: [], model_changes: [] },
     });
     expect(
       (await get('project.collab', { project_id: project.id, since: '2', until: '1' })).status,

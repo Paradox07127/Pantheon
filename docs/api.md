@@ -457,8 +457,8 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 |---|---|---|
 | `review.finding` | `location`: string<br>`quote`: string<br>`evidence`: string<br>`impact`: string<br>`blocking`: boolean<br>`reproduction?`: object | review_finding (reviewer) |
 | `review.finding.resolve` | `review_id`: string<br>`finding_id`: string<br>`outcome`: "fixed" \| "intentional" \| "not_worth_it" \| "wrong"<br>`note?`: string |  |
-| `review.range` | `root`: string<br>`base`: string<br>`head?`: string<br>`runtimes?`: string[] |  |
-| `review.request` | `session_id`: string<br>`runtimes`: string[] |  |
+| `review.range` | `root`: string<br>`base`: string<br>`head?`: string<br>`runtimes?`: string[]<br>`fallback?`: string[] |  |
+| `review.request` | `session_id`: string<br>`runtimes`: string[]<br>`fallback?`: string[] |  |
 | `review.verdict` | `verdict`: "pass" \| "fail"<br>`summary`: string | review_verdict (reviewer) |
 
 ### runtime
@@ -518,11 +518,10 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
-| `trace.evidence` | `project_id`: string<br>`view?`: "summary" \| "findings" \| "workflow"<br>`kind?`: "turn_queue" \| "turn_prepare" \| "dispatch_queue" \| "approval" \| "permission_delivery" \| "gate" \| "slow_tool" \| "tool_failure" \| "turn_failure" \| "context_compaction" \| "background_task" \| "workflow_step"<br>`offset?`: integer<br>`limit?`: integer | trace_evidence (project session) |
-| `trace.reflect` | `project_id`: string<br>`lead_session_id?`: string<br>`runtime?`: string<br>`from`: integer<br>`to`: integer |  |
+| `trace.evidence` | `project_id`: string<br>`view?`: "summary" \| "findings" \| "workflow"<br>`kind?`: "turn_queue" \| "turn_prepare" \| "approval" \| "permission_delivery" \| "gate" \| "slow_tool" \| "tool_failure" \| "turn_failure" \| "context_compaction" \| "background_task" \| "workflow_step"<br>`offset?`: integer<br>`limit?`: integer | trace_evidence (project session) |
+| `trace.reflect` | `project_id`: string<br>`runtime?`: string<br>`from`: integer<br>`to`: integer |  |
 | `trace.remember` | `session_id`: string |  |
 | `trace.report` | `project_id`: string<br>`summary`: string<br>`finding_ids`: string[]<br>`disposition`: "experiment" \| "measure" \| "none"<br>`change`: string<br>`baseline`: string<br>`metric`: string<br>`rollback`: string | trace_report (project session) |
-| `trace.share` | `session_id`: string<br>`lead_session_id?`: string |  |
 | `trace.verify` | `session_id`: string<br>`outcome`: "improved" \| "unchanged" \| "regressed"<br>`baseline`: number<br>`trial`: number<br>`evidence`: string |  |
 
 ### visual

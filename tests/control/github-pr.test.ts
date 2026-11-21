@@ -103,7 +103,7 @@ it('refuses dirty worktrees, sessions without a worktree, and non-user principal
     code: 'invalid_input',
   });
   await expect(
-    f.call('github.pr.create', { session_id: f.session.id }, null, { id: 'agent', role: 'lead' }),
+    f.call('github.pr.create', { session_id: f.session.id }, null, { id: 'agent', role: 'writer' }),
   ).rejects.toMatchObject({ code: 'permission_denied' });
   expect(f.run).not.toHaveBeenCalled();
 });

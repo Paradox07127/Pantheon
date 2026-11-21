@@ -1416,7 +1416,7 @@ it('refuses a baseline started by a session', async () => {
     await expect(async () =>
       f.call('project.baseline.start', { project_id: f.project.id }, null, {
         ...f.principal(session),
-        role: 'lead',
+        role: 'writer',
       }),
     ).rejects.toThrow(expect.objectContaining({ code: 'permission_denied' }));
   } finally {

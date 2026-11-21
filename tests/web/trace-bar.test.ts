@@ -272,12 +272,10 @@ describe('trace bar on the diagnose tab', () => {
       native: 'included' as const,
       findings: [],
     };
-    const leads = [{ id: 'lead-a', title: 'lead' }];
     mock.trace = {
       ...projectTrace(MIDNIGHT),
       diagnostics,
       reflection_runtimes: ['claude'],
-      reflection_leads: leads,
     };
     const h = screen();
     const end = find(h.value, (n) => n.props.className === 'tb-end');
@@ -287,15 +285,9 @@ describe('trace bar on the diagnose tab', () => {
       projectId: 'project-a',
       diagnostics,
       runtimes: ['claude'],
-      leads,
-      lead: undefined,
       windowText: '00:00 – 14:20',
       stale: false,
     });
-    menu.props.onLead(null);
-    h.render();
-    expect(named(h.value, 'AnalyzeMenu').props.lead).toBeNull();
-    expect(named(h.value, 'RuntimePanel').props.lead).toBeNull();
     useShell.setState({ traceTab: 'runs' });
     h.render();
     expect(nodes(h.value).some((n) => (n.type as any)?.name === 'AnalyzeMenu')).toBe(false);

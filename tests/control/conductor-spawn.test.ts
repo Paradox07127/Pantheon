@@ -216,18 +216,18 @@ it('refuses a fifth unfinished spawned session and takes one again after one clo
   expect(row(f, session_id).spawned_by).toEqual({ session_id: conductor.id });
 });
 
-it('refuses the user, a lead and a writer, and tells no one about a session the user opened', async () => {
+it('refuses the user, a planner and a writer, and tells no one about a session the user opened', async () => {
   const f = await workbenchFixture();
   const conductor = await openConductor(f);
-  const lead = await f.create('Plan the export');
-  await settle(f, lead);
+  const caller = await f.create('Plan the export');
+  await settle(f, caller);
   const input = { runtime: f.adapter.name, input: 'Port the parser' };
 
   expect(refusal(() => f.call('conductor.spawn', input)).code).toBe('permission_denied');
-  expect(refusal(() => spawn(f, lead.id, 'Port the parser', 'lead')).code).toBe(
+  expect(refusal(() => spawn(f, caller.id, 'Port the parser', 'planner')).code).toBe(
     'permission_denied',
   );
-  expect(refusal(() => spawn(f, lead.id, 'Port the parser', 'writer')).code).toBe(
+  expect(refusal(() => spawn(f, caller.id, 'Port the parser', 'writer')).code).toBe(
     'permission_denied',
   );
 

@@ -2058,7 +2058,6 @@ export const inputSchemas = {
   'session.comment.delete': z.strictObject({ comment_id: str }),
   'trace.reflect': z.strictObject({
     project_id: str,
-    lead_session_id: str.optional(),
     runtime: z.string().max(80).optional(),
     from: z.number().int().nonnegative().max(8_640_000_000_000_000),
     to: z.number().int().nonnegative().max(8_640_000_000_000_000),
@@ -2070,7 +2069,6 @@ export const inputSchemas = {
       .enum([
         'turn_queue',
         'turn_prepare',
-        'dispatch_queue',
         'approval',
         'permission_delivery',
         'gate',
@@ -2095,7 +2093,6 @@ export const inputSchemas = {
     metric: z.string().trim().max(180),
     rollback: z.string().trim().max(240),
   }),
-  'trace.share': z.strictObject({ session_id: str, lead_session_id: str.optional() }),
   'trace.remember': z.strictObject({ session_id: str }),
   'trace.verify': z.strictObject({
     session_id: str,
@@ -2161,6 +2158,12 @@ export const inputSchemas = {
       .describe(
         "The reviewing runtimes, at least one; choose runtimes other than the writer's when available.",
       ),
+    fallback: strings
+      .min(1)
+      .optional()
+      .describe(
+        "Runtimes that take over, in order, from a reviewer whose turn ends on its usage limit; one already reviewing or the writer's is skipped.",
+      ),
   }),
   /** The user only; reviews the commits from the merge base of base and head up to head, and returns the started Review. */
   'review.range': z.strictObject({
@@ -2171,6 +2174,12 @@ export const inputSchemas = {
       .min(1)
       .optional()
       .describe("The reviewing runtimes; absent means the project's reviewer."),
+    fallback: strings
+      .min(1)
+      .optional()
+      .describe(
+        "Runtimes that take over, in order, from a reviewer whose turn ends on its usage limit; one already reviewing or the writer's is skipped.",
+      ),
   }),
   'review.finding': z
     .strictObject({
@@ -2339,7 +2348,7 @@ export const querySchemas = {
     project_id: str,
     since: z.coerce.number().int().min(0).optional(),
   }),
-  /** DecisionsForUser; what a lead or a stored rule decided without the user from since on, Unix milliseconds, newest first. */
+  /** DecisionsForUser; what a stored rule decided without the user from since on, Unix milliseconds, newest first. */
   'project.decisions': z.strictObject({
     project_id: str,
     since: z.coerce.number().int().min(0).optional(),
@@ -3124,7 +3133,6 @@ export interface ProjectTrace {
   indexing: { done_files: number; total_files: number } | null;
   stats: TraceStats;
   diagnostics?: RuntimeDiagnostics;
-  reflection_leads?: { id: string; title: string }[];
   reflection_runtimes?: string[];
   runtime_reviews?: RuntimeReviewHistory[];
   /** Lanes with a turn in the window, ordered by their first such turn. */
@@ -3164,15 +3172,8 @@ export interface SessionStepDiff {
   files: { path: string; patch: string | null; truncated: boolean }[];
 }
 
-/** GET /v1/project.collab; inclusive epoch-ms range, except in_flight which is current. */
+/** GET /v1/project.collab; inclusive epoch-ms range. */
 export interface ProjectCollab {
-  messages: {
-    sender: string;
-    receiver: string;
-    direction: 'lead_to_worker' | 'worker_to_lead';
-    count: number;
-  }[];
-  in_flight: { sender: string; receiver: string; sent_at: number }[];
   subagents: {
     session_id: string;
     span_id: string;

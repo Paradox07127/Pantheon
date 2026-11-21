@@ -18,8 +18,6 @@
   "trace.reviews.result": "结果",
   "trace.reviews.rollback": "回滚条件",
   "trace.reviews.save": "保存",
-  "trace.reviews.share": "把结论发给 Lead",
-  "trace.reviews.shared": "已发给 Lead",
   "trace.reviews.trialInput": "试验值",
   "trace.reviews.trialValue": "试验",
   "trace.reviews.window": "{from} – {to}"

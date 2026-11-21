@@ -26,7 +26,6 @@ const TRACE_KINDS: ReadonlySet<string> = new Set([
   'agent.context.compacted',
   'agent.background.changed',
   'workflow.step_changed',
-  'task.dispatch_wait_changed',
 ]);
 
 /** Whether an event of this kind can change a trace read. */

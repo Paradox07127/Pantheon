@@ -1,12 +1,5 @@
 import { expect, it, vi } from 'vitest';
-import type {
-  Approval,
-  BoardPlan,
-  Principal,
-  Session,
-  SessionTurn,
-  Workspace,
-} from '@pantheon/domain';
+import type { Approval, Principal, Session, SessionTurn, Workspace } from '@pantheon/domain';
 import type { ControlContext } from '../../packages/control/dist/context.js';
 import { runtimeDiagnostics } from '../../packages/control/dist/runtime-findings.js';
 import { eventually, fixture, user } from '../helpers.js';
@@ -23,11 +16,11 @@ it('pairs lifecycle timestamps, distinguishes tool timing sources and gives refl
       project_id: project,
       kind: 'linked_worktree',
       path: f.projectRoot,
-      owner: 'runtime-lead',
+      owner: 'runtime-writer',
       ownership_epoch: 1,
     });
-    const lead = f.store.insert<Session>('sessions', {
-      id: 'runtime-lead',
+    const writer = f.store.insert<Session>('sessions', {
+      id: 'runtime-writer',
       revision: 1,
       project_id: project,
       runtime: 'fixture',
@@ -39,7 +32,7 @@ it('pairs lifecycle timestamps, distinguishes tool timing sources and gives refl
       id: 'runtime-turn',
       revision: 1,
       project_id: project,
-      session_id: lead.id,
+      session_id: writer.id,
       state: 'completed',
       input: 'private input',
       kind: 'send',
@@ -53,35 +46,25 @@ it('pairs lifecycle timestamps, distinguishes tool timing sources and gives refl
     now += 2_200;
     ev('turn.running', turn);
     const approval = { id: 'runtime-approval', revision: 1 };
-    ev('approval.requested', approval, { session_id: lead.id, turn_id: turn.id });
+    ev('approval.requested', approval, { session_id: writer.id, turn_id: turn.id });
     now += 6_000;
-    ev('approval.approved', approval, {
-      session_id: lead.id,
+    const decision = ev('approval.approved', approval, {
+      session_id: writer.id,
       turn_id: turn.id,
       decided_by: 'local-user',
     });
     now += 4_000;
-    ev('approval.resolved', approval, { session_id: lead.id, turn_id: turn.id });
+    ev('approval.resolved', approval, { session_id: writer.id, turn_id: turn.id });
     const tool = (tool_call_id: string) => ({ tool_call_id, turn_id: turn.id });
-    ev('agent.tool.started', lead, { ...tool('reported'), input: 'SECRET_TOOL_TEXT' });
-    ev('agent.tool.completed', lead, {
+    ev('agent.tool.started', writer, { ...tool('reported'), input: 'SECRET_TOOL_TEXT' });
+    ev('agent.tool.completed', writer, {
       ...tool('reported'),
       ok: true,
       duration_ms: 5_231,
       output: 'SECRET_TOOL_TEXT',
     });
-    ev('agent.tool.started', lead, tool('missing'));
-    ev('agent.tool.completed', lead, { ...tool('missing'), ok: false });
-    ev('task.start_requested', lead, { task_ids: ['sample'] });
-    const requestAt = now;
-    now += 1_000;
-    const reason = ev('task.dispatch_wait_changed', lead, {
-      task_id: 'sample',
-      wait: 'scope',
-      requested_at: requestAt,
-    });
-    now += 6_000;
-    ev('task.dispatched', lead, { task_id: 'sample', session_id: lead.id });
+    ev('agent.tool.started', writer, tool('missing'));
+    ev('agent.tool.completed', writer, { ...tool('missing'), ok: false });
     ev('turn.completed', turn);
     const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
     const result = runtimeDiagnostics(ctx, project, from, now);
@@ -97,24 +80,17 @@ it('pairs lifecycle timestamps, distinguishes tool timing sources and gives refl
           source: 'runtime_reported',
         }),
         expect.objectContaining({ kind: 'tool_failure', duration_ms: undefined }),
-        expect.objectContaining({
-          kind: 'dispatch_queue',
-          duration_ms: 7_000,
-          wait_reason: 'scope',
-          wait_ms_by_reason: { scope: 6_000 },
-          evidence_ids: expect.arrayContaining([reason.event_id]),
-        }),
       ]),
     );
     expect(JSON.stringify(result)).not.toContain('SECRET_TOOL_TEXT');
     const principal: Principal = {
-      id: 'runtime-lead-principal',
-      role: 'lead',
+      id: 'runtime-writer-principal',
+      role: 'writer',
       project_id: project,
-      session_id: lead.id,
+      session_id: writer.id,
       expires_at: now + 60_000,
     };
-    const input = { project_id: project, lead_session_id: lead.id, from, to: now };
+    const input = { project_id: project, from, to: now };
     // A session the user opened holds no credential, so its principal is refused before the action check.
     expect(() => f.call('trace.reflect', input, null, principal)).toThrow(
       'Active session credential required',
@@ -122,16 +98,16 @@ it('pairs lifecycle timestamps, distinguishes tool timing sources and gives refl
 
     const window = { project_id: project, from, to: now };
     const { session_id } = f.call<{ session_id: string }>('trace.reflect', window);
-    expect(session_id).not.toBe(lead.id);
-    expect(f.store.must<Session>('sessions', lead.id)).toEqual(lead);
+    expect(session_id).not.toBe(writer.id);
+    expect(f.store.must<Session>('sessions', writer.id)).toEqual(writer);
     expect(
-      f.store.list<SessionTurn>('session_turns').filter((row) => row.session_id === lead.id),
+      f.store.list<SessionTurn>('session_turns').filter((row) => row.session_id === writer.id),
     ).toEqual([turn]);
     const reflection = f.store
       .list<SessionTurn>('session_turns')
       .find((row) => row.session_id === session_id)!;
     expect(reflection.origin).toBe('reflection');
-    expect(reflection.input).not.toContain(reason.event_id);
+    expect(reflection.input).not.toContain(decision.event_id);
     expect(f.call('trace.reflect', window)).toEqual({ session_id });
     const analysisPrincipal: Principal = {
       ...principal,
@@ -151,53 +127,37 @@ it('pairs lifecycle timestamps, distinguishes tool timing sources and gives refl
     );
     f.store.update('session_turns', { ...reflection, state: 'running' }, reflection.revision);
     const summary = f.call('trace.evidence', { project_id: project }, null, analysisPrincipal);
-    expect(summary).toMatchObject({ counts: { approval: 1, dispatch_queue: 1 } });
+    expect(summary).toMatchObject({ counts: { approval: 1 } });
     const page = f.call<{ items: { id: string; evidence_ids: string[] }[] }>(
       'trace.evidence',
       {
         project_id: project,
         view: 'findings',
-        kind: 'dispatch_queue',
+        kind: 'approval',
         limit: 1,
       },
       null,
       analysisPrincipal,
     );
-    expect(page.items[0]?.evidence_ids).toContain(reason.event_id);
+    expect(page.items[0]?.evidence_ids).toContain(decision.event_id);
     expect(JSON.stringify(page)).not.toContain('SECRET_TOOL_TEXT');
+    expect(
+      f.call('trace.evidence', { project_id: project, view: 'workflow' }, null, analysisPrincipal),
+    ).toEqual({ policy: { policy_version: expect.any(Number), pinned: [] } });
     const report = {
       project_id: project,
-      summary: 'Scope wait',
+      summary: 'Approval wait',
       disposition: 'experiment',
       finding_ids: [page.items[0]!.id],
-      change: 'Separate ownership',
+      change: 'Ask for the approval before the turn starts',
       baseline: 'Same task type',
-      metric: 'Dispatch P95 milliseconds',
+      metric: 'Approval wait P95 milliseconds',
       rollback: 'Revert on worse first-pass quality',
     };
     expect(() =>
       f.call('trace.report', { ...report, finding_ids: ['unknown'] }, null, analysisPrincipal),
     ).toThrow('Cite findings');
     expect(f.call('trace.report', report, null, analysisPrincipal)).toEqual({ saved: true });
-    f.store.insert<BoardPlan>('board_plans', {
-      id: lead.id,
-      revision: 1,
-      project_id: project,
-      headline: 'Original plan',
-      lanes: [],
-      tasks: [],
-      pending_edits: [],
-      risks: [],
-      assumptions: [],
-      inbox: [],
-      notified: {},
-      plan_version: 1,
-      updated_at: now,
-    });
-    expect(f.call('trace.share', { session_id, lead_session_id: lead.id })).toEqual({
-      shared: true,
-    });
-    expect(f.store.must<Session>('sessions', lead.id)).toEqual(lead);
     expect(() => f.call('trace.remember', { session_id })).toThrow('successful experiment');
     f.call('trace.verify', {
       session_id,
@@ -212,7 +172,7 @@ it('pairs lifecycle timestamps, distinguishes tool timing sources and gives refl
     expect(f.store.list<{ id: string; revision: number; state: string }>('memory_records')).toEqual(
       [expect.objectContaining({ state: 'draft' })],
     );
-    for (let index = 0; index < 6; index++)
+    for (let index = 0; index < 5; index++)
       f.call('trace.evidence', { project_id: project }, null, analysisPrincipal);
     expect(() =>
       f.call('trace.evidence', { project_id: project }, null, analysisPrincipal),
@@ -368,37 +328,6 @@ it('reports a decided approval the runtime has not acknowledged as an ongoing de
       expect.objectContaining({ layer: 'runtime', ongoing: true, duration_ms: 10_000 }),
     ]);
     expect(delivery[0]!.evidence_ids).toEqual([approvedEvent.event_id]);
-  } finally {
-    await f.close();
-  }
-});
-
-it('starts a new dispatch wait when a stopped request is requested again', async () => {
-  let now = 1_800_000_000_000;
-  const from = now;
-  const f = await fixture({ now: () => now });
-  try {
-    const project = f.project.id;
-    const lead = { id: 'dispatch-lead', revision: 1 };
-    f.store.event('task.start_requested', lead, project, { task_ids: ['sample'] });
-    f.store.event('task.dispatch_wait_changed', lead, project, {
-      task_id: 'sample',
-      wait: 'capacity',
-      requested_at: from,
-    });
-    now += 60_000;
-    f.store.event('task.stop_requested', lead, project, { task_id: 'sample' });
-    now += 60_000;
-    f.store.event('task.start_requested', lead, project, { task_ids: ['sample'] });
-    now += 6_000;
-    f.store.event('task.dispatched', lead, project, { task_id: 'sample', session_id: 'worker' });
-    const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
-    const result = runtimeDiagnostics(ctx, project, from, now, { live: false });
-    const queue = result.findings.filter((finding) => finding.kind === 'dispatch_queue');
-    expect(queue).toEqual([
-      expect.objectContaining({ duration_ms: 6_000, started_at: now - 6_000 }),
-    ]);
-    expect(queue[0]!.wait_ms_by_reason).toBeUndefined();
   } finally {
     await f.close();
   }

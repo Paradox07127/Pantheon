@@ -38,7 +38,7 @@ it('keeps the GPU closed to gate commands until the user opens it for the projec
 });
 
 it.each([
-  { id: 'agent', role: 'lead' as const },
+  { id: 'agent', role: 'writer' as const },
   { id: 'agent', role: 'planner' as const },
 ])('refuses a $role that turns on the GPU for gate commands', async (principal) => {
   f = await fixture();

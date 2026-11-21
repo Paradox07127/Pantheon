@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import {
   DomainError,
@@ -48,6 +48,8 @@ const REVIEW_MAX_ROUNDS = 3;
 export const reviewInstruction =
   'Review these changes against the task goal. Record each problem with review_finding; quote the diff exactly. End the review with one review_verdict call, pass or fail, with a summary of what you checked.';
 const rangeInstruction = `${reviewInstruction} Write each finding's location as path:line in the changed file. The checkout in your working directory may not be the reviewed head; changes.diff is the reviewed code.`;
+/** The file each reviewer reads the reviewed changes from, in its directory. */
+const ARTIFACT = 'changes.diff';
 /** A finding location naming a file and a line or line range. */
 const FINDING_PLACE = /^(.+?):(\d+)(?:-\d+)?$/;
 
@@ -141,6 +143,7 @@ export function startSessionReview(
     changes: Awaited<ReturnType<typeof sessionChanges>>;
     requester?: Review['requester'];
     notify_session_id?: string;
+    fallback?: string[];
   },
 ): Review {
   const round =
@@ -156,11 +159,12 @@ export function startSessionReview(
     round,
     cause: options.cause,
     prompt: `${reviewInstruction}\n\nTask goal:\n${options.goal}\n\nChanges:\n${diff.toString('utf8')}`,
-    artifact: { name: 'changes.diff', content: diff },
+    artifact: diff,
     session_id: session.id,
     requester: options.requester,
     notify_session_id: options.notify_session_id,
     range,
+    fallback: options.fallback,
   });
 }
 
@@ -179,6 +183,7 @@ export function prepareReviewRequest(
         cause: command.command_id,
         goal,
         changes,
+        fallback: input.fallback,
       });
       return { ...review, review_id: review.id };
     };
@@ -276,9 +281,10 @@ export function prepareRangeReview(
         round: 1,
         cause: command.command_id,
         prompt: `${rangeInstruction}\n\nTask goal:\n${goal}\n\nChanges:\n${diff.stdout.toString('utf8')}`,
-        artifact: { name: 'changes.diff', content: diff.stdout },
+        artifact: diff.stdout,
         range: { source: root, from_sha, to_sha },
         refs: { base: input.base, head },
+        fallback: input.fallback,
       });
       return { ...review, review_id: review.id };
     };
@@ -566,13 +572,14 @@ export function startReview(
     round: number;
     cause: string;
     prompt: string;
-    /** The file each reviewer reads from its directory. */
-    artifact: { name: string; content: Buffer };
+    /** The reviewed changes, which each reviewer reads from its directory. */
+    artifact: Buffer;
     session_id?: string;
     requester?: Review['requester'];
     notify_session_id?: string;
     range?: NonNullable<Review['range']>;
     refs?: Review['refs'];
+    fallback?: string[];
     /** Overrides the session defaults' model and effort of every reviewer session. */
     choice?: { model?: string; effort?: EffortLevel };
   },
@@ -589,75 +596,143 @@ export function startReview(
       ...(options.refs ? { refs: options.refs } : {}),
       ...(options.requester ? { requester: options.requester } : {}),
       ...(options.notify_session_id ? { notify_session_id: options.notify_session_id } : {}),
+      ...(options.fallback ? { fallback: options.fallback } : {}),
       round: options.round,
       runtimes,
       state: 'running',
       findings: [],
       session_ids: [],
     };
-  for (const name of runtimes) runtime(ctx, name, 'reviewer');
+  for (const name of [...runtimes, ...(options.fallback ?? [])]) runtime(ctx, name, 'reviewer');
   // Findings are checked against the stored input.
   const prompt = boundedInput(options.prompt);
   review.input_hash = ctx.files.put(Buffer.from(prompt)).hash;
-  // The normal outbox starts the turns.
   const directories: string[] = [];
   for (const name of runtimes) {
-    const settings = sessionDefaults(ctx, project);
-    const defaults = [settings?.reviewer, settings?.fallbacks?.reviewer, settings].find(
-      (choice) => choice?.runtime === name,
-    );
-    // A default effort may not fit a chosen model, so a chosen model takes only the chosen effort.
-    const model = options.choice?.model ?? defaults?.model,
-      effort =
-        options.choice?.model !== undefined
-          ? options.choice.effort
-          : (options.choice?.effort ?? defaults?.effort);
-    const reviewer: Session = {
-      id: id(),
-      revision: 1,
-      project_id: project.id,
-      runtime: name,
-      ...(model !== undefined ? { requested_model: model } : {}),
-      ...(effort !== undefined ? { requested_effort: effort } : {}),
-      review_id: review.id,
-      state: 'running',
-      turn_count: 1,
-    };
-    const directory = reviewerDirectory(ctx, project.id, review.id, reviewer.id);
-    if (ctx.workspaceRoot) {
-      assertManagedLocation(directory);
-      requireThat(
-        inside(ctx.workspaceRoot, directory),
-        'scope_violation',
-        'Reviewer path outside managed workspace root',
-      );
-    }
-    directories.push(directory);
-    insert(ctx, 'sessions', reviewer, 'session.opened', project.id, cause);
-    const turn: SessionTurn = {
-      id: id(),
-      revision: 1,
-      project_id: project.id,
-      session_id: reviewer.id,
-      model: reviewer.reported_model ?? reviewer.requested_model ?? null,
-      input: prompt,
-      kind: 'send',
-      delivery: 'pending',
-      state: 'queued',
-    };
-    insert(ctx, 'session_turns', turn, 'turn.queued', project.id, cause);
-    ctx.store.enqueue('session.turn', { turn_id: turn.id });
+    const reviewer = openReviewer(ctx, project, review.id, name, prompt, cause, options.choice);
+    directories.push(reviewer.directory);
     review.session_ids.push(reviewer.id);
   }
-  for (const directory of directories) {
-    mkdirSync(directory, { recursive: true, mode: 0o700 });
-    writeFileSync(path.join(directory, options.artifact.name), options.artifact.content, {
-      flag: 'wx',
-      mode: 0o600,
-    });
-  }
+  for (const directory of directories) writeArtifact(directory, options.artifact);
   insert(ctx, 'reviews', review, 'review.requested', project.id, cause);
   return review;
+}
+
+/** Opens one reviewer session with its queued turn; the normal outbox starts the turn. */
+function openReviewer(
+  ctx: ControlContext,
+  project: Project,
+  reviewId: string,
+  name: string,
+  prompt: string,
+  cause: string,
+  choice?: { model?: string; effort?: EffortLevel },
+): { id: string; directory: string } {
+  const settings = sessionDefaults(ctx, project);
+  const defaults = [settings?.reviewer, settings?.fallbacks?.reviewer, settings].find(
+    (candidate) => candidate?.runtime === name,
+  );
+  // A default effort may not fit a chosen model, so a chosen model takes only the chosen effort.
+  const model = choice?.model ?? defaults?.model,
+    effort = choice?.model !== undefined ? choice.effort : (choice?.effort ?? defaults?.effort);
+  const reviewer: Session = {
+    id: id(),
+    revision: 1,
+    project_id: project.id,
+    runtime: name,
+    ...(model !== undefined ? { requested_model: model } : {}),
+    ...(effort !== undefined ? { requested_effort: effort } : {}),
+    review_id: reviewId,
+    state: 'running',
+    turn_count: 1,
+  };
+  const directory = reviewerDirectory(ctx, project.id, reviewId, reviewer.id);
+  if (ctx.workspaceRoot) {
+    assertManagedLocation(directory);
+    requireThat(
+      inside(ctx.workspaceRoot, directory),
+      'scope_violation',
+      'Reviewer path outside managed workspace root',
+    );
+  }
+  insert(ctx, 'sessions', reviewer, 'session.opened', project.id, cause);
+  const turn: SessionTurn = {
+    id: id(),
+    revision: 1,
+    project_id: project.id,
+    session_id: reviewer.id,
+    model: reviewer.reported_model ?? reviewer.requested_model ?? null,
+    input: prompt,
+    kind: 'send',
+    delivery: 'pending',
+    state: 'queued',
+  };
+  insert(ctx, 'session_turns', turn, 'turn.queued', project.id, cause);
+  ctx.store.enqueue('session.turn', { turn_id: turn.id });
+  return { id: reviewer.id, directory };
+}
+
+function writeArtifact(directory: string, artifact: Buffer) {
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  writeFileSync(path.join(directory, ARTIFACT), artifact, { flag: 'wx', mode: 0o600 });
+}
+
+/** The review's reviewer sessions that no fallback runtime took over from. */
+const reviewing = (review: Review) =>
+  review.session_ids.filter(
+    (sessionId) => !review.replacements?.some((replaced) => replaced.session_id === sessionId),
+  );
+
+/**
+ * For each reviewer whose turn ended on its usage limit, opens a reviewer session on the first
+ * fallback runtime that is neither in the review nor the writer's; true when it opened one.
+ */
+function replaceLimitedReviewers(
+  ctx: ControlContext,
+  review: Review,
+  turns: SessionTurn[],
+): boolean {
+  if (!review.fallback) return false;
+  const project = ctx.store.must<Project>('projects', review.project_id),
+    writer = review.session_id
+      ? ctx.store.get<Session>('sessions', review.session_id)?.runtime
+      : undefined;
+  let next = review;
+  for (const sessionId of reviewing(review)) {
+    const turn = turns.find((t) => t.session_id === sessionId);
+    if (turn?.state !== 'failed') continue;
+    const ended = ctx.store
+      .statement(
+        "SELECT payload ->> '$.error_code' AS code FROM events WHERE aggregate_id=? AND kind='agent.turn.completed' AND payload ->> '$.turn_id'=? ORDER BY sequence DESC LIMIT 1",
+      )
+      .get(sessionId, turn.id) as { code: string | null } | undefined;
+    if (ended?.code !== 'usage_limit') continue;
+    const by = review.fallback.find((name) => name !== writer && !next.runtimes.includes(name));
+    if (!by) break;
+    const opened = openReviewer(ctx, project, review.id, by, turn.input, turn.id);
+    writeArtifact(
+      opened.directory,
+      readFileSync(path.join(reviewerDirectory(ctx, project.id, review.id, sessionId), ARTIFACT)),
+    );
+    const replacement = {
+      runtime: ctx.store.must<Session>('sessions', sessionId).runtime,
+      session_id: sessionId,
+      by,
+      reason: 'usage_limit' as const,
+    };
+    next = ctx.store.update<Review>(
+      'reviews',
+      {
+        ...next,
+        runtimes: [...next.runtimes, by],
+        session_ids: [...next.session_ids, opened.id],
+        replacements: [...(next.replacements ?? []), replacement],
+      },
+      next.revision,
+    );
+    ctx.store.event('review.reviewer_replaced', next, project.id, replacement, turn.id);
+  }
+  return next !== review;
 }
 
 /** The caller owns the transaction and command or native event deduplication. */
@@ -851,7 +926,8 @@ export function settleReview(
   }
   if (review.state !== 'running') return;
   const turns = ctx.store.list<SessionTurn>('session_turns');
-  const states = review.session_ids.map((sessionId) => {
+  if (!recovering && replaceLimitedReviewers(ctx, review, turns)) return;
+  const states = reviewing(review).map((sessionId) => {
     const session = ctx.store.get<Session>('sessions', sessionId);
     const turn = turns.find((t) => t.session_id === sessionId);
     return session && turn ? turn.state : 'failed';
@@ -889,7 +965,7 @@ function incompleteReason(
   review: Review,
   turns: SessionTurn[],
 ): string | undefined {
-  const reasons = review.session_ids.flatMap((sessionId) => {
+  const reasons = reviewing(review).flatMap((sessionId) => {
     const name = ctx.store.get<Session>('sessions', sessionId)?.runtime ?? sessionId,
       turn = turns.find((t) => t.session_id === sessionId),
       findings = review.findings.filter((finding) => finding.runtime === name);

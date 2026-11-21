@@ -136,16 +136,16 @@ it('reads a stored policy that still holds removed settings without them, and sa
   ]);
 });
 
-it('refuses a lead session that tries to change the policy', async () => {
+it('refuses a writer session that tries to change the policy', async () => {
   const f = await opened();
-  const lead: Principal = {
-    id: 'session:lead',
-    role: 'lead',
+  const writer: Principal = {
+    id: 'session:writer',
+    role: 'writer',
     project_id: f.project.id,
-    session_id: 'lead',
+    session_id: 'writer',
     expires_at: f.store.now() + 60000,
   };
-  expect(refused(() => set(f, { gate_on_fail: 'stop' }, lead))).toBe('permission_denied');
+  expect(refused(() => set(f, { gate_on_fail: 'stop' }, writer))).toBe('permission_denied');
   expect(f.store.get('workflow_policies', f.project.id)).toBeUndefined();
 });
 
