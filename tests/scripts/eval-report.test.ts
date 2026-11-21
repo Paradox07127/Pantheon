@@ -4,18 +4,18 @@ type Run = {
   task: string;
   condition: string;
   repetition: number;
-  outcome: 'merged' | 'blocked' | 'failed';
+  outcome: 'changed' | 'unchanged';
   hidden_passed: boolean | null;
   hidden_unstable?: boolean | null;
   task_turns: number;
-  gate_runs: number;
+  tool_calls: number;
   wall_ms: number;
   input_tokens: number | null;
 };
 type Condition = {
   condition: string;
   runs: number;
-  merged: number;
+  changed: number;
   leaked: number;
   leak_rate: number | null;
   completion_rate: number;
@@ -72,19 +72,19 @@ const run = (
   outcome,
   hidden_passed,
   task_turns: 1,
-  gate_runs: outcome === 'merged' ? 1 : 0,
+  tool_calls: 1,
   wall_ms: 100,
   input_tokens: null,
 });
-// Three merges, one of which fails the hidden check, and four runs that never merge.
+// Three runs that leave a change, one of which fails the hidden check, and four that change nothing.
 const mixed = [
-  run('passes', 'merged', true),
-  run('also_passes', 'merged', true),
-  run('leaks', 'merged', false),
-  run('blocked_one', 'blocked', null),
-  run('blocked_two', 'blocked', null),
-  run('failed_one', 'failed', null),
-  run('failed_two', 'failed', null),
+  run('passes', 'changed', true),
+  run('also_passes', 'changed', true),
+  run('leaks', 'changed', false),
+  run('unchanged_one', 'unchanged', null),
+  run('unchanged_two', 'unchanged', null),
+  run('unchanged_three', 'unchanged', null),
+  run('unchanged_four', 'unchanged', null),
 ];
 
 describe('the exact binomial interval', () => {
@@ -115,9 +115,9 @@ describe('the exact sign test', () => {
 });
 
 describe('the summary of runs', () => {
-  it('divides leaks by merges and completions by runs', () => {
+  it('divides leaks by changed runs and completions by runs', () => {
     const [condition] = summarize(mixed, rule).conditions;
-    expect(condition).toMatchObject({ runs: 7, merged: 3, leaked: 1 });
+    expect(condition).toMatchObject({ runs: 7, changed: 3, leaked: 1 });
     expect(condition?.leak_rate).toBeCloseTo(1 / 3, 10);
     expect(condition?.completion_rate).toBeCloseTo(2 / 7, 10);
   });
@@ -133,8 +133,8 @@ describe('the summary of runs', () => {
   it('names the condition that leaks less when six pairs all leak under the other', () => {
     const tasks = ['one', 'two', 'three', 'four', 'five', 'six'];
     const runs = [
-      ...tasks.map((task) => run(task, 'merged', false)),
-      ...tasks.map((task) => run(task, 'merged', true, 'independent_check')),
+      ...tasks.map((task) => run(task, 'changed', false)),
+      ...tasks.map((task) => run(task, 'changed', true, 'independent_check')),
     ];
     const { comparison } = summarize(runs, rule);
     expect(comparison?.leaked_only_under).toEqual({ acceptance_only: 6, independent_check: 0 });
@@ -149,11 +149,11 @@ describe('the paired comparison of accepted runs and their cost', () => {
   // Twelve tasks accepted under both conditions; the second costs the first's cost times factor(i).
   const paired = (factor: (index: number) => number) => [
     ...tasks.map((task, index) => ({
-      ...run(task, 'merged', true),
+      ...run(task, 'changed', true),
       input_tokens: 1000 + 100 * index,
     })),
     ...tasks.map((task, index) => ({
-      ...run(task, 'merged', true, 'independent_check'),
+      ...run(task, 'changed', true, 'independent_check'),
       input_tokens: (1000 + 100 * index) * factor(index),
     })),
   ];
@@ -194,8 +194,8 @@ describe('the paired comparison of accepted runs and their cost', () => {
     const six = tasks.slice(0, 6);
     const summary = summarize(
       [
-        ...six.map((task) => run(task, 'failed', null)),
-        ...six.map((task) => run(task, 'merged', true, 'independent_check')),
+        ...six.map((task) => run(task, 'unchanged', null)),
+        ...six.map((task) => run(task, 'changed', true, 'independent_check')),
       ],
       pairedRule,
     );
@@ -211,9 +211,9 @@ describe('the paired comparison of accepted runs and their cost', () => {
   it('divides the input tokens of all runs by the accepted runs', () => {
     const [condition] = summarize(
       [
-        { ...run('passes', 'merged', true), input_tokens: 300 },
-        { ...run('leaks', 'merged', false), input_tokens: 200 },
-        { ...run('fails', 'failed', null), input_tokens: 100 },
+        { ...run('passes', 'changed', true), input_tokens: 300 },
+        { ...run('leaks', 'changed', false), input_tokens: 200 },
+        { ...run('fails', 'unchanged', null), input_tokens: 100 },
       ],
       pairedRule,
     ).conditions;
@@ -222,11 +222,11 @@ describe('the paired comparison of accepted runs and their cost', () => {
 });
 
 describe('runs whose hidden check passed on its second try', () => {
-  const unstable = { ...run('flaky', 'merged', true), repetition: 2, hidden_unstable: true };
+  const unstable = { ...run('flaky', 'changed', true), repetition: 2, hidden_unstable: true };
 
   it('are not leaks and are listed by task, condition and repetition', () => {
     const summary = summarize([...mixed, unstable], rule);
-    expect(summary.conditions[0]).toMatchObject({ merged: 4, leaked: 1 });
+    expect(summary.conditions[0]).toMatchObject({ changed: 4, leaked: 1 });
     expect(render(summary)).toMatch(/second try[\s\S]*`flaky`.*`acceptance_only`.*repetition 2/);
   });
 

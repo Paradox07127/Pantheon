@@ -16,7 +16,6 @@ type Row = {
   hidden_passed: boolean | null;
   turn_error: string | null;
   runtime_version: string;
-  policy_version: number | null;
 };
 type Spec = Record<string, unknown>;
 // The tests project only typechecks the scripts it lists, so these modules are imported by URL.
@@ -26,10 +25,8 @@ const { runOne }: { runOne(spec: Spec): Promise<Row> } = await import(
 const fixtureTasks: {
   createRepo(dir: string): void;
   adapters(): unknown[];
-  leadRuntime: string;
-  task(behaviour: string, repo: string): unknown;
-  gate: unknown;
-  hiddenCheck(tree: string): boolean;
+  goal(behaviour: string, repo: string): string;
+  hiddenCheck(tree: string): { ok: boolean; output: string };
 } = await import(new URL('../eval/lib/fixture-tasks.mjs', import.meta.url).href);
 
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
@@ -62,74 +59,64 @@ afterEach(() => {
 });
 
 describe('a fixture eval run', () => {
-  it('writes one bare row per task that meets the known answers', () => {
-    const { status, stderr, rows } = evalRun('--condition', 'bare');
+  it('writes one plain and one bare row per task that meet the known answers', () => {
+    const { status, stderr, rows } = evalRun();
     expect(status, stderr).toBe(0);
     expect(new Set(rows.map((row) => row.task)).size).toBe(7);
     expect(new Set(rows.map((row) => `${row.condition} ${row.mode}`))).toEqual(
-      new Set(['bare bare']),
+      new Set(['plain plain', 'bare bare']),
     );
     expect(new Set(rows.map((row) => row.runtime_version))).toEqual(new Set(['1']));
-    // The fixture's done report is a Pantheon tool, which a bare session does not have.
-    expect(
-      rows.find((row) => row.condition === 'bare' && row.task === 'completes_correctly'),
-    ).toMatchObject({
-      outcome: 'merged',
-      hidden_passed: true,
-      turn_error: expect.stringMatching(/no Pantheon MCP server/),
-    });
+    expect(rows.filter((row) => row.task === 'completes_correctly')).toEqual([
+      expect.objectContaining({ outcome: 'changed', hidden_passed: true, turn_error: null }),
+      expect.objectContaining({ outcome: 'changed', hidden_passed: true, turn_error: null }),
+    ]);
   }, 600000);
 });
 
-describe('one bare run', () => {
-  it('cannot read the hidden tests or the frozen commits, and merges what it commits in its worktree', async () => {
+describe('one run', () => {
+  const run = async (mode: string, behaviour: string) => {
     const workspace = fresh(path.join(repoRoot, 'node_modules/.cache'));
-    const outside = fresh(path.join(repoRoot, 'node_modules/.cache'));
-    const checkout = path.join(outside, 'checkout'),
-      history = path.join(outside, 'history');
-    const hiddenTest = path.join(checkout, 'tests/eval/tasks/sample/hidden.test.ts'),
-      frozenCommit = path.join(history, 'objects/pack/frozen.pack');
-    for (const file of [hiddenTest, frozenCommit]) {
-      fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.writeFileSync(file, 'hidden\n');
-    }
+    const logs = fresh(path.join(repoRoot, 'node_modules/.cache'));
     const adapters = fixtureTasks.adapters() as FixtureAdapter[];
     const start = vi.spyOn(adapters[0]!, 'start');
     const row = await runOne({
       workspace,
+      logs,
       createRepo: fixtureTasks.createRepo,
       adapters,
-      leadRuntime: fixtureTasks.leadRuntime,
-      task: fixtureTasks.task('completes_correctly', path.join(workspace, 'repo')),
-      gate: fixtureTasks.gate,
-      condition: { name: 'bare', mode: 'bare' },
+      runtime: 'fixture',
+      goal: fixtureTasks.goal(behaviour, path.join(workspace, 'repo')),
+      condition: { name: mode, mode },
       hiddenCheck: fixtureTasks.hiddenCheck,
       settleMs: 60000,
-      quietMs: 2000,
-      checkout,
-      history,
+      checkouts: [],
     });
-    expect(row).toMatchObject({ outcome: 'merged', hidden_passed: true });
-    const { sandbox, cwd } = start.mock.calls[0]![0] as SessionSpec;
-    const covers = (entry: string, file: string) => file === entry || file.startsWith(`${entry}/`);
-    const readable = (file: string) =>
-      !sandbox?.protected_entries.some(
-        (entry) => entry.deny === 'read_write' && covers(entry.path, fs.realpathSync(file)),
-      );
-    expect([hiddenTest, frozenCommit].filter(readable)).toEqual([]);
-    expect(readable(path.join(workspace, 'repo/README.md'))).toBe(true);
-    // The file a commit in the worktree updates for its HEAD.
-    const ref = (() => {
-      const git = (...args: string[]) =>
-        spawnSync('git', args, { cwd, encoding: 'utf8' }).stdout.trim();
-      return path.resolve(
-        cwd,
-        git('rev-parse', '--git-path', git('symbolic-ref', '-q', 'HEAD') || 'HEAD'),
-      );
-    })();
-    expect(sandbox?.writable_roots.some((root) => covers(root, fs.realpathSync(ref)))).toBe(true);
-    expect(
-      sandbox?.protected_entries.filter((entry) => covers(entry.path, fs.realpathSync(ref))),
-    ).toEqual([]);
+    const spec = start.mock.calls[0]![0] as SessionSpec;
+    return { row, spec, repo: fs.realpathSync(path.join(workspace, 'repo')) };
+  };
+  const gitDir = (cwd: string) =>
+    spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {
+      cwd,
+      encoding: 'utf8',
+    }).stdout.trim();
+
+  it('bare works in the repository itself, unsandboxed, and the hidden check sees what it left uncommitted', async () => {
+    const { row, spec, repo } = await run('bare', 'leaves_work_uncommitted');
+    expect(row).toMatchObject({ mode: 'bare', outcome: 'changed', hidden_passed: true });
+    expect(fs.realpathSync(spec.cwd)).toBe(repo);
+    expect(spec.sandbox).toBeUndefined();
+  }, 120000);
+
+  it('plain works in a worktree of the repository that Pantheon made', async () => {
+    const { row, spec, repo } = await run('plain', 'completes_correctly');
+    expect(row).toMatchObject({ mode: 'plain', outcome: 'changed', hidden_passed: true });
+    expect(fs.realpathSync(spec.cwd)).not.toBe(repo);
+    expect(fs.realpathSync(gitDir(spec.cwd))).toBe(path.join(repo, '.git'));
+  }, 120000);
+
+  it('counts a run that leaves nothing as unchanged, without a hidden check', async () => {
+    const { row } = await run('plain', 'ends_without_artifact');
+    expect(row).toMatchObject({ outcome: 'unchanged', hidden_passed: null });
   }, 120000);
 });

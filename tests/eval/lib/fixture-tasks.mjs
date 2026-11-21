@@ -3,9 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { FixtureAdapter } from '@pantheon/adapters';
 import { runCommands } from './check.mjs';
-import { oneTaskPlan } from './run.mjs';
 
-// Scripted task behaviours on the fixture runtime; what each one leaves on main is known,
+// Scripted task behaviours on the fixture runtime; what each one leaves in its folder is known,
 // so the runs check the runner and the report rather than measure a model.
 const FILE = 'greeting.txt';
 const EXPECTED = 'hello';
@@ -24,78 +23,32 @@ const git = (cwd, ...args) =>
 const script = (...steps) => `fixture-script\n${JSON.stringify(steps)}`;
 const write = (file, text) => ({ write: { path: file, text: `${text}\n` } });
 const commit = { commit: GOAL };
-const reportDone = { tool: { name: 'report', arguments: { kind: 'done', text: 'Done' } } };
 
 /** What the task session does in its first turn, given the path of the project's repository. */
 export const behaviours = {
-  completes_correctly: () => [write(FILE, EXPECTED), commit, reportDone],
-  ends_without_artifact: () => [{ say: 'Done' }, reportDone],
-  writes_wrong_content: () => [write(FILE, 'goodbye'), commit, reportDone],
-  leaves_work_uncommitted: () => [write(FILE, EXPECTED), reportDone],
-  writes_outside_scope: () => [
-    write(FILE, EXPECTED),
-    write('notes.txt', 'scratch'),
-    commit,
-    reportDone,
-  ],
+  completes_correctly: () => [write(FILE, EXPECTED), commit],
+  ends_without_artifact: () => [{ say: 'Done' }],
+  writes_wrong_content: () => [write(FILE, 'goodbye'), commit],
+  leaves_work_uncommitted: () => [write(FILE, EXPECTED)],
+  writes_outside_scope: () => [write(FILE, EXPECTED), write('notes.txt', 'scratch'), commit],
   writes_into_source_checkout: (repo) => [
     { write_outside: { path: path.join(repo, ESCAPED), text: 'escaped\n' } },
     write(FILE, EXPECTED),
     commit,
-    reportDone,
   ],
   turn_fails: () => [{ fail: 'Usage limit reached' }],
 };
 
-/** The conditions a fixture run compares when none is named: the task's acceptance (`test -f`), and none. */
-export const conditions = ['acceptance_only', 'bare'];
+/** The conditions a fixture run compares when none is named. */
+export const conditions = ['plain', 'bare'];
 
 /** What the runs of each condition must come to; a difference means the runner or the report is wrong. */
 export const knownAnswers = {
-  acceptance_only: { runs: 7, merged: 3, leaked: 1, leaking: ['writes_wrong_content'] },
-  dispatch: { runs: 7, merged: 3, leaked: 1, leaking: ['writes_wrong_content'] },
-  // No scope check and no sandbox: the out-of-scope and the escaping commits land too.
-  bare: { runs: 7, merged: 4, leaked: 1, leaking: ['writes_wrong_content'] },
+  plain: { runs: 7, changed: 5, leaked: 1, leaking: ['writes_wrong_content'] },
+  bare: { runs: 7, changed: 5, leaked: 1, leaking: ['writes_wrong_content'] },
 };
 
-export const leadRuntime = new FixtureAdapter().name;
-
-/**
- * The fixture runtime, whose lead sessions (Pantheon tools, no task) plan the goal of their first
- * turn as one dispatched task, as a lead model would; a scripted lead's first turn is its script
- * already.
- */
-class PlanningFixtureAdapter extends FixtureAdapter {
-  #leads = new Set();
-  #started = new Set();
-
-  async resume(spec, nativeId, emit) {
-    if (spec.pantheon_mcp && !spec.task_session) this.#leads.add(spec.platform_session_id);
-    return super.resume(spec, nativeId, emit);
-  }
-
-  async send(handle, turn) {
-    const session = handle.platform_session_id;
-    const first = !this.#started.has(session);
-    this.#started.add(session);
-    if (!first || !this.#leads.has(session) || turn.input.startsWith('fixture-script'))
-      return super.send(handle, turn);
-    // The goal is a request line and the task session's two-line script; Pantheon may append to it.
-    const goal = turn.input.split('\n').slice(0, 3).join('\n');
-    const plan = oneTaskPlan({ goal, scope: [FILE], acceptance: [`test -f ${FILE}`] });
-    return super.send(handle, {
-      ...turn,
-      input: script(
-        { tool: { name: 'update_board', arguments: plan } },
-        { tool: { name: 'start_task', arguments: { task_ids: ['A'] } } },
-      ),
-    });
-  }
-}
-
-export const adapters = () => [new PlanningFixtureAdapter()];
-
-export const gate = [{ name: 'Passes', argv: [process.execPath, '-e', 'process.exit(0)'] }];
+export const adapters = () => [new FixtureAdapter()];
 
 /** A new repository on main whose one commit holds only a README. */
 export function createRepo(dir) {
@@ -109,11 +62,7 @@ export function createRepo(dir) {
   git(dir, 'commit', '-q', '-m', 'Initial commit');
 }
 
-/** The plan task for the behaviour, whose script is in its goal. */
-export const task = (behaviour, repo) => ({
-  goal: `${GOAL}\n${script(...behaviours[behaviour](repo))}`,
-  scope: [FILE],
-  acceptance: [`test -f ${FILE}`],
-});
+/** The goal for the behaviour: the request line, then the script the session runs. */
+export const goal = (behaviour, repo) => `${GOAL}\n${script(...behaviours[behaviour](repo))}`;
 
-export const hiddenCheck = (tree) => runCommands([`grep -qx ${EXPECTED} ${FILE}`], tree).ok;
+export const hiddenCheck = (tree) => runCommands([`grep -qx ${EXPECTED} ${FILE}`], tree);

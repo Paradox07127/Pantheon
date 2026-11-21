@@ -1,10 +1,10 @@
-// The conditions an eval run compares. A dispatch condition runs a scripted lead's one-task plan;
-// the task's own acceptance command runs in every condition.
-// A bare condition runs one session of the runtime on the goal alone, outside Pantheon.
+// The conditions an eval run compares; each sends the task's goal alone to one session of the runtime.
+// plain: a worktree session the user opens in Pantheon.
+// adopted: a session the runtime's own CLI opened in the repository, imported into Pantheon and continued there.
+// bare: the runtime's own CLI in the repository, outside Pantheon.
 export const conditionCatalog = {
-  default: { mode: 'dispatch', lead: 'scripted' },
-  acceptance_only: { mode: 'dispatch', lead: 'scripted' },
-  dispatch: { mode: 'dispatch', lead: 'scripted' },
+  plain: { mode: 'plain' },
+  adopted: { mode: 'adopted' },
   bare: { mode: 'bare' },
 };
 

@@ -30,30 +30,31 @@ function median(values) {
   return known.length % 2 ? known[middle] : (known[middle - 1] + known[middle]) / 2;
 }
 
-const leakedRun = (run) => run.outcome === 'merged' && run.hidden_passed === false;
-const acceptedRun = (run) => run.outcome === 'merged' && run.hidden_passed === true;
+// A leak: the session left a change in its folder that fails the hidden check.
+const leakedRun = (run) => run.outcome === 'changed' && run.hidden_passed === false;
+const acceptedRun = (run) => run.outcome === 'changed' && run.hidden_passed === true;
 
 /** Rates per condition and, with two conditions, the paired comparison and its verdict. */
 export function summarize(runs, rule) {
   const names = [...new Set(runs.map((run) => run.condition))];
   const conditions = names.map((condition) => {
     const own = runs.filter((run) => run.condition === condition);
-    const merged = own.filter((run) => run.outcome === 'merged').length;
+    const changed = own.filter((run) => run.outcome === 'changed').length;
     const leaked = own.filter(leakedRun).length;
-    const completed = own.filter((run) => run.outcome === 'merged' && run.hidden_passed).length;
+    const completed = own.filter(acceptedRun).length;
     const tokens = own.filter((run) => run.input_tokens !== null);
     return {
       condition,
       runs: own.length,
-      merged,
+      changed,
       leaked,
-      leak_rate: merged ? leaked / merged : null,
-      leak_interval: interval(leaked, merged, rule.confidence),
+      leak_rate: changed ? leaked / changed : null,
+      leak_interval: interval(leaked, changed, rule.confidence),
       completed,
       completion_rate: completed / own.length,
       completion_interval: interval(completed, own.length, rule.confidence),
       median_task_turns: median(own.map((run) => run.task_turns)),
-      median_gate_runs: median(own.map((run) => run.gate_runs)),
+      median_tool_calls: median(own.map((run) => run.tool_calls)),
       median_wall_ms: median(own.map((run) => run.wall_ms)),
       median_input_tokens: median(own.map((run) => run.input_tokens)),
       // What one accepted run cost, the tokens of the runs that were not accepted included.
@@ -125,17 +126,17 @@ const signed = (value) => `${value > 0 ? '+' : ''}${percent(value)}`;
 export function render(summary) {
   const confidence = percent(summary.rule.confidence);
   const lines = [
-    `| Condition | Runs | Leak rate (${confidence} interval) | Completion rate (${confidence} interval) | Median task turns | Median gate runs | Median wall ms | Median input tokens | Input tokens per accepted run |`,
+    `| Condition | Runs | Leak rate (${confidence} interval) | Completion rate (${confidence} interval) | Median task turns | Median tool calls | Median wall ms | Median input tokens | Input tokens per accepted run |`,
     '|---|---|---|---|---|---|---|---|---|',
     ...summary.conditions.map((row) =>
       [
         '',
         row.condition,
         row.runs,
-        rate(row.leaked, row.merged, row.leak_rate, row.leak_interval),
+        rate(row.leaked, row.changed, row.leak_rate, row.leak_interval),
         rate(row.completed, row.runs, row.completion_rate, row.completion_interval),
         cell(row.median_task_turns),
-        cell(row.median_gate_runs),
+        cell(row.median_tool_calls),
         cell(row.median_wall_ms),
         cell(row.median_input_tokens),
         cell(
@@ -165,7 +166,7 @@ export function render(summary) {
     const [lower, upper] = cost.interval ?? [];
     lines.push(
       '',
-      `Accepted (merged, hidden check passed) only under ${first}: ${comparison.accepted_only_under[first]}; ` +
+      `Accepted (changed, hidden check passed) only under ${first}: ${comparison.accepted_only_under[first]}; ` +
         `only under ${second}: ${comparison.accepted_only_under[second]}. ` +
         `Exact sign test, two-sided: p = ${comparison.pass_p_value.toFixed(4)}.`,
       '',

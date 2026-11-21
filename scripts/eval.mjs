@@ -21,16 +21,13 @@ const rule = {
   // The interval of the per-task change in input tokens per accepted run; one holding 0 is no conclusion.
   bootstrap: { unit: 'task', resamples: 10000, seed: 1 },
 };
-// A run has settled when no event arrives for QUIET_MS and no turn is queued or running.
-const QUIET_MS = 2000;
+// How long a session may take before its run stops waiting for it.
 const SETTLE_MS = 60000;
-// A frozen task's merge builds and tests a whole Pantheon tree.
-const FROZEN_QUIET_MS = 30000;
 const FROZEN_SETTLE_MS = 3600000;
 // Real-model runs per invocation without --over-cap.
 const REAL_RUN_CAP = 5;
 const usage =
-  'usage: node scripts/eval.mjs check [task-name...] | run --runtime fixture|reference|codex|claude [--task <name>]... [--condition <name>]... [--lead scripted|real] [--model <id>] [--repetitions <n>] [--over-cap] [--workspace <dir>] [--out <dir>] | report <run-dir> | history <bundle> <dir>';
+  'usage: node scripts/eval.mjs check [task-name...] | run --runtime fixture|reference|codex [--task <name>]... [--condition <name>]... [--repetitions <n>] [--over-cap] [--workspace <dir>] [--out <dir>] | report <run-dir> | history <bundle> <dir>';
 
 /** Returns the tasks; exits with how to supply them when historyRoot lacks one of their commits. */
 const withCommits = (tasks) => {
@@ -69,17 +66,10 @@ if (command === 'run') {
   )
     refuse(usage);
   const runtime = option('--runtime');
-  if (!['fixture', 'reference', 'codex', 'claude'].includes(runtime)) refuse(usage);
-  const real = runtime === 'codex' || runtime === 'claude';
+  if (!['fixture', 'reference', 'codex'].includes(runtime)) refuse(usage);
+  const real = runtime === 'codex';
   const repetitions = Number(option('--repetitions') ?? 1);
   if (!Number.isInteger(repetitions) || repetitions < 1) refuse(usage);
-  const lead = option('--lead');
-  if (lead !== undefined && !['scripted', 'real'].includes(lead)) refuse(usage);
-  const model = option('--model');
-  if (model !== undefined && !real)
-    refuse(`refused: --model applies to codex and claude runs only`);
-  if (model !== undefined && !/sonnet|opus/.test(model))
-    refuse(`refused: --model ${model} names neither sonnet nor opus`);
   // A real runtime reads the whole disk, and the checkout holds each task's source commit and hidden test.
   const workspaceRoot = path.resolve(
     option('--workspace') ??
@@ -91,21 +81,22 @@ if (command === 'run') {
   const fixtureTasks = await import('../tests/eval/lib/fixture-tasks.mjs');
   const frozenTasks = await import('../tests/eval/lib/frozen-tasks.mjs');
   const { runOne } = await import('../tests/eval/lib/run.mjs');
-  const { ClaudeAdapter, CodexAdapter, FixtureAdapter } = await import('@pantheon/adapters');
+  const { CodexAdapter } = await import('@pantheon/adapters');
   let named;
   try {
     named = parseConditions(
       values('--condition').length
         ? values('--condition')
-        : runtime === 'fixture'
-          ? fixtureTasks.conditions
-          : ['default'],
-    ).map((condition) =>
-      lead !== undefined && condition.mode === 'dispatch' ? { ...condition, lead } : condition,
+        : real
+          ? ['plain', 'adopted', 'bare']
+          : fixtureTasks.conditions,
     );
   } catch (error) {
     refuse(error.message);
   }
+  // The adopted condition imports a session that the runtime's own CLI opened.
+  if (!real && named.some((condition) => condition.mode === 'adopted'))
+    refuse(`refused: the adopted condition needs --runtime codex`);
   const frozen =
     runtime === 'fixture'
       ? []
@@ -121,13 +112,12 @@ if (command === 'run') {
             spec: (workspace) => ({
               createRepo: fixtureTasks.createRepo,
               adapters: fixtureTasks.adapters(),
-              leadRuntime: fixtureTasks.leadRuntime,
-              task: fixtureTasks.task(name, path.join(workspace, 'repo')),
-              gate: fixtureTasks.gate,
+              runtime,
+              goal: fixtureTasks.goal(name, path.join(workspace, 'repo')),
               condition,
               hiddenCheck: fixtureTasks.hiddenCheck,
               settleMs: SETTLE_MS,
-              quietMs: QUIET_MS,
+              checkouts: [],
             }),
           }),
         )
@@ -138,23 +128,29 @@ if (command === 'run') {
           spec: () => ({
             createRepo: frozenTasks.createRepo(historyRoot, task),
             adapters: [
-              new FixtureAdapter(),
               runtime === 'reference'
                 ? frozenTasks.referenceAdapter(historyRoot, task)
-                : runtime === 'codex'
-                  ? new CodexAdapter()
-                  : new ClaudeAdapter(),
+                : new CodexAdapter(),
             ],
-            realHome: real,
-            checkout: repoRoot,
-            history: historyRoot,
-            leadRuntime: fixtureTasks.leadRuntime,
-            task: frozenTasks.planTask(task, runtime, model),
-            gate: frozenTasks.gate,
+            runtime,
+            goal: task.goal,
             condition,
             hiddenCheck: frozenTasks.hiddenCheck(historyRoot, task),
             settleMs: FROZEN_SETTLE_MS,
-            quietMs: FROZEN_QUIET_MS,
+            // A tool call that names one of these read where the frozen task's answer is:
+            // this checkout, its main checkout, and the history repository.
+            checkouts: [
+              ...new Set([
+                repoRoot,
+                path.dirname(
+                  execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {
+                    cwd: repoRoot,
+                    encoding: 'utf8',
+                  }).trim(),
+                ),
+                historyRoot,
+              ]),
+            ],
           }),
         }));
   if (real && jobs.length > REAL_RUN_CAP && !names.includes('--over-cap'))
@@ -196,12 +192,29 @@ if (command === 'run') {
     for (const { task, condition, repetition, spec } of jobs) {
       // A short name: a task goal that holds a path below it must stay within the goal's 400 characters.
       const workspace = fs.mkdtempSync(path.join(root, 'run-'));
-      const result = await runOne({ workspace, ...spec(workspace) });
+      const logs = path.join(out, 'logs', `${task}-${condition.name}-${repetition}`);
+      fs.mkdirSync(logs, { recursive: true });
+      let result;
+      try {
+        result = await runOne({ workspace, logs, ...spec(workspace) });
+      } catch (error) {
+        // The next job still runs; this one counts as a run that changed nothing.
+        result = {
+          mode: condition.mode,
+          outcome: 'error',
+          error: error.stack,
+          hidden_passed: null,
+          task_turns: null,
+          tool_calls: null,
+          wall_ms: null,
+          input_tokens: null,
+        };
+      }
       const row = { task, condition: condition.name, repetition, runtime, ...result };
       runs.push(row);
       fs.appendFileSync(path.join(out, 'runs.jsonl'), `${JSON.stringify(row)}\n`);
       const hidden =
-        row.outcome === 'merged' ? `, hidden ${row.hidden_passed ? 'passed' : 'failed'}` : '';
+        row.outcome === 'changed' ? `, hidden ${row.hidden_passed ? 'passed' : 'failed'}` : '';
       console.log(`${task} ${condition.name}: ${row.outcome}${hidden}`);
     }
   } finally {
@@ -209,13 +222,10 @@ if (command === 'run') {
   }
   writeReport(out, runs, rule);
   if (runtime !== 'fixture') {
-    const missed =
-      runtime === 'reference'
-        ? runs.filter((run) => run.outcome !== 'merged' || !run.hidden_passed)
-        : [];
+    const missed = runtime === 'reference' ? runs.filter((run) => !run.hidden_passed) : [];
     for (const run of missed)
       console.error(
-        `${run.task} repetition ${run.repetition}: expected merged with the hidden check passed, got ${run.outcome}, hidden_passed ${run.hidden_passed}, stopped_by ${run.stopped_by}`,
+        `${run.task} ${run.condition} repetition ${run.repetition}: expected the hidden check passed, got ${run.outcome}, hidden_passed ${run.hidden_passed}, turn_error ${run.turn_error ?? run.error}`,
       );
     console.log(`runs written to ${out}`);
     process.exit(missed.length ? 1 : 0);
@@ -227,11 +237,11 @@ if (command === 'run') {
       const row = conditions.find((summary) => summary.condition === condition);
       const leaking = runs
         .filter(
-          (run) => run.condition === condition && run.outcome === 'merged' && !run.hidden_passed,
+          (run) => run.condition === condition && run.outcome === 'changed' && !run.hidden_passed,
         )
         .map((run) => run.task);
       return [
-        ...['runs', 'merged', 'leaked']
+        ...['runs', 'changed', 'leaked']
           .filter((field) => row?.[field] !== known[field])
           .map(
             (field) => `${condition} ${field}: expected ${known[field]}, got ${row?.[field] ?? 0}`,

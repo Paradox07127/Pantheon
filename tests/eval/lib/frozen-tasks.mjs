@@ -20,9 +20,6 @@ const git = (cwd, ...args) =>
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 const script = (...steps) => `fixture-script\n${JSON.stringify(steps)}`;
-const reportDone = { tool: { name: 'report', arguments: { kind: 'done', text: 'Done' } } };
-
-export const gate = [{ name: 'Passes', argv: [process.execPath, '-e', 'process.exit(0)'] }];
 
 /** Creates, in dir, a repository on main whose one commit holds the tree of the task's base commit. */
 export const createRepo = (repoRoot, task) => (dir) => {
@@ -40,18 +37,9 @@ export const createRepo = (repoRoot, task) => (dir) => {
   if (!install.ok) throw new Error(`pnpm install failed in ${dir}:\n${install.output}`);
 };
 
-/** The plan task of the frozen task, run on the runtime and, when given, the model. */
-export const planTask = (task, runtime, model) => ({
-  goal: task.goal,
-  scope: task.scope,
-  acceptance: task.acceptance,
-  runtime,
-  ...(model ? { model } : {}),
-});
-
 export const hiddenCheck = (repoRoot, task) => (tree) => {
   overlayHidden(repoRoot, task, tree);
-  return runCommands(task.hidden_check, tree).ok;
+  return runCommands(task.hidden_check, tree);
 };
 
 /** The fixture runtime under the name `reference`, whose first turn of each session runs the steps. */
@@ -73,12 +61,11 @@ class ReferenceAdapter extends FixtureAdapter {
   }
 }
 
-/** Writes every file of the task's scope as it is at the source commit, commits, and reports done. */
+/** Writes every file of the task's scope as it is at the source commit and commits. */
 export const referenceAdapter = (repoRoot, task) =>
   new ReferenceAdapter([
     ...task.scope.map((file) => ({
       write: { path: file, text: git(repoRoot, 'show', `${task.source_commit}:${file}`) },
     })),
     { commit: 'Apply the source commit' },
-    reportDone,
   ]);
