@@ -197,21 +197,20 @@ it('does not tell the conductor about a turn the user interrupted', async () => 
   expect(trackerTurns(f, conductor.id)).toHaveLength(0);
 });
 
-it('refuses a fifth unfinished spawned session and takes one again after one closes', async () => {
+it('refuses a fifth spawned session while four have a turn to take and takes one again once their turns end', async () => {
   const f = await workbenchFixture();
   const conductor = await openConductor(f);
   const spawned: string[] = [];
   for (const input of ['Task one', 'Task two', 'Task three', 'Task four'])
     spawned.push((await spawn(f, conductor.id, input)).session_id);
-  for (const id of spawned) await settle(f, row(f, id));
 
   const error = refusal(() => spawn(f, conductor.id, 'Task five'));
   expect(error.code).toBe('resource_busy');
   expect(error.message).toContain('4');
   for (const id of spawned) expect(error.message).toContain(id);
 
-  const closed = row(f, spawned[0]!);
-  f.store.update<Session>('sessions', { ...closed, state: 'closed' }, closed.revision);
+  // Idle spawned sessions with no commits and no outcome no longer hold a place.
+  for (const id of spawned) await settle(f, row(f, id));
   const { session_id } = await spawn(f, conductor.id, 'Task five');
   expect(row(f, session_id).spawned_by).toEqual({ session_id: conductor.id });
 });

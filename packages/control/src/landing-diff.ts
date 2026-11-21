@@ -295,10 +295,31 @@ export async function sessionRangeAsync(
   return headRange(start, await head);
 }
 
-/** A workbench session's goal: its title and the start of its first turn's input. */
+/**
+ * A workbench session's goal: its title and the start of each user turn since its last landing,
+ * the first and the latest four; its first turn when none is left.
+ */
 export function sessionGoal(ctx: ControlContext, session: Session): string {
-  const first = ctx.store
+  const turns = ctx.store
     .list<SessionTurn>('session_turns')
-    .find((turn) => turn.session_id === session.id);
-  return `${session.title ?? ''}\n${(first?.input ?? '').slice(0, 2000)}`;
+    .filter((turn) => turn.session_id === session.id);
+  const landed = ctx.store
+    .kindEvents(session.project_id, ['session.merged'])
+    .findLast((event) => event.aggregate_id === session.id);
+  const since = landed
+    ? new Set(
+        ctx.store
+          .kindEventsSince(session.project_id, ['turn.queued'], landed.created_at)
+          .filter((event) => event.sequence > landed.sequence)
+          .map((event) => event.aggregate_id),
+      )
+    : undefined;
+  const asked = turns.filter(
+    (turn) => (!since || since.has(turn.id)) && turn.origin !== 'tracker' && !turn.rolled_back,
+  );
+  const inputs = (asked.length ? asked : turns.slice(0, 1)).map((turn) =>
+    turn.input.slice(0, 2000),
+  );
+  const kept = inputs.length > 5 ? [inputs[0]!, ...inputs.slice(-4)] : inputs;
+  return [session.title ?? '', ...(kept.length ? kept : [''])].join('\n');
 }

@@ -93,9 +93,13 @@ function prepareConductorReady(
   const review = ctx.store
     .list<Review>('reviews')
     .findLast((each) => each.session_id === target.id && each.state !== 'running');
+  // A finding goes stale when its quoted line changes, which says nothing of whether it was fixed.
   requireThat(
     !review?.findings.some(
-      (finding) => finding.blocking && finding.status === 'open' && !finding.resolution,
+      (finding) =>
+        finding.blocking &&
+        (finding.status === 'open' || finding.status === 'stale') &&
+        !finding.resolution,
     ),
     'review_blocking_open',
     'The latest review of this work has open blocking findings; fix them and request another review first',
@@ -144,20 +148,21 @@ function spawnInput(ctx: ControlContext, p: Principal, command: Command) {
   projectAccess(ctx, p, p.project_id!, command.type);
   const { runtime, input, model, effort } = inputSchemas['conductor.spawn'].parse(command.input);
   const caller = ctx.store.must<Session>('sessions', p.session_id!);
-  const unfinished = ctx.store
+  const busy = new Set(
+    ctx.store
+      .list<SessionTurn>('session_turns')
+      .filter((turn) => turn.state === 'queued' || turn.state === 'running')
+      .map((turn) => turn.session_id),
+  );
+  const taking = ctx.store
     .list<Session>('sessions')
-    .filter(
-      (session) =>
-        session.spawned_by?.session_id === caller.id &&
-        session.state !== 'closed' &&
-        !session.outcome,
-    );
+    .filter((session) => session.spawned_by?.session_id === caller.id && busy.has(session.id));
   requireThat(
-    unfinished.length < SPAWNED_SESSION_LIMIT,
+    taking.length < SPAWNED_SESSION_LIMIT,
     'resource_busy',
-    `At most ${SPAWNED_SESSION_LIMIT} unfinished spawned sessions at a time; these are unfinished: ${unfinished
+    `At most ${SPAWNED_SESSION_LIMIT} spawned sessions take a turn at a time; these are taking one: ${taking
       .map((session) => `${session.id} (${session.title ?? ''})`)
-      .join(', ')}`,
+      .join(', ')}. You get a message as each turn ends.`,
   );
   return inputSchemas['session.create'].parse({
     project_id: caller.project_id,

@@ -51,7 +51,7 @@ const rangeInstruction = `${reviewInstruction} Write each finding's location as 
 /** The file each reviewer reads the reviewed changes from, in its directory. */
 const ARTIFACT = 'changes.diff';
 /** A finding location naming a file and a line or line range. */
-const FINDING_PLACE = /^(.+?):(\d+)(?:-\d+)?$/;
+const FINDING_PLACE = /^(.+?):(\d+)(?:-(\d+))?$/;
 
 /** The session, requester and goal of a review.request, once its permissions are checked. */
 function reviewTarget(ctx: ControlContext, principal: Principal, command: Command) {
@@ -362,9 +362,14 @@ export const reviewHandlers: Handlers = {
     const finding = review.findings.find((item) => item.id === input.finding_id);
     requireThat(finding, 'not_found', 'Review finding not found');
     requireThat(
-      finding.status === 'open' && !finding.resolution,
+      !finding.resolution,
       'invalid_state',
-      'Review finding cannot be resolved',
+      `Review finding is already resolved as ${finding.resolution?.outcome}`,
+    );
+    requireThat(
+      finding.status === 'open' || finding.status === 'stale',
+      'invalid_state',
+      `Review finding is ${finding.status}; only an open or stale finding can be resolved`,
     );
     const resolution: NonNullable<ReviewFinding['resolution']> = {
       outcome: input.outcome,
@@ -774,7 +779,12 @@ export function recordFinding(
       if (!inputBytes?.includes(Buffer.from(finding.quote))) {
         finding.status = 'rejected';
         finding.reason = 'quote_not_in_artifact';
-      }
+      } else
+        finding.location = quotedLocation(
+          inputBytes.toString('utf8'),
+          finding.location,
+          finding.quote,
+        );
     } catch {
       finding.status = 'rejected';
       finding.artifact_error = 'artifact_unavailable';
@@ -799,6 +809,53 @@ export function recordFinding(
   return ctx.store
     .must<Review>('reviews', review.id)
     .findings.find((item) => item.id === finding.id);
+}
+
+/**
+ * A `path:N` or `path:N-M` location moved to the new-file line of the added or context line of
+ * the reviewed diff, nearest N, that holds the quote's first line; otherwise the location as given.
+ */
+function quotedLocation(diff: string, location: string, quote: string): string {
+  const place = FINDING_PLACE.exec(location),
+    first = quote.split('\n')[0]!;
+  if (!place || !first.trim()) return location;
+  const [, file, start, end] = place,
+    stated = Number(start);
+  let current: string | undefined,
+    line = 0,
+    oldLeft = 0,
+    newLeft = 0,
+    found: number | undefined;
+  for (const text of diff.split('\n')) {
+    const mark = text[0];
+    if (oldLeft > 0 || newLeft > 0) {
+      if (mark === '+' || mark === ' ') {
+        if (current === file && text.includes(first)) {
+          if (found === undefined || Math.abs(line - stated) < Math.abs(found - stated))
+            found = line;
+        }
+        line++;
+        newLeft--;
+        if (mark === ' ') oldLeft--;
+        continue;
+      }
+      if (mark === '-') {
+        oldLeft--;
+        continue;
+      }
+      if (mark === '\\') continue;
+      oldLeft = newLeft = 0;
+    }
+    const hunk = /^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(text);
+    if (hunk) {
+      oldLeft = Number(hunk[1] ?? 1);
+      line = Number(hunk[2]);
+      newLeft = Number(hunk[3] ?? 1);
+    } else if (text.startsWith('diff --git ')) current = undefined;
+    else if (text.startsWith('+++ b/')) current = text.slice('+++ b/'.length);
+  }
+  if (found === undefined) return location;
+  return `${file}:${found}${end === undefined ? '' : `-${Number(end) + found - stated}`}`;
 }
 
 const openFinding = (finding: ReviewFinding) => finding.status === 'open' && !finding.resolution;

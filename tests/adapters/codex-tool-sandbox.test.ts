@@ -2660,6 +2660,58 @@ describe('Codex sessions the user opened directly', () => {
     });
   });
 
+  const closesNothing = {
+    mode: 'inherit' as const,
+    overrides: {
+      disabled_mcp_servers: [],
+      disabled_plugins: [],
+      disabled_skills: [],
+      disable_apps: false,
+      disable_hooks: false,
+    },
+  };
+  it.each([
+    [
+      'starts',
+      'a user session that closes no extension',
+      { ...userSpec(), extensions: closesNothing },
+    ],
+    ['fails', 'a user session that closes an extension', userSpec()],
+    ['fails', 'a session the user did not open', { ...writerSpec(), extensions: closesNothing }],
+  ] as const)('%s %s when the extension inventory cannot be read', async (outcome, _, spec) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const server = fakeServer();
+      const asked = Promise.withResolvers<void>();
+      server.intercept.mockImplementation((frame) => {
+        if (frame.method !== 'plugin/installed') return false;
+        asked.resolve();
+        return true;
+      });
+      const adapter = new CodexAdapter('fake-codex');
+      const events: AgentEvent[] = [];
+      const started = adapter.start(spec, (event) => events.push(event));
+      started.catch(() => {});
+      await asked.promise;
+      await vi.advanceTimersByTimeAsync(5000);
+      if (outcome === 'fails') {
+        await expect(started).rejects.toThrow('RPC timeout: plugin/installed');
+        expect(server.frames.some((frame) => frame.method?.startsWith('thread/'))).toBe(false);
+        return;
+      }
+      const handle = await started;
+      cleanup.push(() => adapter.close(handle, Date.now() + 1000));
+      expect(server.frames.some((frame) => frame.method === 'thread/start')).toBe(true);
+      expect(threadParams(server.frames).config ?? {}).not.toHaveProperty('mcp_servers');
+      expect(events.map((event) => event.kind)).not.toContain('extensions.applied');
+      expect(events.find((event) => (event.kind as string) === 'extensions.unread')).toMatchObject({
+        reason: 'RPC timeout: plugin/installed',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('routes the approvals of a read-only turn in full access mode to the user and then back', async () => {
     const server = fakeServer();
     server.intercept.mockImplementation((frame) => {

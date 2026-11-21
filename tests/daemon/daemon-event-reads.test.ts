@@ -62,7 +62,6 @@ it('refuses the events of another project or of every project to a session crede
       body: {
         error: 'permission_denied',
         message: 'Project principal required',
-        stack: expect.stringMatching(/^DomainError: /),
       },
     });
     expect(await f.get('/v1/events?after=0', { headers })).toEqual({
@@ -70,7 +69,6 @@ it('refuses the events of another project or of every project to a session crede
       body: {
         error: 'permission_denied',
         message: 'Project scope required',
-        stack: expect.stringMatching(/^DomainError: /),
       },
     });
     const own = await f.get('/v1/events?after=0&project_id=' + mine.id, { headers });
@@ -120,7 +118,6 @@ it('reads at most the requested number of events and refuses a limit out of rang
         body: {
           error: 'invalid_limit',
           message: 'Limit must be an integer from 1 to 2000',
-          stack: expect.stringMatching(/^DomainError: /),
         },
       });
   } finally {

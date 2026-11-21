@@ -3,9 +3,11 @@ import path from 'node:path';
 import { expect, it } from 'vitest';
 import type { LandingDiff } from '@pantheon/protocol';
 import { renderStoryBrief } from '../../packages/control/src/change-story-brief.js';
-import { rangeDiffWithSyncBounds } from '../../packages/control/src/landing-diff.js';
+import type { Session } from '@pantheon/domain';
+import { rangeDiffWithSyncBounds, sessionGoal } from '../../packages/control/src/landing-diff.js';
+import { notifySession } from '../../packages/control/src/session-wake.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
-import { user } from '../helpers.js';
+import { settle, user } from '../helpers.js';
 
 type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
@@ -94,4 +96,54 @@ it('asks the story to tell a moved block that may run differently in a card', as
   expect(brief).toContain(
     'put them in `noise` only when the lines still run at the same points, else in a card',
   );
+});
+
+/** A settled session that received each message as its own turn. */
+async function askedSession(f: Fixture, messages: string[]) {
+  const session = await f.create(messages[0]);
+  await settle(f, session);
+  for (const input of messages.slice(1)) {
+    await f.call(
+      'session.send',
+      { session_id: session.id, input },
+      f.store.must<Session>('sessions', session.id).revision,
+    );
+    await settle(f, session);
+  }
+  return f.store.must<Session>('sessions', session.id);
+}
+
+/** The requests a session's goal carries, below its title line. */
+const goalOf = (f: Fixture, session: Session) =>
+  sessionGoal(f.control['ctx'], f.store.must<Session>('sessions', session.id)).split('\n').slice(1);
+
+it("puts a session's later requests in its goal after the first", async () => {
+  const f = await workbenchFixture();
+  const session = await askedSession(f, ['Explain the layout', 'Rename the answer file']);
+  expect(goalOf(f, session)).toEqual(['Explain the layout', 'Rename the answer file']);
+});
+
+it('starts the goal from the requests after the last landing', async () => {
+  const f = await workbenchFixture();
+  const session = await askedSession(f, ['Write the parser']);
+  f.store.event('session.merged', session, f.project.id, {});
+  await f.call(
+    'session.send',
+    { session_id: session.id, input: 'Add parser error messages' },
+    f.store.must<Session>('sessions', session.id).revision,
+  );
+  await settle(f, session);
+  expect(goalOf(f, session)).toEqual(['Add parser error messages']);
+});
+
+it("leaves Pantheon's notices out of the goal, and keeps the first request when only they follow a landing", async () => {
+  const f = await workbenchFixture();
+  const session = await askedSession(f, ['Write the parser', 'Add parser error messages']);
+  notifySession(f.control['ctx'], session.id, 'Review finished: pass', 'review-notice');
+  await settle(f, session);
+  expect(goalOf(f, session)).toEqual(['Write the parser', 'Add parser error messages']);
+  f.store.event('session.merged', session, f.project.id, {});
+  notifySession(f.control['ctx'], session.id, 'Landing checks passed', 'landing-notice');
+  await settle(f, session);
+  expect(goalOf(f, session)).toEqual(['Write the parser']);
 });

@@ -2340,15 +2340,32 @@ export class CodexAdapter implements HarnessAdapter {
         });
       }
       const mode = spec.extensions?.mode;
+      const inherited = spec.extensions?.mode === 'inherit' ? spec.extensions.overrides : undefined;
+      // Like a plain `codex exec`, a user session that closes nothing starts without the inventory.
+      const inventoryOptional =
+        spec.user_session &&
+        mode !== 'none' &&
+        !inherited?.disabled_mcp_servers.length &&
+        !inherited?.disabled_plugins.length &&
+        !inherited?.disabled_skills.length &&
+        !inherited?.disable_apps &&
+        !inherited?.disable_hooks &&
+        !inherited?.enabled_user_mcp_servers &&
+        !inherited?.enabled_user_skills &&
+        !inherited?.enabled_user_connectors;
+      let unread: string | undefined;
       const extensions =
         mode || spec.sandbox || spec.pantheon_mcp || spec.mcp_servers.length
           ? await readExtensions(
               rpc,
               spec.cwd,
               !!spec.sandbox && mode !== 'none' && !spec.user_session,
-            )
+            ).catch((error: unknown) => {
+              if (!inventoryOptional) throw error;
+              unread = (error instanceof Error ? error.message : String(error)).split('\n')[0];
+              return undefined;
+            })
           : undefined;
-      const inherited = spec.extensions?.mode === 'inherit' ? spec.extensions.overrides : undefined;
       const overrides =
         inherited && extensions ? closeUserExtensions(inherited, extensions) : inherited;
       const notApplied: { item: string; reason: string }[] = [];
@@ -2495,6 +2512,9 @@ export class CodexAdapter implements HarnessAdapter {
           // Codex 0.164 fails every turn's account check when the profile comes from the `permissions` field.
           config.default_permissions = permissions;
         }
+      }
+      // Without the inventory nothing below has anything to close, as with an empty one.
+      if (spec.sandbox && extensions && disabled) {
         const serverPolicy = (server: NonNullable<typeof extensions>['mcp_servers'][number]) =>
           disabled!.mcp_servers.includes(server.name)
             ? { enabled: false }
@@ -2762,6 +2782,13 @@ export class CodexAdapter implements HarnessAdapter {
             hooks: extensions.hooks && !disabled.hooks,
           },
           ...(notApplied.length ? { not_applied: notApplied } : {}),
+        });
+      if (unread !== undefined)
+        emit({
+          key: String(++session.sequence),
+          provider_sequence: session.sequence,
+          kind: 'extensions.unread',
+          reason: unread,
         });
       ready = true;
       for (const frame of pending.splice(0)) session.notification(frame);

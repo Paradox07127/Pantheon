@@ -138,6 +138,37 @@ it('keeps a located blocking finding of a range review blocking and records a fr
   });
 });
 
+it.each([
+  { location: 'answer.txt:9', quote: 'second', recorded: 'answer.txt:3' },
+  { location: 'answer.txt:1', quote: ' fourth', recorded: 'answer.txt:4' },
+  { location: 'answer.txt:2', quote: 'third', recorded: 'answer.txt:2' },
+  { location: 'src/b.ts:5', quote: 'return x;', recorded: 'src/b.ts:6' },
+  { location: 'src/b.ts:3-4', quote: '+return x;\n+const y = 2;', recorded: 'src/b.ts:2-3' },
+  { location: 'src/missing.ts:1', quote: 'return x;', recorded: 'src/missing.ts:1' },
+  { location: 'src/b.ts', quote: 'return x;', recorded: 'src/b.ts' },
+])(
+  'records the finding at $location quoting $quote at $recorded, the line of the quote in the new file',
+  async ({ location, quote, recorded }) => {
+    const { w, reviewer, started, row } = await rangeFixture();
+    writeFileSync(path.join(w.source, 'answer.txt'), 'first\nsecond\nthird\nfourth\n');
+    git(w.source, 'commit', '--quiet', '-am', 'Write four lines');
+    git(w.source, 'checkout', '--quiet', '-b', 'located');
+    writeFileSync(path.join(w.source, 'answer.txt'), 'first\nadded\nsecond\nfourth\n');
+    mkdirSync(path.join(w.source, 'src'), { recursive: true });
+    writeFileSync(
+      path.join(w.source, 'src/b.ts'),
+      'const x = 1;\nreturn x;\nconst y = 2;\nconst z = 3;\nconst w = 4;\nreturn x;\n',
+    );
+    git(w.source, 'add', '.');
+    git(w.source, 'commit', '--quiet', '-m', 'Rework the answer');
+    git(w.source, 'checkout', '--quiet', 'main');
+    const review = await started({ head: 'located' });
+    reviewer.finding(location, quote);
+    await eventually(() => row(review.id).findings.length === 1);
+    expect(row(review.id).findings[0]).toMatchObject({ location: recorded, status: 'open' });
+  },
+);
+
 it('keeps a free-text blocking finding of a session review blocking', async () => {
   const w = await workbenchFixture();
   const reviewer = new ReviewerAdapter('session-reviewer');

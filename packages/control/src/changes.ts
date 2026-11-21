@@ -22,7 +22,7 @@ export interface ChangeRow {
   status: 'running' | 'needs_you' | 'ready' | 'merged' | 'failed';
   ahead?: number;
   behind?: number;
-  gate: { state: 'passed' | 'failed' | 'none'; failed?: string[] };
+  gate: { state: 'passed' | 'failed' | 'stale' | 'none'; failed?: string[] };
   review?: {
     id: string;
     state: Review['state'];
@@ -113,7 +113,12 @@ export function projectChanges(
                   { results?: GateResults } | undefined
               )?.results,
             )
-          : { state: listed.gate?.state === 'passed' ? 'passed' : 'none' },
+          : {
+              state:
+                listed.gate?.state === 'passed' || listed.gate?.state === 'stale'
+                  ? listed.gate.state
+                  : 'none',
+            },
       ...(review
         ? {
             review: {
@@ -124,7 +129,10 @@ export function projectChanges(
                 verdict,
               })),
               blocking_open: review.findings.filter(
-                (finding) => finding.status === 'open' && finding.blocking && !finding.resolution,
+                (finding) =>
+                  (finding.status === 'open' || finding.status === 'stale') &&
+                  finding.blocking &&
+                  !finding.resolution,
               ).length,
               ...(review.range ? { to_sha: review.range.to_sha } : {}),
             },

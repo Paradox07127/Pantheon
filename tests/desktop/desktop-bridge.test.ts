@@ -112,7 +112,6 @@ it('maps a daemon error to a failed result with its code and HTTP status', async
       code: 'not_found',
       message: 'sessions/missing',
       status: 400,
-      stack: expect.stringMatching(/^DomainError: sessions\/missing\n {4}at /),
     },
   });
 });
@@ -129,7 +128,6 @@ it('maps unknown routes and missing session queries to the daemon error code', a
       code: 'not_found',
       message: 'sessions/w',
       status: 400,
-      stack: expect.stringMatching(/^DomainError: sessions\/w\n {4}at /),
     },
   });
 });

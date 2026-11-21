@@ -163,7 +163,13 @@ async function settle(f: Fixture, sessionId: string, turnId: string, state = 'co
   for (let i = 0; i < 3; i++) await f.control.tick();
 }
 
-function review(f: Fixture, sessionId: string, id: string, blocking: boolean) {
+function review(
+  f: Fixture,
+  sessionId: string,
+  id: string,
+  blocking: boolean,
+  status: 'open' | 'stale' = 'open',
+) {
   f.store.transaction(() =>
     f.store.insert<Review>('reviews', {
       id,
@@ -185,7 +191,7 @@ function review(f: Fixture, sessionId: string, id: string, blocking: boolean) {
               quote: 'ready',
               evidence: 'The answer is wrong',
               impact: 'Users read a wrong answer',
-              status: 'open',
+              status,
               blocking: true,
             },
           ]
@@ -276,6 +282,8 @@ it.skipIf(insideSandbox)(
     expect(git(f.source, 'rev-parse', 'main')).toBe(sourceHead);
     expect(messages(f, session.id)).toEqual([expect.stringContaining('gate_failed')]);
     expect(messages(f, session.id)[0]).toContain('Always fails');
+    expect(messages(f, session.id)[0]).toContain('exit code 3');
+    expect(messages(f, session.id)[0]).toContain('gate broke');
   },
 );
 
@@ -361,14 +369,14 @@ it.skipIf(insideSandbox)(
   },
 );
 
-it.skipIf(insideSandbox)(
-  "refuses a spawned session's blocked work to its conductor but not to the user's merge",
-  async () => {
+it.skipIf(insideSandbox).each(['open', 'stale'] as const)(
+  "refuses a spawned session's work with an unresolved %s blocking finding to its conductor but not to the user's merge",
+  async (status) => {
     const f = await readyFixture();
     const { session: conductor } = await openConductor(f);
     const { session, workspace } = await spawnedBy(f, conductor.id);
     const head = commit(workspace.path, 'answer.txt', 'by the user\n');
-    review(f, session.id, 'spawned-review', true);
+    review(f, session.id, 'spawned-review', true, status);
     expect(await refusal(() => ready(f, conductor.id, { session_id: session.id }))).toBe(
       'review_blocking_open',
     );

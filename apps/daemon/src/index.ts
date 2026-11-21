@@ -462,7 +462,7 @@ export async function startDaemon(options: DaemonOptions) {
       const stack = error.stack?.split('\n').slice(0, 15).join('\n');
       const body =
         error instanceof DomainError
-          ? { error: error.code, message: error.message, details: error.details, stack }
+          ? { error: error.code, message: error.message, details: error.details }
           : error.name === 'ZodError'
             ? { error: 'invalid_input', message: issueLines(error) }
             : { error: 'invalid_request', message: error.message, stack };

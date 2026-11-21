@@ -2993,6 +2993,8 @@ async function completeMerge(ctx: ControlContext, sessionId: string, jobId: stri
     return;
   }
   const gate = item.gate_results?.find(gateFailed),
+    // The tail of the output, so the session that reads it need not rerun the command.
+    tail = gate?.output.trimEnd().split('\n').slice(-20).join('\n').slice(-1500),
     { conflicts, conflict_commits } = item as {
       conflicts?: string[];
       conflict_commits?: string[];
@@ -3034,7 +3036,13 @@ async function completeMerge(ctx: ControlContext, sessionId: string, jobId: stri
       notifyMergeWatcher(
         ctx,
         next,
-        `did not land: ${reason}${gate ? `; the gate command "${gate.name}" failed` : ''}`,
+        `did not land: ${reason}${
+          gate
+            ? `; the gate command "${gate.name}" failed${
+                gate.exit_code !== null ? ` with exit code ${gate.exit_code}` : ''
+              }${tail ? `, its output ending:\n${tail}\n` : ''}`
+            : ''
+        }`,
         jobId,
       );
     }

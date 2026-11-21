@@ -151,6 +151,23 @@ it("reviews a conductor's committed changes while its own turn runs", async () =
   expect(reviewer.starts[0]!.turn!.input).toContain('reviewed answer');
 });
 
+it('gives the reviewer what the conductor was asked for after its first message', async () => {
+  const { f, conductor, writer, reviewer, request, ready } = await conductorFixture();
+  writer.emit({ kind: 'turn.completed', status: 'completed' });
+  await eventually(
+    () => f.store.must<Session>('sessions', conductor.id).state === 'open',
+    () => f.control.tick(),
+  );
+  await f.call(
+    'session.send',
+    { session_id: conductor.id, input: 'Change answer.txt to the reviewed answer' },
+    f.store.must<Session>('sessions', conductor.id).revision,
+  );
+  await request();
+  await ready();
+  expect(reviewer.starts[0]!.turn!.input).toContain('Change answer.txt to the reviewed answer');
+});
+
 it('returns a blocking finding to the conductor once, as a message without a plan', async () => {
   const { f, conductor, reviewer, request, ready, settled, messages, planRows } =
     await conductorFixture();

@@ -1273,6 +1273,12 @@ export const INHERITED_ENV_DENYLIST: readonly string[] = [
   'LD_LIBRARY_PATH',
   'NODE_OPTIONS',
   'ELECTRON_*',
+  // Set by an outer Claude Code process the daemon runs under; a session that inherits them talks to it.
+  'CLAUDECODE',
+  'CLAUDE_CODE_*',
+  'CLAUDE_AGENT_SDK_*',
+  'CLAUDE_PID',
+  'CLAUDE_EFFORT',
 ];
 export interface ProcessIdentity {
   pid: number;
@@ -1502,6 +1508,8 @@ export type AgentEvent = {
       method: 'chatgpt' | 'claude.ai';
       plan?: string;
     }
+  /** The extension inventory could not be read; the session started without its adjustments. */
+  | { kind: 'extensions.unread'; reason: string }
   | {
       kind: 'extensions.applied';
       mode: 'inherit' | 'none';

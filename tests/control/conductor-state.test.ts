@@ -12,7 +12,13 @@ import {
   type Workspace,
 } from '@pantheon/domain';
 import { command } from '@pantheon/protocol';
-import { awaitWorkspaceReady, eventually, user, waitOutStatusReuse } from '../helpers.js';
+import {
+  awaitWorkspaceReady,
+  eventually,
+  insideSandbox,
+  user,
+  waitOutStatusReuse,
+} from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
 type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
@@ -64,7 +70,12 @@ function commitIn(f: Fixture, session: Session, message: string) {
   git(workspace.path, 'commit', '--quiet', '--allow-empty', '-m', message);
 }
 
-const finding = (reviewId: string, blocking: boolean, resolved = false): ReviewFinding => ({
+const finding = (
+  reviewId: string,
+  blocking: boolean,
+  resolved = false,
+  status: ReviewFinding['status'] = 'open',
+): ReviewFinding => ({
   id: id(),
   review_id: reviewId,
   runtime: 'reviewer',
@@ -73,7 +84,7 @@ const finding = (reviewId: string, blocking: boolean, resolved = false): ReviewF
   quote: 'base',
   evidence: 'The answer is wrong',
   impact: 'It breaks',
-  status: 'open',
+  status,
   blocking,
   ...(resolved
     ? { resolution: { outcome: 'intentional' as const, resolved_at: 1, resolved_by: 'local-user' } }
@@ -156,6 +167,9 @@ it("lists the project's changes, their review and to-dos to a conductor session 
       finding(reviewId, true),
       finding(reviewId, true, true),
       finding(reviewId, false),
+      finding(reviewId, true, false, 'stale'),
+      finding(reviewId, true, true, 'stale'),
+      finding(reviewId, true, false, 'rejected'),
     ],
     verdicts: [{ runtime: 'reviewer', verdict: 'fail', summary: 'Two bugs', at: 1 }],
     session_ids: [],
@@ -199,7 +213,7 @@ it("lists the project's changes, their review and to-dos to a conductor session 
     review: {
       id: reviewId,
       state: 'completed',
-      blocking_open: 2,
+      blocking_open: 3,
       to_sha: 'b'.repeat(40),
       verdicts: [{ runtime: 'reviewer', verdict: 'fail' }],
     },
@@ -264,3 +278,57 @@ it('lists the work a conductor landed as merged while it stays open', async () =
     self: true,
   });
 });
+
+it.skipIf(insideSandbox)(
+  'shows a stale gate on the change row as the session list does',
+  async () => {
+    const f = await workbenchFixture();
+    git(f.source, 'config', 'user.name', 'Source User');
+    git(f.source, 'config', 'user.email', 'source@example.invalid');
+    await f.call<Project>(
+      'project.gate.set',
+      {
+        project_id: f.project.id,
+        root: f.source,
+        commands: [{ name: 'Passes', argv: [process.execPath, '-e', 'process.exit(0)'] }],
+      },
+      f.store.must<Project>('projects', f.project.id).revision,
+    );
+    const conductor = await idle(
+      f,
+      await f.call<Promise<Session>>('session.create', {
+        project_id: f.project.id,
+        runtime: f.adapter.name,
+        input: 'Ship the export',
+        purpose: 'conductor',
+      }),
+    );
+    commitIn(f, conductor, 'Conductor work');
+    await f.call(
+      'session.merge',
+      { session_id: conductor.id },
+      f.store.must<Session>('sessions', conductor.id).revision,
+    );
+    await eventually(
+      () =>
+        f.store
+          .kindEvents(f.project.id, ['session.merged'])
+          .some((event) => event.aggregate_id === conductor.id),
+      () => f.control.tick(),
+      10000,
+    );
+    await idle(f, conductor);
+    commitIn(f, conductor, 'More conductor work');
+
+    waitOutStatusReuse();
+    await f.prefetch();
+    expect(f.list().find((row) => row.id === conductor.id)?.gate?.state).toBe('stale');
+    const state = (await f.control.execute(
+      credential(conductor, 'conductor'),
+      command(`session:${conductor.id}`, 'conductor.state', {}),
+    )) as ConductorState;
+    expect(state.changes.find((row) => row.id === `session:${conductor.id}`)?.gate).toEqual({
+      state: 'stale',
+    });
+  },
+);

@@ -202,7 +202,13 @@ it('runs a session adopted from the terminal as bare as a worktree session the u
 
 it("runs a session the user opened in the project folder on the user's extensions and daemon environment", async () => {
   vi.stubEnv('PLAIN_DAEMON_VARIABLE', 'kept');
-  for (const name of ['ANTHROPIC_API_KEY', 'PANTHEON_X', 'CLAUDE_CONFIG_DIR'])
+  for (const name of [
+    'ANTHROPIC_API_KEY',
+    'PANTHEON_X',
+    'CLAUDE_CONFIG_DIR',
+    'CLAUDECODE',
+    'CLAUDE_CODE_SESSION_ID',
+  ])
     vi.stubEnv(name, 'denied');
   const f = await workbenchFixture();
   const session = await f.call<Promise<Session>>('session.create', {
@@ -215,7 +221,13 @@ it("runs a session the user opened in the project folder on the user's extension
   expect(spec.user_session).toBe(true);
   expect(spec.native_state_dir).toBeUndefined();
   expect(spec.env_allowlist).toContain('PLAIN_DAEMON_VARIABLE');
-  for (const name of ['ANTHROPIC_API_KEY', 'PANTHEON_X', 'CLAUDE_CONFIG_DIR'])
+  for (const name of [
+    'ANTHROPIC_API_KEY',
+    'PANTHEON_X',
+    'CLAUDE_CONFIG_DIR',
+    'CLAUDECODE',
+    'CLAUDE_CODE_SESSION_ID',
+  ])
     expect(spec.env_allowlist).not.toContain(name);
   expect(spec.extensions).toEqual({
     mode: 'inherit',

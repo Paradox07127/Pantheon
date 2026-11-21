@@ -181,14 +181,27 @@ it('refuses to resolve a session review finding that already has an outcome or w
   expect(rejected!.status).toBe('rejected');
   f.resolve(review, open!.id, 'fixed');
   const before = f.row(review);
-  for (const [id, outcome] of [
-    [open!.id, 'wrong'],
-    [rejected!.id, 'fixed'],
+  for (const [id, outcome, reason] of [
+    [open!.id, 'wrong', 'fixed'],
+    [rejected!.id, 'fixed', 'rejected'],
   ] as const)
     expect(() => f.resolve(review, id, outcome)).toThrow(
-      expect.objectContaining({ code: 'invalid_state' }),
+      expect.objectContaining({ code: 'invalid_state', message: expect.stringContaining(reason) }),
     );
   expect(f.row(review)).toEqual(before);
+});
+
+it('resolves a session review finding that went stale after a later commit', async () => {
+  const f = await sessionReviewFixture();
+  const review = await f.request();
+  f.reviewers[0]!.finding({ ...finding, quote: 'title.toLowerCase()' });
+  await f.writerTurn(content.replace('title.', 'title.trim().'));
+  await eventually(() => f.row(review).findings[0]!.status === 'stale');
+  f.resolve(review, f.row(review).findings[0]!.id, 'fixed');
+  expect(f.row(review).findings[0]).toMatchObject({
+    status: 'stale',
+    resolution: { outcome: 'fixed', resolved_by: user.id },
+  });
 });
 
 it('refuses session review finding resolution from a principal other than the user', async () => {

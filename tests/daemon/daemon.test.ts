@@ -141,13 +141,13 @@ it.each([
     },
   },
   {
-    name: 'a domain error with its code and stack',
+    name: 'a domain error with its code and without a stack',
     request: '/v1/session.reviews?session_id=w',
     expected: {
       status: 400,
       error: 'not_found',
-      stack: true,
-      frame: /^\s+at /,
+      stack: false,
+      frame: null,
       loggedStack: false,
     },
   },
