@@ -1,11 +1,11 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { startDaemon } from '@pantheon/daemon';
 import { FixtureAdapter } from '@pantheon/adapters';
 import { command } from '@pantheon/protocol';
-import type { AgentProfile, Project, Session } from '@pantheon/domain';
+import type { Project } from '@pantheon/domain';
 import { user } from '../helpers.js';
 
 const TOKEN = 'personal-secret';
@@ -78,9 +78,6 @@ it('accepts project.seen and refuses commands off its list from a personal princ
     const refused = await request('POST', '/v1/commands', command(personal.id, type, {}));
     expect(refused.status).toBe(403);
   }
-  // On the list, request.send reaches its input check.
-  const send = await request('POST', '/v1/commands', command(personal.id, 'request.send', {}));
-  expect(send.status).toBe(400);
 });
 
 it('starts no reads it may not make when a personal principal lists the summary', async () => {
@@ -109,21 +106,4 @@ it.each([
     JSON.stringify({ token: TOKEN, ...('project_id' in extra ? { project_id: project.id } : {}) }),
   );
   expect(await closed).toBe(1008);
-});
-
-it('answers the built-in personal agent on its key until the user revokes the key', async () => {
-  const session = (await daemon.control.execute(
-    user,
-    command(user.id, 'resident.open', { kind: 'personal' }),
-  )) as Session;
-  const keyId = daemon.store.must<AgentProfile>(
-    'agents',
-    session.resident!.agent_id!,
-  ).personal_key_id!;
-  const token = readFileSync(daemon.control['ctx'].personalKeyFile!(keyId).token_file, 'utf8');
-  const summary = () =>
-    fetch(`${daemon.url}/v1/projects.summary`, { headers: { Authorization: `Bearer ${token}` } });
-  expect((await summary()).status).toBe(200);
-  await daemon.control.execute(user, command(user.id, 'personal.key.revoke', { key_id: keyId }));
-  expect((await summary()).status).toBe(403);
 });

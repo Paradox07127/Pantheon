@@ -1,17 +1,9 @@
 import {
   canonical,
   DomainError,
-  FLOW_PATHS,
   requireThat,
-  TASK_TIERS,
-  type CharterMode,
-  type CharterPower,
   type Entity,
-  type FlowPath,
   type Project,
-  type TaskBudget,
-  type TaskKind,
-  type WorkflowParam,
   type WorkflowPolicy,
 } from '@pantheon/domain';
 import { inputSchemas } from '@pantheon/protocol';
@@ -31,47 +23,16 @@ type PolicySettings = Omit<
 >;
 type InheritedParam = NonNullable<WorkflowPolicy['overridden']>[number];
 
-export const DEFAULT_WORKFLOW_POLICY: PolicySettings & {
-  runtime_quota_threshold: number;
-  charter: Record<Exclude<CharterPower, 'plan_change' | 'start_external'>, CharterMode>;
-} = {
-  plan_changes: 'auto',
-  // plan_change and start_external follow plan_changes and the project's external events.
-  charter: {
-    approve_worker_prompts: 'on',
-    answer_worker_questions: 'on',
-    create_agent: 'ask',
-    accept_milestone: 'on',
-    merge_out_of_scope: 'on',
-  },
-  urgent_direct: ['main_gate_failed'],
-  path: { t1: 'direct', t2: 'dispatch', t3: 'dispatch' },
-  acceptance_wake: 'each_merge',
-  max_parallel: 3,
-  max_parallel_limit: 3,
-  runtime_parallel: {},
-  dispatch_paused: false,
+export const DEFAULT_WORKFLOW_POLICY: PolicySettings & { runtime_quota_threshold: number } = {
   runtime_quota_threshold: 90,
-  handback_limit: 3,
   gate_on_fail: 'handback',
   gate_runner: 'daemon',
-  milestone_verify: 'off',
-  recovery_switch: 'off',
-  // The largest of the simple-task baselines on each path; tiers without a baseline have none.
-  budget: {
-    t1: {
-      direct: { input_tokens: 400000, wall_ms: 95000 },
-      dispatch: { input_tokens: 1120000, wall_ms: 255000 },
-    },
-  },
   pinned: [],
 };
 
 /** The settings a project follows from the global values unless it sets them itself. */
 const INHERITED = [
   ...Object.keys(DEFAULT_WORKFLOW_POLICY),
-  'task_size_hint',
-  'must_ask_extra',
   'question_defaults',
 ] as InheritedParam[];
 const SETTINGS: (keyof PolicySettings)[] = [...INHERITED, 'project_budget'];
@@ -138,33 +99,6 @@ function changedParams(
 }
 
 function checkPolicy(policy: WorkflowPolicy): void {
-  const between = (value: number, low: number, high: number) =>
-    Number.isInteger(value) && value >= low && value <= high;
-  // Stored settings and global values reach here without the input schema, so its shapes are checked too.
-  requireThat(
-    Object.entries(policy.path).every(
-      ([tier, way]) =>
-        TASK_TIERS.includes(tier as never) &&
-        FLOW_PATHS.filter((flow) => flow !== 'parallel').includes(way),
-    ),
-    'invalid_input',
-    'path must map t1, t2 or t3 to direct, dispatch or review_loop',
-  );
-  requireThat(
-    ['each_merge', 'milestone'].includes(policy.acceptance_wake),
-    'invalid_input',
-    'acceptance_wake must be each_merge or milestone',
-  );
-  requireThat(
-    between(policy.max_parallel_limit, 1, 8),
-    'invalid_input',
-    'max_parallel_limit must be from 1 to 8',
-  );
-  requireThat(
-    between(policy.max_parallel, 1, policy.max_parallel_limit),
-    'invalid_input',
-    `max_parallel must be from 1 to max_parallel_limit (${policy.max_parallel_limit})`,
-  );
   requireThat(
     policy.runtime_quota_threshold === undefined ||
       (Number.isFinite(policy.runtime_quota_threshold) &&
@@ -174,42 +108,11 @@ function checkPolicy(policy: WorkflowPolicy): void {
     'runtime_quota_threshold must be a percentage from 0 to 100',
   );
   requireThat(
-    policy.handback_limit === 0 || between(policy.handback_limit, 2, 5),
-    'invalid_input',
-    'handback_limit must be 0 or from 2 to 5',
-  );
-  requireThat(
-    policy.task_size_hint === undefined ||
-      (Number.isInteger(policy.task_size_hint) && policy.task_size_hint > 0),
-    'invalid_input',
-    'task_size_hint must be a positive integer',
-  );
-  requireThat(
-    Object.entries(policy.budget).every(
-      ([tier, cells]) =>
-        TASK_TIERS.includes(tier as never) &&
-        Object.entries(cells).every(
-          ([way, cell]) =>
-            FLOW_PATHS.includes(way as never) &&
-            [cell.input_tokens, cell.wall_ms].every(
-              (limit) => Number.isInteger(limit) && limit > 0,
-            ),
-        ),
-    ),
-    'invalid_input',
-    'budget must map t1, t2 or t3 and direct, dispatch or review_loop to positive integer input_tokens and wall_ms',
-  );
-  requireThat(
     policy.project_budget === undefined ||
       (Number.isInteger(policy.project_budget.input_tokens) &&
         policy.project_budget.input_tokens > 0),
     'invalid_input',
     'project_budget must be a positive integer of input tokens',
-  );
-  requireThat(
-    policy.charter?.create_agent !== 'on',
-    'invalid_input',
-    'create_agent cannot be on: the user approves each agent the lead creates',
   );
 }
 
@@ -294,8 +197,6 @@ export function clearPolicyOverrides(
         project_id: projectId,
         policy_version: current.policy_version,
       };
-  if (param === 'task_size_hint' && inherited.task_size_hint === undefined)
-    delete next.task_size_hint;
   const overridden = param ? own.filter((p) => p !== param) : [];
   const changed = changedParams(current, next, own, overridden);
   if (!changed.length) return current;
@@ -352,16 +253,9 @@ export const workflowPolicyHandlers: Handlers = {
   },
   'workflow.policy.set': (ctx, p, c) => {
     userOnly(p);
-    const {
-      project_id,
-      task_size_hint,
-      path,
-      budget,
-      project_budget,
-      charter,
-      question_defaults,
-      ...input
-    } = inputSchemas['workflow.policy.set'].parse(c.input);
+    const { project_id, project_budget, question_defaults, ...input } = inputSchemas[
+      'workflow.policy.set'
+    ].parse(c.input);
     projectAccess(ctx, p, project_id, c.type);
     ctx.store.must<Project>('projects', project_id);
     const old = ctx.store.get<WorkflowPolicy>('workflow_policies', project_id);
@@ -370,35 +264,10 @@ export const workflowPolicyHandlers: Handlers = {
       own = ownParams(ctx, project_id);
     const given = [
       ...Object.keys(input),
-      ...(path ? ['path'] : []),
-      ...(budget ? ['budget'] : []),
-      ...(charter ? ['charter'] : []),
-      ...(task_size_hint === undefined ? [] : ['task_size_hint']),
       ...(question_defaults === undefined ? [] : ['question_defaults']),
     ] as InheritedParam[];
-    // A cleared hint is no longer the project's own, so the global one applies.
-    const overridden = [...new Set([...own, ...given])].filter(
-      (param) => param !== 'task_size_hint' || task_size_hint !== null,
-    );
-    const next: WorkflowPolicy = {
-      ...current,
-      ...input,
-      path: { ...current.path, ...path },
-      ...(charter && { charter: { ...current.charter, ...charter } }),
-      budget: structuredClone(current.budget),
-    };
-    for (const [tier, cells] of Object.entries(budget ?? {}) as [TaskKind['tier'], object][])
-      for (const [way, cell] of Object.entries(cells) as [FlowPath, TaskBudget | null][]) {
-        const tierCells = (next.budget[tier] ??= {});
-        if (cell) tierCells[way] = cell;
-        else delete tierCells[way];
-        if (!Object.keys(tierCells).length) delete next.budget[tier];
-      }
-    if (task_size_hint === null) {
-      delete next.task_size_hint;
-      const inherited = inheritedPolicy(ctx).task_size_hint;
-      if (inherited !== undefined) next.task_size_hint = inherited;
-    } else if (task_size_hint !== undefined) next.task_size_hint = task_size_hint;
+    const overridden = [...new Set([...own, ...given])];
+    const next: WorkflowPolicy = { ...current, ...input };
     if (question_defaults === null) delete next.question_defaults;
     else if (question_defaults) next.question_defaults = question_defaults;
     // A changed budget keeps counting from when the first one was set.

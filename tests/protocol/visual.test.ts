@@ -52,9 +52,9 @@ it('leaves kind spec validation to the draw handler without dropping the raw spe
   expect(inputSchemas['visual.draw'].parse(input)).toEqual(input);
 });
 
-it('offers draw to planners, leads and workers only', () => {
-  for (const role of ['planner', 'lead', 'worker'] as const)
-    expect(sessionTools[role]).toHaveProperty('draw', 'visual.draw');
+it('offers draw to planners and conductors only', () => {
+  expect(sessionTools.planner).toHaveProperty('draw', 'visual.draw');
+  expect(sessionTools.conductor).toHaveProperty('draw', 'visual.draw');
   expect(sessionTools.reviewer).not.toHaveProperty('draw');
 });
 

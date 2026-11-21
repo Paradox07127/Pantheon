@@ -245,7 +245,7 @@ it('makes an existing key folder private at start', async () => {
 });
 
 const callers = {
-  'a lead session': () => {
+  'a session': () => {
     const session = daemon.store.insert<Session>('sessions', {
       id: id(),
       revision: 1,
@@ -253,10 +253,9 @@ const callers = {
       runtime: 'fixture',
       state: 'open',
       turn_count: 0,
-      resident: { kind: 'assistant' },
     });
     return Promise.resolve({
-      token: daemon.auth.issueSession(session, 'lead'),
+      token: daemon.auth.issueSession(session, 'planner'),
       actor: `session:${session.id}`,
     });
   },
@@ -267,9 +266,9 @@ const callers = {
 };
 
 it.each([
-  ['personal.key.create', 'a lead session'],
-  ['personal.key.revoke', 'a lead session'],
-  ['personal.key.list', 'a lead session'],
+  ['personal.key.create', 'a session'],
+  ['personal.key.revoke', 'a session'],
+  ['personal.key.list', 'a session'],
   ['personal.key.create', 'a personal agent'],
   ['personal.key.revoke', 'a personal agent'],
   ['personal.key.list', 'a personal agent'],

@@ -3,14 +3,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it } from 'vitest';
 import type { AgentEvent, Approval, Project, Session, WorkflowPolicy } from '@pantheon/domain';
-import type { ProjectDefaultsRead } from '@pantheon/protocol';
+import { RETIRED_POLICY_SETTINGS, type ProjectDefaultsRead } from '@pantheon/protocol';
 import type { ControlContext } from '../../packages/control/dist/context.js';
 import { requestApproval } from '../../packages/control/dist/approvals.js';
-import {
-  autoMerge,
-  sessionDefaults,
-  usageTargets,
-} from '../../packages/control/dist/user-config.js';
+import { sessionDefaults, usageTargets } from '../../packages/control/dist/user-config.js';
 import { fixture, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
@@ -39,20 +35,15 @@ async function defaultsFixture() {
   const current = () => f.store.must<Project>('projects', f.project.id);
   const policy = () => f.control.workflowPolicy(user, f.project.id);
   const storedPolicy = () => f.store.get<WorkflowPolicy>('workflow_policies', f.project.id);
-  const mergePolicy = () => autoMerge(ctx, current());
   const externalMode = () => f.control.externalRead(user, f.project.id).mode;
   const setGlobal = (key: string, value: unknown) =>
     f.call<ProjectDefaultsRead>('project.defaults.set', { key, value });
-  return { ...f, dir, ctx, current, policy, storedPolicy, mergePolicy, externalMode, setGlobal };
+  return { ...f, dir, ctx, current, policy, storedPolicy, externalMode, setGlobal };
 }
 
 it('follows the global values where a project has none of its own', async () => {
   const f = await defaultsFixture();
-  f.setGlobal('workflow_policy', {
-    max_parallel: 2,
-    gate_on_fail: 'stop',
-    plan_changes: 'confirm',
-  });
+  f.setGlobal('workflow_policy', { gate_on_fail: 'stop', gate_runner: 'session' });
   f.setGlobal('session_defaults', {
     runtime: 'fixture',
     permission_mode: 'plan',
@@ -61,42 +52,29 @@ it('follows the global values where a project has none of its own', async () => 
   });
   f.setGlobal('usage_targets', { fixture: 500 });
   f.setGlobal('external_events', 'approve');
-  f.setGlobal('auto_merge', true);
   expect(JSON.parse(readFileSync(path.join(f.dir, 'config.json'), 'utf8'))).toMatchObject({
     model_families: { 'fixture-': 'fixture' },
-    project_defaults: { auto_merge: true, external_events: 'approve' },
+    project_defaults: { external_events: 'approve' },
   });
   expect(f.policy()).toMatchObject({
-    max_parallel: 2,
     gate_on_fail: 'stop',
-    plan_changes: 'confirm',
+    gate_runner: 'session',
     policy_version: 0,
   });
-  expect(f.policy().defaults).toMatchObject({ max_parallel: 2, gate_on_fail: 'stop' });
+  expect(f.policy().defaults).toMatchObject({ gate_on_fail: 'stop', gate_runner: 'session' });
   expect(usageTargets(f.ctx, f.current())).toEqual({ fixture: 500 });
   expect(f.externalMode()).toBe('approve');
-  expect(f.mergePolicy()).toBe(true);
-  const { session_ids } = await f.call<{ session_ids: string[] }>('board.sync', {
-    project_id: f.project.id,
-  });
-  // The Assistant resident that takes the sync runs read-only, so it takes no permission mode.
-  expect(f.store.must<Session>('sessions', session_ids[0]!)).toMatchObject({
-    runtime: 'fixture',
-    requested_model: 'fixture-large',
-    requested_effort: 'low',
-  });
   expect(sessionDefaults(f.ctx, f.current())?.permission_mode).toBe('plan');
 });
 
 it('reads the project value over the global one, also when it equals the built-in default', async () => {
   const f = await defaultsFixture();
-  f.setGlobal('workflow_policy', { max_parallel: 2, plan_changes: 'confirm' });
+  f.setGlobal('workflow_policy', { gate_on_fail: 'stop', gate_runner: 'session' });
   f.setGlobal('usage_targets', { fixture: 500, claude: 900 });
   f.setGlobal('external_events', 'approve');
-  f.setGlobal('auto_merge', true);
   f.call(
     'workflow.policy.set',
-    { project_id: f.project.id, max_parallel: 2, plan_changes: 'auto' },
+    { project_id: f.project.id, gate_on_fail: 'stop', gate_runner: 'daemon' },
     null,
   );
   f.call(
@@ -112,31 +90,24 @@ it('reads the project value over the global one, also when it equals the built-i
     { project_id: f.project.id, mode: 'off' },
     f.current().revision,
   );
-  f.call(
-    'project.autoMerge.set',
-    { project_id: f.project.id, enabled: false },
-    f.current().revision,
-  );
-  expect(f.current()).toMatchObject({ auto_merge: false, external_events: 'off' });
-  expect(f.policy()).toMatchObject({ max_parallel: 2, plan_changes: 'auto' });
+  expect(f.current()).toMatchObject({ external_events: 'off' });
+  expect(f.policy()).toMatchObject({ gate_on_fail: 'stop', gate_runner: 'daemon' });
   expect(usageTargets(f.ctx, f.current())).toEqual({ fixture: 100, claude: 900 });
   expect(f.externalMode()).toBeUndefined();
-  expect(f.mergePolicy()).toBe(false);
   // A value set equal to the global one stays the project's own when the global one changes.
-  f.setGlobal('workflow_policy', { max_parallel: 1, acceptance_wake: 'milestone' });
-  expect(f.policy()).toMatchObject({ max_parallel: 2, acceptance_wake: 'milestone' });
+  f.setGlobal('workflow_policy', { gate_on_fail: 'retry', runtime_quota_threshold: 80 });
+  expect(f.policy()).toMatchObject({ gate_on_fail: 'stop', runtime_quota_threshold: 80 });
 });
 
 it('returns a project to the global value once its own value is cleared', async () => {
   const f = await defaultsFixture();
-  f.setGlobal('workflow_policy', { max_parallel: 2, task_size_hint: 6 });
+  f.setGlobal('workflow_policy', { gate_on_fail: 'stop', runtime_quota_threshold: 70 });
   f.setGlobal('session_defaults', { runtime: 'fixture', permission_mode: 'plan' });
   f.setGlobal('external_events', 'auto');
-  f.setGlobal('auto_merge', true);
   f.call('workflow.policy.set', {
     project_id: f.project.id,
-    max_parallel: 1,
-    task_size_hint: 3,
+    gate_on_fail: 'retry',
+    runtime_quota_threshold: 50,
   });
   f.call(
     'project.sessionDefaults.set',
@@ -152,24 +123,12 @@ it('returns a project to the global value once its own value is cleared', async 
     { project_id: f.project.id, mode: 'off' },
     f.current().revision,
   );
-  f.call(
-    'project.autoMerge.set',
-    { project_id: f.project.id, enabled: false },
-    f.current().revision,
-  );
-  f.call(
-    'workflow.policy.set',
-    { project_id: f.project.id, task_size_hint: null },
-    f.storedPolicy()!.revision,
-  );
-  expect(f.policy()).toMatchObject({ max_parallel: 1, task_size_hint: 6 });
-  for (const key of ['session_defaults', 'external_events', 'auto_merge'])
+  expect(f.policy()).toMatchObject({ gate_on_fail: 'retry', runtime_quota_threshold: 50 });
+  for (const key of ['session_defaults', 'external_events'])
     f.call('project.override.clear', { project_id: f.project.id, key }, f.current().revision);
   expect(f.current()).not.toHaveProperty('session_defaults');
   expect(f.current()).not.toHaveProperty('external_events');
-  expect(f.current()).not.toHaveProperty('auto_merge');
   expect(f.externalMode()).toBe('auto');
-  expect(f.mergePolicy()).toBe(true);
   expect(() =>
     f.call('project.override.clear', { project_id: f.project.id, key: 'workflow_policy' }, null),
   ).toThrowError(expect.objectContaining({ code: 'revision_conflict' }));
@@ -178,10 +137,9 @@ it('returns a project to the global value once its own value is cleared', async 
     { project_id: f.project.id, key: 'workflow_policy' },
     f.storedPolicy()!.revision,
   );
-  expect(f.policy()).toMatchObject({ max_parallel: 2, task_size_hint: 6 });
-  f.setGlobal('workflow_policy', { max_parallel: 3 });
-  expect(f.policy().max_parallel).toBe(3);
-  expect(f.policy()).not.toHaveProperty('task_size_hint');
+  expect(f.policy()).toMatchObject({ gate_on_fail: 'stop', runtime_quota_threshold: 70 });
+  f.setGlobal('workflow_policy', { gate_on_fail: 'retry' });
+  expect(f.policy()).toMatchObject({ gate_on_fail: 'retry', runtime_quota_threshold: 90 });
   f.call(
     'project.sessionDefaults.set',
     {
@@ -195,73 +153,84 @@ it('returns a project to the global value once its own value is cleared', async 
   expect(sessionDefaults(f.ctx, f.current())?.permission_mode).toBe('plan');
   f.call(
     'workflow.policy.set',
-    { project_id: f.project.id, max_parallel: 1 },
+    { project_id: f.project.id, gate_on_fail: 'stop' },
     f.storedPolicy()!.revision,
   );
   f.call('workflow.policy.reset', { project_id: f.project.id }, f.storedPolicy()!.revision);
-  expect(f.policy().max_parallel).toBe(3);
+  expect(f.policy().gate_on_fail).toBe('retry');
   f.call('project.defaults.clear', { key: 'workflow_policy' });
-  expect(f.policy().max_parallel).toBe(3);
-  expect(f.policy().defaults.max_parallel).toBe(3);
+  expect(f.policy().gate_on_fail).toBe('handback');
+  expect(f.policy().defaults.gate_on_fail).toBe('handback');
 });
 
 it('clears one workflow setting of a project and keeps its other own settings', async () => {
   const f = await defaultsFixture();
-  f.setGlobal('workflow_policy', { max_parallel: 2, task_size_hint: 6 });
-  f.call('workflow.policy.set', { project_id: f.project.id, max_parallel: 1, task_size_hint: 3 });
+  f.setGlobal('workflow_policy', { gate_on_fail: 'stop', runtime_quota_threshold: 70 });
+  f.call('workflow.policy.set', {
+    project_id: f.project.id,
+    gate_on_fail: 'retry',
+    runtime_quota_threshold: 50,
+  });
   f.call(
     'project.override.clear',
-    { project_id: f.project.id, key: 'workflow_policy', param: 'max_parallel' },
+    { project_id: f.project.id, key: 'workflow_policy', param: 'gate_on_fail' },
     f.storedPolicy()!.revision,
   );
-  expect(f.policy()).toMatchObject({ max_parallel: 2, task_size_hint: 3 });
-  expect(f.storedPolicy()!.overridden).toEqual(['task_size_hint']);
+  expect(f.policy()).toMatchObject({ gate_on_fail: 'stop', runtime_quota_threshold: 50 });
+  expect(f.storedPolicy()!.overridden).toEqual(['runtime_quota_threshold']);
   expect(() =>
     f.call(
       'project.override.clear',
-      { project_id: f.project.id, key: 'auto_merge', param: 'max_parallel' },
+      { project_id: f.project.id, key: 'external_events', param: 'gate_on_fail' },
       f.current().revision,
     ),
   ).toThrowError(expect.objectContaining({ code: 'invalid_input' }));
 });
 
-it('reads global workflow settings that still hold improvement_mode without it', async () => {
+it('reads a configuration file whose global workflow settings still hold removed ones without them', async () => {
   const f = await defaultsFixture();
-  f.setGlobal('workflow_policy', { max_parallel: 2, improvement_mode: 'confirm' });
-  expect(f.policy()).toMatchObject({ max_parallel: 2 });
-  expect(f.policy()).not.toHaveProperty('improvement_mode');
-  expect(f.policy().defaults).not.toHaveProperty('improvement_mode');
-  const read = f.control.projectDefaults(user);
-  expect(read.settings.find((entry) => entry.key === 'workflow_policy')).toMatchObject({
-    global: { max_parallel: 2 },
-  });
-  expect(read.settings.find((entry) => entry.key === 'workflow_policy')).not.toHaveProperty(
-    'global.improvement_mode',
+  const file = path.join(f.dir, 'config.json');
+  const removed = Object.fromEntries(RETIRED_POLICY_SETTINGS.map((key) => [key, 1]));
+  writeFileSync(
+    file,
+    JSON.stringify({
+      ...JSON.parse(readFileSync(file, 'utf8')),
+      project_defaults: { workflow_policy: { gate_on_fail: 'stop', ...removed } },
+    }),
   );
+  expect(f.policy()).toMatchObject({ gate_on_fail: 'stop' });
+  for (const key of RETIRED_POLICY_SETTINGS) {
+    expect(f.policy()).not.toHaveProperty(key);
+    expect(f.policy().defaults).not.toHaveProperty(key);
+  }
+  const global = () =>
+    f.control.projectDefaults(user).settings.find((entry) => entry.key === 'workflow_policy')
+      ?.global;
+  expect(global()).toEqual({ gate_on_fail: 'stop' });
+  f.setGlobal('external_events', 'approve');
+  expect(global()).toEqual({ gate_on_fail: 'stop' });
+  expect(f.externalMode()).toBe('approve');
 });
 
 it('records a change of the global workflow settings', async () => {
   const f = await defaultsFixture();
-  f.setGlobal('workflow_policy', { handback_limit: 5 });
+  f.setGlobal('workflow_policy', { gate_on_fail: 'stop' });
   expect(f.store.kindEvents('', ['workflow.policy_changed']).map((e) => e.payload)).toEqual([
-    { param: 'handback_limit', from: 3, to: 5, by: 'global' },
+    { param: 'gate_on_fail', from: 'handback', to: 'stop', by: 'global' },
   ]);
 });
 
-it('refuses global values that are invalid alone or under a project value, and non-user callers', async () => {
+it('refuses global values that are invalid, and non-user callers', async () => {
   const f = await defaultsFixture();
-  f.call('workflow.policy.set', { project_id: f.project.id, max_parallel: 2 });
-  expect(() => f.setGlobal('workflow_policy', { max_parallel: 5 })).toThrowError(
+  f.call('workflow.policy.set', { project_id: f.project.id, gate_on_fail: 'stop' });
+  expect(() => f.setGlobal('workflow_policy', { runtime_quota_threshold: 150 })).toThrowError(
     expect.objectContaining({ code: 'invalid_input' }),
-  );
-  expect(() => f.setGlobal('workflow_policy', { max_parallel: 1, max_parallel_limit: 1 })).toThrow(
-    'in project fixture',
   );
   expect(() =>
     f.setGlobal('session_defaults', { runtime: 'unknown-runtime', permission_mode: 'ask' }),
   ).toThrowError(expect.objectContaining({ code: 'invalid_input' }));
   expect(() =>
-    f.call('project.defaults.set', { key: 'auto_merge', value: true }, null, {
+    f.call('project.defaults.set', { key: 'external_events', value: 'auto' }, null, {
       id: 'agent',
       role: 'planner',
     }),
@@ -276,9 +245,8 @@ it('lists each global value, built-in default and the projects that set their ow
   const otherRoot = path.join(f.root, 'other');
   mkdirSync(otherRoot);
   const other = await f.call<Project>('project.open', { name: 'other', roots: [otherRoot] });
-  f.setGlobal('auto_merge', true);
-  f.call('project.autoMerge.set', { project_id: other.id, enabled: false }, other.revision);
-  f.call('workflow.policy.set', { project_id: other.id, max_parallel: 2 });
+  f.setGlobal('external_events', 'approve');
+  f.call('workflow.policy.set', { project_id: other.id, gate_on_fail: 'stop' });
   f.call(
     'project.usageTargets.set',
     {
@@ -294,17 +262,10 @@ it('lists each global value, built-in default and the projects that set their ow
     'session_defaults',
     'usage_targets',
     'external_events',
-    'auto_merge',
   ]);
-  expect(setting('auto_merge')).toEqual({
-    key: 'auto_merge',
-    global: true,
-    builtin: false,
-    overrides: [{ project_id: other.id, name: 'other', value: false }],
-  });
   expect(setting('workflow_policy')).toMatchObject({
-    builtin: { max_parallel: 3 },
-    overrides: [{ project_id: other.id, name: 'other', value: { max_parallel: 2 } }],
+    builtin: { gate_on_fail: 'handback' },
+    overrides: [{ project_id: other.id, name: 'other', value: { gate_on_fail: 'stop' } }],
   });
   expect(setting('workflow_policy')).not.toHaveProperty('global');
   expect(setting('session_defaults')).toEqual({ key: 'session_defaults', overrides: [] });
@@ -315,12 +276,13 @@ it('lists each global value, built-in default and the projects that set their ow
   });
   expect(setting('external_events')).toEqual({
     key: 'external_events',
+    global: 'approve',
     builtin: 'off',
     overrides: [],
   });
   expect(read.projects.sort((a, b) => a.name.localeCompare(b.name))).toEqual([
     { project_id: f.project.id, name: 'fixture', overridden: 1 },
-    { project_id: other.id, name: 'other', overridden: 2 },
+    { project_id: other.id, name: 'other', overridden: 1 },
   ]);
   expect(read.permission_rules).toEqual([]);
 });
@@ -337,23 +299,16 @@ it('keeps a policy stored before global values as the project value, and absent 
       revision: 1,
       project_id: other.id,
       policy_version: 1,
-      plan_changes: 'auto',
-      path: { t1: 'direct', t2: 'dispatch', t3: 'dispatch' },
-      acceptance_wake: 'each_merge',
-      max_parallel: 3,
-      max_parallel_limit: 3,
-      handback_limit: 3,
-      budget: {},
+      runtime_quota_threshold: 90,
+      gate_on_fail: 'handback',
       pinned: [],
     }),
   );
-  f.setGlobal('workflow_policy', { max_parallel: 1, gate_runner: 'session' });
-  f.setGlobal('auto_merge', true);
+  f.setGlobal('workflow_policy', { gate_on_fail: 'stop', gate_runner: 'session' });
   expect(f.control.workflowPolicy(user, other.id)).toMatchObject({
-    max_parallel: 3,
+    gate_on_fail: 'handback',
     gate_runner: 'session',
   });
-  expect(autoMerge(f.ctx, f.store.must<Project>('projects', other.id))).toBe(true);
   const listed = f.control
     .projectDefaults(user)
     .settings.find((entry) => entry.key === 'workflow_policy')!.overrides;
@@ -361,7 +316,7 @@ it('keeps a policy stored before global values as the project value, and absent 
     {
       project_id: other.id,
       name: 'other',
-      value: expect.objectContaining({ max_parallel: 3, budget: {} }),
+      value: expect.objectContaining({ gate_on_fail: 'handback', pinned: [] }),
     },
   ]);
   expect(listed[0]!.value).not.toHaveProperty('gate_runner');

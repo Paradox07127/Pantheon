@@ -14,16 +14,7 @@ import {
 import { LoadError } from '../../components/LoadError';
 import { Collapsible } from '@base-ui/react/collapsible';
 import { Tooltip } from '@base-ui/react/tooltip';
-import {
-  AppWindow,
-  Bot,
-  ChevronRight,
-  Crown,
-  KeyRound,
-  Minus,
-  RefreshCw,
-  Undo2,
-} from 'lucide-react';
+import { AppWindow, Bot, ChevronRight, KeyRound, Minus, RefreshCw, Undo2 } from 'lucide-react';
 import type { BoardSnapshot, WorkbenchSession } from '@pantheon/protocol';
 import { MarkdownBaseProvider } from '../../components/Markdown';
 import { Skeleton } from '../../components/Skeleton';
@@ -73,7 +64,7 @@ import type { Panel } from './inspector-model';
 import { shownInput, statusTicks, timelineNodes, type TimelineNode } from './thread-model';
 import { ThreadFind, useThreadFind } from './ThreadFind';
 import { MemoryUsed } from './MemoryUsed';
-import { ChapterMark, Items, ResolveButtons, ThreadMark, TurnWork } from './parts';
+import { Items, ResolveButtons, ThreadMark, TurnWork } from './parts';
 import { showThreadTurns } from './trace';
 import { BaselineReview, PendingQuestions, RequestCard, RequestSlot } from './RequestCards';
 import {
@@ -393,7 +384,6 @@ export function Thread(props: {
                 {spoken}
               </div>
               {history.error && <LoadError message={history.error} onRetry={history.reload} />}
-              {view?.chapter && <ChapterMark event={view.chapter} />}
               {!view
                 ? !history.error && (
                     <div className="tr-typing" aria-busy="true">
@@ -688,8 +678,6 @@ export function ThreadTurn(props: {
         <div className="ss-who">
           <RuntimeGlyph runtime={runtime} />
           <b>{t({ id: 'sessions.thread.main', defaultMessage: 'Main' })}</b>
-          {/* The main agent's mark, named by the word before it; the session need not be a lead. */}
-          <Crown className="lead-crown" aria-hidden="true" />
           {model && <span>{model}</span>}
           {spoke !== null && <span className="ss-whot">{clockText(spoke)}</span>}
         </div>

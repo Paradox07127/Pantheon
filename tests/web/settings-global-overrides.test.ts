@@ -14,7 +14,6 @@ import { t } from '@/i18n';
 import { GlobalPermissions } from '@/screens/settings/PermissionsPage';
 import { ProjectListPage } from '@/screens/settings/ProjectListPage';
 import { useSettingsView } from '@/screens/settings/view';
-import { WorktreesPage } from '@/screens/settings/WorktreesPage';
 import { zh, zhf } from './i18n-setup.js';
 
 type Command = { type: string; input: Record<string, unknown>; expected_revision: number | null };
@@ -57,7 +56,6 @@ const defaults = (patch: Partial<ProjectDefaultsRead> = {}): ProjectDefaultsRead
         builtin: 'off',
         overrides: [{ project_id: 'beta', name: 'Beta api', value: 'auto' }],
       },
-      { key: 'auto_merge', global: true, builtin: false, overrides: [] },
     ],
     projects: [
       { project_id: 'alpha', name: 'Alpha app', overridden: 0 },
@@ -139,28 +137,6 @@ describe('the projects page', () => {
     expect(useSettingsView.getState().detail).toBe('beta');
   });
 
-  it('turns auto merge off for every project without its own choice', async () => {
-    const list = mount(() => ProjectListPage());
-    await list.flush();
-    const merge = find(
-      list.value,
-      (n) => typeof n.type === 'function' && n.type.name === 'GlobalAutoMerge',
-    );
-    const h = mount(() => (merge.type as (props: unknown) => ReactNode)(merge.props));
-    await h.flush();
-    const toggle = () => labelled(h.value, zh('settings.autoMerge.toggle'));
-    expect(toggle().props.checked).toBe(true);
-    toggle().props.onChange({ target: { checked: false } });
-    await h.flush();
-    expect(sent()).toEqual([
-      {
-        type: 'project.defaults.set',
-        input: { key: 'auto_merge', value: false },
-        expected_revision: null,
-      },
-    ]);
-  });
-
   it('shows the settings the project sets itself, each cleared on its own', async () => {
     useSettingsView.setState({ page: 'projects', detail: 'beta' });
     const list = mount(() => ProjectListPage());
@@ -220,16 +196,6 @@ describe('global permission rules', () => {
 });
 
 describe('values a project follows', () => {
-  it('shows a project’s auto merge as the global value until it sets its own', async () => {
-    const label = zh('settings.autoMerge.toggle');
-    const follows = mount(() => WorktreesPage({ project: beta as never }));
-    await follows.flush();
-    expect(labelled(follows.value, label).props.checked).toBe(true);
-    const own = mount(() => WorktreesPage({ project: { ...beta, auto_merge: false } as never }));
-    await own.flush();
-    expect(labelled(own.value, label).props.checked).toBe(false);
-  });
-
   it('reads token targets from the project, then the global ones', () => {
     expect(effectiveUsageTargets({ usage_targets: { claude: 500 } }, defaults())).toEqual({
       codex: 700,

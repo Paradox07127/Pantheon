@@ -34,12 +34,11 @@ const refusal = (run: () => unknown) => {
   return 'accepted';
 };
 
-it('holds milestones to accept and merges for the brief, delivers every other kind now and sets no quiet hours by default', async () => {
+it('holds merges for the brief, delivers every other kind now and sets no quiet hours by default', async () => {
   const f = await setup();
   const settings = f.call<AppSettings>('app.settings.set', {});
   expect(settings.attention_delivery).toEqual({
     ...Object.fromEntries(NEEDS_YOU_DECISIONS.map((kind) => [kind, 'now'])),
-    milestone_accept: 'brief',
     merged: 'brief',
   });
   expect(settings.quiet_hours).toBeUndefined();

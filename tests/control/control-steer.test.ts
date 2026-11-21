@@ -5,7 +5,6 @@ import { FixtureAdapter } from '@pantheon/adapters';
 import { command } from '@pantheon/protocol';
 import type {
   AgentEventSink,
-  BoardPlan,
   CancelReceipt,
   DeliveryReceipt,
   HarnessAdapter,
@@ -104,7 +103,7 @@ async function steeringFixture(support = false) {
   const f = await fixture({ adapter, managedWorkspaces: true });
   commitProjectRoot(f.projectRoot);
   /** Creates a session with its first send and prepares the worktree without starting that turn. */
-  const open = async (text = 'send', purpose?: 'lead') => {
+  const open = async (text = 'send', purpose?: 'project_setup') => {
     const session = await f.call<Session>('session.create', {
       project_id: f.project.id,
       runtime: adapter.name,
@@ -404,59 +403,6 @@ describe('session input delivery', () => {
     }
   });
 
-  it('holds a steer during a compaction and sends it afterwards as a read-only turn of a lead with an unfinished plan', async () => {
-    const s = await steeringFixture(true);
-    try {
-      const { session, first } = await s.open();
-      await s.f.control.tick();
-      s.complete();
-      await eventually(() => s.row(first).state === 'completed');
-      s.f.store.insert<BoardPlan>('board_plans', {
-        id: session.id,
-        revision: 1,
-        project_id: s.f.project.id,
-        headline: 'Export ships',
-        lanes: [{ id: 'core', title: 'Core' }],
-        tasks: [
-          {
-            id: 'a',
-            title: 'Task a',
-            goal: 'Finish task a',
-            lane: 'core',
-            depends_on: [],
-            source: ['send'],
-            scope: ['src/a.ts'],
-            acceptance: ['pnpm test'],
-          },
-        ],
-        plan_version: 1,
-        pending_edits: [],
-        risks: [],
-        assumptions: [],
-        inbox: [],
-        notified: {},
-        updated_at: s.f.store.now(),
-      });
-      const compaction = s.f.call<SessionTurn>(
-        'session.compact',
-        { session_id: session.id },
-        s.f.store.must<Session>('sessions', session.id).revision,
-      );
-      await s.f.control.tick();
-      await eventually(() => s.row(compaction).delivery === 'delivered');
-      const turn = s.input(session, 'steer', 'Write a file');
-      await s.f.control.tick();
-      expect(s.steer).not.toHaveBeenCalled();
-      expect(s.row(turn)).toMatchObject({ delivery: 'queued', state: 'queued' });
-      s.complete();
-      await eventually(() => s.row(turn).delivery === 'delivered');
-      expect(s.send.mock.calls.at(-1)![1]).toMatchObject({ turn_id: turn.id, read_only: true });
-      expect(s.row(turn)).toMatchObject({ state: 'running', read_only: true });
-    } finally {
-      await s.f.close();
-    }
-  });
-
   it('acknowledges the memory of a delivered turn when a steer prepared later stays queued', async () => {
     const s = await steeringFixture(true);
     let release!: () => void;
@@ -468,7 +414,7 @@ describe('session input delivery', () => {
         text: 'Use precise terminology',
       });
       s.f.call('memory.commit', { memory_id: draft.id }, draft.revision);
-      const { session, first } = await s.open(undefined, 'lead');
+      const { session, first } = await s.open(undefined, 'project_setup');
       await s.f.control.tick();
       // A changed packet goes out again; an unchanged one is not resent.
       const next = s.f.call<{ id: string; revision: number }>('memory.propose', {

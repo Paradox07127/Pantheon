@@ -70,7 +70,7 @@ export function useDecisionsToday(projectIds: readonly string[]): Readonly<Recor
     for (const project_id of projectIds)
       void readQuery('project.decisions', { project_id, since }).then((result) => {
         if (!current || !result.ok || !isDecisions(result.value)) return;
-        const count = byRule((result.value as DecisionsForUser).items).length;
+        const count = (result.value as DecisionsForUser).items.length;
         setCounts((all) => ({ ...all, [project_id]: count }));
       });
     return () => {
@@ -79,12 +79,6 @@ export function useDecisionsToday(projectIds: readonly string[]): Readonly<Recor
   }, [key, changed, resync, midnights]);
   return counts;
 }
-
-type RuleDecision = Extract<DecisionForUser, { kind: 'prompt_by_rule' }>;
-
-/** The prompts a stored permission rule answered; the list shows no other decision. */
-export const byRule = (items: readonly DecisionForUser[]): RuleDecision[] =>
-  items.filter((item): item is RuleDecision => item.kind === 'prompt_by_rule');
 
 /** One row of the list, as text. */
 export interface DecisionRow {
@@ -101,7 +95,7 @@ export interface DecisionRow {
   sessionId: string | null;
 }
 
-export function decisionRow(item: RuleDecision): DecisionRow {
+export function decisionRow(item: DecisionForUser): DecisionRow {
   const input = item.input_summary ?? item.tool;
   return {
     key: item.approval_id,

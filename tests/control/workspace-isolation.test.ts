@@ -643,18 +643,6 @@ async function leadAndTaskSessions() {
   };
 }
 
-it('denies a task session reading other worktrees, native session records and reviews', async () => {
-  const { f, lead, worker, nativeRecords, reviews } = await leadAndTaskSessions();
-  const hidden = worker.denied('read_write');
-  expect(hidden).toEqual(expect.arrayContaining([lead.workspace.path, ...nativeRecords, reviews]));
-  // Its own worktree, the source checkout and user skills stay readable.
-  expect(hidden).not.toContain(path.join(f.protectionPaths.home, '.claude/skills'));
-  for (const readable of [worker.workspace.path, f.source])
-    expect(
-      hidden.filter((entry) => readable === entry || readable.startsWith(`${entry}/`)),
-    ).toEqual([]);
-});
-
 it('keeps the sandbox of a session without a task: other worktrees are only write-protected', async () => {
   const { f, lead, worker, nativeRecords, reviews } = await leadAndTaskSessions();
   const { worktreeSandbox } = await import('../../packages/control/dist/protection.js');
@@ -674,25 +662,6 @@ it('keeps the sandbox of a session without a task: other worktrees are only writ
   const hidden = lead.denied('read_write');
   for (const readable of [worker.workspace.path, ...nativeRecords, reviews])
     expect(hidden).not.toContain(readable);
-});
-
-it('denies a task session reading a symlinked other worktree under its own name and its target', async () => {
-  const f = await worktreeFixture();
-  const input = await sandboxInput(f);
-  const { worktreeSandbox } = await import('../../packages/control/dist/protection.js');
-  const otherTarget = path.join(f.root, 'other-workspace-target'),
-    other = path.join(f.root, 'other-workspace');
-  mkdirSync(otherTarget);
-  mkdirSync(input.tempDir);
-  symlinkSync(otherTarget, other);
-  const hidden = worktreeSandbox({
-    ...input,
-    otherWorkspaces: [other],
-    taskSession: { reviewsDirs: [path.join(f.workspaceRoot, f.project.id, 'reviews')] },
-  })
-    .protected_entries.filter((entry) => entry.deny === 'read_write')
-    .map((entry) => entry.path);
-  expect(hidden).toEqual(expect.arrayContaining([other, otherTarget]));
 });
 
 it('refuses a sandbox for a source folder whose Git metadata is not a directory', async () => {

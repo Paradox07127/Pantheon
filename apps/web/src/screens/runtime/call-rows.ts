@@ -5,7 +5,7 @@ type TraceSpan = SessionTrace['spans'][number];
 
 export type CallView = 'now' | 'history';
 export type CallVerb =
-  'read' | 'edit' | 'run' | 'search' | 'think' | 'dispatch' | 'subagent' | 'compact' | 'tool';
+  'read' | 'edit' | 'run' | 'search' | 'think' | 'subagent' | 'compact' | 'tool';
 export type CallState = 'run' | 'wait' | 'ok' | 'bad' | 'ready' | 'idle';
 export type BarTone = 'run' | 'wait' | 'bad' | 'idle' | `series-${1 | 2 | 3 | 4 | 5}`;
 
@@ -141,16 +141,12 @@ const VERBS: Record<string, CallVerb> = {
   task: 'subagent',
   agent: 'subagent',
   collabagenttoolcall: 'subagent',
-  start_task: 'dispatch',
-  direct_task: 'dispatch',
-  message_task: 'dispatch',
 };
 
 const VERB_TONE: Record<CallVerb, BarTone> = {
   read: 'series-2',
   edit: 'series-2',
   search: 'series-2',
-  dispatch: 'series-2',
   run: 'series-3',
   subagent: 'series-1',
   think: 'series-4',

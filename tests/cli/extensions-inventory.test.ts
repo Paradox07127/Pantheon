@@ -13,7 +13,7 @@ async function inventory(failing: string[]) {
       return Response.json({
         principal: {
           id: 'session:baseline',
-          role: 'worker',
+          role: 'planner',
           session_id: 'baseline',
           project_id: 'project',
           expires_at: Date.now() + 60_000,

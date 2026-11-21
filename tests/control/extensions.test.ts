@@ -380,7 +380,7 @@ describe('project extension overrides', () => {
             f.project.revision,
           );
         if (source === 'legacy') setLegacyExtensions(f.store, f.project);
-        const session = await f.create(undefined, undefined, 'lead');
+        const session = await createSetupSession(f);
         await awaitWorkspaceReady(f.control, session.workspace_id!);
         await eventually(
           () => f.start.mock.calls.length > 0,
@@ -437,7 +437,7 @@ describe('project extension overrides', () => {
           { project_id: f.project.id, runtime: adapter.name, overrides: { ...empty, ...saved } },
           f.project.revision,
         );
-        const session = await f.create(undefined, undefined, 'lead');
+        const session = await createSetupSession(f);
         await awaitWorkspaceReady(f.control, session.workspace_id!);
         await eventually(
           () => f.start.mock.calls.length > 0,
@@ -475,7 +475,7 @@ describe('project extension overrides', () => {
         },
         f.project.revision,
       );
-      const session = await f.create(undefined, undefined, 'lead');
+      const session = await createSetupSession(f);
       await awaitWorkspaceReady(f.control, session.workspace_id!);
       await eventually(
         () => f.start.mock.calls.length > 0,
@@ -538,7 +538,7 @@ describe('project extension overrides', () => {
           { project_id: f.project.id, runtime: adapter.name, overrides: { ...empty, ...opened } },
           f.project.revision,
         );
-      const session = await f.create(undefined, undefined, 'lead');
+      const session = await createSetupSession(f);
       await awaitWorkspaceReady(f.control, session.workspace_id!);
       await eventually(
         () => f.start.mock.calls.length > 0,
@@ -567,6 +567,16 @@ describe('project extension overrides', () => {
     }
   });
 });
+
+// A project setup session is a managed worktree session: it gets only what the project opened.
+function createSetupSession(f: Awaited<ReturnType<typeof workbenchFixture>>) {
+  return f.call<Promise<Session>>('session.create', {
+    project_id: f.project.id,
+    runtime: f.adapter.name,
+    input: 'Rename the answer file and explain why',
+    purpose: 'project_setup',
+  });
+}
 
 function setLegacyExtensions(store: Store, project: Project) {
   store.update(

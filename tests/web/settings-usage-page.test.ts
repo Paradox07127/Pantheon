@@ -43,14 +43,7 @@ const policy = (patch: Partial<WorkflowPolicy> = {}): WorkflowPolicy => ({
   revision: 2,
   project_id: project.id,
   policy_version: 2,
-  plan_changes: 'auto',
-  path: { t1: 'direct', t2: 'dispatch', t3: 'dispatch' },
-  acceptance_wake: 'each_merge',
-  max_parallel: 3,
-  max_parallel_limit: 4,
-  handback_limit: 3,
-  budget: {},
-  pinned: ['handback_limit'],
+  pinned: [],
   ...patch,
 });
 
@@ -223,7 +216,7 @@ describe('usage page budget and quota', () => {
     pin().props.onClick();
     await h.flush();
     bridge.answers['workflow.policy'] = policy({
-      pinned: ['handback_limit', 'runtime_quota_threshold'],
+      pinned: ['runtime_quota_threshold'],
       policy_version: 3,
     });
     const after = await mount();
@@ -231,8 +224,8 @@ describe('usage page budget and quota', () => {
     labelled(tree(after), pinQuota()).props.onClick();
     await after.flush();
     expect(sent()).toEqual([
-      { project_id: project.id, pinned: ['handback_limit', 'runtime_quota_threshold'] },
-      { project_id: project.id, pinned: ['handback_limit'] },
+      { project_id: project.id, pinned: ['runtime_quota_threshold'] },
+      { project_id: project.id, pinned: [] },
     ]);
   });
 });

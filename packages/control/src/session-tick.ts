@@ -1,11 +1,10 @@
 import type { Approval, Session } from '@pantheon/domain';
 import type { ControlContext } from './context.js';
-import { relayingQuestion } from './approvals.js';
 import { latestEvent, stuckMerge } from './needs-you.js';
 import { advanceQueuedHandoffs } from './session.js';
 import { finishStops } from './workbench-session.js';
 
-/** A permission request unanswered this long, in milliseconds, is escalated once: the user and the lead are reminded. */
+/** A permission request unanswered this long, in milliseconds, is escalated once: the user is reminded. */
 const ESCALATION_MS = 10 * 60_000;
 
 export function tickSessions(ctx: ControlContext): void {
@@ -28,8 +27,7 @@ export function tickSessions(ctx: ControlContext): void {
       approval.kind !== 'permission' ||
       approval.state !== 'pending' ||
       waited <= ESCALATION_MS ||
-      latestEvent(ctx, approval.id, 'approval.escalated') ||
-      relayingQuestion(ctx, approval)
+      latestEvent(ctx, approval.id, 'approval.escalated')
     )
       continue;
     ctx.store.event('approval.escalated', approval, approval.project_id, { waited_ms: waited });

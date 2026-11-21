@@ -186,22 +186,6 @@ it('confirms the brief the newest round handed back, not the one drafted while i
   ]);
 });
 
-it('opens the lead session once the baseline is confirmed', async () => {
-  read = baseline('baseline-a', 'submitted');
-  const h = await mount();
-  h.value!.review.props.onConfirmed({ ...read, state: 'confirmed', lead_session_id: 'lead-a' });
-  expect(mock.openSession).toHaveBeenCalledWith('lead-a');
-});
-
-it('stays where the viewer went when the confirmation lands after the thread closed', async () => {
-  read = baseline('baseline-a', 'submitted');
-  const h = await mount();
-  const confirmed = h.value!.review.props.onConfirmed;
-  h.unmount();
-  confirmed({ ...read, state: 'confirmed', lead_session_id: 'lead-a' });
-  expect(mock.openSession).not.toHaveBeenCalled();
-});
-
 const task = (id: string, title: string, depends_on: string[] = []) => ({
   id,
   title,

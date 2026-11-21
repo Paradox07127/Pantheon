@@ -8,24 +8,49 @@ import type { ControlContext } from '../../packages/control/src/context.js';
 
 async function drawings() {
   const f = await workbenchFixture();
-  const session = await f.create('Draw a chart');
+  const call = <T = unknown>(type: string, input: Record<string, unknown>, actor = user): T =>
+    f.control.execute(actor, command(actor.id, type as CommandType, input)) as T;
+  // A project setup session carries the planner credential, whose tools include draw.
+  const create = (input: string) =>
+    call<Promise<Session>>('session.create', {
+      project_id: f.project.id,
+      runtime: f.adapter.name,
+      input,
+      purpose: 'project_setup',
+    });
+  const session = await create('Draw a chart');
   const principal: Principal = {
     id: `session:${session.id}`,
-    role: 'lead',
+    role: 'planner',
     project_id: f.project.id,
     session_id: session.id,
     expires_at: f.store.now() + 60000,
   };
-  const call = <T = unknown>(type: string, input: Record<string, unknown>, actor = user): T =>
-    f.control.execute(actor, command(actor.id, type as CommandType, input)) as T;
   const draw = (input: Record<string, unknown>, actor = principal) =>
     call<{ visual_id: string; revision: number }>(
       'visual.draw',
       { title: 'Chart', kind: 'mermaid', spec: { source: 'graph LR; a-->b' }, ...input },
       actor,
     );
-  return { ...f, session, principal, call, draw };
+  return { ...f, create, session, principal, call, draw };
 }
+
+it('lets a conductor session draw', async () => {
+  const f = await drawings();
+  const conductor = await f.call<Promise<Session>>('session.create', {
+    project_id: f.project.id,
+    runtime: f.adapter.name,
+    input: 'Plan the work',
+    purpose: 'conductor',
+  });
+  const principal: Principal = {
+    ...f.principal,
+    id: `session:${conductor.id}`,
+    role: 'conductor',
+    session_id: conductor.id,
+  };
+  expect(f.draw({}, principal)).toMatchObject({ visual_id: expect.any(String) });
+});
 
 it('records drawing progress in the session stream without creating a visual', async () => {
   const f = await drawings();

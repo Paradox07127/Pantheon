@@ -57,7 +57,6 @@ it('shows the user how the project takes events, each source and the events newe
   const read = f.control.externalRead(user, f.project.id);
   expect(read.mode).toBe('approve');
   expect(read.sources).toEqual([{ id: 'stub' }]);
-  expect(read.held).toEqual([]);
   expect(read.events.map((event) => [event.kind, event.state])).toEqual([
     ['mention', 'dropped'],
     ['issue_assigned', 'pending'],

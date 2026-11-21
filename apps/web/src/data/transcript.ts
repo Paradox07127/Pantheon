@@ -470,8 +470,6 @@ export interface Transcript {
   turns: TurnView[];
   /** Agent events whose turn_id names no turn of the session. */
   loose: { text: string; usage: unknown; items: TranscriptItem[] };
-  /** The agent.chapter_started event of a resident session that took over from another; it heads the thread. */
-  chapter?: DaemonEvent;
 }
 
 const TURN_END = new Set(['turn.completed', 'turn.failed', 'turn.cancelled']);
@@ -489,7 +487,6 @@ interface Build {
   events: DaemonEvent[];
   views: Map<string, TurnView>;
   loose: Transcript['loose'];
-  chapter?: DaemonEvent;
   calls: Map<string, Slot<ToolItem>>;
   requests: Map<string, Slot<RequestItem> & { base: RequestItem }>;
   approvals: Map<string, unknown>;
@@ -600,10 +597,6 @@ function applyEvent(b: Build, event: DaemonEvent): void {
   if (!event.kind.startsWith('agent.')) return;
   // The runtime's quota shows in the tray and Insights, not in the thread.
   if (event.kind === 'agent.quota.updated') return;
-  if (event.kind === 'agent.chapter_started') {
-    b.chapter = event;
-    return;
-  }
   const server = mcpStartFailure(event)?.server;
   if (server !== undefined) {
     if (b.mcpFailed.has(server)) return;
@@ -756,7 +749,6 @@ export function buildTranscript(
       return show(view, (before) => before.turn !== turn, { turn });
     }),
     loose: show(build.loose, () => false, {}),
-    ...(build.chapter && { chapter: build.chapter }),
   };
   build.dirty.clear();
   return transcript;

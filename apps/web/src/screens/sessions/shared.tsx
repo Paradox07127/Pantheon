@@ -18,7 +18,6 @@ import {
   Code,
   Columns2,
   Copy,
-  Crown,
   ExternalLink,
   FileDown,
   FileText,
@@ -185,7 +184,6 @@ const ICONS: Record<SessionMenuItem['command'], LucideIcon> = {
   'session.interrupt': CircleStop,
   'session.gates.run': ListChecks,
   'session.merge': GitMerge,
-  'session.open_lead': Crown,
   'open.editor': Code,
   'open.terminal': SquareTerminal,
   'open.finder': FolderOpen,
@@ -398,8 +396,6 @@ export function useSessionMenu(
     if (item.command === 'session.open_beside') return openBeside?.();
     if (item.command === 'session.mark_unread') return markUnread(projectId, session);
     if (item.command === 'session.mark_read') return markRead(projectId, session);
-    if (item.command === 'session.open_lead')
-      return useShell.getState().openSession(String(item.input.session_id));
     if (item.command === 'session.copy_markdown' || item.command === 'session.export_markdown') {
       const read = await sessionExport(session).catch(fail);
       if (!read.ok) return void toast({ title: failureText(read.error), kind: 'failure' });

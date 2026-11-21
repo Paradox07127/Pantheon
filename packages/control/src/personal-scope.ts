@@ -1,6 +1,5 @@
-import { requireThat, type LeadQuestion, type Principal } from '@pantheon/domain';
-import type { Command, CommandType, PersonalAnswerKind, QueryMethod } from '@pantheon/protocol';
-import { readAppSettings } from './app-settings.js';
+import { requireThat, type Principal } from '@pantheon/domain';
+import type { Command, CommandType, QueryMethod } from '@pantheon/protocol';
 import type { ControlContext } from './context.js';
 
 /** The queries a personal principal may make, for every project. */
@@ -12,19 +11,9 @@ export const PERSONAL_QUERIES = [
 ] as const satisfies readonly QueryMethod[];
 
 /** The commands a personal principal may send. */
-export const PERSONAL_COMMANDS = [
-  'project.seen',
-  'request.send',
-  'lead.question.answer',
-] as const satisfies readonly CommandType[];
+export const PERSONAL_COMMANDS = ['project.seen'] as const satisfies readonly CommandType[];
 
 export const OUTSIDE_PERSONAL_SCOPE = "Outside the personal agent's scope";
-
-const ANSWER_KINDS = {
-  'lead.question.answer': 'question',
-} as const satisfies Partial<Record<CommandType, PersonalAnswerKind>>;
-
-type AnswerCommand = keyof typeof ANSWER_KINDS;
 
 /** The id of the personal key the principal holds. */
 export const personalKeyId = (p: Principal) => p.id.slice('personal:'.length);
@@ -44,30 +33,6 @@ export function personalCommand(p: Principal, command: Command): void {
     p.role !== 'personal' || (PERSONAL_COMMANDS as readonly string[]).includes(command.type),
     'permission_denied',
     OUTSIDE_PERSONAL_SCOPE,
-  );
-}
-
-/**
- * Refuses a personal principal an answer of a kind the user did not turn on, and a relayed worker
- * question, which answers a permission prompt.
- */
-export function personalAnswer(
-  ctx: ControlContext,
-  p: Principal,
-  type: AnswerCommand,
-  projectId: string,
-  question?: LeadQuestion,
-): void {
-  if (p.role !== 'personal') return;
-  requireThat(
-    readAppSettings(ctx).personal_answers.includes(ANSWER_KINDS[type]),
-    'permission_denied',
-    'The user has not let the personal agent answer this kind of decision',
-  );
-  requireThat(
-    !question?.source,
-    'permission_denied',
-    "Only the user answers a task session's question",
   );
 }
 

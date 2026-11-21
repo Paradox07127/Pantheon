@@ -644,8 +644,7 @@ export function Sidebar({
     () => (waitingOnly ? onlyWaiting(ordered) : ordered),
     [ordered, waitingOnly],
   );
-  // Sessions board tasks were opened from, and every listed session's title for the preview.
-  const leads = new Set((list.data ?? []).flatMap((s) => (s.lead ? [s.lead] : [])));
+  // Every listed session's title for the preview.
   const titleOf = (id: string | undefined) => {
     const found = id ? list.data?.find((s) => s.id === id) : undefined;
     return found && sessionRow(found).title;
@@ -968,9 +967,8 @@ export function Sidebar({
         key={session.id}
         session={session}
         tree={tree}
-        lead={leads.has(session.id)}
         number={number > 0 && number <= 9 ? number : undefined}
-        source={titleOf(session.lead ?? session.forked_from?.session_id)}
+        source={titleOf(session.forked_from?.session_id)}
         models={models[session.runtime]}
         on={session.id === shownId}
         unread={unread(session)}

@@ -207,29 +207,6 @@ it('reports the list stale after its read timed out twice', async () => {
   expect(h.value).toMatchObject({ error: null, refreshing: false, stale: true });
 });
 
-it("reads a worker's gates and preflight again after its lead's plan changes", async () => {
-  mock.board = {
-    ...mock.board,
-    board: {
-      sessions: [{ id: 'session-worker', task: { lead_session_id: 'session-lead', id: 'task-1' } }],
-      session_turns: [],
-    },
-  };
-  const gates = mount(() => useSessionGates('session-worker'));
-  const preflight = mount(() => useSessionPreflight('session-worker'));
-  await settle(gates, preflight);
-  expect(reads.map((r) => r.method).sort()).toEqual(['session.gates', 'session.preflight']);
-  for (const read of reads) read.answer({ ok: true, value: {} });
-
-  await deliver(event(1, 'board.plan_updated', 'session-lead', 'project-plan'), gates, preflight);
-  expect(reads.map((r) => r.method).sort()).toEqual([
-    'session.gates',
-    'session.gates',
-    'session.preflight',
-    'session.preflight',
-  ]);
-});
-
 it("reads a session's gates and preflight again after another session merges into its source", async () => {
   mock.board = {
     ...mock.board,

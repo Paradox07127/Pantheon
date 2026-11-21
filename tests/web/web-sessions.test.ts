@@ -715,6 +715,20 @@ describe('changes panel tabs', () => {
     );
   });
 
+  it('names each of the four outcomes of a resolved finding', () => {
+    for (const [outcome, id] of [
+      ['fixed', 'fixed'],
+      ['intentional', 'intentional'],
+      ['not_worth_it', 'notWorthIt'],
+      ['wrong', 'wrong'],
+    ] as const)
+      expect(
+        findingState(
+          finding('one', { resolution: { outcome, resolved_at: 1, resolved_by: 'user' } }),
+        ),
+      ).toBe(zh(`sessions.model.finding.${id}`));
+  });
+
   it('lists the findings of the newest review first', () => {
     const older = review('older', [finding('first')]);
     const newer = review('newer', [finding('second'), finding('third')]);
@@ -724,14 +738,14 @@ describe('changes panel tabs', () => {
   it('lets each open finding be attached and leaves resolved ones as they are', () => {
     const html = reviewTab([
       finding('open', { blocking: true }),
-      finding('adopted', {
-        resolution: { outcome: 'adopted', resolved_at: 1, resolved_by: 'user' },
+      finding('fixed', {
+        resolution: { outcome: 'fixed', resolved_at: 1, resolved_by: 'user' },
       }),
       finding('invalid', { status: 'rejected' }),
     ]);
     expect(html).toContain(zh('sessions.panel.review.blocking'));
     expect(html).toContain('src/answer.ts:12');
-    expect(html).toContain(zh('sessions.model.finding.adopted'));
+    expect(html).toContain(zh('sessions.model.finding.fixed'));
     expect(html).not.toContain('Returns the wrong answer invalid');
     expect(html).not.toContain('type="checkbox"');
     expect(html.match(/>附加</g)).toHaveLength(1);

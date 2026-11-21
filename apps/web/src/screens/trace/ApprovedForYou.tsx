@@ -3,14 +3,13 @@ import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
 import { Tabs } from '@base-ui/react/tabs';
 import { Bell, KeyRound, ScrollText, X } from 'lucide-react';
-import { decisionType, type DecisionType } from '@pantheon/protocol';
+import type { DecisionType } from '@pantheon/protocol';
 import { Clip } from '../../components/Clip';
 import { EmptyState } from '../../components/EmptyState';
 import { TopBar } from '../../components/TopBar';
 import { useAppSettings } from '../../data/app-settings';
 import { useBoard } from '../../data/board';
 import {
-  byRule,
   decisionRow,
   rangeSince,
   useDecisionsForUser,
@@ -47,7 +46,7 @@ const RANGES: { range: DecisionRange; label: string }[] = [
   },
 ];
 
-type TypeFilter = Extract<DecisionType, 'permission'> | 'all';
+type TypeFilter = DecisionType | 'all';
 
 const TYPES: { type: TypeFilter; label: string }[] = [
   {
@@ -93,13 +92,9 @@ export function ApprovedForYou({ projectId, tabs }: { projectId: string | null; 
   const [notifying, setNotifying] = useState(false);
   const read = useDecisionsForUser(projectId, range);
   const board = useBoard((s) => s.board);
-  const items = read.read ? byRule(read.read.items) : null;
-  const counts = items && {
-    all: items.length,
-    permission: items.filter((item) => decisionType(item) === 'permission').length,
-  };
-  const rows =
-    items?.filter((item) => type === 'all' || decisionType(item) === type).map(decisionRow) ?? null;
+  const items = read.read?.items ?? null;
+  const counts = items && { all: items.length, permission: items.length };
+  const rows = items?.map(decisionRow) ?? null;
   const now = Date.now();
   const titleOf = (sessionId: string) => {
     const session = board?.sessions.find((s) => s.id === sessionId);

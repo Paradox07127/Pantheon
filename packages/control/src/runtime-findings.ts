@@ -557,30 +557,19 @@ export function runtimeDiagnostics(
             : session?.merge?.state === 'running';
         })()) ||
       (kind === 'workflow_step' &&
-        ctx.store.get<StepRun>('workflow_step_runs', event.aggregate_id)?.state === 'running') ||
-      (kind === 'dispatch_queue' &&
-        !!task_id &&
-        Object.hasOwn(
-          ctx.store.get<BoardPlan>('board_plans', event.aggregate_id)?.dispatch ?? {},
-          task_id,
-        ));
+        ctx.store.get<StepRun>('workflow_step_runs', event.aggregate_id)?.state === 'running');
     if (open) {
-      const dispatch =
-        task_id && kind === 'dispatch_queue'
-          ? ctx.store.get<BoardPlan>('board_plans', event.aggregate_id)?.dispatch?.[task_id]
-          : undefined;
       const changes = task_id ? waits.get(pairKey(event.aggregate_id, task_id)) : undefined;
       const wait = changes?.at(-1);
-      const observed =
-        wait && payloadOf(wait).requested_at === dispatch?.requested_at ? wait : undefined;
+      const observed = wait && payloadOf(wait).requested_at === undefined ? wait : undefined;
       add(
         event.event_id,
         to,
         {
           ...finding,
           lane_key,
-          duration_ms: elapsed(dispatch?.requested_at ?? event.created_at, to),
-          started_at: dispatch?.requested_at ?? event.created_at,
+          duration_ms: elapsed(event.created_at, to),
+          started_at: event.created_at,
           ongoing: true,
           wait_reason: observed && text(payloadOf(observed).wait),
           ...(observed && changes ? { wait_ms_by_reason: waitBreakdown(changes, to) } : {}),

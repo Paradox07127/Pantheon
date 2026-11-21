@@ -67,7 +67,16 @@ import {
   sourceBranch,
   type PanelTab,
 } from './model';
-import { detachedText, sessionBranch, type ChangesView, type Panel } from './inspector-model';
+import {
+  detachedText,
+  FINDING_OUTCOMES,
+  findingOutcomeLabel,
+  findingOutcomeName,
+  sessionBranch,
+  type ChangesView,
+  type FindingOutcome,
+  type Panel,
+} from './inspector-model';
 import { BrowserPanel } from './BrowserPanel';
 import { askFix, ChecksTab, MergeBar, PlanTab, ReviewTab, StoryTab } from './panel';
 import { ThreadTrace, useThreadTurns } from './trace';
@@ -755,7 +764,7 @@ export function SessionInspector(props: {
     setBusy(false);
     if (!result.ok) setError({ at: 'checks', text: failureText(result.error) });
   };
-  const resolve = async (finding: ReviewFinding, outcome: 'adopted' | 'dismissed') => {
+  const resolve = async (finding: ReviewFinding, outcome: FindingOutcome) => {
     const review = reviews.data?.find((r) => r.id === finding.review_id);
     if (busy || !review) return;
     setBusy(true);
@@ -933,22 +942,18 @@ export function SessionInspector(props: {
                   <p>{finding.impact}</p>
                   {!readOnly && (
                     <div className="df-findinga">
-                      <button
-                        type="button"
-                        className="btn"
-                        disabled={busy}
-                        onClick={() => void resolve(finding, 'adopted')}
-                      >
-                        {t({ id: 'sessions.screen.adopt', defaultMessage: 'Adopt' })}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn"
-                        disabled={busy}
-                        onClick={() => void resolve(finding, 'dismissed')}
-                      >
-                        {t({ id: 'sessions.screen.dismiss', defaultMessage: 'Dismiss' })}
-                      </button>
+                      {FINDING_OUTCOMES.map((outcome) => (
+                        <button
+                          key={outcome}
+                          type="button"
+                          className="btn"
+                          aria-label={findingOutcomeLabel(finding, outcome)}
+                          disabled={busy}
+                          onClick={() => void resolve(finding, outcome)}
+                        >
+                          {findingOutcomeName(outcome)}
+                        </button>
+                      ))}
                       {!ended && (
                         <button
                           type="button"

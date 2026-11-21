@@ -1,6 +1,5 @@
-import type { BoardPlan, LeadNote, Session, SessionTurn } from '@pantheon/domain';
+import type { Session, SessionTurn } from '@pantheon/domain';
 import type { ControlContext } from './context.js';
-import { contractLines } from './lead-inbox.js';
 
 /** The most the task sections and kept entries of a handoff take together, in UTF-8 bytes. */
 const HANDOFF_BYTES = 16_000;
@@ -148,63 +147,14 @@ function entries(ctx: ControlContext, session: Session, kept: Map<string, Sessio
 }
 
 /**
- * A task session's current contract, the reports it sent and its lead's messages, each a section;
- * none for a session outside a task.
- */
-function taskSections(ctx: ControlContext, session: Session, leadTurns: SessionTurn[]): string[] {
-  if (!session.task) return [];
-  const planned = ctx.store
-    .get<BoardPlan>('board_plans', session.task.lead_session_id)
-    ?.tasks.find((candidate) => candidate.id === session.task!.id);
-  const reports = ctx.store.db
-    .prepare(
-      "SELECT payload FROM events WHERE kind='task.reported' AND json_extract(payload, '$.session_id')=? ORDER BY sequence",
-    )
-    .all(session.id)
-    .map((row) => JSON.parse(row.payload as string) as LeadNote);
-  return [
-    ...(planned
-      ? [
-          [
-            `Current contract of task ${planned.id} "${planned.title}":`,
-            ...contractLines(planned),
-          ].join('\n'),
-        ]
-      : []),
-    ...(reports.length
-      ? [
-          [
-            'Reports this session sent to the lead:',
-            ...reports.map((note) => `- ${note.kind}: ${note.text}`),
-          ].join('\n'),
-        ]
-      : []),
-    ...(leadTurns.length
-      ? [['Messages from the lead:', ...leadTurns.map((turn) => turn.input)].join('\n')]
-      : []),
-  ];
-}
-
-/**
- * The session's record for a new native conversation. A task session's contract, reports and lead
- * messages come first and whole; the record's entries are cut to the rest of the byte budget by
- * fixed rules: entries are kept whole, the latest input, the latest answer and the first input
+ * The session's record for a new native conversation. The record's entries are cut to the byte
+ * budget by fixed rules: entries are kept whole, the latest input, the latest answer and the first input
  * first, then the rest from newest to oldest, skipping each that does not fit. `beforeTurnId`
  * leaves out that turn and later ones; rolled back turns are always left out.
  */
 export function buildHandoff(ctx: ControlContext, session: Session, beforeTurnId?: string): string {
   const turns = keptTurns(ctx, session, beforeTurnId);
-  const messaged = new Set(
-    ctx.store.db
-      .prepare("SELECT payload FROM events WHERE aggregate_id=? AND kind='task.messaged'")
-      .all(session.id)
-      .map((row) => record(JSON.parse(row.payload as string)).turn_id),
-  );
-  const leadTurns = [...turns.values()].filter((turn) => messaged.has(turn.id));
-  const sections = taskSections(ctx, session, leadTurns);
-  const all = entries(ctx, session, turns).filter(
-    (entry) => !(entry.kind === 'user' && messaged.has(entry.turnId)),
-  );
+  const all = entries(ctx, session, turns);
   const lastOf = (kind: Entry['kind']) => all.findLastIndex((entry) => entry.kind === kind);
   const order = [
     lastOf('user'),
@@ -213,8 +163,8 @@ export function buildHandoff(ctx: ControlContext, session: Session, beforeTurnId
     ...all.map((_, index) => all.length - 1 - index),
   ].filter((index, at, list) => index !== -1 && list.indexOf(index) === at);
   const kept = new Set<number>();
-  // Two bytes for the blank line that separates a section or entry from the one before it.
-  let used = sections.reduce((sum, section) => sum + Buffer.byteLength(section) + 2, 0);
+  // Two bytes for the blank line that separates an entry from the one before it.
+  let used = 0;
   for (const index of order) {
     const size = Buffer.byteLength(all[index]!.text) + 2;
     if (used + size > HANDOFF_BYTES) continue;
@@ -223,7 +173,6 @@ export function buildHandoff(ctx: ControlContext, session: Session, beforeTurnId
   }
   const lines = [
     `[Pantheon] You continue work that a ${session.runtime} session did in this worktree. Its record follows, cut to fit; entries left out are marked. Check the files and git log for anything it does not show.`,
-    ...sections,
   ];
   let gap = 0;
   all.forEach((entry, index) => {

@@ -25,6 +25,11 @@ export function resolveLocale(choice: LocaleChoice, preferred: readonly string[]
 export interface MenuText {
   about: (name: string) => string;
   settings: string;
+  installCli: string;
+  cliInstalled: (file: string) => string;
+  cliOccupied: (file: string) => string;
+  cliAddToPath: string;
+  cliFailed: string;
   services: string;
   hide: (name: string) => string;
   hideOthers: string;
@@ -87,6 +92,13 @@ export const MENU_TEXT: Record<Locale, MenuText> = {
   en: {
     about: (name) => `About ${name}`,
     settings: 'Settings…',
+    installCli: 'Install Command Line Tool…',
+    cliInstalled: (file) => `Installed the pantheon command at ${file}.`,
+    cliOccupied: (file) =>
+      `${file} already exists and was not made by Pantheon, so it was left as is.`,
+    cliAddToPath:
+      'Add this line to your shell profile, such as ~/.zshrc, then open a new terminal:',
+    cliFailed: 'Could not install the command line tool.',
     services: 'Services',
     hide: (name) => `Hide ${name}`,
     hideOthers: 'Hide Others',
@@ -152,6 +164,11 @@ export const MENU_TEXT: Record<Locale, MenuText> = {
   'zh-CN': {
     about: (name) => `关于 ${name}`,
     settings: '设置…',
+    installCli: '安装命令行工具…',
+    cliInstalled: (file) => `pantheon 命令已装到 ${file}。`,
+    cliOccupied: (file) => `${file} 已存在且不是 Pantheon 写的，没有覆盖。`,
+    cliAddToPath: '把这一行加进 shell 配置(例如 ~/.zshrc),再开一个新终端:',
+    cliFailed: '没能安装命令行工具。',
     services: '服务',
     hide: (name) => `隐藏 ${name}`,
     hideOthers: '隐藏其他',

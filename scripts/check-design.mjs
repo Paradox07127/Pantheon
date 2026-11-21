@@ -18,7 +18,7 @@ const ids = new Set(catalog.cases.map(c => c.id));
 // Retired case IDs that the docs may still name.
 const retired = new Set(["A007", "A009", "A019"]);
 need(catalog.schema_version === 1, "acceptance schema_version");
-need(ids.size === catalog.cases.length && ids.size === 33, "33 unique cases");
+need(ids.size === catalog.cases.length && ids.size === 34, "34 unique cases");
 const validModes = new Set(["integration", "live", "ui"]);
 const groups = new Set(Object.keys(catalog.gates));
 let assertionCount = 0;
@@ -38,7 +38,7 @@ for (const c of catalog.cases) {
     assertionCount++;
   }
 }
-need(assertionCount === 224, "224 assertions");
+need(assertionCount === 249, "249 assertions");
 for (let f = 0; f < files.length; f++) {
   const text = texts[f];
   for (const m of text.matchAll(/\bA\d{3}\b/g)) need(ids.has(m[0]) || retired.has(m[0]), "unknown case in " + files[f] + ": " + m[0]);
@@ -53,6 +53,6 @@ if (failures.length) {
   for (const failure of failures) console.error("FAIL " + failure);
   process.exitCode = 1;
 } else {
-  console.log(`Design checks passed: 33 cases, 224 assertions, links in ${files.length} docs.`);
+  console.log(`Design checks passed: 34 cases, 249 assertions, links in ${files.length} docs.`);
   console.log("Scope: static specification only; product results are recorded in separate reports.");
 }

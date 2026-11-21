@@ -11,13 +11,6 @@ const policy: WorkflowPolicy = {
   revision: 2,
   project_id: 'alpha',
   policy_version: 2,
-  plan_changes: 'auto',
-  path: { t1: 'direct', t2: 'dispatch', t3: 'dispatch' },
-  acceptance_wake: 'each_merge',
-  max_parallel: 3,
-  max_parallel_limit: 4,
-  handback_limit: 3,
-  budget: {},
   pinned: [],
 };
 const status: RuntimeStatus = {
@@ -54,7 +47,6 @@ vi.mock('@/data/project-defaults', async (actual) => ({
         { key: 'session_defaults', overrides: [] },
         { key: 'usage_targets', builtin: {}, overrides: [] },
         { key: 'external_events', builtin: 'off', overrides: [] },
-        { key: 'auto_merge', builtin: false, overrides: [] },
       ],
       projects: [{ project_id: 'alpha', name: 'Alpha app', overridden: 0 }],
       permission_rules: [],
@@ -176,14 +168,4 @@ describe('setting anchors', () => {
       expect(missing).toEqual([]);
     },
   );
-});
-
-describe('the handback limit', () => {
-  it('is found on the gates page, at the row that holds it', () => {
-    const hit = searchSettings('交回次数上限').find((h) => h.page === 'gates');
-    expect(hit).toMatchObject({ id: 'gates.handbackLimit', page: 'gates', pageOnly: false });
-    useSettingsView.setState({ page: 'gates', detail: 'alpha' });
-    const html = renderToStaticMarkup(createElement(ProjectSettingsScreen));
-    expect(anchors(html).has('gates.handbackLimit')).toBe(true);
-  });
 });

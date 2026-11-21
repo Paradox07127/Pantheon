@@ -1093,19 +1093,6 @@ export const SETTINGS_INDEX: SettingRecord[] = [
   },
 
   page('projects'),
-  {
-    id: 'projects.globalAutoMerge',
-    page: 'projects',
-    section: defineMessage({ id: 'settings.worktrees.merging', defaultMessage: 'Merging' }),
-    label: defineMessage({
-      id: 'settings.autoMerge.toggle',
-      defaultMessage: 'Merge automatically once gates pass',
-    }),
-    keywords: defineMessage({
-      id: 'settings.search.keywords.autoMerge',
-      defaultMessage: 'land, worktree',
-    }),
-  },
   page('gates'),
   {
     id: 'gates.gate',
@@ -1120,20 +1107,7 @@ export const SETTINGS_INDEX: SettingRecord[] = [
     id: 'gates.handbackLimit',
     page: 'gates',
     section: gate,
-    label: defineMessage({
-      id: 'data.workflowPolicy.param.handbackLimit',
-      defaultMessage: 'Handback limit',
-    }),
-    options: () => [t({ id: 'settings.gate.onFail', defaultMessage: 'When a gate fails' })],
-  },
-  {
-    id: 'gates.recoverySwitch',
-    page: 'gates',
-    section: gate,
-    label: defineMessage({
-      id: 'settings.gate.recoverySwitch',
-      defaultMessage: 'Switch runtime when hand-backs run out',
-    }),
+    label: defineMessage({ id: 'settings.gate.onFail', defaultMessage: 'When a gate fails' }),
   },
   {
     id: 'gates.runner',
@@ -1208,19 +1182,6 @@ export const SETTINGS_INDEX: SettingRecord[] = [
     keywords: defineMessage({
       id: 'settings.search.keywords.setupCommand',
       defaultMessage: 'install, dependencies, script, bootstrap',
-    }),
-  },
-  {
-    id: 'worktrees.autoMerge',
-    page: 'worktrees',
-    section: defineMessage({ id: 'settings.worktrees.merging', defaultMessage: 'Merging' }),
-    label: defineMessage({
-      id: 'settings.autoMerge.toggle',
-      defaultMessage: 'Merge automatically once gates pass',
-    }),
-    keywords: defineMessage({
-      id: 'settings.search.keywords.autoMerge',
-      defaultMessage: 'land, worktree',
     }),
   },
   {

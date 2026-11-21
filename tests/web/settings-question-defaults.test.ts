@@ -35,14 +35,7 @@ const policy = (patch: Partial<WorkflowPolicy> = {}): WorkflowPolicy => ({
   revision: 2,
   project_id: 'alpha',
   policy_version: 2,
-  plan_changes: 'auto',
-  path: { t1: 'direct', t2: 'dispatch', t3: 'dispatch' },
-  acceptance_wake: 'each_merge',
-  max_parallel: 3,
-  max_parallel_limit: 4,
-  handback_limit: 3,
-  budget: {},
-  pinned: ['handback_limit'],
+  pinned: [],
   ...patch,
 });
 

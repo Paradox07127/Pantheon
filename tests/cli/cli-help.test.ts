@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, it } from 'vitest';
 
@@ -8,9 +9,9 @@ const cli = (...args: string[]) =>
 it.each(['--help', '-h'])('prints usage and exits 0 for %s', (flag) => {
   const result = cli(flag);
   expect(result.status).toBe(0);
-  expect(result.stdout).toMatch(/^Usage: pnpm cli /);
-  expect(result.stdout).toContain('pnpm cli review [--base REF] [RANGE] [--runtime NAME]...');
-  expect(result.stdout).toContain('pnpm cli land [BRANCH] [--message TEXT]');
+  expect(result.stdout).toMatch(/^Usage: pantheon /);
+  expect(result.stdout).toContain('pantheon review [--base REF] [RANGE] [--runtime NAME]...');
+  expect(result.stdout).toContain('pantheon land [BRANCH] [--message TEXT]');
   expect(result.stderr).toBe('');
 });
 
@@ -22,4 +23,9 @@ it('reports an unknown option as one usage error line with exit 64', () => {
   expect(lines).toHaveLength(1);
   expect(lines[0]).toContain("'--bogus'");
   expect(result.stderr).not.toMatch(/\n\s+at /);
+});
+
+it('starts the built entry with a node shebang so it runs as the pantheon command', () => {
+  const first = readFileSync(path.resolve('apps/cli/dist/index.js'), 'utf8').split('\n')[0];
+  expect(first).toBe('#!/usr/bin/env node');
 });

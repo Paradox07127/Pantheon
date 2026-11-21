@@ -1,7 +1,13 @@
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, it, vi } from 'vitest';
-import type { Principal, Session, SessionComment, Workspace } from '@pantheon/domain';
+import {
+  credentialRole,
+  type Principal,
+  type Session,
+  type SessionComment,
+  type Workspace,
+} from '@pantheon/domain';
 import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
@@ -121,22 +127,15 @@ it('deletes a comment from storage and the open count, and refuses a stale revis
   expect(await f.control.sessionPreflight(user, session.id)).not.toHaveProperty('open_comments');
 });
 
-it.each(['lead', 'worker'] as const)('refuses comment mutations by a %s session', async (role) => {
+it('refuses comment mutations by the session credential', async () => {
   const f = await workbenchFixture();
-  const session = await idleSession(f);
-  if (role === 'worker')
-    f.store.update<Session>(
-      'sessions',
-      {
-        ...session,
-        task: { lead_session_id: 'lead-session', id: 'explain-change', generation: 1 },
-      },
-      session.revision,
-    );
+  const idle = await idleSession(f);
+  // Only a session with Pantheon tools holds a credential; a conductor is one.
+  const session = f.store.update<Session>('sessions', { ...idle, conductor: true }, idle.revision);
   const comment = add(f, session.id);
   const principal: Principal = {
-    id: `${role}-credential`,
-    role,
+    id: 'session-credential',
+    role: credentialRole(session)!,
     session_id: session.id,
     project_id: f.project.id,
     expires_at: f.store.now() + 60_000,

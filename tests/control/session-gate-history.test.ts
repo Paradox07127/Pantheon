@@ -158,7 +158,7 @@ it('refuses access to another project principal', async () => {
 
   const otherPrincipal = {
     id: 'other-agent',
-    role: 'worker' as const,
+    role: 'writer' as const,
     project_id: 'other-project',
   };
   expect(() => f.control.sessionGatesHistory(otherPrincipal, session.id)).toThrow(

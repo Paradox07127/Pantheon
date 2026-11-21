@@ -52,7 +52,7 @@ it('probes one device and lists the hosts of the SSH config over HTTP', async ()
       arch: 'x86_64',
       cpus: 8,
       labels: [],
-      load: { sessions: 0 },
+      load: { active_sessions: [] },
     });
     const unknown = await fetch(daemon.url + '/v1/device.probe?id=cloud-box', { headers });
     expect(await unknown.json()).toMatchObject({ error: 'invalid_input' });

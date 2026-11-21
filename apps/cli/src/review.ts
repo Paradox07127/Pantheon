@@ -11,6 +11,8 @@ export interface Daemon {
 }
 
 export const reviewUsage = 'review [--base REF] [RANGE] [--runtime NAME]...';
+const outcomes = ['fixed', 'intentional', 'not_worth_it', 'wrong'];
+export const resolveUsage = `review resolve REVIEW_ID FINDING_ID ${outcomes.join('|')} [--note TEXT]`;
 
 export const usageError = (message: string): never => {
   console.error(message);
@@ -56,11 +58,12 @@ export const sendCommand = async (
   type: CommandType,
   input: Record<string, unknown>,
   timeout: number,
+  expectedRevision: number | null = null,
 ) => {
   const response = await fetch(new URL('/v1/commands', daemon.url), {
     method: 'POST',
     headers: { Authorization: `Bearer ${daemon.token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(command(USER_PRINCIPAL_ID, type, input)),
+    body: JSON.stringify(command(USER_PRINCIPAL_ID, type, input, expectedRevision)),
     signal: AbortSignal.timeout(timeout),
   });
   return { ok: response.ok, body: (await response.json()) as { receipt: unknown } };
@@ -94,16 +97,57 @@ const printFinding = (finding: ReviewFinding) => {
   console.log(
     `${finding.location} [${finding.blocking ? 'blocking' : 'report'}] ${finding.runtime}: ${finding.impact}`,
   );
+  console.log(`  id: ${finding.id}`);
   console.log(`  quote: ${finding.quote}`);
   console.log(`  evidence: ${finding.evidence}`);
+};
+
+/** Records the user's outcome on one finding, at the review's current revision. */
+const resolve = async (connect: () => Daemon, positionals: string[], note?: string) => {
+  const [reviewId, findingId, outcome] = positionals;
+  if (positionals.length !== 3 || !outcomes.includes(outcome!))
+    return usageError(`Usage: pantheon ${resolveUsage}`);
+  try {
+    const daemon = connect();
+    const url = new URL('/v1/review.read', daemon.url);
+    url.searchParams.set('review_id', reviewId!);
+    const read = await fetch(url, {
+      headers: { Authorization: `Bearer ${daemon.token}` },
+      signal: AbortSignal.timeout(5000),
+    });
+    const current = (await read.json()) as Review;
+    if (!read.ok) throw new Error(JSON.stringify(current));
+    const sent = await sendCommand(
+      daemon,
+      'review.finding.resolve',
+      {
+        review_id: reviewId,
+        finding_id: findingId,
+        outcome,
+        ...(note === undefined ? {} : { note }),
+      },
+      5000,
+      current.revision,
+    );
+    if (!sent.ok) {
+      console.error(JSON.stringify(sent.body, null, 2));
+      return 2;
+    }
+  } catch (error) {
+    console.error(String(error));
+    return 2;
+  }
+  console.log(`${findingId}: ${outcome}`);
+  return 0;
 };
 
 export const review = async (
   connect: () => Daemon,
   positionals: string[],
-  values: { base?: string; runtime?: string[] },
+  values: { base?: string; runtime?: string[]; note?: string },
 ) => {
-  if (positionals.length > 1) usageError(`Usage: pnpm cli ${reviewUsage}`);
+  if (positionals[0] === 'resolve') return resolve(connect, positionals.slice(1), values.note);
+  if (positionals.length > 1) usageError(`Usage: pantheon ${reviewUsage}`);
   let base = values.base,
     head = positionals[0];
   const separator = head?.indexOf('..') ?? -1;
@@ -111,9 +155,9 @@ export const review = async (
     if (base) usageError('Give the base either with --base or in A..B, not both.');
     base = head.slice(0, separator);
     head = head.slice(separator + 2).replace(/^\./, '');
-    if (!base || !head) usageError(`Usage: pnpm cli ${reviewUsage}`);
+    if (!base || !head) usageError(`Usage: pantheon ${reviewUsage}`);
   }
-  if (!base) return usageError(`Usage: pnpm cli ${reviewUsage}`);
+  if (!base) return usageError(`Usage: pantheon ${reviewUsage}`);
   const root = projectRoot();
   const defaulted = !head;
   base = sharedRef(base);

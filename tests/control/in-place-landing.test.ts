@@ -53,18 +53,12 @@ const refusal = async (run: () => unknown) => {
 const current = (f: Fixture, id: string) => f.store.must<Session>('sessions', id);
 const head = (f: Fixture) => git(f.source, 'rev-parse', 'HEAD').trim();
 
-async function folderSession(
-  f: Fixture,
-  input = writeAndCommit,
-  workspace = 'auto',
-  purpose?: 'lead',
-) {
+async function folderSession(f: Fixture, input = writeAndCommit, workspace = 'auto') {
   const session = await f.call<Promise<Session>>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input,
     workspace,
-    ...(purpose ? { purpose } : {}),
   });
   await eventually(
     () => f.turns(session.id).every((turn) => !['queued', 'running'].includes(turn.state)),
@@ -111,21 +105,6 @@ it('records the folder HEAD a new folder session opens on and keeps its commit i
     state: 'ready',
     changes: { files: 1 },
   });
-});
-
-it('gives a new folder session the lead credential a worktree session the user opened has', async () => {
-  const f = await workbenchFixture();
-  Object.assign(f.control['ctx'], {
-    issueSessionCredential: () => ({
-      token_file: path.join(f.root, 'token'),
-      daemon_url: 'http://127.0.0.1:1',
-    }),
-  });
-  const session = await folderSession(f, 'Look around', 'auto', 'lead');
-  expect(credentialRole(session, 'in_place')).toBe('lead');
-  const spec = f.start.mock.calls.at(-1)![0] as SessionSpec;
-  expect(spec.control_instructions).toContain('You are a lead session');
-  expect(spec.control_instructions).toContain('Commit your changes there');
 });
 
 it('runs a new folder session the user opened without Pantheon tools, text or memory', async () => {
@@ -231,7 +210,7 @@ it('opens a worktree for the next session while one writes in the folder, and fr
 it('keeps an adopted session out of gates and landing while it holds the folder', async () => {
   const f = await workbenchFixture({ adoptable: true });
   const adopted = await f.adopt();
-  expect(credentialRole(adopted, 'in_place')).toBe('planner');
+  expect(credentialRole(adopted)).toBeUndefined();
   expect(
     (await refusal(() => f.call('session.gates.run', { session_id: adopted.id }, adopted.revision)))
       .message,

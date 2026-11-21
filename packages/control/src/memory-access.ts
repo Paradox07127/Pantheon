@@ -3,7 +3,6 @@ import path from 'node:path';
 import {
   hash,
   requireThat,
-  type BoardPlan,
   type MemoryItem,
   type MemoryRecord,
   type MemoryState,
@@ -12,7 +11,6 @@ import {
   type Session,
 } from '@pantheon/domain';
 import { projectAccess, type ControlContext } from './context.js';
-import { taskGeneration, taskSessions, taskState } from './board-plan.js';
 
 export function rows<T>(
   ctx: ControlContext,
@@ -31,48 +29,16 @@ export const state = (ctx: ControlContext, project: string) =>
 
 /** Only authoritative source fields. Delivery acknowledgements, page writes and inbox consumption are excluded. */
 export function sources(ctx: ControlContext, project: string) {
-  const plans = rows<BoardPlan>(ctx, 'board_plans', project),
-    sessions = ctx.store.list<Session>('sessions');
   return {
     brief: ctx.store.get('project_briefs', project) ?? null,
-    tasks: plans.flatMap((plan) => {
-      const lead = ctx.store.get<Session>('sessions', plan.id);
-      return plan.tasks.map((task) => ({
-        lead_session_id: plan.id,
-        task_id: task.id,
-        generation: taskGeneration(plan, task.id),
-        title: task.title,
-        goal: task.goal,
-        scope: task.scope,
-        acceptance: task.acceptance,
-        state: taskState(plan, task.id, taskSessions(ctx, plan.id, task.id, sessions, plan), lead),
-        completion: plan.accepted?.[task.id] ?? plan.direct_merged?.[task.id] ?? null,
-        done_when: task.done_when ?? 'merged',
-      }));
-    }),
     // Kept so the source signatures of stored reports stay valid.
+    tasks: [],
     experiences: [],
   };
 }
-export function taskCurrent(
-  ctx: ControlContext,
-  r: Pick<MemoryRecord, 'project_id' | 'task'>,
-  sessions = ctx.store.list<Session>('sessions'),
-): boolean {
-  if (!r.task) return true;
-  const plan = ctx.store.get<BoardPlan>('board_plans', r.task.lead_session_id);
-  return (
-    !!plan &&
-    plan.project_id === r.project_id &&
-    plan.tasks.some((t) => t.id === r.task!.id) &&
-    taskGeneration(plan, r.task.id) === (r.task.generation ?? 1) &&
-    taskState(
-      plan,
-      r.task.id,
-      taskSessions(ctx, plan.id, r.task.id, sessions),
-      ctx.store.get<Session>('sessions', plan.id),
-    ) !== 'done'
-  );
+/** A record scoped to a board task is never current. */
+export function taskCurrent(r: Pick<MemoryRecord, 'task'>): boolean {
+  return !r.task;
 }
 export const NOTE_IDLE_MS = 90 * 24 * 60 * 60 * 1000;
 /** Past its expires_at, or an agent's own note no session read for NOTE_IDLE_MS. */
@@ -89,20 +55,19 @@ export function expired(ctx: ControlContext, r: MemoryRecord): boolean {
       now - (r.last_used_at ?? r.created_at) > NOTE_IDLE_MS)
   );
 }
-export function alive(ctx: ControlContext, r: MemoryRecord, sessions?: Session[]): boolean {
-  return r.state === 'active' && !expired(ctx, r) && taskCurrent(ctx, r, sessions);
+export function alive(ctx: ControlContext, r: MemoryRecord): boolean {
+  return r.state === 'active' && !expired(ctx, r) && taskCurrent(r);
 }
 export function sourceSignature(
   ctx: ControlContext,
   project: string,
   all = records(ctx, project),
 ): string {
-  const sessions = ctx.store.list<Session>('sessions');
   return hash({
     sources: sources(ctx, project),
     // A decision Pantheon wrote from a plan does not make the project's reports stale.
     decisions: all
-      .filter((r) => r.kind === 'decision' && !r.origin && alive(ctx, r, sessions))
+      .filter((r) => r.kind === 'decision' && !r.origin && alive(ctx, r))
       .map((r) => r.id),
   });
 }
@@ -116,14 +81,13 @@ export function current(
   const all = records(ctx, project),
     byId = new Map(all.map((r) => [r.id, r]));
   const stamp = known ?? sourceSignature(ctx, project, all),
-    sessions = ctx.store.list<Session>('sessions'),
     accepted = new Map<string, boolean>();
   const valid = (r: MemoryRecord, visiting = new Set<string>()): boolean => {
     if (accepted.has(r.id)) return accepted.get(r.id)!;
     if (visiting.has(r.id)) return false;
     const next = new Set(visiting).add(r.id);
     const ok =
-      alive(ctx, r, sessions) &&
+      alive(ctx, r) &&
       (!r.source_signature || r.source_signature === stamp) &&
       r.dependencies.every((k) => {
         const source = byId.get(k);
@@ -172,49 +136,8 @@ export function taskScope(task?: { lead_session_id: string; id: string; generati
     task && { lead_session_id: task.lead_session_id, id: task.id, generation: task.generation ?? 1 }
   );
 }
-/**
- * Moves the task memory of a plan, every version and the versions a retraction saved, to the lead
- * the plan moved to; a retraction's saved revisions count the move, so it can still be undone.
- */
-export function moveTaskMemory(ctx: ControlContext, project: string, from: string, to: string) {
-  const scoped = (r: { task?: MemoryRecord['task'] }) => r.task?.lead_session_id === from;
-  const moved = <T extends { task?: MemoryRecord['task'] }>(r: T): T =>
-    scoped(r) ? { ...r, task: { ...r.task!, lead_session_id: to } } : r;
-  const all = records(ctx, project);
-  const touched = new Set(
-    all
-      .filter((r) => scoped(r) || r.retraction?.records.some(({ record }) => scoped(record)))
-      .map((r) => r.id),
-  );
-  for (const r of all)
-    if (touched.has(r.id))
-      ctx.store.update<MemoryRecord>(
-        'memory_records',
-        {
-          ...moved(r),
-          ...(r.retraction && {
-            retraction: {
-              ...r.retraction,
-              records: r.retraction.records.map(({ record, archived_revision }) => ({
-                record: moved(record),
-                archived_revision: archived_revision + Number(touched.has(record.id)),
-              })),
-            },
-          }),
-        },
-        r.revision,
-      );
-}
-/** The board task a session works on, or the direct task its lead claimed. */
-export function sessionTaskScope(session?: Session) {
-  return taskScope(
-    session?.task ??
-      (session?.direct_task && { ...session.direct_task, lead_session_id: session.id }),
-  );
-}
 export function visible(r: MemoryRecord, session?: Session): boolean {
-  const own = sessionTaskScope(session);
-  return !r.task || !session || (!!own && hash(taskScope(r.task)) === hash(own));
+  return !r.task || !session;
 }
 export function sessionFor(ctx: ControlContext, p: Principal): Session | undefined {
   return p.session_id ? ctx.store.must<Session>('sessions', p.session_id) : undefined;

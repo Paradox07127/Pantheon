@@ -10,7 +10,6 @@
   "runs.table.verb.run": "运行",
   "runs.table.verb.search": "搜索",
   "runs.table.verb.think": "思考",
-  "runs.table.verb.dispatch": "派发",
   "runs.table.verb.subagent": "子 agent",
   "runs.table.verb.compact": "压缩",
   "runs.table.verb.tool": "工具",

@@ -1,4 +1,4 @@
-import type { Entity, LandingItem, Session } from './index.js';
+import type { Entity, LandingItem } from './index.js';
 
 export type StoryKind = 'added' | 'behavior' | 'fix' | 'refactor' | 'style' | 'test' | 'config';
 /** Where a change shows: a ui card gets a sketch, every other surface a structure diagram. */
@@ -99,7 +99,7 @@ export interface StoryTag {
 export interface StoryContext {
   goal: string;
   acceptance: string[];
-  task?: NonNullable<Session['task']>;
+  task?: import('./memory.js').MemoryTaskScope;
   /** False when a bound task's historical generation no longer has a recorded contract. */
   contract_available: boolean;
   checks: {

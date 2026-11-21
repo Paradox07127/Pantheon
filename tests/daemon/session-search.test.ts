@@ -40,7 +40,7 @@ it('serves authenticated session search over HTTP and validates query parameters
       expect((await get(params)).status).toBe(400);
     expect((await fetch(`${daemon.url}/v1/session.search?text=query`)).status).toBe(403);
     expect(() =>
-      daemon.control.sessionSearch({ id: 'agent', role: 'worker' }, { text: 'query', limit: 20 }),
+      daemon.control.sessionSearch({ id: 'agent', role: 'writer' }, { text: 'query', limit: 20 }),
     ).toThrow('Authenticated user required');
   } finally {
     await daemon.close();

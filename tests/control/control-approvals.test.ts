@@ -5,11 +5,11 @@ import { Control } from '@pantheon/control';
 import { FixtureAdapter } from '@pantheon/adapters';
 import { Store } from '@pantheon/store';
 import {
+  credentialRole,
   hash,
   type AgentEvent,
   type AgentEventSink,
   type Approval,
-  type BoardPlan,
   type Principal,
   type Project,
   type Session,
@@ -563,178 +563,6 @@ it('refuses question answers that leave a question unanswered', async () => {
   }
 });
 
-const exportQuestions = [
-  {
-    question: 'Which export format?',
-    header: 'Format',
-    options: [
-      { label: 'CSV', description: 'Opens in spreadsheets' },
-      { label: 'JSON', description: 'Keeps nested fields' },
-    ],
-    multiSelect: false,
-  },
-];
-
-/** Gives the fixture session a lead whose plan has its task, when it is a task session. */
-async function leadOf(
-  f: Awaited<ReturnType<typeof approvalFixture>>,
-  taskSession: boolean,
-): Promise<string> {
-  const lead = await f.call<Session>('session.create', {
-    project_id: f.project.id,
-    runtime: f.session.runtime,
-    input: 'Plan the export feature',
-  });
-  f.store.insert<BoardPlan>('board_plans', {
-    id: lead.id,
-    revision: 1,
-    project_id: f.project.id,
-    headline: 'Export files',
-    lanes: [{ id: 'core', title: 'Core' }],
-    tasks: [
-      {
-        id: 'format',
-        title: 'Format',
-        goal: 'Export files',
-        lane: 'core',
-        depends_on: [],
-        source: ['Plan the export feature'],
-        scope: ['src/format'],
-        acceptance: ['pnpm test'],
-      },
-    ],
-    plan_version: 1,
-    pending_edits: [],
-    risks: [],
-    assumptions: [],
-    inbox: [],
-    notified: {},
-    updated_at: f.store.now(),
-  });
-  if (taskSession) {
-    const session = f.store.must<Session>('sessions', f.session.id);
-    f.store.update<Session>(
-      'sessions',
-      { ...session, task: { lead_session_id: lead.id, id: 'format', generation: 1 } },
-      session.revision,
-    );
-  }
-  return lead.id;
-}
-
-const askExport = (f: Awaited<ReturnType<typeof approvalFixture>>) =>
-  f.request({
-    tool: 'AskUserQuestion',
-    detail: {
-      input: { questions: exportQuestions },
-      tool_call_id: 'ask',
-      questions: exportQuestions,
-    },
-  });
-
-const boardQuestions = (f: Awaited<ReturnType<typeof approvalFixture>>, leadId: string) =>
-  f.store.must<BoardPlan>('board_plans', leadId).questions ?? [];
-
-it.each([
-  ['a task session', true, 1],
-  ['a session without a task', false, 0],
-] as const)(
-  'puts the question of %s on its lead board as it asks',
-  async (_name, taskSession, cards) => {
-    const f = await approvalFixture();
-    try {
-      const leadId = await leadOf(f, taskSession),
-        approval = askExport(f),
-        questions = boardQuestions(f, leadId);
-      expect(questions).toHaveLength(cards);
-      if (cards)
-        expect(questions[0]).toMatchObject({
-          question: 'Which export format?',
-          options: ['CSV', 'JSON'],
-          blocks: ['format'],
-          source: { session_id: f.session.id, approval_id: approval.id },
-          questions: exportQuestions,
-        });
-      const items = f.control
-        .needsYou(user, f.project.id)
-        .items.filter((item) => item.source.id === approval.id);
-      expect(items.map((item) => item.kind)).toEqual(cards ? [] : ['permission']);
-    } finally {
-      await f.close();
-    }
-  },
-);
-
-it.each([
-  ['answers', { answers: { 'Which export format?': 'JSON, with a header row' } }],
-  ['an answer only', {}],
-] as const)('sends a board answer with %s back to the task session', async (_name, extra) => {
-  const f = await approvalFixture();
-  try {
-    const leadId = await leadOf(f, true),
-      approval = askExport(f),
-      [card] = boardQuestions(f, leadId);
-    f.call('lead.question.answer', {
-      project_id: f.project.id,
-      lead_session_id: leadId,
-      question_id: card!.id,
-      answer: 'JSON',
-      ...extra,
-    });
-    const answers = 'answers' in extra ? extra.answers : { 'Which export format?': 'JSON' };
-    expect(f.store.must<Approval>('approvals', approval.id)).toMatchObject({
-      state: 'approved',
-      answers,
-    });
-    expect(boardQuestions(f, leadId)[0]!.answer).toMatchObject({ text: 'JSON' });
-    await f.control.tick();
-    expect(f.answer).toHaveBeenCalledExactlyOnceWith(
-      f.handle,
-      approval.request_id,
-      'allow',
-      answers,
-    );
-  } finally {
-    await f.close();
-  }
-});
-
-it.each(['approve', 'reject'] as const)(
-  'closes the board card of a question the user answers with %s in the task session',
-  async (decision) => {
-    const f = await approvalFixture();
-    try {
-      const leadId = await leadOf(f, true),
-        approval = askExport(f);
-      f.respond(
-        approval,
-        decision,
-        user,
-        decision === 'approve' ? { answers: { 'Which export format?': 'CSV' } } : {},
-      );
-      expect(boardQuestions(f, leadId)[0]!.answer).toMatchObject({
-        text: decision === 'approve' ? 'CSV' : 'rejected',
-      });
-      expect(
-        f.control
-          .needsYou(user, f.project.id)
-          .items.filter((item) => String(item.kind) === 'lead.question'),
-      ).toEqual([]);
-      const [card] = boardQuestions(f, leadId);
-      expect(() =>
-        f.call('lead.question.answer', {
-          project_id: f.project.id,
-          lead_session_id: leadId,
-          question_id: card!.id,
-          answer: 'JSON',
-        }),
-      ).toThrow(expect.objectContaining({ code: 'invalid_state' }));
-    } finally {
-      await f.close();
-    }
-  },
-);
-
 it('refuses answers on a request that is not AskUserQuestion', async () => {
   const f = await approvalFixture();
   try {
@@ -793,28 +621,30 @@ it.each(['approve', 'reject'] as const)(
 it('returns the stored receipt when a session retries a command after its credential was extended', async () => {
   const f = await approvalFixture();
   try {
-    const lead: Principal = {
+    // A project setup session draws with the planner tools.
+    const stored = f.store.must<Session>('sessions', f.session.id);
+    const drawing = f.store.update<Session>(
+      'sessions',
+      { ...stored, project_setup: true },
+      stored.revision,
+    );
+    const agent: Principal = {
         id: `session:${f.session.id}`,
-        role: 'lead',
+        role: credentialRole(drawing)!,
         project_id: f.project.id,
         session_id: f.session.id,
         expires_at: f.clock.now() + 60000,
       },
-      sent = command(lead.id, 'board.plan.update', {
-        project_id: f.project.id,
-        base_version: 0,
-        headline: 'Export ships this week',
-        lanes: [{ id: 'core', title: 'Core' }],
-        tasks: [],
-        milestones: [],
-        risks: [],
-        assumptions: [],
+      sent = command(agent.id, 'visual.draw', {
+        title: 'Export formats',
+        kind: 'mermaid',
+        spec: { source: 'graph LR; csv-->json' },
       }),
-      result = f.control.execute(lead, sent),
+      result = f.control.execute(agent, sent),
       cursor = f.store.cursor();
-    const extended = { ...lead, expires_at: lead.expires_at! + 5 };
+    const extended = { ...agent, expires_at: agent.expires_at! + 5 };
     expect(f.control.execute(extended, sent)).toEqual(result);
-    expect(f.control.execute(extended, { ...sent, command_id: 'retried-plan' })).toEqual(result);
+    expect(f.control.execute(extended, { ...sent, command_id: 'retried-draw' })).toEqual(result);
     expect(f.store.cursor()).toBe(cursor);
   } finally {
     await f.close();
@@ -879,7 +709,7 @@ it('denies an approval response from an expired user principal', async () => {
   }
 });
 
-it.each(['planner', 'writer', 'reviewer', 'lead', 'worker', 'personal'] as const)(
+it.each(['planner', 'writer', 'reviewer', 'lead', 'personal'] as const)(
   'denies approval responses from a %s principal without changing pending state',
   async (role) => {
     const f = await approvalFixture();

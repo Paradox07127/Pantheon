@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, it, vi } from 'vitest';
-import type { MemoryRecord, Principal } from '@pantheon/domain';
+import type { MemoryRecord, Principal, Session } from '@pantheon/domain';
 import { workbenchFixture } from './workbench-fixture.js';
 import { user } from '../helpers.js';
 import { syncMemoryFiles } from '../../packages/control/src/memory.js';
@@ -10,14 +10,20 @@ const DAY = 24 * 60 * 60 * 1000;
 
 async function setup() {
   const f = await workbenchFixture();
-  const s = await f.create();
+  // A project setup session carries the planner credential, whose tools include memory.
+  const s = await f.call<Promise<Session>>('session.create', {
+    project_id: f.project.id,
+    runtime: f.adapter.name,
+    input: 'Set up the project',
+    purpose: 'project_setup',
+  });
   const start = f.store.now();
   let now = start;
   vi.spyOn(f.store, 'now').mockImplementation(() => now);
   const day = (n: number) => (now = start + n * DAY);
   const agent: Principal = {
     id: 'agent',
-    role: 'lead',
+    role: 'planner',
     session_id: s.id,
     project_id: f.project.id,
     expires_at: start + 1000 * DAY,

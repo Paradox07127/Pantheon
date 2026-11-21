@@ -10,7 +10,6 @@ import type {
   ProjectBrief,
   TaskKind,
 } from './board.js';
-import type { CharterMode, CharterPower, WorkflowPolicy } from './workflow.js';
 export type * from './change-story.js';
 export type * from './trace.js';
 export type * from './task-thread.js';
@@ -43,8 +42,8 @@ export class DomainError extends Error {
 export function requireThat(condition: unknown, code: string, message: string): asserts condition {
   if (!condition) throw new DomainError(code, message);
 }
-export type Role =
-  'user' | 'planner' | 'writer' | 'reviewer' | 'lead' | 'worker' | 'personal' | 'conductor';
+/** A role older rows may also hold worker, which reads as a plain session. */
+export type Role = 'user' | 'planner' | 'writer' | 'reviewer' | 'lead' | 'personal' | 'conductor';
 export interface Principal {
   id: string;
   role: Role;
@@ -320,7 +319,7 @@ export interface Project extends Entity {
   session_defaults?: SessionDefaults;
   /** Token targets by runtime; a runtime without one follows the global target. */
   usage_targets?: Record<string, number>;
-  /** Merges a session after each turn that completes normally; absent follows the global value, else off. */
+  /** Not read. */
   auto_merge?: boolean;
   /** Takes events from outside the app: approve starts no task before the user agrees, auto also starts work on an issue the user alone wrote; absent follows the global value, else off. */
   external_events?: 'off' | 'approve' | 'auto';
@@ -404,13 +403,7 @@ export type TaskRungName = 'retry' | 'switch' | 'lead' | 'user';
 
 export interface NeedsYouItem {
   source: {
-    table:
-      | 'approvals'
-      | 'sessions'
-      | 'board_plans'
-      | 'milestones'
-      | 'workflow_policies'
-      | 'memory_records';
+    table: 'approvals' | 'sessions' | 'workflow_policies' | 'memory_records';
     id: string;
     revision: number;
   };
@@ -420,13 +413,7 @@ export interface NeedsYouItem {
     | 'session.failed'
     | 'session.gate_failed'
     | 'session.merge_blocked'
-    | 'milestone.ready_for_acceptance'
-    | 'board.plan.proposal'
-    | 'board.lane.approval'
-    | 'board.plan.reassessment'
     | 'project.over_budget'
-    | 'lead.question'
-    | 'external.approval'
     | 'memory.decision_budget';
   project_id: string;
   /**
@@ -436,8 +423,6 @@ export interface NeedsYouItem {
   session_id?: string;
   /** The plan task, `<lead session id>:<task id>`, of a task item. */
   task_id?: string;
-  /** The rung of the item's task, as its board row has it; absent on items of no task. */
-  rung?: TaskRungName;
   /** The turn and native request of a lost request or an undelivered answer. */
   turn_id?: string;
   request_id?: string;
@@ -454,46 +439,15 @@ export interface NeedsYouItem {
     | 'gate_failed'
     | 'merge_blocked'
     | 'merge_stuck'
-    | 'continuation_limit_reached'
-    | 'lead_turn_failed'
-    | 'lead_closed'
-    | 'task_dispatch_failed'
-    | 'task_upstream_stuck'
     | 'workspace_reconciling'
     | 'stop_unconfirmed'
-    | 'task_retired'
-    | 'task_turn_looping'
-    | 'task_turn_stalled'
-    | 'lead_turn_looping'
-    | 'lead_turn_stalled'
-    | 'lead_wake_limited'
-    | 'usage_limit_waiting'
     | 'usage_limit_reached'
     | 'session_turn_stalled'
     | 'background_task_long'
-    | 'milestone_ready_for_acceptance'
-    | 'plan_proposal_awaiting_decision'
-    | 'lane_plan_awaiting_approval'
-    | 'plan_reassessment_ready'
     | 'project_over_budget'
-    | 'lead_question'
-    | 'task_blocked'
-    | 'workflow_approval'
-    | 'external_approval'
     | 'plan_decisions_over_budget';
   /** What the user decides. */
-  decision:
-    | 'plan_change'
-    | 'question'
-    | 'milestone_accept'
-    | 'repeated_failure'
-    | 'permission'
-    | 'budget'
-    | 'improvement'
-    | 'external'
-    | 'other';
-  /** The plan tasks not done that wait on the item; lists put the items blocking the most first. */
-  blocks: number;
+  decision: 'question' | 'repeated_failure' | 'permission' | 'budget' | 'improvement' | 'other';
   /** The command of the item's one primary action. */
   primary?: string;
   actions: {
@@ -695,8 +649,8 @@ export interface Session extends Entity {
   forked_from?: { session_id: string; before_turn_id?: string; before_span_id?: string };
   /** A session starting a project from an empty folder with the setup guide. */
   project_setup?: true;
-  /** A session opened to lead on the board; a direct session without it gets no Pantheon tools. */
-  lead?: true;
+  /** Not read. */
+  lead?: unknown;
   /** A native session with only the four conductor tools. */
   conductor?: true;
   /** The conductor's turn that declared its work ready, by command command_id; it merges once that turn completes. */
@@ -788,7 +742,7 @@ export interface Session extends Entity {
     conflict_tasks?: string[];
     gate?: { name: string; output: string; tests?: TestCounts };
     failure_class?: GateFailureClass;
-    /** The user let this merge land files outside its board task's scope. */
+    /** Not read. */
     allow_out_of_scope?: boolean;
     /** Files outside the task's scope the lead let this merge land; others are still checked. */
     allowed_files?: string[];
@@ -813,40 +767,14 @@ export interface Session extends Entity {
   };
   /** A rollback whose files may have moved but whose record is not written yet; input waits for it. */
   rollback_pending?: { checkpoint: string; turn_id: string; scope?: 'files' | 'both' };
-  /** The board task this session was opened from; written once at creation. */
-  task?: {
-    lead_session_id: string;
-    id: string;
-    /** The task generation the session works on; absent means the first. */
-    generation?: number;
-    parallel_index?: number;
-    /** The device resources the task used when the session opened, which it holds until it ends. */
-    uses?: Record<string, number>;
-  };
-  /** A lead the project keeps for one role: it plans and dispatches, never writes or works on a task itself. */
-  resident?: {
-    kind: AgentProfile['template'];
-    agent_id?: string;
-    /** Hash of the agent's instructions when the session opened; absent when it had none. */
-    instructions_hash?: string;
-  };
-  /** The resident's turn that writes its handoff note, queued at Unix ms at; a new session of its agent takes over once its turns end. */
-  rotation?: {
-    flush_turn_id: string;
-    at: number;
-    /** Absent on rotations queued before reasons were kept, which were all context_full. */
-    reason?: 'context_full' | 'weekly' | 'instructions_changed';
-  };
-  /**
-   * The task of its own plan a lead works on itself; reported_head is its worktree's commit when it
-   * reported the task done. Not task, which would make the session a worker.
-   */
-  direct_task?: {
-    id: string;
-    generation: number;
-    reported_head?: string;
-    reported_at?: number;
-  };
+  /** Not read. */
+  task?: unknown;
+  /** Not read. */
+  resident?: unknown;
+  /** Not read. */
+  rotation?: unknown;
+  /** Not read. */
+  direct_task?: unknown;
   /** ISO time the user pinned the session in the session list. */
   pinned_at?: string;
   /** ISO time the user archived the ended session. */
@@ -968,9 +896,8 @@ export interface AgentMessage extends Entity {
   delivery?: 'feed' | 'notify';
 }
 /**
- * The Pantheon MCP role a session's credential carries; a session in the user's own folder is never
- * a lead, one the user opened there writes, and one opened from a report task there is a worker so
- * it can report.
+ * The Pantheon MCP role a session's credential carries; undefined for a session the user opened
+ * or imported, which runs without a credential. A project setup session reads and draws like a planner.
  */
 export function credentialRole(
   session: Pick<
@@ -980,26 +907,20 @@ export function credentialRole(
     | 'change_story'
     | 'intro'
     | 'workspace_id'
-    | 'task'
-    | 'resident'
-    | 'in_place'
     | 'conductor'
+    | 'project_setup'
   >,
-  workspaceKind?: Workspace['kind'],
-): Role {
+): Role | undefined {
   if (session.review_id) return 'reviewer';
-  if (session.resident) return 'lead';
   if (session.conductor) return 'conductor';
   if (
     session.baseline ||
     session.change_story ||
     session.intro ||
-    !session.workspace_id ||
-    // An imported session reads like a planner; a new one in the project folder is a lead or worker.
-    (workspaceKind === 'in_place' && !session.task && !session.in_place)
+    session.project_setup ||
+    !session.workspace_id
   )
     return 'planner';
-  return session.task ? 'worker' : 'lead';
 }
 export interface TurnAttachment {
   id: string;
@@ -1120,7 +1041,8 @@ export interface ReviewFinding {
   /** Set on a range review's finding whose location is not `path:line`; such a finding never blocks. */
   unlocated?: true;
   resolution?: {
-    outcome: 'adopted' | 'dismissed';
+    /** Every outcome ends the finding: fixed, true but intended, true but not worth changing, or not true. */
+    outcome: 'fixed' | 'intentional' | 'not_worth_it' | 'wrong';
     note?: string;
     resolved_at: number;
     resolved_by: string;
@@ -1188,10 +1110,11 @@ export interface ReviewMetrics {
   reviews_without_findings: number;
   /** All findings this runtime recorded, including rejected ones. */
   findings: number;
-  /** Findings the user marked adopted. */
-  adopted: number;
-  /** Findings the user marked dismissed. */
-  dismissed: number;
+  /** Findings the user marked fixed, intentional, not worth it and wrong. */
+  fixed: number;
+  intentional: number;
+  not_worth_it: number;
+  wrong: number;
   /** Open findings with no resolution yet; a stale one is not counted. */
   unresolved: number;
   /** Findings rejected on recording, such as a quote not found in the artifact. */
@@ -1289,8 +1212,6 @@ export interface ExternalRead {
   mode?: Project['external_events'];
   sources: ExternalSourceStatus[];
   events: ExternalEvent[];
-  /** The subject keys that wait for the user's approval. */
-  held: string[];
 }
 export interface Event {
   sequence: number;
@@ -1415,8 +1336,6 @@ export interface SessionSpec {
   locked_version?: string;
   role: Role;
   workspace?: { id: string; path: string };
-  /** A task session dispatched by a lead, rather than a user or lead conversation. */
-  task_session?: boolean;
   /** A session the user opened directly, without Pantheon tools: it runs as the bare runtime would. */
   user_session?: true;
   /** A runtime analyst receives evidence only through its bound MCP tools. */
@@ -1949,56 +1868,8 @@ export interface ProjectRead {
   project: Project;
   brief?: ProjectBrief;
   cursor: number;
-  plans: BoardPlanView[];
   /** The calling session; absent for the user. */
-  you?: { session_id: string; role: Role; task: Session['task'] | null };
-  /** What a lead plans with; present only when a lead session reads. */
-  lead?: LeadGuidance;
-}
-export interface LeadGuidance {
-  workflow: Pick<
-    WorkflowPolicy,
-    | 'policy_version'
-    | 'path'
-    | 'acceptance_wake'
-    | 'max_parallel'
-    | 'handback_limit'
-    | 'task_size_hint'
-    | 'pinned'
-    | 'plan_changes'
-  > & {
-    /** What the lead may do on its own, must ask the user for, or may not do, by power. */
-    charter: Record<Exclude<CharterPower, 'plan_change'>, CharterMode>;
-  };
-  runtime: import('./trace.js').RuntimeDiagnostics;
-  runtime_reviews?: { session_id: string; summary: string; change: string; outcome?: string }[];
-  /** The latest 10 retrospectives of the reading lead's plan, newest first. */
-  retrospectives: (Pick<
-    Retrospective,
-    | 'id'
-    | 'task_id'
-    | 'outcome'
-    | 'measured_kind'
-    | 'model'
-    | 'gate_passed_on_attempt'
-    | 'turn_failure_codes'
-  > & { handbacks: number; runtime_finding_count?: number })[];
-  /**
-   * This machine (id `local`) and the configured devices; runtimes: the ones logged in; sessions:
-   * the task sessions holding a place on it. Absent while no device and no local_device is configured.
-   */
-  devices?: {
-    id: string;
-    name: string;
-    online: boolean;
-    os?: 'macos' | 'linux';
-    arch?: string;
-    labels: string[];
-    resources: Record<string, number>;
-    max_sessions?: number;
-    runtimes: string[];
-    sessions: number;
-  }[];
+  you?: { session_id: string; role: Role };
 }
 
 export * from './memory.js';

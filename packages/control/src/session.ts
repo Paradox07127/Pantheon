@@ -13,12 +13,10 @@ import {
   id,
   SessionStartError,
   type CancelReceipt,
-  type BoardPlan,
   requireThat,
   type Project,
   type Session,
   type SessionTurn,
-  type Timer,
   type UserTurn,
   type Workspace,
   NATIVE_ENV_ALLOWLIST,
@@ -28,7 +26,6 @@ import {
   type HarnessAdapter,
   type ProcessIdentity,
   type Principal,
-  type AgentProfile,
 } from '@pantheon/domain';
 import { inputSchemas, type Command } from '@pantheon/protocol';
 import { checkRuntimeConnection, isRuntimeHeld, updateRuntimeQuota } from './runtime-status.js';
@@ -43,7 +40,6 @@ import {
   projectFolders,
   resolvedPath,
   sessionMcp,
-  personalSessionMcp,
   purposeSessionInstructions,
   purposeSessionTools,
   sessionAdapter,
@@ -81,19 +77,6 @@ import {
 } from './remote-workspace.js';
 import { serveSessionTools } from './remote-tools.js';
 import { buildHandoff } from './handoff.js';
-import { awaitingChange, planUnfinished, taskGeneration } from './board-plan.js';
-import {
-  appendNote,
-  compactionInstructions,
-  contractMoveWaits,
-  followContractModel,
-  followContractRuntime,
-  INBOX_HEADER,
-  noteUserMessage,
-  returnNotes,
-  takeContractChange,
-  takeInbox,
-} from './lead-inbox.js';
 import {
   assertManagedLocation,
   plannerProtectionList,
@@ -102,14 +85,9 @@ import {
 import { assertInPlaceSessionFree, inPlaceSessionSpec } from './in-place-session.js';
 import { managedSessionSpec } from './native-session.js';
 import { workspaceReady } from './provisioning.js';
-import { daemonDriven, usageLimitWaiting } from './continuation.js';
-import { cancelTimer, scheduleTimer } from './timers.js';
 import { activeRuntimeReview, RUNTIME_REVIEW_CONTRACT } from './runtime-review.js';
 import { projectOverBudget } from './workflow-policy.js';
 import { backgroundTasks } from './progress.js';
-import { residentInstructions } from './agent-prompts.js';
-import { residentProfile } from './agent-templates.js';
-import { afterResidentTurn } from './resident.js';
 import { afterSpawnedTurn } from './conductor.js';
 import { personalKeyId } from './personal-scope.js';
 import {
@@ -119,24 +97,19 @@ import {
   applyUltracode,
   autoMergeAfterTurn,
   turnExtras,
-  WORKBENCH_TURN_MS,
   workbenchSessionSpec,
 } from './workbench-session.js';
 
 const queues = new WeakMap<SessionHandle, ReturnType<typeof createTurnQueue>>();
 const stopRetryAfter = new WeakMap<SessionHandle, number>();
 /**
- * Running turns the user or a lead interrupted, with the user's turns queued behind them at that
- * moment. An interrupted end of such a turn is a cancel, not a failure, and cancels those queued turns.
+ * Running turns the user interrupted, with the user's turns queued behind them at that moment. An
+ * interrupted end of such a turn is a cancel, not a failure, and cancels those queued turns.
  */
-const interrupts = new Map<string, { queued: string[]; cause: string; by: 'user' | 'lead' }>();
+const interrupts = new Map<string, { queued: string[]; cause: string }>();
 /** Sessions whose native process is starting and has no handle yet. */
 const launching = new Set<string>();
 const conversationIdleLimitMs = 10 * 60 * 1000;
-const deliveringContracts = new WeakMap<
-  ControlContext,
-  Map<string, { turn_id: string; generation: number }>
->();
 
 /** The latest context an MCP interface gave each session, until a user turn carries it. */
 const appContexts = new WeakMap<ControlContext, Map<string, { server: string; content: string }>>();
@@ -153,10 +126,6 @@ function appContextText(found: { server: string; content: string }): string {
   const content = found.content.replaceAll('</app-context>', '</app-context_>');
   return `<app-context server="${server}">\n${content}\n</app-context>`;
 }
-
-/** A report may arrive after native acceptance but before send returns its receipt. */
-export const taskReportGeneration = (ctx: ControlContext, session: Session): number =>
-  deliveringContracts.get(ctx)?.get(session.id)?.generation ?? session.task?.generation ?? 1;
 
 const HANDOFF_RETRIES = 3;
 
@@ -201,10 +170,7 @@ export function advanceQueuedHandoffs(ctx: ControlContext): void {
       continue;
     const first = queuedInputs(ctx, session.id)[0];
     if (!first) continue;
-    const moved = followContractRuntime(ctx, { ...session, state: 'open' }, '', first.id);
-    let next = moved.session;
-    if (moved.handoff !== undefined && first.handoff === undefined)
-      ctx.store.update('session_turns', { ...first, handoff: moved.handoff }, first.revision);
+    let next = session;
     if (next.state !== 'running')
       next = ctx.store.update('sessions', { ...next, state: 'running' }, next.revision);
     if (
@@ -256,11 +222,7 @@ export function recoverQueuedHandoff(
       turn.state === 'queued' && (turn.delivery === 'pending' || turn.delivery === 'queued'),
   );
   if (session.queued_handoff?.blocked) return true;
-  if (
-    !pending.length ||
-    (!session.queued_handoff && !contractMoveWaits(ctx, { ...session, state: 'open' }))
-  )
-    return false;
+  if (!pending.length || !session.queued_handoff) return false;
   for (const turn of interrupted) {
     if (pending.some((queued) => queued.id === turn.id)) {
       if (turn.delivery !== 'pending') turnDelivery(ctx, turn, 'pending', undefined, 'queued');
@@ -497,67 +459,54 @@ export function acceptInput(
   requireThat(!handle || !queues.get(handle)?.settled, 'resource_busy', 'Session is closing');
 }
 
-/** The user's own words of a turn input, without the board updates digest appended to it. */
-export function userWords(input: string): string {
-  return input.split(`\n\n${INBOX_HEADER}`)[0]!;
-}
-
 const queueInput: Handler = (ctx, p, c) => {
   const cause = c.command_id,
     kind = c.type === 'session.steer' ? 'steer' : 'send',
     input = inputSchemas['session.send'].parse(c.input),
-    sent = ctx.store.must<Session>('sessions', input.session_id);
+    session = ctx.store.must<Session>('sessions', input.session_id);
   // A personal principal reaches a session only through request.send.
-  projectAccess(ctx, p, sent.project_id, p.role === 'personal' ? 'request.send' : c.type);
-  requireThat(!sent.review_id, 'permission_denied', 'Reviewer input is fixed by its artifact');
-  if (sent.runtime_review) {
+  projectAccess(ctx, p, session.project_id, p.role === 'personal' ? 'request.send' : c.type);
+  requireThat(!session.review_id, 'permission_denied', 'Reviewer input is fixed by its artifact');
+  if (session.runtime_review) {
     userOnly(p);
     requireThat(
-      kind === 'send' && sent.turn_count < 4,
+      kind === 'send' && session.turn_count < 4,
       'invalid_state',
       'Analysis accepts at most four read-only turns',
     );
     requireThat(
-      !projectOverBudget(ctx, sent.project_id),
+      !projectOverBudget(ctx, session.project_id),
       'budget_exceeded',
       'Project runtime budget is exhausted',
     );
-    revision(ctx, c, sent);
-    acceptInput(ctx, sent, 'send');
+    revision(ctx, c, session);
+    acceptInput(ctx, session, 'send');
     requireThat(
       input.input.length <= 1600 && !input.attachments?.length && !input.skills?.length,
       'invalid_input',
       'Analysis follow-ups take a short text question',
     );
     requireThat(
-      !activeRuntimeReview(ctx, sent.project_id, sent.id),
+      !activeRuntimeReview(ctx, session.project_id, session.id),
       'resource_busy',
       'A runtime analysis is already active',
     );
-    return queueTurn(ctx, sent, input.input, 'reflection', cause, turnExtras(ctx, sent, input));
+    return queueTurn(
+      ctx,
+      session,
+      input.input,
+      'reflection',
+      cause,
+      turnExtras(ctx, session, input),
+    );
   }
-  revision(ctx, c, sent);
-  acceptInput(ctx, sent, kind);
-  const extras = turnExtras(ctx, sent, input);
-  const digest = takeInbox(ctx, sent.id);
-  const { session, handoff } = followContractRuntime(ctx, sent, cause);
-  requireThat(
-    !contractMoveWaits(ctx, session),
-    'resource_busy',
-    'The task session is moving to its changed runtime or model; send the message again in a moment',
-  );
-  const turn = queuedTurn(
-    session,
-    [input.input, digest?.text].filter((part) => part !== undefined).join('\n\n'),
-    kind,
-    {
-      ...extras,
-      handoff,
-      ...(digest ? { lead_note_ids: digest.note_ids } : {}),
-      ...(input.app ? { app: input.app } : {}),
-      ...(p.role === 'personal' ? { via: { kind: 'personal', key_id: personalKeyId(p) } } : {}),
-    },
-  );
+  revision(ctx, c, session);
+  acceptInput(ctx, session, kind);
+  const turn = queuedTurn(session, input.input, kind, {
+    ...turnExtras(ctx, session, input),
+    ...(input.app ? { app: input.app } : {}),
+    ...(p.role === 'personal' ? { via: { kind: 'personal', key_id: personalKeyId(p) } } : {}),
+  });
   const { archived_at, ...rest } = session;
   const next = ctx.store.update(
     'sessions',
@@ -573,7 +522,6 @@ const queueInput: Handler = (ctx, p, c) => {
   ctx.store.enqueue('session.turn', { turn_id: turn.id });
   insert(ctx, 'session_turns', turn, 'turn.queued', session.project_id, cause);
   ctx.store.event('session.turn.delivery', turn, turn.project_id, { delivery: 'pending' }, cause);
-  if (p.role === 'user' && session.task) noteUserMessage(ctx, session, turn.id, input.input, cause);
   if (p.role === 'user' || p.role === 'personal') unsnooze(ctx, session.id, 'user_message', cause);
   return turn;
 };
@@ -589,19 +537,14 @@ const interruptTurn: Handler = (ctx, p, c) => {
     'Only a direct conversation can be interrupted',
   );
   revision(ctx, c, session);
-  return interruptSession(ctx, session, 'user', cause);
+  return interruptSession(ctx, session, cause);
 };
 
 /**
- * Asks the runtime to end the session's running turn and keep the session. A user's interrupt
- * also cancels the user's own turns queued behind it; other queued turns run after it.
+ * Asks the runtime to end the session's running turn and keep the session. The interrupt also
+ * cancels the user's own turns queued behind it; other queued turns run after it.
  */
-export function interruptSession(
-  ctx: ControlContext,
-  session: Session,
-  by: 'user' | 'lead',
-  cause: string,
-): Session {
+export function interruptSession(ctx: ControlContext, session: Session, cause: string): Session {
   const handle = sessionHandle(ctx, session);
   requireThat(
     session.state === 'running' && !session.stop_pending && handle,
@@ -620,12 +563,8 @@ export function interruptSession(
   const running = turns.find((t) => t.state === 'running');
   if (running)
     interrupts.set(running.id, {
-      queued:
-        by === 'user'
-          ? turns.filter((t) => t.state === 'queued' && !t.origin).map((t) => t.id)
-          : [],
+      queued: turns.filter((t) => t.state === 'queued' && !t.origin).map((t) => t.id),
       cause,
-      by,
     });
   ctx.store.event('session.interrupt_requested', session, session.project_id, {}, cause);
   const failed = (error: string): void => {
@@ -776,11 +715,6 @@ export const sessionHandlers: Handlers = {
       'resource_busy',
       'Wait for the current turn',
     );
-    requireThat(
-      !contractMoveWaits(ctx, session),
-      'resource_busy',
-      'The task session is moving to its changed runtime or model; try again in a moment',
-    );
     const adapter = sessionAdapter(ctx, session);
     requireThat(
       adapter?.report.capabilities.manual_compaction?.status === 'supported',
@@ -885,9 +819,7 @@ export function createTurnQueue(ctx: ControlContext, initial: SessionTurn, resum
   ): void => {
     ctx.store.transaction(() => {
       const before = ctx.store.must<SessionTurn>('session_turns', turn.id);
-      const next = turnDelivery(ctx, before, delivery, reason, state);
-      if (delivery === 'failed' && before.delivery !== 'failed')
-        returnNotes(ctx, next.session_id, [next]);
+      turnDelivery(ctx, before, delivery, reason, state);
       const session = ctx.store.must<Session>('sessions', turn.session_id);
       if (
         (delivery === 'delivered' || delivery === 'queued') &&
@@ -948,24 +880,6 @@ export function createTurnQueue(ctx: ControlContext, initial: SessionTurn, resum
     if (event.kind === 'turn.completed' && event.turn_id === current.id) {
       inProgress = false;
       if (event.error) failure = event.error;
-      if (event.error_code === 'usage_limit')
-        ctx.store.transaction(() => {
-          const session = ctx.store.must<Session>('sessions', current.session_id);
-          if (!daemonDriven(ctx, session) || usageLimitWaiting(ctx, session.id)) return;
-          // A minute past the reset; half an hour when the runtime gives no reset time.
-          const dueAt =
-            event.resets_at === undefined
-              ? ctx.store.now() + 30 * 60_000
-              : event.resets_at + 60_000;
-          scheduleTimer(ctx, {
-            // Keyed by the failed turn: a retry that fails with the same reset time needs a new timer.
-            id: `usage-limit-resume:${current.id}`,
-            project_id: session.project_id,
-            kind: 'usage-limit-resume',
-            subject_id: session.id,
-            due_at: dueAt,
-          });
-        });
       const requested = interrupts.get(current.id);
       interrupts.delete(current.id);
       const cancelled = event.status === 'interrupted' && requested !== undefined;
@@ -975,7 +889,6 @@ export function createTurnQueue(ctx: ControlContext, initial: SessionTurn, resum
             const turn = ctx.store.must<SessionTurn>('session_turns', id);
             if (turn.state !== 'queued') continue;
             const next = turnDelivery(ctx, turn, 'failed', 'interrupted', 'cancelled');
-            returnNotes(ctx, next.session_id, [next]);
             ctx.store.event(
               'turn.cancelled',
               next,
@@ -984,24 +897,6 @@ export function createTurnQueue(ctx: ControlContext, initial: SessionTurn, resum
               requested.cause,
             );
           }
-          const session = ctx.store.must<Session>('sessions', current.session_id);
-          const plan =
-            requested.by === 'user' && session.task
-              ? ctx.store.get<BoardPlan>('board_plans', session.task.lead_session_id)
-              : undefined;
-          if (plan)
-            appendNote(
-              ctx,
-              plan,
-              {
-                at: ctx.store.now(),
-                session_id: session.id,
-                task_id: session.task!.id,
-                kind: 'user_edit',
-                text: `The user interrupted the current turn of task ${session.task!.id}.`,
-              },
-              requested.cause,
-            );
         });
       resolveTurn?.(
         event.status === 'completed' ? 'completed' : cancelled ? 'cancelled' : 'failed',
@@ -1016,7 +911,6 @@ export function createTurnQueue(ctx: ControlContext, initial: SessionTurn, resum
       resolveTurn = resolve;
     });
     const ready = (async () => {
-      let contract: ContractDelivery | undefined;
       let dispatched = false;
       try {
         if (turn.origin === 'compaction') {
@@ -1057,18 +951,10 @@ export function createTurnQueue(ctx: ControlContext, initial: SessionTurn, resum
         const copied = await deviceTurn(ctx, turn.session_id, userTurn(turn));
         requireThat(!interrupted(), 'invalid_state', 'Session interrupted before input delivery');
         const beforeDelivery = ctx.store.must<Session>('sessions', turn.session_id);
-        if (contractMoveWaits(ctx, { ...beforeDelivery, state: 'open' })) {
-          ctx.store.transaction(() => holdQueuedHandoff(ctx, beforeDelivery, turn));
-          inProgress = false;
-          resolveTurn?.('completed');
-          return;
-        }
-        let readOnly = false;
+        const readOnly = turn.origin === 'reflection';
         const delivered = ctx.store.transaction(() => {
           const s = ctx.store.must<Session>('sessions', turn.session_id);
-          contract = prepareContractDelivery(ctx, s, turn.id);
           const t = ctx.store.must<SessionTurn>('session_turns', turn.id);
-          readOnly = t.origin === 'reflection' || (!s.direct_task && planUnfinished(ctx, s.id));
           const next = ctx.store.update(
             'session_turns',
             {
@@ -1086,9 +972,6 @@ export function createTurnQueue(ctx: ControlContext, initial: SessionTurn, resum
           );
           if (s.handoff_before_turn_id)
             ctx.store.update('sessions', { ...s, handoff_before_turn_id: undefined }, s.revision);
-          for (const timer of ctx.store.list<Timer>('timers'))
-            if (timer.kind === 'usage-limit-resume' && timer.subject_id === s.id)
-              cancelTimer(ctx, timer.id);
           ctx.store.event('turn.running', next, t.project_id, {});
           return next;
         });
@@ -1100,13 +983,6 @@ export function createTurnQueue(ctx: ControlContext, initial: SessionTurn, resum
             spec.role !== 'writer' || beforeDelivery.permission_mode === 'plan' || readOnly,
           );
         dispatched = true;
-        if (contract) {
-          let deliveries = deliveringContracts.get(ctx);
-          if (!deliveries) deliveringContracts.set(ctx, (deliveries = new Map()));
-          deliveries.set(turn.session_id, { turn_id: turn.id, generation: contract.generation });
-        }
-        const compaction =
-          turn.origin === 'reflection' ? undefined : compactionInstructions(ctx, turn.session_id);
         const input = { ...copied, input: userTurn(delivered).input };
         const memory =
           beforeDelivery.runtime_review ||
@@ -1123,17 +999,11 @@ export function createTurnQueue(ctx: ControlContext, initial: SessionTurn, resum
         const appContext = turn.origin ? undefined : takeAppContext(ctx, turn.session_id);
         const parts = appContext ? [appContext, input.input] : [input.input];
         if (memory) parts.push('[Pantheon current project memory]\n' + JSON.stringify(memory));
-        if (compaction) parts.push(compaction.text);
         const receipt = await adapter.send(handle, {
           ...input,
           input: parts.join('\n\n'),
           ...(readOnly ? { read_only: true } : {}),
         });
-        if (compaction && receipt.status !== 'unsupported')
-          ctx.store.event('session.context_restored', beforeDelivery, beforeDelivery.project_id, {
-            turn_id: turn.id,
-            compaction_sequence: compaction.sequence,
-          });
         if (memory)
           finishMemoryDelivery(
             ctx,
@@ -1142,7 +1012,6 @@ export function createTurnQueue(ctx: ControlContext, initial: SessionTurn, resum
             memory,
             receipt.status === 'delivered',
           );
-        finishContractDelivery(ctx, turn.session_id, contract, receipt.status !== 'unsupported');
         saveSessionHandle(ctx, handle);
         const wasHeld = !!ctx.store.must<Session>('sessions', turn.session_id).queued_handoff;
         const retry =
@@ -1163,7 +1032,6 @@ export function createTurnQueue(ctx: ControlContext, initial: SessionTurn, resum
           resolveTurn?.('failed');
         }
       } catch (error) {
-        finishContractDelivery(ctx, turn.session_id, contract, false);
         saveSessionHandle(ctx, handle);
         failure = String(error);
         const retry = ctx.store.transaction(() => {
@@ -1187,10 +1055,6 @@ export function createTurnQueue(ctx: ControlContext, initial: SessionTurn, resum
         record(turn, retry ? 'pending' : 'failed', failure, retry ? 'queued' : 'failed');
         inProgress = false;
         resolveTurn?.('failed');
-      } finally {
-        const deliveries = deliveringContracts.get(ctx);
-        if (deliveries?.get(turn.session_id)?.turn_id === turn.id)
-          deliveries.delete(turn.session_id);
       }
     })();
     return { ready, completed };
@@ -1211,11 +1075,7 @@ export function createTurnQueue(ctx: ControlContext, initial: SessionTurn, resum
           (t) => t.session_id === initial.session_id && t.id !== current.id && t.state === 'queued',
         );
       const session = ctx.store.must<Session>('sessions', initial.session_id);
-      if (
-        !interrupted() &&
-        (session.queued_handoff ||
-          (next && (connectorsChanged() || contractMoveWaits(ctx, { ...session, state: 'open' }))))
-      ) {
+      if (!interrupted() && (session.queued_handoff || (next && connectorsChanged()))) {
         ctx.store.transaction(() => {
           const latest = ctx.store.must<SessionTurn>('session_turns', current.id);
           if (latest.state === 'running') {
@@ -1255,8 +1115,6 @@ export function createTurnQueue(ctx: ControlContext, initial: SessionTurn, resum
         resolveTurn = undefined;
         waitingForInput = true;
         ctx.idleConversations.set(initial.session_id, ctx.store.now());
-        // After the conversation is idle, so a resident that closes releases its process.
-        afterResidentTurn(ctx, initial.session_id, current.id);
         return;
       }
       if (interrupted() || !next || isRuntimeHeld(ctx, session.runtime)) {
@@ -1405,100 +1263,6 @@ export function createTurnQueue(ctx: ControlContext, initial: SessionTurn, resum
   return queue;
 }
 
-/** Applies the model before starting or resuming the native process, without confirming delivery. */
-function followModelAtStart(ctx: ControlContext, session: Session): Session {
-  return ctx.store.transaction(() => {
-    const between = { ...session, state: 'open' as const };
-    const followed = followContractModel(ctx, between, '');
-    return followed === between
-      ? session
-      : ctx.store.update('sessions', { ...followed, state: session.state }, followed.revision);
-  });
-}
-
-type ContractDelivery = {
-  notice: string;
-  task: NonNullable<Session['task']>;
-  generation: number;
-  plan_sequence: number;
-};
-
-/** The caller owns the delivery transaction; the marker stays until a delivery receipt. */
-function prepareContractDelivery(
-  ctx: ControlContext,
-  session: Session,
-  turnId: string,
-): ContractDelivery | undefined {
-  // A running row includes this turn; the previous turn is no longer running at this boundary.
-  const between = { ...session, state: 'open' as const };
-  const plan = session.task
-    ? ctx.store.get<BoardPlan>('board_plans', session.task.lead_session_id)
-    : undefined;
-  const notice = takeContractChange(ctx, between, false);
-  if (notice !== undefined) {
-    const turn = ctx.store.must<SessionTurn>('session_turns', turnId);
-    // A lead message may already show this contract while queued; a newer one is appended.
-    if (!turn.input.includes(notice))
-      ctx.store.update(
-        'session_turns',
-        { ...turn, input: `${turn.input}\n\n${notice}` },
-        turn.revision,
-      );
-  }
-  return notice !== undefined && session.task
-    ? {
-        notice,
-        task: session.task,
-        generation: taskGeneration(plan, session.task.id),
-        plan_sequence: (
-          ctx.store.db
-            .prepare('SELECT max(sequence) AS sequence FROM events WHERE aggregate_id=?')
-            .get(plan!.id) as { sequence: number }
-        ).sequence,
-      }
-    : undefined;
-}
-
-/** Confirms only the contract and generation accepted by this delivery receipt. */
-function finishContractDelivery(
-  ctx: ControlContext,
-  sessionId: string,
-  contract: ContractDelivery | undefined,
-  accepted: boolean,
-): void {
-  if (!contract) return;
-  ctx.store.transaction(() => {
-    const session = ctx.store.must<Session>('sessions', sessionId);
-    if (
-      session.task?.lead_session_id !== contract.task.lead_session_id ||
-      session.task.id !== contract.task.id
-    )
-      return;
-    if (accepted) {
-      ctx.store.event('session.contract_notified', session, session.project_id, {
-        plan_sequence: contract.plan_sequence,
-      });
-      let between = { ...session, state: 'open' as const };
-      const plan = ctx.store.get<BoardPlan>('board_plans', session.task.lead_session_id);
-      // A later lead update while send awaited its receipt must keep its notification.
-      if (
-        taskGeneration(plan, session.task.id) === contract.generation &&
-        takeContractChange(ctx, between, false) === contract.notice
-      ) {
-        if (awaitingChange(plan, between)) {
-          const next = ctx.store.update(
-            'sessions',
-            { ...session, task: { ...session.task, generation: contract.generation } },
-            session.revision,
-          );
-          between = { ...next, state: 'open' };
-        }
-        takeContractChange(ctx, between);
-      }
-    }
-  });
-}
-
 /**
  * Fails the turn when a process outside Pantheon holds the native session of an in-place session
  * whose live process would take the turn.
@@ -1522,7 +1286,6 @@ function heldElsewhere(ctx: ControlContext, session: Session, turn: SessionTurn)
         error.message,
         'failed',
       );
-      returnNotes(ctx, failed.session_id, [failed]);
       ctx.store.event('turn.failed', failed, failed.project_id, {
         error: error.message,
         error_code: error.code,
@@ -1563,22 +1326,6 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
   )
     return;
   if (!resumed && session.queued_handoff?.blocked) return;
-  if (
-    !resumed &&
-    turn.origin !== 'compaction' &&
-    contractMoveWaits(ctx, { ...session, state: 'open' })
-  ) {
-    const live = sessionHandle(ctx, session);
-    if (live) {
-      queues.get(live)?.handoff(turn);
-      return;
-    }
-    ctx.store.transaction(() => {
-      session = holdQueuedHandoff(ctx, session, queuedInputs(ctx, session.id)[0] ?? turn);
-      advanceQueuedHandoffs(ctx);
-    });
-    session = ctx.store.must<Session>('sessions', session.id);
-  }
   if (!resumed && session.queued_handoff) {
     const held = session.queued_handoff;
     if (
@@ -1588,8 +1335,6 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
     )
       return;
   }
-  if (!resumed && turn.origin !== 'compaction' && !nativeTurnActive(ctx, session))
-    session = followModelAtStart(ctx, session);
   const live = sessionHandle(ctx, session);
   if (live) {
     if (!heldElsewhere(ctx, session, turn)) await queues.get(live)?.submit(turn);
@@ -1605,8 +1350,7 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
         session.runtime_review ||
         session.baseline ||
         session.change_story ||
-        session.intro ||
-        session.resident
+        session.intro
         ? 'reviewer'
         : session.workspace_id
           ? 'writer'
@@ -1656,8 +1400,6 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
       }
       mkdirSync(analysisPath, { recursive: true, mode: 0o700 });
     }
-    const personalPath =
-      session.resident?.kind === 'personal' ? personalAgentFolder(ctx) : undefined;
     const spec: SessionSpec = session.workspace_id
       ? ctx.store.must<Workspace>('workspaces', session.workspace_id).kind === 'in_place'
         ? await inPlaceSessionSpec(ctx, session)
@@ -1670,22 +1412,17 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
           effort: session.requested_effort,
           profile_version: session.profile_version,
           ...(session.runtime_review ? { runtime_analysis: true as const } : {}),
-          ...(session.baseline || session.resident ? { read_only_shell: true as const } : {}),
+          ...(session.baseline ? { read_only_shell: true as const } : {}),
           ...(session.permission_mode === 'plan' ? { permission_mode: 'plan' as const } : {}),
           control_instructions: session.runtime_review
             ? RUNTIME_REVIEW_CONTRACT
-            : session.resident
-              ? residentInstructions({
-                  ...residentProfile(ctx.store, session.resident),
-                  template: session.resident.kind,
-                })
-              : purposeSessionInstructions(session, {
-                  rounds: readAppSettings(ctx).baseline_rounds,
-                  visuals: readAppSettings(ctx).baseline_visuals,
-                }),
+            : purposeSessionInstructions(session, {
+                rounds: readAppSettings(ctx).baseline_rounds,
+                visuals: readAppSettings(ctx).baseline_visuals,
+              }),
           account_ref: session.account_ref,
           role: session.review_id || session.runtime_review ? 'reviewer' : 'planner',
-          cwd: analysisPath ?? reviewerPath ?? personalPath ?? project.roots[0]!,
+          cwd: analysisPath ?? reviewerPath ?? project.roots[0]!,
           ...(analysisPath
             ? { workspace: { id: session.id, path: analysisPath } }
             : reviewerPath
@@ -1757,20 +1494,13 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
           env_allowlist: NATIVE_ENV_ALLOWLIST,
           skills: [],
           mcp_servers: [],
-          pantheon_mcp:
-            session.resident?.kind === 'personal'
-              ? personalSessionMcp(
-                  ctx,
-                  ctx.store.must<AgentProfile>('agents', session.resident.agent_id!),
-                )
-              : sessionMcp(ctx, session, credentialRole(session)),
+          pantheon_mcp: sessionMcp(ctx, session, credentialRole(session)),
           extensions: { mode: 'none' },
           device_id: session.device_id ?? 'local',
           budget: {
             max_turns: 1,
-            wall_time_ms: session.resident
-              ? (ctx.turnWallTimeMs ?? WORKBENCH_TURN_MS)
-              : session.review_id || session.runtime_review
+            wall_time_ms:
+              session.review_id || session.runtime_review
                 ? REVIEW_WALL_TIME_MS
                 : session.baseline
                   ? BASELINE_WALL_TIME_MS
@@ -1780,7 +1510,7 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
     // Only a session with memory tools hears about memory, and only one that can write about writing.
     const tools = purposeSessionTools(session);
     const memoryText =
-      session.resident?.kind === 'personal' || session.conductor || !usesPantheonTools(ctx, session)
+      session.conductor || !usesPantheonTools(ctx, session)
         ? undefined
         : !tools || tools.includes('memory.propose')
           ? MEMORY_INSTRUCTIONS
@@ -1823,9 +1553,7 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
         ctx,
         spec,
         turn.id,
-        spec.role !== 'writer' ||
-          session.permission_mode === 'plan' ||
-          (!session.direct_task && planUnfinished(ctx, session.id)),
+        spec.role !== 'writer' || session.permission_mode === 'plan',
       );
       bindSessionAdapter(ctx, session, adapter);
       closeToolRelay(ctx, session.id);
@@ -2043,7 +1771,6 @@ export async function finishTurn(
         undelivered ? (error ?? 'Session ended before delivery') : turn.delivery_reason,
         turn.state === 'queued' && state !== 'cancelled' ? 'failed' : turnState,
       );
-      if (undelivered) returnNotes(ctx, s.id, [next]);
       ctx.store.event(`turn.${next.state}`, next, t.project_id, {
         ...stop,
         error: error ?? stop?.error,
@@ -2086,7 +1813,6 @@ export async function finishTurn(
     if (s.review_id) settleReview(ctx, s.review_id);
     if (turns.length) unsnooze(ctx, s.id, 'turn_ended');
   });
-  afterResidentTurn(ctx, ctx.store.must<SessionTurn>('session_turns', key).session_id, key);
   afterSpawnedTurn(ctx, ctx.store.must<SessionTurn>('session_turns', key).session_id);
   if (stop?.receipt?.stopped === true)
     closeToolRelay(ctx, ctx.store.must<SessionTurn>('session_turns', key).session_id);
@@ -2193,7 +1919,7 @@ export async function stopConversations(ctx: ControlContext): Promise<void> {
   if (retried) await new Promise<void>((resolve) => setImmediate(resolve));
 }
 
-/** The personal agent's home has no roots, so the agent runs in an empty folder of its own, made on first use. */
+/** A project without roots runs in an empty folder of its own, made on first use. */
 export function personalAgentFolder(ctx: ControlContext): string {
   const folder = path.join(ctx.workspaceRoot ?? os.tmpdir(), 'personal-agent');
   mkdirSync(folder, { recursive: true, mode: 0o700 });

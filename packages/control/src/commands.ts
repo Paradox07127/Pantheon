@@ -8,29 +8,16 @@ import { conductorPreparers } from './conductor.js';
 import { changeStoryHandlers } from './change-story.js';
 import type { Handlers, Preparers } from './context.js';
 import { projectFactHandlers } from './project-facts.js';
-import { projectBoardHandlers } from './project-board.js';
 import { projectHandlers, projectPreparers } from './project.js';
 import { prepareResolve, sessionHandlers } from './session.js';
 import { workbenchSessionHandlers } from './workbench-session.js';
 import { approvalHandlers } from './approvals.js';
 import { prepareRangeReview, prepareReviewRequest, reviewHandlers } from './review.js';
-import { prepareBoardSync, prepareTaskReport, taskTrackingHandlers } from './task-tracking.js';
-import { taskDispatchHandlers } from './task-dispatch.js';
-import { taskStatusLineHandlers } from './task-status-line.js';
-import { leadInboxHandlers } from './lead-inbox.js';
 import { workflowPolicyHandlers } from './workflow-policy.js';
 import { inPlaceSessionHandlers } from './in-place-session.js';
 import { visualHandlers } from './visual.js';
 import { appSettingsHandlers } from './app-settings.js';
 import { deviceHandlers } from './devices.js';
-import { externalEventHandlers } from './external-events.js';
-import { residentHandlers } from './resident.js';
-import { frontDoorHandlers } from './front-door.js';
-import { agentAlwaysOnHandlers } from './agent-always-on.js';
-import { agentWakeHandlers } from './agent-wakes.js';
-import { agentAppToolPreparers } from './agent-app-tools.js';
-import { agentPromptPreparers } from './agent-prompts.js';
-import { agentPreparers } from './agents.js';
 import { projectBriefHandlers } from './project-brief.js';
 import { briefProseHandlers } from './project-brief-prose.js';
 import { personalKeyHandlers } from './personal-keys.js';
@@ -39,7 +26,6 @@ export const handlers: Handlers = {
   ...memoryHandlers,
   ...projectHandlers,
   ...projectFactHandlers,
-  ...projectBoardHandlers,
   ...baselineHandlers,
   ...environmentCheckHandlers,
   ...changeStoryHandlers,
@@ -48,19 +34,10 @@ export const handlers: Handlers = {
   ...workbenchSessionHandlers,
   ...approvalHandlers,
   ...reviewHandlers,
-  ...taskTrackingHandlers,
-  ...taskDispatchHandlers,
-  ...taskStatusLineHandlers,
-  ...leadInboxHandlers,
   ...workflowPolicyHandlers,
   ...inPlaceSessionHandlers,
   ...appSettingsHandlers,
   ...deviceHandlers,
-  ...externalEventHandlers,
-  ...residentHandlers,
-  ...frontDoorHandlers,
-  ...agentAlwaysOnHandlers,
-  ...agentWakeHandlers,
   ...projectBriefHandlers,
   ...briefProseHandlers,
   ...personalKeyHandlers,
@@ -74,12 +51,7 @@ export const preparers: Preparers = {
   ...projectIntroPreparers,
   ...branchLandingPreparers,
   ...conductorPreparers,
-  'task.report': prepareTaskReport,
-  'board.sync': prepareBoardSync,
   'review.request': prepareReviewRequest,
   'review.range': prepareRangeReview,
   'session.resolve': prepareResolve,
-  ...agentAppToolPreparers,
-  ...agentPreparers,
-  ...agentPromptPreparers,
 };

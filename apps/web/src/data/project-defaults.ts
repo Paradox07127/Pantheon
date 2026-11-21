@@ -109,36 +109,14 @@ export function globalPolicy(setting: SettingOverview<'workflow_policy'>): Workf
   };
 }
 
-/** The global workflow settings with the patch applied; a global value replaces the built-in one whole. */
+/** The global workflow settings with the patch applied. */
 export function patchedPolicy(
   global: PolicySettings | undefined,
-  shown: WorkflowPolicy,
   patch: PolicyPatch,
 ): PolicySettings {
-  const { project_budget: _budget, path, budget, task_size_hint, ...rest } = patch;
-  const next: PolicySettings = { ...global, ...rest };
-  if (path) next.path = { ...shown.path, ...path };
-  if (task_size_hint === null) delete next.task_size_hint;
-  else if (task_size_hint !== undefined) next.task_size_hint = task_size_hint;
-  if (budget) {
-    const merged = structuredClone(shown.budget) as Record<string, Record<string, unknown>>;
-    for (const [tier, ways] of Object.entries(budget))
-      for (const [way, cell] of Object.entries(ways ?? {})) {
-        const row = (merged[tier] ??= {});
-        if (cell === null) delete row[way];
-        else row[way] = cell;
-        if (Object.keys(row).length === 0) delete merged[tier];
-      }
-    next.budget = merged as PolicySettings['budget'];
-  }
-  return next;
+  const { project_budget: _budget, ...rest } = patch;
+  return { ...global, ...rest };
 }
-
-/** Whether a project merges on its own: its value, else the global one, else off. */
-export const effectiveAutoMerge = (
-  project: Pick<Project, 'auto_merge'>,
-  read: ProjectDefaultsRead | null,
-): boolean => project.auto_merge ?? settingOf(read, 'auto_merge')?.global ?? false;
 
 /** The project's session defaults, else the global ones whole, as the daemon starts a session with. */
 export const effectiveSessionDefaults = (

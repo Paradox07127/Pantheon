@@ -1,12 +1,10 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import { AlertDialog } from '@base-ui/react/alert-dialog';
 import { Folder, Plus, X } from 'lucide-react';
 import { create } from 'zustand';
 import type { BoardSnapshot } from '@pantheon/protocol';
 import { PathText } from '../../components/PathText';
 import { toast } from '../../components/Toast';
-import { setAutoMerge } from '../../data/auto-merge';
-import { effectiveAutoMerge, useProjectDefaults } from '../../data/project-defaults';
 import {
   argvLine,
   copyPathProblem,
@@ -22,82 +20,10 @@ import { t } from '../../i18n';
 import { revealText } from '../../lib/platform-text';
 import { scrimFlag } from '../../lib/root-flag';
 import { ipcFailure } from './editors';
-import { savedGate } from './gate';
-import { useGateSaving } from './GatesPage';
 import { failureText, Row, Section, type Failure } from './ProjectSettingsScreen';
 import './worktrees-page.css';
 
 type Project = BoardSnapshot['projects'][number];
-
-/** The auto-merge value sent from the switch; revision is null while sending. */
-const useAutoMergeSave = create<{
-  sent: { project_id: string; enabled: boolean; revision: number | null } | null;
-  failure: { project_id: string; failure: Failure } | null;
-}>(() => ({ sent: null, failure: null }));
-
-async function saveAutoMerge(project: Project, enabled: boolean) {
-  if (useAutoMergeSave.getState().sent?.project_id === project.id) return;
-  useAutoMergeSave.setState({ sent: { project_id: project.id, enabled, revision: null } });
-  const result = await setAutoMerge(project, enabled);
-  useAutoMergeSave.setState(
-    result.ok
-      ? {
-          sent: {
-            project_id: project.id,
-            enabled,
-            revision: (result.value as Project).revision ?? project.revision + 1,
-          },
-          failure: null,
-        }
-      : { sent: null, failure: { project_id: project.id, failure: result.error } },
-  );
-}
-
-/** The project's auto-merge switch, at the value it follows until it sets its own. */
-function useAutoMergeRow(project: Project): ReactNode {
-  const save = useAutoMergeSave();
-  const sent = save.sent?.project_id === project.id ? save.sent : null;
-  const failure = save.failure?.project_id === project.id ? save.failure.failure : null;
-  const defaults = useProjectDefaults();
-  const gateSaving = useGateSaving(project);
-
-  // Show the sent value until the board catches up.
-  useEffect(() => {
-    if (sent?.revision != null && project.revision >= sent.revision)
-      useAutoMergeSave.setState({ sent: null });
-  }, [project.revision, sent]);
-
-  // Sessions start from the first folder, so its gate is the one a merge runs.
-  const gated = savedGate(project, project.roots[0]!).length > 0;
-  const checked = sent?.enabled ?? effectiveAutoMerge(project, defaults.data);
-  const label = t({
-    id: 'settings.autoMerge.toggle',
-    defaultMessage: 'Merge automatically once gates pass',
-  });
-  return (
-    <>
-      <Row label={label} settingId="worktrees.autoMerge">
-        <input
-          type="checkbox"
-          className="ps-sw"
-          checked={checked}
-          disabled={(!gated && !checked) || sent !== null || gateSaving}
-          aria-label={label}
-          onChange={(e) => void saveAutoMerge(project, e.target.checked)}
-        />
-      </Row>
-      {failure && (
-        <div className="ps-err wt-err" role="alert">
-          {failureText(failure)}
-        </div>
-      )}
-    </>
-  );
-}
-
-export function AutoMergeSwitch({ project }: { project: Project }) {
-  return <div className="ps-rows">{useAutoMergeRow(project)}</div>;
-}
 
 type SetupRow = 'copyPaths' | 'command';
 
@@ -145,7 +71,6 @@ const PROBLEM_TEXT: Record<CopyPathProblem, () => string> = {
 };
 
 export function WorktreesPage({ project }: { project: Project }) {
-  const merge = useAutoMergeRow(project);
   const setup = useWorktreeSave();
   const setupSent = setup.sent?.project_id === project.id ? setup.sent : null;
   const setupFailure = setup.failure?.project_id === project.id ? setup.failure : null;
@@ -377,9 +302,6 @@ export function WorktreesPage({ project }: { project: Project }) {
           </Row>
           {setupError('command')}
         </div>
-      </Section>
-      <Section title={t({ id: 'settings.worktrees.merging', defaultMessage: 'Merging' })}>
-        <div className="ps-rows">{merge}</div>
       </Section>
       <Section title={t({ id: 'settings.worktreeSetup.cleanup', defaultMessage: 'Cleanup' })}>
         <div className="ps-rows">

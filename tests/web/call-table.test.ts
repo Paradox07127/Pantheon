@@ -86,7 +86,7 @@ const LEAD: Span[] = [
   span('lead-dispatch', {
     parent: 'lead-turn',
     turn: 'lead-turn',
-    name: 'mcp__pantheon__start_task',
+    name: 'mcp__pantheon__spawn_session',
     start: T0 + 10_000,
     end: T0 + 10_400,
   }),
@@ -176,7 +176,7 @@ describe('call rows', () => {
       row.type === 'call' ? [[row.verb, row.target, row.more]] : [],
     );
     expect(verbs).toEqual([
-      ['dispatch', 'mcp__pantheon__start_task', 0],
+      ['tool', 'mcp__pantheon__spawn_session', 0],
       ['think', null, 0],
       ['read', 'src/a.ts', 2],
       ['run', 'Bash', 0],

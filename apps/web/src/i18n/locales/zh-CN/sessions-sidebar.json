@@ -1,6 +1,5 @@
 {
   "sessions.sidebar.badge.environment": "环境异常",
   "sessions.sidebar.badge.unread": "有新结果",
-  "sessions.sidebar.preview.openedBy": "由 {source} 派出，{time}",
   "sessions.sidebar.preview.forkedFrom": "分叉自 {source}，{time}"
 }

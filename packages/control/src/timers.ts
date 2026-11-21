@@ -31,7 +31,11 @@ export function fireDueTimers(ctx: ControlContext): void {
         const current = ctx.store.must<Timer>('timers', timer.id);
         if (current.state !== 'pending' || current.due_at > ctx.store.now()) return;
         const handler = timerHandlers.get(current.kind);
-        if (!handler) return;
+        // A stored timer of a kind nothing handles any more never fires.
+        if (!handler) {
+          ctx.store.update<Timer>('timers', { ...current, state: 'cancelled' }, current.revision);
+          return;
+        }
         const retryAt = handler(ctx, current);
         if (retryAt !== undefined) {
           ctx.store.update<Timer>('timers', { ...current, due_at: retryAt }, current.revision);

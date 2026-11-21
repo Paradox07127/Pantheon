@@ -42,88 +42,61 @@ it('reads the default policy at version 0 when the project has none', async () =
   expect(policyOf(f)).toMatchObject({
     project_id: f.project.id,
     policy_version: 0,
-    plan_changes: 'auto',
-    path: { t1: 'direct', t2: 'dispatch', t3: 'dispatch' },
-    acceptance_wake: 'each_merge',
-    max_parallel: 3,
-    max_parallel_limit: 3,
-    handback_limit: 3,
+    runtime_quota_threshold: 90,
+    gate_on_fail: 'handback',
+    gate_runner: 'daemon',
     pinned: [],
   });
-  expect(policyOf(f).task_size_hint).toBeUndefined();
+  expect(policyOf(f).question_defaults).toBeUndefined();
   expect(f.store.get('workflow_policies', f.project.id)).toBeUndefined();
 });
 
-it('stores a user change to max_parallel at version 1 and records what changed', async () => {
+it('stores a user change to gate_on_fail at version 1 and records what changed', async () => {
   const f = await opened();
-  set(f, { max_parallel: 2 });
-  expect(policyOf(f)).toMatchObject({ max_parallel: 2, policy_version: 1 });
+  set(f, { gate_on_fail: 'stop' });
+  expect(policyOf(f)).toMatchObject({ gate_on_fail: 'stop', policy_version: 1 });
   expect(changes(f).map((event) => event.payload)).toEqual([
-    { param: 'max_parallel', from: 3, to: 2, by: 'user', policy_version: 1 },
-  ]);
-});
-
-it('stores a plan changes setting and reads it back', async () => {
-  const f = await opened();
-  set(f, { plan_changes: 'confirm' });
-  expect(policyOf(f)).toMatchObject({ plan_changes: 'confirm', policy_version: 1 });
-  expect(changes(f).map((event) => event.payload)).toEqual([
-    { param: 'plan_changes', from: 'auto', to: 'confirm', by: 'user', policy_version: 1 },
+    { param: 'gate_on_fail', from: 'handback', to: 'stop', by: 'user', policy_version: 1 },
   ]);
 });
 
 it('records one change per parameter but raises the version once', async () => {
   const f = await opened();
-  set(f, { acceptance_wake: 'milestone', handback_limit: 4 });
+  set(f, { gate_on_fail: 'retry', gate_runner: 'session' });
   expect(policyOf(f)).toMatchObject({
-    acceptance_wake: 'milestone',
-    handback_limit: 4,
+    gate_on_fail: 'retry',
+    gate_runner: 'session',
     policy_version: 1,
   });
   expect(changes(f).map((event) => event.payload)).toEqual([
-    {
-      param: 'acceptance_wake',
-      from: 'each_merge',
-      to: 'milestone',
-      by: 'user',
-      policy_version: 1,
-    },
-    { param: 'handback_limit', from: 3, to: 4, by: 'user', policy_version: 1 },
+    { param: 'gate_on_fail', from: 'handback', to: 'retry', by: 'user', policy_version: 1 },
+    { param: 'gate_runner', from: 'daemon', to: 'session', by: 'user', policy_version: 1 },
   ]);
-});
-
-it('refuses max_parallel above the user limit and keeps the stored policy', async () => {
-  const f = await opened();
-  set(f, { max_parallel: 2 });
-  const before = f.store.get('workflow_policies', f.project.id);
-  expect(refused(() => set(f, { max_parallel: 4 }))).toBe('invalid_input');
-  expect(f.store.get('workflow_policies', f.project.id)).toEqual(before);
-  expect(changes(f)).toHaveLength(1);
 });
 
 it('leaves the version and events alone when the input matches the project settings', async () => {
   const f = await opened();
-  set(f, { max_parallel: 2, plan_changes: 'auto' });
-  set(f, { max_parallel: 2 });
-  set(f, { max_parallel: 2, plan_changes: 'auto' });
+  set(f, { gate_on_fail: 'stop', gate_runner: 'daemon' });
+  set(f, { gate_on_fail: 'stop' });
+  set(f, { gate_on_fail: 'stop', gate_runner: 'daemon' });
   expect(policyOf(f).policy_version).toBe(1);
   expect(changes(f)).toHaveLength(2);
 });
 
 it('stores a value equal to the one it follows as the project setting', async () => {
   const f = await opened();
-  set(f, { max_parallel: 3, path: { t1: 'direct' } });
+  set(f, { gate_on_fail: 'handback', gate_runner: 'daemon' });
   expect(f.store.get<WorkflowPolicy>('workflow_policies', f.project.id)?.overridden).toEqual([
-    'max_parallel',
-    'path',
+    'gate_on_fail',
+    'gate_runner',
   ]);
   expect(changes(f).map((event) => event.payload)).toMatchObject([
-    { param: 'path', from: { t1: 'direct' }, to: { t1: 'direct' } },
-    { param: 'max_parallel', from: 3, to: 3 },
+    { param: 'gate_on_fail', from: 'handback', to: 'handback' },
+    { param: 'gate_runner', from: 'daemon', to: 'daemon' },
   ]);
 });
 
-it('reads a stored policy that still holds improvement_mode and eval_runner without them, and saves another parameter', async () => {
+it('reads a stored policy that still holds removed settings without them, and saves another parameter', async () => {
   const f = await opened();
   const stored = {
     id: f.project.id,
@@ -139,23 +112,27 @@ it('reads a stored policy that still holds improvement_mode and eval_runner with
     max_parallel_limit: 3,
     handback_limit: 3,
     budget: {},
+    gate_on_fail: 'retry',
     pinned: [],
-    overridden: ['improvement_mode', 'eval_runner', 'max_parallel'],
+    overridden: ['improvement_mode', 'eval_runner', 'max_parallel', 'gate_on_fail'],
   };
   f.store.transaction(() =>
     f.store.insert<WorkflowPolicy>('workflow_policies', stored as unknown as WorkflowPolicy),
   );
+  const removed = ['improvement_mode', 'eval_runner', 'plan_changes', 'max_parallel', 'budget'];
   const read = f.control.workflowPolicy(user, f.project.id);
-  expect(read).toMatchObject({ max_parallel: 3, policy_version: 1 });
-  expect(read).not.toHaveProperty('improvement_mode');
-  expect(read).not.toHaveProperty('eval_runner');
-  set(f, { max_parallel: 2 });
+  expect(read).toMatchObject({ gate_on_fail: 'retry', policy_version: 1 });
+  for (const key of removed) expect(read).not.toHaveProperty(key);
+  set(f, { gate_on_fail: 'stop' });
   const after = f.store.get<WorkflowPolicy>('workflow_policies', f.project.id)!;
-  expect(after).toMatchObject({ max_parallel: 2, policy_version: 2, overridden: ['max_parallel'] });
-  expect(after).not.toHaveProperty('improvement_mode');
-  expect(after).not.toHaveProperty('eval_runner');
+  expect(after).toMatchObject({
+    gate_on_fail: 'stop',
+    policy_version: 2,
+    overridden: ['gate_on_fail'],
+  });
+  for (const key of removed) expect(after).not.toHaveProperty(key);
   expect(changes(f).map((event) => event.payload)).toEqual([
-    { param: 'max_parallel', from: 3, to: 2, by: 'user', policy_version: 2 },
+    { param: 'gate_on_fail', from: 'retry', to: 'stop', by: 'user', policy_version: 2 },
   ]);
 });
 
@@ -168,122 +145,30 @@ it('refuses a lead session that tries to change the policy', async () => {
     session_id: 'lead',
     expires_at: f.store.now() + 60000,
   };
-  expect(refused(() => set(f, { max_parallel: 2 }, lead))).toBe('permission_denied');
+  expect(refused(() => set(f, { gate_on_fail: 'stop' }, lead))).toBe('permission_denied');
   expect(f.store.get('workflow_policies', f.project.id)).toBeUndefined();
-});
-
-it('reads a default budget for the t1 cells only', async () => {
-  const f = await opened();
-  expect(policyOf(f).budget).toEqual({
-    t1: {
-      direct: { input_tokens: 400000, wall_ms: 95000 },
-      dispatch: { input_tokens: 1120000, wall_ms: 255000 },
-    },
-  });
-});
-
-it('sets one budget cell, clears another with null and records the change', async () => {
-  const f = await opened();
-  set(f, {
-    budget: {
-      t1: { dispatch: null },
-      t2: { dispatch: { input_tokens: 2000000, wall_ms: 600000 } },
-    },
-  });
-  expect(policyOf(f)).toMatchObject({
-    policy_version: 1,
-    budget: {
-      t1: { direct: { input_tokens: 400000, wall_ms: 95000 } },
-      t2: { dispatch: { input_tokens: 2000000, wall_ms: 600000 } },
-    },
-  });
-  expect(policyOf(f).budget.t1).not.toHaveProperty('dispatch');
-  expect(changes(f).map((event) => (event.payload as { param: string }).param)).toEqual(['budget']);
-});
-
-it('refuses a budget that is not a positive integer and keeps the stored policy', async () => {
-  const f = await opened();
-  for (const cell of [
-    { input_tokens: 0, wall_ms: 95000 },
-    { input_tokens: 400000, wall_ms: -1 },
-  ])
-    expect(refused(() => set(f, { budget: { t1: { direct: cell } } }))).toBe('invalid_input');
-  expect(f.store.get('workflow_policies', f.project.id)).toBeUndefined();
-});
-
-it('stores the review loop as a tier path and a budget cell', async () => {
-  const f = await opened();
-  const cell = { input_tokens: 2000000, wall_ms: 600000 };
-  set(f, { path: { t2: 'review_loop' }, budget: { t2: { review_loop: cell } } });
-  expect(policyOf(f)).toMatchObject({
-    path: { t2: 'review_loop' },
-    budget: { t2: { review_loop: cell } },
-  });
-});
-
-it('reads the default budget for a policy stored without one', async () => {
-  const f = await opened();
-  set(f, { max_parallel: 2 });
-  const row = f.store.must<WorkflowPolicy>('workflow_policies', f.project.id);
-  const { budget: _, ...old } = row;
-  f.store.update('workflow_policies', old, row.revision);
-  expect(policyOf(f)).toMatchObject({
-    max_parallel: 2,
-    budget: { t1: { direct: { input_tokens: 400000, wall_ms: 95000 } } },
-  });
 });
 
 it('stores and reads back the pinned parameters', async () => {
   const f = await opened();
-  set(f, { pinned: ['path', 'task_size_hint'] });
-  expect(policyOf(f).pinned).toEqual(['path', 'task_size_hint']);
+  set(f, { pinned: ['runtime_quota_threshold'] });
+  expect(policyOf(f).pinned).toEqual(['runtime_quota_threshold']);
   set(f, { pinned: [] });
   expect(policyOf(f)).toMatchObject({ pinned: [], policy_version: 2 });
-});
-
-it('allows quota and task budgets to be pinned alongside the existing parameters', async () => {
-  const f = await opened();
-  const pinned = [
-    'path',
-    'acceptance_wake',
-    'max_parallel',
-    'handback_limit',
-    'task_size_hint',
-    'runtime_quota_threshold',
-    'budget',
-  ];
-  expect(set(f, { pinned }).pinned).toEqual(pinned);
-});
-
-it('defaults dispatch to active and stores runtime limits and pause changes', async () => {
-  const f = await opened();
-  expect(policyOf(f).dispatch_paused).toBe(false);
-  expect(set(f, { runtime_parallel: { fixture: 1 }, dispatch_paused: true })).toMatchObject({
-    runtime_parallel: { fixture: 1 },
-    dispatch_paused: true,
-  });
-  expect(changes(f).map((event) => (event.payload as { param: string }).param)).toEqual([
-    'runtime_parallel',
-    'dispatch_paused',
-  ]);
-  expect(set(f, { runtime_parallel: {}, dispatch_paused: false })).toMatchObject({
-    runtime_parallel: {},
-    dispatch_paused: false,
-  });
 });
 
 it('resets a changed policy to the defaults exposed by the query at the current revision', async () => {
   const f = await opened();
   const initial = f.control.workflowPolicy(user, f.project.id);
-  expect(initial.max_parallel).toBe(initial.defaults.max_parallel);
+  expect(initial.gate_on_fail).toBe(initial.defaults.gate_on_fail);
   set(f, {
-    max_parallel: 1,
-    task_size_hint: 8,
+    gate_on_fail: 'stop',
+    question_defaults: { after_hours: 8 },
     project_budget: { input_tokens: 1000 },
-    pinned: ['path'],
+    pinned: ['runtime_quota_threshold'],
   });
   const changed = f.control.workflowPolicy(user, f.project.id);
-  expect(changed.max_parallel).not.toBe(changed.defaults.max_parallel);
+  expect(changed.gate_on_fail).not.toBe(changed.defaults.gate_on_fail);
   expect(() =>
     f.call('workflow.policy.reset', { project_id: f.project.id }, initial.revision),
   ).toThrowError(expect.objectContaining({ code: 'revision_conflict' }));
@@ -303,11 +188,4 @@ it('resets a changed policy to the defaults exposed by the query at the current 
     by: 'user',
     policy_version: reset.policy_version,
   });
-});
-
-it('stores disabled hand-backs and refuses a limit of one', async () => {
-  const f = await opened();
-  expect(set(f, { handback_limit: 0 }).handback_limit).toBe(0);
-  expect(policyOf(f).handback_limit).toBe(0);
-  expect(() => set(f, { handback_limit: 1 })).toThrow();
 });

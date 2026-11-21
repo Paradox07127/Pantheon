@@ -24,69 +24,11 @@
   user-select: text;
 }
 
-/* A request row: title, who raised it, what became of it, when. */
-.xr-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 128px 200px 64px;
-  column-gap: var(--sp-4);
-  align-items: center;
-  height: var(--row);
-  padding: 0 var(--sp-4);
-  border-top: var(--hair) solid var(--bd2);
-  transition: background-color var(--dur-1) var(--ease-std);
-}
-.xr-row:hover,
-.xr-row:focus-within {
-  background: var(--sf2);
-}
-.xr-row.xr-hd {
-  border-top: 0;
-  background: var(--sf2);
-}
-.xr-title,
-.xr-row > .xr-out {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  min-width: 0;
-}
-.xr-title svg {
-  color: var(--mu);
-}
-.xr-title .xr-cut {
-  user-select: text;
-}
 .xr-cut {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.xr-who,
-.xr-row .xr-out {
-  color: var(--tx2);
-}
-.xr-row[data-dropped] .xr-title {
-  color: var(--mu);
-}
-button.xr-out {
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  text-align: start;
-}
-button.xr-out:hover .xr-cut {
-  text-decoration: underline;
-}
-.xr-out .btn {
-  margin-left: auto;
-}
-.xr-at {
-  justify-self: end;
-  font-size: var(--fs-xs);
-  line-height: var(--lh-xs);
-  font-variant-numeric: tabular-nums;
 }
 .xr-pg .hp-dot[data-s='bad'] {
   background: var(--bad);

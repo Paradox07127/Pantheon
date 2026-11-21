@@ -7,7 +7,6 @@ import { AuthRegistry } from '../../apps/daemon/src/index.js';
 import { FixtureAdapter } from '@pantheon/adapters';
 import { command } from '@pantheon/protocol';
 import type {
-  BoardPlan,
   ProjectBaseline,
   Review,
   Role,
@@ -180,7 +179,7 @@ const receipt = (result: Awaited<ReturnType<Client['callTool']>>) => {
 };
 
 const CONDUCTOR_TEXT =
-  "Pantheon gives this session four tools. request_review: another vendor reviews your committed changes; the result comes back to you as a message. report_ready: your committed changes go through the project's gate and land. spawn_session: another vendor's session starts in a new worktree from your current commit; you hear when its turn ends. read_state: this project's changes, checks, landing queue and items waiting for the user. Plan, split work and run subagents with your own tools.";
+  "Pantheon gives this session five tools. request_review: another vendor reviews your committed changes; the result comes back to you as a message. report_ready: your committed changes go through the project's gate and land. spawn_session: another vendor's session starts in a new worktree from your current commit; you hear when its turn ends. read_state: this project's changes, checks, landing queue and items waiting for the user. draw: a chart or diagram the user sees in this session. Plan, split work and run subagents with your own tools.";
 /** Each conductor tool with a valid input, and the command it sends. */
 const conductorCalls = [
   ['request_review', 'conductor.review', { runtimes: ['codex'] }],
@@ -577,300 +576,6 @@ it('starts planner sessions without inherited extensions and writers with the pr
   expect(writer[0].extensions).toMatchObject({ mode: 'inherit' });
 });
 
-it('mounts a lead credential on a workbench session and a worker credential on a session opened from its task', async () => {
-  const f = await sessionFixture('planner');
-  const opened = async (input: Record<string, unknown>) => {
-    const session = await f.call<Session>('session.create', {
-      project_id: f.project.id,
-      runtime: f.adapter.name,
-      ...input,
-    });
-    await awaitWorkspaceReady(f.control, session.workspace_id!);
-    await eventually(
-      () => f.starts.mock.calls.some(([spec]) => spec.platform_session_id === session.id),
-      () => f.control.tick(),
-    );
-    const spec = f.starts.mock.calls.find(([spec]) => spec.platform_session_id === session.id)![0];
-    return { session, spec };
-  };
-  const lead = await opened({ input: 'Plan the export feature', purpose: 'lead' });
-  expect(lead.spec.pantheon_mcp).toBeDefined();
-  expect(lead.spec.pantheon_mcp!.ask_tools).toEqual(['rerun_baseline']);
-  expect(f.auth.authenticate(`Bearer ${sessionToken(lead.spec)}`)).toMatchObject({
-    session_id: lead.session.id,
-    role: 'lead',
-  });
-  const leadClient = await connect(lead.spec);
-  expect((await leadClient.listTools()).tools.map((tool) => tool.name)).toEqual([
-    'memory_context',
-    'memory_search',
-    'memory_related',
-    'memory_get',
-    'memory_propose',
-    'project_read',
-    'update_board',
-    'start_task',
-    'message_task',
-    'accept_task',
-    'read_note',
-    'ask_user',
-    'answer_worker_question',
-    'stop_task',
-    'report',
-    'status_line',
-    'interrupt_task',
-    'stop_background',
-    'sync_board',
-    'rerun_baseline',
-    'request_review',
-    'merge_task',
-    'draw',
-    'browser_open',
-    'browser_read',
-    'browser_screenshot',
-    'guide',
-  ]);
-  const plan = {
-    base_version: 0,
-    headline: 'Export',
-    lanes: [{ id: 'core', title: 'Core' }],
-    tasks: [
-      {
-        id: 'api',
-        title: 'Export API',
-        goal: 'Serve exports over HTTP',
-        lane: 'core',
-        milestone: 'm1',
-        depends_on: [],
-        source: ['Plan the export feature'],
-        scope: ['src/export'],
-        acceptance: ['pnpm test'],
-      },
-    ],
-    milestones: [
-      { id: 'm1', title: 'First export', criteria: ['Exports download'], tasks: ['api'] },
-    ],
-    risks: [],
-    assumptions: [],
-  };
-  const written = await leadClient.callTool({ name: 'update_board', arguments: plan });
-  expect(written.isError, text(written)).toBeFalsy();
-
-  const worker = await opened({ input: 'Build the export API', task_id: `${lead.session.id}:api` });
-  expect(f.auth.authenticate(`Bearer ${sessionToken(worker.spec)}`)).toMatchObject({
-    session_id: worker.session.id,
-    role: 'worker',
-  });
-  expect(worker.spec.pantheon_mcp).not.toHaveProperty('ask_tools');
-  const workerClient = await connect(worker.spec);
-  expect((await workerClient.listTools()).tools.map((tool) => tool.name)).toEqual([
-    'memory_context',
-    'memory_search',
-    'memory_related',
-    'memory_get',
-    'memory_propose',
-    'project_read',
-    'report',
-    'status_line',
-    'draw',
-    'browser_open',
-    'browser_read',
-    'browser_screenshot',
-  ]);
-  expect(text(await workerClient.callTool({ name: 'update_board', arguments: plan }))).toBe(
-    'Refused update_board: permission_denied',
-  );
-
-  const otherReviewer = new FixtureAdapter();
-  otherReviewer.name = 'cross-reviewer';
-  f.control.adapters.set(otherReviewer.name, otherReviewer);
-  const workerPath = f.store.must<import('@pantheon/domain').Workspace>(
-    'workspaces',
-    worker.session.workspace_id!,
-  ).path;
-  mkdirSync(path.join(workerPath, 'src/export'), { recursive: true });
-  writeFileSync(path.join(workerPath, 'src/export/answer.txt'), 'export ready\n');
-  git(workerPath, 'add', '--', 'src/export/answer.txt');
-  git(workerPath, 'commit', '--quiet', '-m', 'Write export answer');
-  const requestedReview = await leadClient.callTool({
-    name: 'request_review',
-    arguments: { session_id: worker.session.id, runtimes: [otherReviewer.name] },
-  });
-  expect(requestedReview.isError, text(requestedReview)).toBeFalsy();
-  expect(JSON.parse(text(requestedReview)).receipt).toMatchObject({
-    session_id: worker.session.id,
-    requester: { lead_session_id: lead.session.id, task_id: 'api', generation: 1 },
-  });
-  expect(
-    text(
-      await workerClient.callTool({
-        name: 'request_review',
-        arguments: { session_id: worker.session.id, runtimes: [otherReviewer.name] },
-      }),
-    ),
-  ).toBe('Refused request_review: permission_denied');
-
-  const reported = await workerClient.callTool({
-    name: 'report',
-    arguments: { kind: 'risk', text: 'The export format may change' },
-  });
-  expect(reported.isError, text(reported)).toBeFalsy();
-  const inbox = f.store.must<BoardPlan>('board_plans', lead.session.id).inbox;
-  // The first note tells the lead the user opened the worker from the board.
-  expect(inbox.map((each) => each.kind)).toEqual(['user_edit', 'risk']);
-  const note = inbox[1];
-  const read = await leadClient.callTool({ name: 'read_note', arguments: { note_id: note!.id } });
-  expect(read.isError, text(read)).toBeFalsy();
-  expect(text(read)).toContain('The export format may change');
-  const stop = { task_id: 'api', reason: 'The export moves to another service' };
-  expect(text(await workerClient.callTool({ name: 'stop_task', arguments: stop }))).toBe(
-    'Refused stop_task: permission_denied',
-  );
-  for (const spec of [lead.spec, worker.spec]) {
-    const principal = f.auth.authenticate(`Bearer ${sessionToken(spec)}`)!;
-    for (const [, type, input] of conductorCalls)
-      expect(
-        refusalCode(() => f.control.execute(principal, command(principal.id, type, input))),
-        type,
-      ).toBe('permission_denied');
-  }
-});
-
-it('tells a lead to plan a small change as one direct task before it changes the repository', async () => {
-  const f = await sessionFixture('planner');
-  const lead = await f.call<Session>('session.create', {
-    project_id: f.project.id,
-    runtime: f.adapter.name,
-    input: 'Add an optional phone field to createContact',
-    purpose: 'lead',
-  });
-  await awaitWorkspaceReady(f.control, lead.workspace_id!);
-  await eventually(
-    () => f.starts.mock.calls.some(([spec]) => spec.platform_session_id === lead.id),
-    () => f.control.tick(),
-  );
-  const instructions = f.starts.mock.calls.find(
-    ([spec]) => spec.platform_session_id === lead.id,
-  )![0].control_instructions!;
-  expect(instructions).not.toContain('leave the board alone');
-  expect(instructions).not.toContain('Use update_board only when');
-  for (const phrase of [
-    'every request that changes the repository',
-    'Write a small request that one session can finish right away as one task.',
-    'Claim it with start_task',
-    'only asks a question and changes nothing needs no task; answer it in plain text',
-    'call report with kind done',
-  ])
-    expect(instructions).toContain(phrase);
-});
-
-it('lets a lead stop a task of its plan through stop_task, without a project id', async () => {
-  const f = await sessionFixture('planner');
-  const lead = await f.call<Session>('session.create', {
-    project_id: f.project.id,
-    runtime: f.adapter.name,
-    input: 'Plan the export feature',
-    purpose: 'lead',
-  });
-  await awaitWorkspaceReady(f.control, lead.workspace_id!);
-  await eventually(
-    () => f.starts.mock.calls.some(([spec]) => spec.platform_session_id === lead.id),
-    () => f.control.tick(),
-  );
-  const client = await connect(
-    f.starts.mock.calls.find(([spec]) => spec.platform_session_id === lead.id)![0],
-  );
-  const tool = (await client.listTools()).tools.find((each) => each.name === 'stop_task')!;
-  expect(Object.keys(tool.inputSchema.properties ?? {})).toEqual(['task_id', 'reason']);
-  const written = await client.callTool({
-    name: 'update_board',
-    arguments: {
-      base_version: 0,
-      headline: 'Export',
-      lanes: [{ id: 'core', title: 'Core' }],
-      tasks: [
-        {
-          id: 'api',
-          title: 'Export API',
-          goal: 'Serve exports over HTTP',
-          lane: 'core',
-          depends_on: [],
-          source: ['Plan the export feature'],
-          scope: ['src/export'],
-          acceptance: ['pnpm test'],
-          path: 'dispatch',
-          flow_reason: 'The export needs a session of its own',
-        },
-      ],
-      milestones: [],
-      risks: [],
-      assumptions: [],
-    },
-  });
-  expect(written.isError, text(written)).toBeFalsy();
-  const started = await client.callTool({ name: 'start_task', arguments: { task_ids: ['api'] } });
-  expect(started.isError, text(started)).toBeFalsy();
-  const stopped = await client.callTool({
-    name: 'stop_task',
-    arguments: { task_id: 'api', reason: 'The export moves to another service' },
-  });
-  expect(stopped.isError, text(stopped)).toBeFalsy();
-  expect(receipt(stopped).receipt).toEqual({
-    task_id: 'api',
-    dequeued: true,
-    sessions: [],
-    task_state: 'todo',
-  });
-});
-
-it('hands a lead that calls sync_board its plan and the recent commits of the project', async () => {
-  const f = await sessionFixture('planner');
-  const lead = await f.call<Session>('session.create', {
-    project_id: f.project.id,
-    runtime: f.adapter.name,
-    input: 'Plan the export feature',
-    purpose: 'lead',
-  });
-  await awaitWorkspaceReady(f.control, lead.workspace_id!);
-  await eventually(
-    () => f.starts.mock.calls.some(([spec]) => spec.platform_session_id === lead.id),
-    () => f.control.tick(),
-  );
-  const client = await connect(
-    f.starts.mock.calls.find(([spec]) => spec.platform_session_id === lead.id)![0],
-  );
-  const written = await client.callTool({
-    name: 'update_board',
-    arguments: {
-      base_version: 0,
-      headline: 'Export',
-      lanes: [{ id: 'core', title: 'Core' }],
-      tasks: [
-        {
-          id: 'export-api',
-          title: 'Export API',
-          goal: 'Serve exports over HTTP',
-          lane: 'core',
-          depends_on: [],
-          source: ['Plan the export feature'],
-          scope: ['src/export'],
-          acceptance: ['pnpm test'],
-        },
-      ],
-      milestones: [],
-      risks: [],
-      assumptions: [],
-    },
-  });
-  expect(written.isError, text(written)).toBeFalsy();
-  const synced = await client.callTool({ name: 'sync_board', arguments: {} });
-  expect(synced.isError, text(synced)).toBeFalsy();
-  const { brief } = receipt(synced).receipt as { brief: string };
-  expect(brief).toContain('Sync the board with the project as it is now.');
-  expect(brief).toContain('- export-api "Export API": todo; sessions: none');
-  expect(brief).toContain('Initial files');
-});
-
 it('refuses a credential role that does not match the session', async () => {
   const f = await sessionFixture('planner');
   const planner = f.store.must<Session>('sessions', f.spec.platform_session_id);
@@ -883,7 +588,7 @@ it('refuses a credential role that does not match the session', async () => {
   expect(() => f.auth.issueSession(planner, 'lead')).toThrow('Active session required');
 });
 
-it('mounts only the four conductor tools and their instructions on a conductor worktree session', async () => {
+it('mounts only the five conductor tools and their instructions on a conductor worktree session', async () => {
   const f = await sessionFixture('planner');
   const draft = f.call<{ id: string; revision: number }>('memory.propose', {
     project_id: f.project.id,
@@ -929,6 +634,7 @@ it('mounts only the four conductor tools and their instructions on a conductor w
     ['report_ready', ['session_id']],
     ['spawn_session', ['runtime', 'input', 'model', 'effort']],
     ['read_state', []],
+    ['draw', ['title', 'kind', 'spec', 'source', 'size', 'replaces', 'pin']],
   ]);
   for (const [, type, input] of conductorCalls)
     expect(
@@ -985,9 +691,10 @@ it('mounts the conductor tools on a conductor session in the project folder', as
     `You are working in the project folder at ${folder}, on its current branch. Commit your changes there; Pantheon runs the gates in this folder, and the session lands once they pass on the commit you leave. Do not write files outside the project folder.\n\n${CONDUCTOR_TEXT}`,
   );
   const client = await connect(spec);
-  expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual(
-    conductorCalls.map(([name]) => name),
-  );
+  expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual([
+    ...conductorCalls.map(([name]) => name),
+    'draw',
+  ]);
   expect(
     receipt(await client.callTool({ name: 'read_state', arguments: {} })).receipt,
   ).toMatchObject({ changes: expect.any(Array), todo: expect.any(Array) });

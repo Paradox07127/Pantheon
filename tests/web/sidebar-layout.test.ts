@@ -150,7 +150,7 @@ describe('sidebar layout', () => {
     expect(items.filter((item) => item === allLabel)).toHaveLength(1);
   });
 
-  it('lists a confirmed baseline session and the lead it opened among the open sessions', () => {
+  it('lists a confirmed baseline session and an open session among the open sessions', () => {
     const h = mount([
       session('baseline', 'done', { title: '', workspace_id: null, baseline_started_at: 1 }),
       session('lead', 'starting', { title: 'Baseline plan' }),
@@ -241,23 +241,22 @@ describe('sidebar layout', () => {
 });
 
 describe('session row', () => {
-  const button = (s: WorkbenchSession, lead = false) =>
+  const button = (s: WorkbenchSession) =>
     SessionRowButton({
       session: s,
       on: false,
       now: Date.parse(s.last_activity_at),
-      lead,
       onSelect() {},
     });
 
-  it('runs avatar, title, crown and time', () => {
-    const order = (button(session('l', 'running'), true).props.children as any[])
+  it('runs avatar, title and time', () => {
+    const order = (button(session('l', 'running')).props.children as any[])
       .flat()
       .filter((n) => n && typeof n === 'object')
       .map((n: ReactElement<any>) =>
         typeof n.type === 'function' ? n.type.name : n.props.className,
       );
-    expect(order).toEqual(['Avatar', 'ss-ttl', 'LeadCrown', 'ss-time']);
+    expect(order).toEqual(['Avatar', 'ss-ttl', 'ss-time']);
   });
 
   const badgeOf = (s: WorkbenchSession) =>

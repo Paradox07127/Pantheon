@@ -59,7 +59,7 @@ it('adds a rule once, lists it and answers later requests', async () => {
   ).toContainEqual(expect.objectContaining({ approval_id: automatic.id, decision: 'allow' }));
 });
 
-it.each(['lead', 'worker'] as const)(
+it.each(['lead', 'writer'] as const)(
   'refuses a %s session adding a project permission rule',
   async (role) => {
     const f = await workbenchFixture();

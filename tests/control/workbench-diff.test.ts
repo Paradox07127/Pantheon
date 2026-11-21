@@ -41,19 +41,6 @@ const discard = (f: Fixture, sessionId: string, principal: Principal = user) =>
     principal,
   );
 
-it('reads the diff of a resident session without a workspace in the project folder against its HEAD', async () => {
-  const f = await workbenchFixture();
-  const resident = f.call<Session>('resident.open', {
-    project_id: f.project.id,
-    kind: 'assistant',
-  });
-  writeFileSync(path.join(f.source, 'answer.txt'), 'changed\n');
-  const diff = await f.control.sessionDiff(user, resident.id);
-  const head = git(f.source, 'rev-parse', 'HEAD');
-  expect(diff).toMatchObject({ session_id: resident.id, base_sha: head, head_sha: head });
-  expect(diff.files.map((file) => file.path)).toEqual(['answer.txt']);
-});
-
 it('lists committed, uncommitted and untracked changes against the session base commit', async () => {
   const f = await workbenchFixture();
   const { session, workspace, sourceHead } = await idleSession(f);

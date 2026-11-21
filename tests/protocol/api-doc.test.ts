@@ -13,8 +13,8 @@ it('keeps docs/api.md in step with the protocol schemas', () => {
 it('wraps a list of a union in parentheses', () => {
   const doc = readFileSync(fileURLToPath(new URL('../../docs/api.md', import.meta.url)), 'utf8');
   const row = (name: string) => doc.split('\n').find((line) => line.startsWith(`| \`${name}\` |`));
-  expect(row('workflow.policy.set')).toContain(
-    '`pinned?`: ("path" \\| "acceptance_wake" \\| "max_parallel" \\| "handback_limit" \\| "task_size_hint" \\| "runtime_quota_threshold" \\| "budget")[]',
+  expect(row('memory.graph')).toContain(
+    '("decision" \\| "report" \\| "note" \\| "file" \\| "url" \\| "session")[]',
   );
   expect(row('session.send')).toContain('`refs?`: (object \\| object)[]');
   expect(row('session.send')).toContain('`attachments?`: string[]');

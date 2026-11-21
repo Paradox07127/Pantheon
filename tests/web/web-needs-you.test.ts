@@ -212,7 +212,7 @@ describe('attention kept by the backend', () => {
     expect(reasonText(code)).not.toBe(code);
   });
 
-  it.each(['session.continuation_skipped', 'approval.delivery_failed', 'approval.delivered'])(
+  it.each(['approval.delivery_failed', 'approval.delivered'])(
     'refreshes attention after %s',
     (kind) => {
       expect(touchesNeedsYou(kind)).toBe(true);

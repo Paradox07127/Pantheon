@@ -5,7 +5,6 @@ import {
   DomainError,
   id,
   requireThat,
-  type BoardPlan,
   type EffortLevel,
   type Principal,
   type Project,
@@ -41,13 +40,11 @@ import { confirmTermination } from './process.js';
 import type { WrittenState } from './non-writer-audit.js';
 import { closeReconciledSession } from './session.js';
 import { assertManagedLocation } from './protection.js';
-import { currentBinding, retiredBinding } from './board-plan.js';
-import { appendNote, contractLines } from './lead-inbox.js';
-import { wakeLead } from './task-tracking.js';
 import { notifySession } from './session-wake.js';
-import { REVIEW_MAX_ROUNDS, reopenReviewStep } from './merge-review.js';
 
 export const REVIEW_WALL_TIME_MS = 2 * 60 * 60 * 1000;
+/** The most code review rounds a reviewed session gets. */
+const REVIEW_MAX_ROUNDS = 3;
 export const reviewInstruction =
   'Review these changes against the task goal. Record each problem with review_finding; quote the diff exactly. End the review with one review_verdict call, pass or fail, with a summary of what you checked.';
 const rangeInstruction = `${reviewInstruction} Write each finding's location as path:line in the changed file. The checkout in your working directory may not be the reviewed head; changes.diff is the reviewed code.`;
@@ -60,33 +57,8 @@ function reviewTarget(ctx: ControlContext, principal: Principal, command: Comman
   const session = ctx.store.must<Session>('sessions', input.session_id);
   projectAccess(ctx, principal, session.project_id, command.type);
   revision(ctx, command);
-  let requester: Review['requester'];
-  let goal = sessionGoal(ctx, session);
-  if (principal.role !== 'user') {
-    requireThat(principal.role === 'lead', 'permission_denied', 'Owning lead required');
-    const plan = ctx.store.get<BoardPlan>('board_plans', principal.session_id!);
-    const task = session.task && plan?.tasks.find((task) => task.id === session.task!.id);
-    requireThat(
-      plan &&
-        plan.project_id === session.project_id &&
-        task &&
-        session.workspace_id &&
-        session.task &&
-        session.task.lead_session_id === principal.session_id &&
-        currentBinding(plan, session.task) &&
-        !retiredBinding(plan, session),
-      'permission_denied',
-      'Review target must be a worker of your current board plan',
-    );
-    requireCrossReview(ctx, session, input.runtimes);
-    requester = {
-      lead_session_id: plan.id,
-      task_id: task.id,
-      generation: session.task!.generation ?? 1,
-    };
-    goal = contractLines(task).join('\n');
-  }
-  return { input, session, requester, goal };
+  userOnly(principal);
+  return { input, session, goal: sessionGoal(ctx, session) };
 }
 
 /** The text the agent wrote after its last tool call in the turn. */
@@ -174,11 +146,10 @@ export function startSessionReview(
   const round =
     ctx.store.list<Review>('reviews').filter((review) => review.session_id === session.id).length +
     1;
-  const maxRounds = REVIEW_MAX_ROUNDS;
   requireThat(
-    round <= maxRounds,
+    round <= REVIEW_MAX_ROUNDS,
     'invalid_state',
-    `Code review limit reached: at most ${maxRounds} rounds per reviewed session (${session.id}).`,
+    `Code review limit reached: at most ${REVIEW_MAX_ROUNDS} rounds per reviewed session (${session.id}).`,
   );
   const { diff, range } = options.changes;
   return startReview(ctx, session.project_id, runtimes, {
@@ -203,17 +174,11 @@ export function prepareReviewRequest(
   return (async () => {
     const changes = await sessionChanges(ctx, session);
     return (ctx: ControlContext, principal: Principal, command: Command) => {
-      const { input, session, requester, goal } = reviewTarget(ctx, principal, command);
-      if (requester) {
-        const step = reopenReviewStep(ctx, session);
-        if (step) return step;
-        requireNoRunningReviewer(ctx, session, input.runtimes);
-      }
+      const { input, session, goal } = reviewTarget(ctx, principal, command);
       const review = startSessionReview(ctx, session, input.runtimes, {
         cause: command.command_id,
         goal,
         changes,
-        requester,
       });
       return { ...review, review_id: review.id };
     };
@@ -493,8 +458,10 @@ export function projectReviewMetrics(
             reviews: 0,
             reviews_without_findings: 0,
             findings: 0,
-            adopted: 0,
-            dismissed: 0,
+            fixed: 0,
+            intentional: 0,
+            not_worth_it: 0,
+            wrong: 0,
             unresolved: 0,
             invalid: 0,
           }),
@@ -509,8 +476,7 @@ export function projectReviewMetrics(
           continue;
         }
         valid++;
-        if (finding.resolution?.outcome === 'adopted') row.adopted++;
-        else if (finding.resolution?.outcome === 'dismissed') row.dismissed++;
+        if (finding.resolution) row[finding.resolution.outcome]++;
         else if (finding.status === 'open') row.unresolved++;
       }
       if (valid === 0) row.reviews_without_findings++;
@@ -914,7 +880,6 @@ export function settleReview(
     recovering ? { reason: 'daemon_restart' } : {},
   );
   ctx.store.enqueue('review.remove', { review_id: review.id });
-  notifyRequestingLead(ctx, next, turns);
   notifyRequestingSession(ctx, next, turns);
 }
 
@@ -979,40 +944,4 @@ function notifyRequestingSession(ctx: ControlContext, review: Review, turns: Ses
       : []),
   ];
   notifySession(ctx, review.notify_session_id, lines.join('\n'), '');
-}
-
-/** Durable review results return to the owning plan; a transfer routes them to its new lead. */
-function notifyRequestingLead(ctx: ControlContext, review: Review, turns: SessionTurn[]): void {
-  const requester = review.requester;
-  // The workflow engine settles its own review step, and a milestone verification its review.
-  if (!requester || requester.step_run_id || requester.milestone_id) return;
-  let lead = requester.lead_session_id;
-  const visited = new Set<string>();
-  const transfers = ctx.store.kindEvents(review.project_id, ['board.plan_transferred']);
-  while (!visited.has(lead)) {
-    visited.add(lead);
-    const moved = transfers.findLast((event) => (event.payload as { from?: string }).from === lead);
-    if (!moved) break;
-    lead = moved.aggregate_id;
-  }
-  const plan = ctx.store.get<BoardPlan>('board_plans', lead);
-  if (!plan || plan.project_id !== review.project_id) return;
-  const results = reviewResults(ctx, review, turns);
-  const lines = [
-    `Review ${review.id}: ${review.state}. Worker ${review.session_id}; task generation ${requester.generation}.`,
-    ...(review.range
-      ? [`Reviewed commits: ${review.range.from_sha}..${review.range.to_sha}.`]
-      : []),
-    ...results,
-    'This review covers the recorded commits only. Re-read current task and session state before deciding; request fixes with message_task. Review completion does not accept the task or merge it.',
-  ];
-  const next = appendNote(ctx, plan, {
-    at: ctx.store.now(),
-    session_id: review.session_id ?? '',
-    task_id: requester.task_id!,
-    generation: requester.generation,
-    kind: review.state === 'completed' ? 'review_completed' : 'review_failed',
-    text: lines.join('\n'),
-  });
-  wakeLead(ctx, next, '');
 }

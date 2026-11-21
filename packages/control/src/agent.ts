@@ -12,7 +12,6 @@ import type { ControlContext } from './context.js';
 import { inputSchemas, type VisualDrawingPayload } from '@pantheon/protocol';
 import { requestApproval, loseSessionApprovals, resolvePermission } from './approvals.js';
 import { markStaleFindings, recordFinding } from './review.js';
-import { noteCompactionThrash } from './lead-inbox.js';
 import { unsnooze } from './session.js';
 import { isRuntimeHeld } from './runtime-status.js';
 import { recapSession } from './session-recap.js';
@@ -277,8 +276,6 @@ export function agentEvent(ctx: ControlContext, sessionId: string, event: AgentE
     if (event.kind === 'session.exited' || event.kind === 'turn.completed')
       loseSessionApprovals(ctx, s.id);
     if (event.kind === 'turn.completed') markStaleFindings(ctx, s);
-    if (event.kind === 'context.compacted' && event.trigger !== 'manual')
-      noteCompactionThrash(ctx, s);
     if (event.kind === 'visual.drawing')
       ctx.store.event('visual.drawing', s, s.project_id, {
         tool_call_id: event.tool_call_id,

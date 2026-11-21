@@ -1,4 +1,11 @@
-import type { Entity, Session } from './index.js';
+import type { Entity } from './index.js';
+
+/** The board task a stored record was scoped to. */
+export interface MemoryTaskScope {
+  lead_session_id: string;
+  id: string;
+  generation?: number;
+}
 
 /** An immutable text version. Only lifecycle metadata changes; a replacement gets a new id. */
 export interface MemoryRecord extends Entity {
@@ -9,7 +16,7 @@ export interface MemoryRecord extends Entity {
   tags?: string[];
   references?: MemoryReference[];
   kind: 'decision' | 'report' | 'note';
-  task?: NonNullable<Session['task']>;
+  task?: MemoryTaskScope;
   state: 'draft' | 'active' | 'archived';
   authority: 'user' | 'agent_reported';
   author: string;

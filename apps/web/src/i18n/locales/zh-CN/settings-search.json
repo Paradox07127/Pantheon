@@ -62,7 +62,6 @@
   "settings.search.keywords.gate": "检查, 测试, 校验, 工作树, worktree",
   "settings.search.keywords.gateCommand": "脚本, 参数",
   "settings.search.keywords.gateTimeout": "秒, 时限",
-  "settings.search.keywords.autoMerge": "落回, 工作树, worktree",
   "settings.search.keywords.mcp": "工具, 模型上下文协议",
   "settings.search.keywords.plugins": "附加组件, 插件包",
   "settings.search.keywords.skills": "能力",

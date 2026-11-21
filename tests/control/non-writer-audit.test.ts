@@ -12,14 +12,7 @@ import {
 import os from 'node:os';
 import path from 'node:path';
 import { expect, it, onTestFinished, vi } from 'vitest';
-import type {
-  AgentEventSink,
-  BoardPlan,
-  Review,
-  Session,
-  SessionSpec,
-  SessionTurn,
-} from '@pantheon/domain';
+import type { AgentEventSink, Review, Session, SessionSpec, SessionTurn } from '@pantheon/domain';
 import { eventually, user } from '../helpers.js';
 import { gitFolderAsync, type ControlContext } from '../../packages/control/dist/context.js';
 import { finishWriteAudit, startWriteAudit } from '../../packages/control/dist/non-writer-audit.js';
@@ -45,7 +38,7 @@ function slowGit() {
 }
 
 async function auditingSession(
-  kind: 'plan' | 'text' | 'review' | 'read-only' | 'writer' = 'plan',
+  kind: 'plan' | 'text' | 'review' | 'writer' = 'plan',
   waived = false,
   runtime = 'fixture',
 ) {
@@ -132,33 +125,6 @@ async function auditingSession(
       input: 'Plan the change',
       permission_mode: kind === 'plan' ? 'plan' : 'ask',
     });
-    if (kind === 'read-only')
-      f.store.insert<BoardPlan>('board_plans', {
-        id: session.id,
-        revision: 1,
-        project_id: f.project.id,
-        plan_version: 1,
-        headline: 'A pending task',
-        lanes: [{ id: 'core', title: 'Core' }],
-        tasks: [
-          {
-            id: 'export',
-            title: 'Export',
-            goal: 'Build export',
-            lane: 'core',
-            depends_on: [],
-            source: ['Export requested'],
-            scope: ['answer.txt'],
-            acceptance: ['pnpm test'],
-          },
-        ],
-        pending_edits: [],
-        risks: [],
-        assumptions: [],
-        inbox: [],
-        notified: {},
-        updated_at: f.store.now(),
-      });
   }
   await eventually(
     () => turnId !== '',
@@ -226,7 +192,7 @@ async function auditingSession(
   };
 }
 
-it.each(['plan', 'text', 'read-only'] as const)(
+it.each(['plan', 'text'] as const)(
   'flags a %s session that silently changes a tracked file',
   async (kind) => {
     const f = await auditingSession(kind);

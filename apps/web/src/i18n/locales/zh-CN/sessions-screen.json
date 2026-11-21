@@ -71,8 +71,6 @@
   "sessions.screen.tabChecks": "检查",
   "sessions.screen.changeScope": "改动范围",
   "sessions.screen.filesTotal": "{count, plural, other {文件 #}}",
-  "sessions.screen.adopt": "采纳",
-  "sessions.screen.dismiss": "忽略",
   "sessions.screen.attachFinding": "附加：{impact}",
   "sessions.screen.attach": "附加",
   "sessions.screen.commentAuthor": "你",
@@ -240,10 +238,5 @@
   "sessions.thread.mcpStartFailed": "MCP 服务器 {name} 没有启动",
   "sessions.thread.interrupted": "已打断",
   "sessions.thread.interruptedKept": "已保留改动",
-  "sessions.thread.failed": "出错",
-  "sessions.thread.chapter": "第 {chapter} 章开始",
-  "sessions.thread.handoffChanges": "交接变化",
-  "sessions.thread.handoffNote": "交接笔记",
-  "sessions.thread.handoffDiff": "交接笔记的变化",
-  "sessions.thread.handoffClose": "关闭"
+  "sessions.thread.failed": "出错"
 }

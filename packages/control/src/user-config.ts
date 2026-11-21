@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import path from 'node:path';
 import { DomainError, requireThat, type Project, type SessionDefaults } from '@pantheon/domain';
 import {
+  RETIRED_POLICY_SETTINGS,
   userConfigSchema,
   type BackendProfile,
   type BackendSummary,
@@ -50,9 +51,12 @@ export type ProjectDefaults = NonNullable<UserConfig['project_defaults']>;
 /** The values every project follows where it has none of its own. */
 export function projectDefaults(dir: string | undefined): ProjectDefaults {
   const defaults = readUserConfig(dir).project_defaults ?? {};
-  if (defaults.workflow_policy?.improvement_mode === undefined) return defaults;
-  // No longer used; a stored value is ignored.
-  const { improvement_mode: _unused, ...workflow_policy } = defaults.workflow_policy;
+  if (!defaults.workflow_policy) return defaults;
+  const workflow_policy = Object.fromEntries(
+    Object.entries(defaults.workflow_policy).filter(
+      ([key]) => !(RETIRED_POLICY_SETTINGS as readonly string[]).includes(key),
+    ),
+  );
   return { ...defaults, workflow_policy };
 }
 
@@ -70,10 +74,6 @@ export function usageTargets(
   project: Project,
 ): Record<string, number> {
   return { ...projectDefaults(ctx.userConfigDir).usage_targets, ...project.usage_targets };
-}
-
-export function autoMerge(ctx: Pick<ControlContext, 'userConfigDir'>, project: Project): boolean {
-  return project.auto_merge ?? projectDefaults(ctx.userConfigDir).auto_merge ?? false;
 }
 
 export function externalEvents(

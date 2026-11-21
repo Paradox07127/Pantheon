@@ -685,9 +685,15 @@ it('extends a session credential on each use and lets an unused one expire', () 
   let now = 1800000000000;
   const auth = new AuthRegistry('user-credential', () => now);
   const session = (id: string) =>
-    ({ id, project_id: 'project', state: 'open', workspace_id: 'workspace' }) as Session;
-  const used = `Bearer ${auth.issueSession(session('long-running'), 'lead')}`;
-  const unused = `Bearer ${auth.issueSession(session('idle'), 'lead')}`;
+    ({
+      id,
+      project_id: 'project',
+      state: 'open',
+      workspace_id: 'workspace',
+      conductor: true,
+    }) as Session;
+  const used = `Bearer ${auth.issueSession(session('long-running'), 'conductor')}`;
+  const unused = `Bearer ${auth.issueSession(session('idle'), 'conductor')}`;
   now += 23 * hour;
   expect(auth.authenticate(used)).toMatchObject({ session_id: 'long-running' });
   now += 23 * hour;

@@ -241,7 +241,6 @@ export function baselineConfirmRequest(baseline: ProjectBaseline, draft: Baselin
       ...(gates.length > 0 && { gates }),
       answers: baselineAnswers(baseline.result?.questions ?? [], draft.answers),
       ...(extensions.length > 0 && { extensions }),
-      plan_board: true,
     },
     expected_revision: baseline.revision,
   };

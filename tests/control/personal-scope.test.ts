@@ -69,7 +69,7 @@ describe('a personal principal at the command entry and the project check', () =
 
 type Workbench = Awaited<ReturnType<typeof workbenchFixture>>;
 
-/** Two projects, each with an idle session, a pending approval and a decision a lead made for the user. */
+/** Two projects, each with an idle session, a pending approval and a decision a stored rule made for the user. */
 async function twoProjects() {
   const f = await workbenchFixture();
   const other = f.store.insert<Project>('projects', {
@@ -108,12 +108,20 @@ async function twoProjects() {
       state: 'pending',
       created_at: f.store.now(),
     });
-    f.store.event('charter.power_used', session, session.project_id, {
-      power: 'merge_out_of_scope',
-      mode: 'on',
-      subject: 'Merge a change outside the task scope',
+    const byRule = f.store.insert<Approval>('approvals', {
+      id: `approval-by-rule-${session.project_id}`,
+      revision: 1,
+      project_id: session.project_id,
       session_id: session.id,
+      kind: 'permission',
+      tool: 'Read',
+      input_hash: 'read-input',
+      decider: 'user',
+      state: 'approved',
+      answered_by_rule: 'Read',
+      created_at: f.store.now(),
     });
+    f.store.event('approval.approved', byRule, session.project_id, { answered_by_rule: 'Read' });
   }
   return { f, ids: [f.project.id, other.id].sort() };
 }

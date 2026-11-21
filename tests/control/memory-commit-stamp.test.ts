@@ -1,15 +1,21 @@
 import { mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { expect, it } from 'vitest';
-import type { MemoryRecord, Principal } from '@pantheon/domain';
+import type { MemoryRecord, Principal, Session } from '@pantheon/domain';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
 async function setup() {
   const f = await workbenchFixture();
-  const s = await f.create();
+  // A project setup session carries the planner credential, whose tools include memory.
+  const s = await f.call<Promise<Session>>('session.create', {
+    project_id: f.project.id,
+    runtime: f.adapter.name,
+    input: 'Set up the project',
+    purpose: 'project_setup',
+  });
   const agent: Principal = {
     id: 'agent',
-    role: 'lead',
+    role: 'planner',
     session_id: s.id,
     project_id: f.project.id,
     expires_at: f.store.now() + 60_000,

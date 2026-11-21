@@ -101,6 +101,7 @@ import { browserRoots, scanBrowsers } from './browsers.js';
 import { visualHosts, VisualPages } from './visual.js';
 import { AppPages } from './mcp-app.js';
 import { shellPath } from './shell-env.js';
+import { installCli } from './cli-install.js';
 import { readVoiceLocale, VoiceRecognizer, type VoiceEvent } from './voice.js';
 import {
   chooseTerminal,
@@ -2100,6 +2101,27 @@ ipcMain.on('pantheon:locale', (event) => {
   event.returnValue = localeState();
 });
 
+/** Writes the `pantheon` launcher and says where it went, or why the user must act. */
+const installCliFromMenu = async (): Promise<void> => {
+  const text = menuText();
+  const PATH = await shellPath(path.join(app.getPath('userData'), 'shell-env.json'));
+  let result;
+  try {
+    result = installCli(resources!, os.homedir(), PATH);
+  } catch (error) {
+    await dialog.showMessageBox({ type: 'error', message: text.cliFailed, detail: String(error) });
+    return;
+  }
+  await dialog.showMessageBox(
+    result.status === 'occupied'
+      ? { type: 'warning', message: text.cliOccupied(result.file) }
+      : {
+          type: 'info',
+          message: text.cliInstalled(result.file),
+          ...(result.pathLine && { detail: `${text.cliAddToPath}\n\n${result.pathLine}` }),
+        },
+  );
+};
 // The renderer sends the keys the user gave the menu's items each time it loads.
 let menuAccelerators: Partial<Record<MenuAction, string>> = {};
 /** Builds the application menu in the saved language. */
@@ -2115,6 +2137,7 @@ const applyMenu = (): void => {
         zoom: zoomFromMenu,
         newWindow,
         openLogs: () => shell.showItemInFolder(path.dirname(logFile)),
+        ...(resources && process.platform !== 'win32' && { installCli: installCliFromMenu }),
         about: () => app.showAboutPanel(),
         mini: miniItem(),
         accelerators: menuAccelerators,

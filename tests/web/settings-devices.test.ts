@@ -52,7 +52,7 @@ const thisMachine: DeviceListItem = {
   load_1m: 2.41,
   runtimes: {},
   tools: { git: 'git version 2.50.1 (Apple Git-155)' },
-  load: { sessions: 2, uses: {}, active_sessions: [] },
+  load: { active_sessions: [] },
 };
 const studioConfig = {
   ssh: 'devbox.local',
@@ -82,7 +82,7 @@ const studio: DeviceListItem = {
   },
   tools: { node: 'v24.3.0' },
   config: studioConfig,
-  load: { sessions: 1, uses: { simulator: 1 }, active_sessions: [] },
+  load: { active_sessions: [] },
 };
 const unreachable: DeviceListItem = {
   id: 'pi5',
@@ -97,7 +97,7 @@ const unreachable: DeviceListItem = {
   runtimes: {},
   tools: {},
   config: { ssh: 'pi5.lan' },
-  load: { sessions: 0, uses: {}, active_sessions: [] },
+  load: { active_sessions: [] },
 };
 const runtime = (name: string): RuntimeStatus => ({
   runtime: name,
@@ -325,45 +325,35 @@ describe('device details', () => {
     ).toEqual([BACK, zhf('settings.devices.testOf', { name: zh('settings.devices.thisMac') })]);
   });
 
-  it('names the session count and the load figure of a device', async () => {
+  it('names the load figure of a device', async () => {
     const h = await page();
     const local = await open(h, zh('settings.devices.thisMac'));
-    expect(text(local)).toContain(zhf('settings.devices.sessions', { count: 2 }));
     const meter = labelled(local, zhf('settings.devices.loadOf', { percent: 20, load: '2.41' }));
     expect(meter.props.role).toBe('img');
-    button(local, BACK).props.onClick();
-    await h.flush();
-    const remote = await open(h, 'studio');
-    expect(text(remote)).toContain(zhf('settings.devices.sessionsOf', { count: 1, max: 2 }));
   });
 
-  it('names the sessions that hold a resource, and only the count where they are unknown', async () => {
+  it('shows the total of each resource without the sessions that hold it', async () => {
     const started = new Date(Date.now() - 5 * 60_000).toISOString();
     bridge.answers['device.list'] = [
       thisMachine,
       {
         ...studio,
         load: {
-          sessions: 1,
-          uses: { simulator: 1 },
           active_sessions: [
             { id: 'refunds', title: 'Refund list', runtime: 'codex', started_at: started },
           ],
-          resource_sessions: { simulator: ['refunds'] },
         },
       },
     ];
     const h = await page();
     const studioPanel = await open(h, 'studio');
-    expect(text(studioPanel)).toContain(
-      zhf('settings.devices.usedBy', {
-        sessions: zhf('settings.devices.quoted', { title: 'Refund list' }),
-      }),
-    );
+    expect(text(studioPanel)).toContain('simulator');
+    expect(text(studioPanel)).not.toContain('1 / 2');
     button(studioPanel, BACK).props.onClick();
     await h.flush();
     const localPanel = await open(h, zh('settings.devices.thisMac'));
-    expect(text(localPanel)).toContain('0 / 1');
+    expect(text(localPanel)).toContain('display');
+    expect(text(localPanel)).not.toContain('0 / 1');
   });
 
   it('lists the open sessions of a device and opens one in its project', async () => {
@@ -384,8 +374,6 @@ describe('device details', () => {
       {
         ...studio,
         load: {
-          sessions: 2,
-          uses: {},
           active_sessions: [
             { id: 'refunds', title: 'Refund list', runtime: 'codex', started_at: started },
             { id: 'elsewhere', title: 'Signature review', runtime: 'claude', started_at: started },

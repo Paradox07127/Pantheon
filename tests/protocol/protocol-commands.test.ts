@@ -20,11 +20,6 @@ it('defines a strict input schema for each unimplemented command and the queries
     expect(inputSchemas[type].safeParse({ ...input, extra: 1 }).success, type).toBe(false);
   }
   expect(Object.keys(querySchemas).sort()).toEqual([
-    'agent.ledger',
-    'agent.list',
-    'agent.routines',
-    'agent.templates',
-    'agent.wakes',
     'app.settings',
     'backend.list',
     'change_story.diff',
@@ -93,8 +88,6 @@ it('defines a strict input schema for each unimplemented command and the queries
     'session.trace',
     'session.turn_diff',
     'symbols.search',
-    'task.thread',
-    'task.trace',
     'tool.calls',
     'trace.time',
     'workflow.policy',
@@ -133,12 +126,13 @@ it('rejects a defined but unimplemented command with unsupported_command and kee
   }
 });
 
-it('gives a conductor session exactly four tools with strict inputs', () => {
+it('gives a conductor session exactly five tools with strict inputs', () => {
   expect(sessionTools.conductor).toEqual({
     request_review: 'conductor.review',
     report_ready: 'conductor.ready',
     spawn_session: 'conductor.spawn',
     read_state: 'conductor.state',
+    draw: 'visual.draw',
   });
   const cases: [CommandType, Record<string, unknown>, Record<string, unknown>[]][] = [
     [

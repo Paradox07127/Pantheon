@@ -90,20 +90,12 @@ it('keeps pushing the native title for sessions the runtime does not name', asyn
   const conversation = await f.create('Fix the importer');
   await awaitWorkspaceReady(f.control, conversation.workspace_id!);
   expect(workbenchSessionSpec(f.ctx, conversation)).toMatchObject({ auto_title: true });
-  // A lead the board opened is titled by the board, and its first message is an instruction.
-  const lead = await f.create('Plan the work the sync found');
-  const [first] = f.turns(lead.id) as SessionTurn[];
+  // A session whose first message did not come from the user is an instruction, not a topic.
+  const synced = await f.create('Plan the work the sync found');
+  const [first] = f.turns(synced.id) as SessionTurn[];
   f.store.update<SessionTurn>('session_turns', { ...first!, origin: 'sync' }, first!.revision);
-  const task = await f.create('Work on a planned task');
-  const assigned = f.store.update<Session>(
-    'sessions',
-    { ...task, task: { lead_session_id: lead.id, id: 'task-1' } },
-    task.revision,
-  );
-  for (const session of [lead, assigned]) {
-    await awaitWorkspaceReady(f.control, session.workspace_id!);
-    const spec = workbenchSessionSpec(f.ctx, f.store.must<Session>('sessions', session.id));
-    expect(spec).not.toHaveProperty('auto_title');
-    expect(spec.native_title).toBe('Workbench project · Project conversation');
-  }
+  await awaitWorkspaceReady(f.control, synced.workspace_id!);
+  const spec = workbenchSessionSpec(f.ctx, f.store.must<Session>('sessions', synced.id));
+  expect(spec).not.toHaveProperty('auto_title');
+  expect(spec.native_title).toBe('Workbench project · Project conversation');
 });

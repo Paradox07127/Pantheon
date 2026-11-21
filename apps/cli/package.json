@@ -3,6 +3,9 @@
   "version": "0.1.0-dev.20261116",
   "private": true,
   "type": "module",
+  "bin": {
+    "pantheon": "./dist/index.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

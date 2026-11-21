@@ -80,7 +80,6 @@ export function projectsSummary(
                 ),
                 longest_wait_ms:
                   ctx.store.now() - Math.min(...needs.map((item) => item.created_at)),
-                blocked_tasks: needs.reduce((sum, item) => sum + item.blocks, 0),
               },
             }
           : {}),

@@ -140,12 +140,12 @@ const pressWindow = (key: string, target: object = { tagName: 'BODY' }) => {
 };
 
 describe('session list keys', () => {
-  it('lists a session that carries a resident field as a plain row the keys step to', () => {
+  it('lists a session stored with a field the list no longer reads as a plain row the keys step to', () => {
     const h = mount([
       session('a', { last_activity_at: '2026-11-13T10:30:00.000Z' }),
       session('b', {
         last_activity_at: '2026-11-13T10:20:00.000Z',
-        resident: { kind: 'assistant' },
+        ...({ resident: { kind: 'assistant' } } as object),
       }),
     ]);
     expect(rowsOf(h).map((r) => r.props.session.id)).toEqual(['a', 'b']);

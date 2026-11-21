@@ -111,7 +111,6 @@ const settingsWith = (
   ...(quiet_hours && { quiet_hours }),
   baseline_rounds: 5,
   baseline_visuals: true,
-  personal_answers: [],
 });
 
 let notify: ReturnType<typeof vi.fn>;

@@ -2,7 +2,6 @@ import { expect, it, vi } from 'vitest';
 import { FixtureAdapter } from '@pantheon/adapters';
 import type {
   AgentEventSink,
-  BoardPlan,
   CancelReceipt,
   DeliveryReceipt,
   HarnessAdapter,
@@ -13,7 +12,6 @@ import type {
   UserTurn,
 } from '@pantheon/domain';
 import type { ControlContext } from '../../packages/control/dist/context.js';
-import { appendNote } from '../../packages/control/dist/lead-inbox.js';
 import { eventually, fixture } from '../helpers.js';
 
 function controlledAdapter() {
@@ -116,40 +114,6 @@ function send(
 const contextOf = (f: Awaited<ReturnType<typeof fixture>>) =>
   (f.control as unknown as { ctx: ControlContext }).ctx;
 
-/** A lead session with a plan whose inbox holds one worker report. */
-function leadWithReport(f: Awaited<ReturnType<typeof fixture>>) {
-  const lead = open(f),
-    ctx = contextOf(f);
-  const plan = f.store.insert<BoardPlan>('board_plans', {
-    id: lead.id,
-    revision: 1,
-    project_id: f.project.id,
-    headline: 'Plan the export feature',
-    lanes: [],
-    tasks: [],
-    plan_version: 1,
-    pending_edits: [],
-    risks: [],
-    assumptions: [],
-    inbox: [],
-    notified: {},
-    updated_at: f.store.now(),
-  });
-  ctx.store.transaction(() =>
-    appendNote(ctx, plan, {
-      at: f.store.now(),
-      session_id: 'worker-session',
-      task_id: 'a',
-      kind: 'risk',
-      text: 'The export format may change',
-    }),
-  );
-  return lead;
-}
-
-const inbox = (f: Awaited<ReturnType<typeof fixture>>, leadId: string) =>
-  f.store.must<BoardPlan>('board_plans', leadId).inbox.map((note) => note.text);
-
 it('starts no queued session and keeps their inputs pending once shutdown begins', async () => {
   const stub = controlledAdapter(),
     f = await fixture({ adapter: stub.adapter });
@@ -185,45 +149,6 @@ it('starts no queued session and keeps their inputs pending once shutdown begins
     ]);
   } finally {
     release();
-    await f.close();
-  }
-});
-
-it('gives the lead back the notes of a message the runtime refused', async () => {
-  const stub = controlledAdapter(),
-    f = await fixture({ adapter: stub.adapter });
-  stub.send.mockImplementation(async (_handle, turn) => ({
-    turn_id: turn.turn_id,
-    status: 'unsupported',
-    reason: 'Input was refused',
-  }));
-  try {
-    const lead = leadWithReport(f);
-    const turn = send(f, lead, 'How is the export going?');
-    expect(turn.lead_note_ids).toHaveLength(1);
-    expect(inbox(f, lead.id)).toEqual([]);
-    await f.control.tick();
-    await eventually(() => f.store.must<SessionTurn>('session_turns', turn.id).state === 'failed');
-    expect(inbox(f, lead.id)).toEqual(['The export format may change']);
-  } finally {
-    await f.close();
-  }
-});
-
-it('gives the lead back the notes of a message whose process never started', async () => {
-  const stub = controlledAdapter(),
-    f = await fixture({ adapter: stub.adapter });
-  stub.start.mockRejectedValue(new Error('Runtime failed to start'));
-  try {
-    const lead = leadWithReport(f);
-    const turn = send(f, lead, 'How is the export going?');
-    await f.control.tick();
-    expect(f.store.must<SessionTurn>('session_turns', turn.id)).toMatchObject({
-      state: 'failed',
-      delivery: 'failed',
-    });
-    expect(inbox(f, lead.id)).toEqual(['The export format may change']);
-  } finally {
     await f.close();
   }
 });

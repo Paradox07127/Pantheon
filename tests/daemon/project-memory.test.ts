@@ -57,7 +57,7 @@ it('runs HTTP decisions through real MCP child processes, two adapter sessions, 
         project_id: project.id,
         runtime: 'fixture',
         input: 'Read current project memory',
-        purpose: 'lead',
+        purpose: 'project_setup',
       });
       sessions.push(s);
       await eventually(
@@ -68,7 +68,7 @@ it('runs HTTP decisions through real MCP child processes, two adapter sessions, 
       );
       const token = f.daemon.auth.issueSession(
         f.daemon.store.must<Session>('sessions', s.id),
-        'lead',
+        'planner',
       );
       const tokenFile = path.join(root, `mcp-token-${n}`);
       writeFileSync(tokenFile, token, { mode: 0o600 });

@@ -2,15 +2,13 @@ import { expect, it } from 'vitest';
 import type { Session } from '@pantheon/domain';
 import { coordinationTools, sessionTools } from '@pantheon/protocol';
 import { baselineSkill } from '../../packages/control/src/baseline-skill.js';
-import type { ControlContext } from '../../packages/control/src/context.js';
 import { purposeSessionInstructions } from '../../packages/control/src/context.js';
 import {
   MEMORY_INSTRUCTIONS,
   MEMORY_READ_INSTRUCTIONS,
 } from '../../packages/control/src/memory.js';
 import { projectSetupSkill } from '../../packages/control/src/project-setup-skill.js';
-import { LEAD_INSTRUCTIONS } from '../../packages/control/src/agent-prompts.js';
-import { workerInstructions } from '../../packages/control/src/workbench-session.js';
+import { CONDUCTOR_INSTRUCTIONS } from '../../packages/control/src/conductor.js';
 
 const known = new Set([
   ...Object.values(sessionTools).flatMap((tools) => Object.keys(tools)),
@@ -28,15 +26,11 @@ const LIST = new RegExp(
 const toolNames = (text: string) =>
   [...text.matchAll(LIST)].flatMap((match) => match[1]!.split(/,\s*|\s+and\s+|\s+or\s+/));
 
-const ctx = { store: { get: () => undefined } } as unknown as ControlContext;
-const task = { lead_session_id: 'lead-1', id: 'task-1' } as NonNullable<Session['task']>;
 const purpose = (tag: Partial<Session>) => purposeSessionInstructions(tag as Session, baseline)!;
 const baseline = { rounds: 3, visuals: true };
 
 const injected: Record<string, string> = {
-  lead: LEAD_INSTRUCTIONS,
-  'worker with a question tool': workerInstructions(ctx, task, 'AskUserQuestion'),
-  'worker without a question tool': workerInstructions(ctx, task, undefined),
+  conductor: CONDUCTOR_INSTRUCTIONS,
   'baseline with visuals': baselineSkill({ rounds: 3, visuals: true }),
   'baseline without visuals': baselineSkill({ rounds: 3, visuals: false }),
   intro: purpose({ intro: {} as Session['intro'] }),
@@ -58,8 +52,6 @@ it('finds the tool names the instructions call', () => {
   const names = Object.values(injected).flatMap(toolNames);
   for (const name of [
     'project_read',
-    'ask_user',
-    'request_review',
     'memory_propose',
     'project_baseline_submit',
     'review_finding',

@@ -48,6 +48,12 @@ import {
   sessionStory,
   worktreeReason,
 } from './model';
+import {
+  FINDING_OUTCOMES,
+  findingOutcomeLabel,
+  findingOutcomeName,
+  type FindingOutcome,
+} from './inspector-model';
 import { commentSent } from './compose';
 import { GateResults } from './GateResults';
 import { DiscardDialog } from './parts';
@@ -730,7 +736,7 @@ export function ReviewTab(props: {
     } else setError(failureText(result.error));
   }
 
-  async function resolve(finding: ReviewFinding, outcome: 'adopted' | 'dismissed') {
+  async function resolve(finding: ReviewFinding, outcome: FindingOutcome) {
     const review = reviews?.find((r) => r.id === finding.review_id);
     if (holding || !review || props.reviews.stale) return;
     setResolving(true);
@@ -821,36 +827,18 @@ export function ReviewTab(props: {
                   <p className="ss-rve">{finding.evidence}</p>
                   {open && (
                     <div className="ss-rva">
-                      <button
-                        type="button"
-                        className="btn"
-                        aria-label={t(
-                          {
-                            id: 'sessions.panel.review.adoptLabel',
-                            defaultMessage: 'Adopt: {impact}',
-                          },
-                          { impact: finding.impact },
-                        )}
-                        disabled={holding}
-                        onClick={() => void resolve(finding, 'adopted')}
-                      >
-                        {t({ id: 'sessions.panel.review.adopt', defaultMessage: 'Adopt' })}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn"
-                        aria-label={t(
-                          {
-                            id: 'sessions.panel.review.dismissLabel',
-                            defaultMessage: 'Dismiss: {impact}',
-                          },
-                          { impact: finding.impact },
-                        )}
-                        disabled={holding}
-                        onClick={() => void resolve(finding, 'dismissed')}
-                      >
-                        {t({ id: 'sessions.panel.review.dismiss', defaultMessage: 'Dismiss' })}
-                      </button>
+                      {FINDING_OUTCOMES.map((outcome) => (
+                        <button
+                          key={outcome}
+                          type="button"
+                          className="btn"
+                          aria-label={findingOutcomeLabel(finding, outcome)}
+                          disabled={holding}
+                          onClick={() => void resolve(finding, outcome)}
+                        >
+                          {findingOutcomeName(outcome)}
+                        </button>
+                      ))}
                       <button
                         type="button"
                         className="btn"

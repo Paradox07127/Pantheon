@@ -50,20 +50,20 @@ pnpm build && pnpm exec vitest run tests/control/<文件>.test.ts
 
 新测试放进 `tests/<区域>/`。共用的 helper 在 `tests/helpers.ts`,用 `../helpers.js` 引入。
 
-| 目录                | 内容                                       |
-| ------------------- | ------------------------------------------ |
-| `tests/adapters/`   | 运行时适配器，含一个假的 ACP agent         |
-| `tests/cli/`        | CLI 的 MCP 工具                            |
-| `tests/control/`    | 控制逻辑：会话、worktree、门禁、看板、记忆 |
-| `tests/daemon/`     | HTTP 和 WebSocket 服务                     |
-| `tests/desktop/`    | Electron 壳和打包脚本                      |
-| `tests/protocol/`   | schema 和生成的接口表                      |
-| `tests/store/`      | SQLite 存储和迁移                          |
-| `tests/web/`        | Web 界面，含 i18n catalog 守卫             |
-| `tests/scripts/`    | 脚本的单元测试                             |
-| `tests/acceptance/` | 产品验收 driver、场景、fixture 和库        |
-| `tests/eval/`       | 评测运行器和冻结任务                       |
-| `tests/fixtures/`   | 测试读的固定数据                           |
+| 目录                | 内容                                 |
+| ------------------- | ------------------------------------ |
+| `tests/adapters/`   | 运行时适配器，含一个假的 ACP agent   |
+| `tests/cli/`        | CLI 的 MCP 工具                      |
+| `tests/control/`    | 控制逻辑：会话、worktree、门禁、记忆 |
+| `tests/daemon/`     | HTTP 和 WebSocket 服务               |
+| `tests/desktop/`    | Electron 壳和打包脚本                |
+| `tests/protocol/`   | schema 和生成的接口表                |
+| `tests/store/`      | SQLite 存储和迁移                    |
+| `tests/web/`        | Web 界面，含 i18n catalog 守卫       |
+| `tests/scripts/`    | 脚本的单元测试                       |
+| `tests/acceptance/` | 产品验收 driver、场景、fixture 和库  |
+| `tests/eval/`       | 评测运行器和冻结任务                 |
+| `tests/fixtures/`   | 测试读的固定数据                     |
 
 ## 运行
 

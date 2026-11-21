@@ -2,7 +2,7 @@ import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, it, vi } from 'vitest';
 import { FixtureAdapter } from '@pantheon/adapters';
-import type { BoardPlan, Project, Session, Workspace } from '@pantheon/domain';
+import type { Project, Session, Workspace } from '@pantheon/domain';
 import { awaitWorkspaceReady, eventually, user, waitOutStatusReuse } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
@@ -157,7 +157,7 @@ it('lists branch and divergence against the source branch and omits git facts wi
     expect(noWorktree).not.toHaveProperty(field);
 });
 
-it('lists a bounded first-input goal and device and uses the task goal for task sessions', async () => {
+it('lists a bounded first-input goal and device and keeps it after a later input', async () => {
   const f = await workbenchFixture();
   const text = 'Build the report. '.repeat(20);
   const lead = await f.create(text);
@@ -175,42 +175,6 @@ it('lists a bounded first-input goal and device and uses the task goal for task 
     f.store.must<Session>('sessions', lead.id).revision,
   );
   await settle(f, lead);
-  const plan: BoardPlan = {
-    id: lead.id,
-    revision: 1,
-    project_id: f.project.id,
-    headline: 'Reports',
-    lanes: [{ id: 'reports', title: 'Reports' }],
-    tasks: [
-      {
-        id: 'export',
-        title: 'Export',
-        goal: 'Download reports',
-        lane: 'reports',
-        depends_on: [],
-        source: [text],
-        scope: ['src'],
-        acceptance: ['pnpm test'],
-      },
-    ],
-    risks: [],
-    assumptions: [],
-    plan_version: 0,
-    pending_edits: [],
-    inbox: [],
-    notified: {},
-    updated_at: f.store.now(),
-  };
-  f.store.insert('board_plans', plan);
-  const worker = await f.call<Session>('session.create', {
-    project_id: f.project.id,
-    runtime: f.adapter.name,
-    task_id: `${lead.id}:export`,
-    input: 'Do it',
-  });
-  expect(f.list().find((row) => row.id === worker.id)).toMatchObject({
-    goal: { text: 'Download reports' },
-  });
   expect(f.list().find((row) => row.id === lead.id)).toMatchObject({
     goal: { text: text.slice(0, 200) },
   });

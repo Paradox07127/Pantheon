@@ -18,10 +18,7 @@ import { startWorkspaceProvisioning } from './provisioning.js';
 import { tickChangeStories } from './change-story.js';
 import { tickProjectBaselines } from './baseline.js';
 import { tickSessions } from './session-tick.js';
-import { tickTaskTracking } from './task-tracking.js';
 import { tickSessionStalls } from './session-stall.js';
-import { readDispatchOpenings } from './task-dispatch.js';
-import { forgetRetrospectiveScan, recordRetrospectives } from './retrospective.js';
 
 export async function tick(ctx: ControlContext): Promise<void> {
   if (ctx.busy || ctx.closing) return;
@@ -32,21 +29,10 @@ export async function tick(ctx: ControlContext): Promise<void> {
     await autoMergesRead(ctx);
     ctx.store.transaction(() => tickProjectBaselines(ctx));
     ctx.store.transaction(() => tickChangeStories(ctx));
-    // The dispatch in the tracker's transaction opens sessions from these start points; awaited
-    // only when there is git to read, so a tick with nothing to read does not yield here.
-    const openings = readDispatchOpenings(ctx);
-    if (openings) await openings;
-    try {
-      rollbackTransaction(ctx, () => {
-        tickSessions(ctx);
-        tickTaskTracking(ctx);
-        tickSessionStalls(ctx);
-        recordRetrospectives(ctx);
-      });
-    } catch (error) {
-      forgetRetrospectiveScan(ctx);
-      throw error;
-    }
+    rollbackTransaction(ctx, () => {
+      tickSessions(ctx);
+      tickSessionStalls(ctx);
+    });
     for (const out of ctx.store.pending()) {
       // Shutdown began while an earlier job awaited; the rest stay pending for the next daemon.
       if (ctx.closing) break;
@@ -72,6 +58,8 @@ export async function tick(ctx: ControlContext): Promise<void> {
         await removeWorkspace(ctx, payload.workspace_id!, out.id);
       else if (out.kind === 'review.remove')
         removeReviewDirectories(ctx, payload.review_id!, out.id);
+      // A kind no handler takes any more would stay pending for good; the loop below sends permission.answer.
+      else if (out.kind !== 'permission.answer') ctx.store.mark(out.id, 'done');
     }
     fireDueTimers(ctx);
     tickMemory(ctx);

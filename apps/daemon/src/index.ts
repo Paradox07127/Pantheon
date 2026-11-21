@@ -32,7 +32,6 @@ import {
   type ProcessIdentity,
   type Session,
   type Role,
-  type Workspace,
 } from '@pantheon/domain';
 import {
   PROTOCOL_VERSION,
@@ -98,9 +97,9 @@ export class AuthRegistry {
     for (const [key, principal] of this.tokens)
       if (principal.id === principalId) this.tokens.delete(key);
   }
-  issueSession(session: Session, role: Role, workspaceKind?: Workspace['kind']): string {
+  issueSession(session: Session, role: Role): string {
     requireThat(
-      role === credentialRole(session, workspaceKind) && session.state !== 'closed',
+      role === credentialRole(session) && session.state !== 'closed',
       'permission_denied',
       'Active session required',
     );
@@ -383,12 +382,9 @@ export async function startDaemon(options: DaemonOptions) {
         issueSessionCredential: (sessionId, role) => {
           requireThat(daemonUrl, 'daemon_unavailable', 'Daemon address is not ready');
           const session = openedStore.must<Session>('sessions', sessionId);
-          const kind = session.workspace_id
-            ? openedStore.get<Workspace>('workspaces', session.workspace_id)?.kind
-            : undefined;
           const tokenFile = path.join(sessionTokens, sessionId),
             partial = `${tokenFile}.${randomBytes(6).toString('hex')}.tmp`;
-          writeFileSync(partial, registry.issueSession(session, role, kind), {
+          writeFileSync(partial, registry.issueSession(session, role), {
             mode: 0o600,
             flag: 'wx',
           });
@@ -600,14 +596,7 @@ export async function startDaemon(options: DaemonOptions) {
       'memory.document': (p, i) => control.memoryDocument(p, i.project_id),
       'project.read': (p, i) => control.projectRead(p, i.project_id),
       'project.usage.read': (p, i) => control.projectUsageRead(p, i.project_id),
-      'agent.list': (p, i) => control.agentList(p, i.project_id),
-      'agent.templates': (p) => control.agentTemplates(p),
-      'agent.wakes': (p, i) => control.agentWakes(p, i.agent_id, i.limit, i.routine_id),
-      'agent.ledger': (p, i) => control.agentLedger(p, i.agent_id, i.weeks),
-      'agent.routines': (p, i) => control.agentRoutines(p, i.project_id),
       'workflow.policy': (p, i) => control.workflowPolicy(p, i.project_id),
-      'task.trace': (p, i) => control.taskTrace(p, i.project_id, i.lead_session_id, i.task_id),
-      'task.thread': (p, i) => control.taskThread(p, i.project_id, i.lead_session_id, i.task_id),
       'project.review.metrics': (p, i) => control.projectReviewMetrics(p, i.project_id),
       'project.intro.read': (p, i) => control.projectIntroRead(p, i.project_id),
       'project.baseline.read': (p, i) => control.projectBaselineRead(p, i.project_id),

@@ -20,7 +20,7 @@
 Pantheon is a local workbench for native coding-agent sessions.
 Each session is a native Claude Code, Codex or ACP agent (grok, agy) session.
 A new session changes the project folder on its current branch.
-A session gets its own git worktree when another session already writes in the folder, when you pick a start point, or when a lead or a resident agent dispatches it as a worker.
+A session gets its own git worktree when another session already writes in the folder, when you pick a start point, or when a session with Pantheon tools starts it.
 When the work is done, the project gate runs. Then Pantheon commits the changes on the current branch, or merges the commits of the worktree into the source repository.
 You can also import a session that you started outside Pantheon. An imported session continues in its original folder.
 
@@ -34,9 +34,8 @@ You can also import a session that you started outside Pantheon. An imported ses
 - **Sessions.** Start a native session in a new worktree or in the current folder. Send messages, approve tool calls, interrupt, fork and roll back.
 - **Project gate.** Pantheon rebases the session, runs the gate commands of the project and merges with `git merge --ff-only`.
 - **Import.** Continue an external Claude Code or Codex session in its own folder.
-- **Project board.** A lead session writes a plan. Task sessions do the tasks. The board shows milestones, tasks and the items that need you.
-- **Assistant.** Each project's Assistant is its default entry point: requests you write on the [project board](docs/usage.md#project-board) go to it.
-- **Engineering board.** Iterations, collaboration and named workflows.
+- **Review and land.** Other runtimes review any range of commits (`pnpm cli review`). Any branch lands through the project gate (`pnpm cli land`).
+- **Sessions with Pantheon tools.** A session can get five tools: request a review, land its work, start a session of another runtime, read the state of the project, and draw a chart.
 - **Trace.** Timelines, tool calls and step replay for each session.
 - **Memory.** Project decisions, reports and notes that agents propose and you confirm.
 - **Devices.** Run sessions on other machines over SSH.
@@ -45,22 +44,6 @@ You can also import a session that you started outside Pantheon. An imported ses
 The [usage guide](docs/usage.md) describes each feature.
 
 <table>
-  <tr>
-    <td width="50%">
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/images/board-en-dark.webp">
-        <img alt="The project board with the tasks of a plan and the items that need you" src="docs/images/board-en-light.webp">
-      </picture>
-      <p align="center">Project board</p>
-    </td>
-    <td width="50%">
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/images/insights-en-dark.webp">
-        <img alt="The engineering board with iterations and collaboration" src="docs/images/insights-en-light.webp">
-      </picture>
-      <p align="center">Engineering board</p>
-    </td>
-  </tr>
   <tr>
     <td colspan="2">
       <picture>
@@ -158,7 +141,7 @@ To report a security problem, see [SECURITY.md](SECURITY.md).
 
 | Document                             | Content                                                                   |
 | ------------------------------------ | ------------------------------------------------------------------------- |
-| [Usage](docs/usage.md)               | Install, open a project, sessions, merge, import, board, settings, CLI.   |
+| [Usage](docs/usage.md)               | Install, open a project, sessions, merge, import, settings, CLI.          |
 | [Development](docs/development.md)   | Build, test, run, package, acceptance, eval, probes, repository rules.    |
 | [Releasing](docs/releasing.md)       | Version numbers, packages, smoke tests and the GitHub pre-release.        |
 | [Contributing](CONTRIBUTING.md)      | Checks before a pull request, conventions, bug reports.                   |

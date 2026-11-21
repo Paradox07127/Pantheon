@@ -31,7 +31,6 @@ import {
   type Review,
   type Role,
   type RuntimeModel,
-  type BoardPlan,
 } from '@pantheon/domain';
 import {
   commandSchema,
@@ -53,7 +52,6 @@ import {
   sessionPrincipal,
   sessionAction,
   purposeSessionTools,
-  leadSessionTools,
   userOnly,
   revision,
   type ControlContext,
@@ -63,14 +61,12 @@ import { personalCommand } from './personal-scope.js';
 import { handlers, preparers } from './commands.js';
 import type { VisualDrawReceipt } from './visual.js';
 import { tick } from './scheduler.js';
-import { acceptInput, personalAgentFolder, stopTurn } from './session.js';
+import { personalAgentFolder, stopTurn } from './session.js';
 import { recover, reconcile } from './recovery.js';
 import { snapshot, snapshotAccess } from './snapshot.js';
 import { projectRead } from './project-facts.js';
 import { projectUsageRead } from './usage-report.js';
 import { inheritedPolicy, workflowPolicy } from './workflow-policy.js';
-import { taskTrace } from './task-trace.js';
-import { taskThread } from './task-thread.js';
 import { projectReviewMetrics, reviewExecutionReader, reviewTimeReader } from './review.js';
 import {
   baselineSessionOf,
@@ -129,11 +125,6 @@ import { projectBrief } from './project-brief.js';
 import { decisionsForUser } from './decisions-for-user.js';
 import { personalKeyList } from './personal-keys.js';
 import { timerHandlers } from './timers.js';
-import { agentList, agentTemplates } from './agents.js';
-import { agentRoutines, agentWakes } from './agent-wakes.js';
-import { agentLedger } from './agent-ledger.js';
-import { continueSession } from './continuation.js';
-import { appendNote } from './lead-inbox.js';
 import type { ProtectionPaths } from './protection.js';
 import { readProcess } from './process.js';
 import { githubSource } from './github-notifications.js';
@@ -161,7 +152,6 @@ import { readAppSettings } from './app-settings.js';
 import { listDevices, refreshDevices, reprobeDevice, sshHosts } from './devices.js';
 import { backendList, externalEvents, readUserConfig } from './user-config.js';
 import { onDevice, pullRemoteWorkspace } from './remote-workspace.js';
-import { deviceLoads } from './task-dispatch.js';
 import { importCandidates, importableSessions } from './import-candidates.js';
 import { Terminals, type TerminalSpawn, type TerminalFrame } from './terminals.js';
 import { BrowserRelay } from './browser.js';
@@ -196,17 +186,10 @@ export {
   personalQuery,
   personalCommand,
 } from './personal-scope.js';
-export { AGENT_SCOPE, agentScopeMarkdown, type AgentScopeRow } from './agent-scope.js';
-export { personalHome } from './personal-agent.js';
 export { TraceIndex } from './trace-index.js';
 export { RUNTIME_EVENT_KINDS } from './runtime-findings.js';
 export { runtimeConfig } from './user-config.js';
-export { taskRung, type TaskRungFacts } from './task-rung.js';
 export { startEnvironmentCheck } from './environment-check.js';
-export type { HandBackCheck } from './task-tracking.js';
-
-const USAGE_LIMIT_RESUME_TEXT =
-  '[Pantheon] Your last turn stopped because the usage limit was used up. The limit has reset. Check where your work stopped, then continue.';
 
 /** Each item once; an item is enabled when any folder enables it. */
 function unionInventory(a: ExtensionInventory, b: ExtensionInventory): ExtensionInventory {
@@ -332,30 +315,6 @@ export class Control extends EventEmitter {
         'Workspace root cannot be inside the data directory',
       );
     }
-    timerHandlers.set('usage-limit-resume', (ctx, timer) => {
-      const session = ctx.store.get<Session>('sessions', timer.subject_id);
-      if (!session || session.state === 'closed') return;
-      const plan = ctx.store.get<BoardPlan>('board_plans', session.id);
-      // A lead's wake is held while this timer is pending, so the tracker sends the note on a later tick.
-      if (plan)
-        appendNote(ctx, plan, {
-          at: ctx.store.now(),
-          session_id: '',
-          task_id: '',
-          kind: 'usage_reset',
-          text: USAGE_LIMIT_RESUME_TEXT,
-        });
-      else {
-        // A session that takes no input now, such as one still stopping, is asked again later.
-        try {
-          acceptInput(ctx, session, 'send');
-        } catch (error) {
-          if (error instanceof DomainError) return ctx.store.now() + 60_000;
-          throw error;
-        }
-        continueSession(ctx, session, USAGE_LIMIT_RESUME_TEXT, '');
-      }
-    });
     files.failpoint = failpoint;
     this.adapters = new Map(adapters.map((a) => [a.name, a]));
     this.ctx = {
@@ -727,21 +686,6 @@ export class Control extends EventEmitter {
   projectRead(principal: Principal, projectId: string): unknown {
     return projectRead(this.ctx, principal, projectId);
   }
-  agentList(principal: Principal, projectId: string) {
-    return agentList(this.ctx, principal, projectId);
-  }
-  agentTemplates(principal: Principal) {
-    return agentTemplates(principal);
-  }
-  agentWakes(principal: Principal, agentId: string, limit: number, routineId?: string) {
-    return agentWakes(this.ctx, principal, agentId, limit, routineId);
-  }
-  agentLedger(principal: Principal, agentId: string, weeks: number) {
-    return agentLedger(this.ctx, principal, agentId, weeks);
-  }
-  agentRoutines(principal: Principal, projectId: string) {
-    return agentRoutines(this.ctx, principal, projectId);
-  }
   projectUsageRead(principal: Principal, projectId: string) {
     return projectUsageRead(this.ctx, principal, projectId);
   }
@@ -752,12 +696,6 @@ export class Control extends EventEmitter {
       ...workflowPolicy(this.ctx, projectId),
       defaults: inheritedPolicy(this.ctx),
     };
-  }
-  taskTrace(principal: Principal, projectId: string, leadId: string, taskId: string) {
-    return taskTrace(this.ctx, principal, projectId, leadId, taskId);
-  }
-  taskThread(principal: Principal, projectId: string, leadId: string, taskId: string) {
-    return taskThread(this.ctx, principal, projectId, leadId, taskId);
   }
   projectReviewMetrics(principal: Principal, projectId: string) {
     return projectReviewMetrics(this.ctx, principal, projectId);
@@ -910,7 +848,7 @@ export class Control extends EventEmitter {
       baseline_id: session.baseline?.baseline_id,
       story_id: session.change_story?.story_id,
       ...(session.baseline ? { extension_runtimes: inventoryRuntimes(this.ctx) } : {}),
-      allowed_tool_names: purposeSessionTools(session) ?? leadSessionTools(this.ctx, session),
+      allowed_tool_names: purposeSessionTools(session),
     };
   }
   needsYou(principal: Principal, projectId?: string): { items: NeedsYouItem[] } {
@@ -927,10 +865,6 @@ export class Control extends EventEmitter {
         .filter((event) => event.project_id === projectId)
         .reverse()
         .slice(0, 50),
-      held: this.ctx.store
-        .list<BoardPlan>('board_plans')
-        .filter((plan) => plan.project_id === projectId)
-        .flatMap((plan) => Object.keys(plan.external_holds ?? {})),
     };
   }
   projectsSummary(principal: Principal, readChanges: true | 'cached' = true) {
@@ -1028,8 +962,7 @@ export class Control extends EventEmitter {
   async listDevices(principal: Principal, refresh = false): Promise<DeviceListItem[]> {
     userOnly(principal);
     if (refresh) await refreshDevices(this.ctx);
-    const configured = readUserConfig(this.ctx.userConfigDir).devices,
-      loads = deviceLoads(this.ctx);
+    const configured = readUserConfig(this.ctx.userConfigDir).devices;
     const all = this.store.list<Session>('sessions'),
       opened = this.store.statement(
         "SELECT created_at FROM events WHERE aggregate_id=? AND project_id=? AND kind='session.opened' ORDER BY sequence DESC LIMIT 1",
@@ -1042,10 +975,7 @@ export class Control extends EventEmitter {
         .filter(
           (session) =>
             session.project_id === project.id &&
-            (session.workspace_id ||
-              session.baseline ||
-              session.runtime_review ||
-              session.resident) &&
+            (session.workspace_id || session.baseline || session.runtime_review) &&
             session.state !== 'closed' &&
             !session.outcome,
         )
@@ -1065,7 +995,6 @@ export class Control extends EventEmitter {
         ...device,
         ...(config && { config }),
         load: {
-          ...(loads.get(device.id) ?? { sessions: 0, uses: {} }),
           active_sessions: sessions
             .filter((session) => session.device_id === device.id)
             .map(({ device_id: _device, ...session }) => session),

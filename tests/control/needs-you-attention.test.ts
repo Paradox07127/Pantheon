@@ -13,7 +13,6 @@ import {
   type Workspace,
 } from '@pantheon/domain';
 import type { ControlContext } from '../../packages/control/src/context.js';
-import { continueSession } from '../../packages/control/dist/continuation.js';
 import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
@@ -112,7 +111,6 @@ it.each(['closed', 'failed', 'cancelled'] as const)(
         created_at: event.created_at,
         reason: 'session_failed',
         decision: 'other',
-        blocks: 0,
         actions: [],
       },
     ]);
@@ -134,7 +132,6 @@ it('lists the latest failed gate with its event time and clears it after a passi
       created_at: event.created_at,
       reason: 'gate_failed',
       decision: 'other',
-      blocks: 0,
       actions: [],
     },
   ]);
@@ -165,7 +162,6 @@ it('lists a blocked merge with its event time and the merge handler retry precon
       created_at: event.created_at,
       reason: 'merge_blocked',
       decision: 'other',
-      blocks: 0,
       primary: 'session.merge',
       actions: [{ command: 'session.merge', allowed: false, disabled_reason: 'no_changes' }],
     },
@@ -290,7 +286,6 @@ it('lists a failed baseline assessment with its failure time, as the session lis
       created_at: event.created_at,
       reason: 'session_failed',
       decision: 'other',
-      blocks: 0,
       actions: [],
     },
   ]);
@@ -319,7 +314,6 @@ it('lists a runtime analysis that closed without a report in a project with no o
       created_at: event.created_at,
       reason: 'session_failed',
       decision: 'other',
-      blocks: 0,
       actions: [],
     },
   ]);
@@ -334,52 +328,6 @@ it('leaves out the failed sessions of a removed project', async () => {
   f.store.update<Project>('projects', { ...project, removed_at: f.store.now() }, project.revision);
   expect(f.control.needsYou(user).items).toEqual([]);
 });
-
-const leadOf = (f: Fixture, sessionId: string): Principal => ({
-  id: `session:${sessionId}`,
-  role: 'lead',
-  project_id: f.project.id,
-  session_id: sessionId,
-  expires_at: f.store.now() + 60000,
-});
-
-async function leadWithPlan(f: Fixture) {
-  const lead = await f.create('Plan the export feature');
-  await awaitWorkspaceReady(f.control, lead.workspace_id!);
-  await eventually(
-    () =>
-      f.turns(lead.id).every((turn) => turn.state === 'completed') &&
-      current(f, lead.id).state === 'open',
-    () => f.control.tick(),
-  );
-  f.call(
-    'board.plan.update',
-    {
-      project_id: f.project.id,
-      base_version: 0,
-      headline: 'Export ships this week',
-      lanes: [{ id: 'core', title: 'Core' }],
-      tasks: [
-        {
-          id: 'a',
-          title: 'Serve exports over HTTP',
-          goal: 'Exports download',
-          lane: 'core',
-          depends_on: [],
-          source: ['Plan the export feature'],
-          scope: ['src/export'],
-          acceptance: ['pnpm test'],
-        },
-      ],
-      milestones: [],
-      risks: [],
-      assumptions: [],
-    },
-    null,
-    leadOf(f, lead.id),
-  );
-  return current(f, lead.id);
-}
 
 /** Fails the session's latest turn the way the runtime reports it: the row and a turn.failed event. */
 function failLatestTurn(f: Fixture, sessionId: string, error: string) {
@@ -401,57 +349,6 @@ function skewedClock(f: Fixture) {
   };
 }
 
-const planOf = (f: Fixture, leadId: string) => f.store.must<BoardPlan>('board_plans', leadId);
-
-it('lists a failed lead turn until the lead gets another turn, and queues none itself', async () => {
-  const f = await workbenchFixture();
-  const lead = await leadWithPlan(f);
-  const failed = failLatestTurn(f, lead.id, 'provider overloaded');
-  const turns = f.turns(lead.id).length;
-  await f.control.tick();
-  await f.control.tick();
-  expect(f.turns(lead.id)).toHaveLength(turns);
-  expect(f.control.needsYou(user, f.project.id).items).toEqual([
-    {
-      source: { table: 'sessions', id: lead.id, revision: current(f, lead.id).revision },
-      kind: 'session.failed',
-      project_id: f.project.id,
-      status: 'open',
-      created_at: failed.created_at,
-      reason: 'lead_turn_failed',
-      decision: 'other',
-      blocks: 0,
-      primary: 'session.send',
-      actions: [{ command: 'session.send', allowed: true }],
-      next_step: expect.any(String),
-    },
-  ]);
-  f.call(
-    'session.send',
-    { session_id: lead.id, input: 'Try the plan again' },
-    current(f, lead.id).revision,
-  );
-  expect(f.control.needsYou(user, f.project.id).items).toEqual([]);
-});
-
-it('keeps a failed lead turn listed after a steer delivered into it', async () => {
-  const f = await workbenchFixture();
-  const lead = await leadWithPlan(f);
-  const failed = failLatestTurn(f, lead.id, 'provider overloaded');
-  f.store.insert<SessionTurn>('session_turns', {
-    ...f.turns(lead.id).at(-1)!,
-    id: 'steer-into-failed-turn',
-    revision: 1,
-    input: 'Also look at the import path',
-    kind: 'steer',
-    delivery: 'delivered',
-    state: 'completed',
-  });
-  expect(
-    f.control.needsYou(user, f.project.id).items.map((item) => [item.reason, item.created_at]),
-  ).toEqual([['lead_turn_failed', failed.created_at]]);
-});
-
 it('lists a stop whose process is not confirmed stopped after two minutes', async () => {
   const f = await workbenchFixture();
   const session = await idleSession(f);
@@ -472,7 +369,6 @@ it('lists a stop whose process is not confirmed stopped after two minutes', asyn
       created_at: stopping.stop_requested!.at,
       reason: 'stop_unconfirmed',
       decision: 'other',
-      blocks: 0,
       actions: [],
       next_step: expect.stringContaining('retries the stop'),
     },
@@ -491,93 +387,6 @@ it('lists a stop as soon as its discard failed', async () => {
   });
   expect(f.control.needsYou(user, f.project.id).items.map((item) => item.reason)).toEqual([
     'stop_unconfirmed',
-  ]);
-});
-
-it('keeps a wake the closed lead refused on its plan until a later wake succeeds', async () => {
-  const f = await workbenchFixture();
-  const lead = await leadWithPlan(f);
-  patch(f, lead.id, { state: 'closed' });
-  const plan = planOf(f, lead.id);
-  f.store.update<BoardPlan>(
-    'board_plans',
-    {
-      ...plan,
-      inbox: [
-        {
-          at: f.store.now(),
-          session_id: 'ended-task-session',
-          task_id: 'a',
-          kind: 'failed',
-          text: 'The session ended without a merge.',
-        },
-      ],
-    },
-    plan.revision,
-  );
-  await f.control.tick();
-  const refused = planOf(f, lead.id).wake_failed!;
-  expect(refused).toEqual({ reason: 'lead_closed', at: expect.any(Number) });
-
-  patch(f, lead.id, { state: 'open' });
-  await f.control.tick();
-  expect(planOf(f, lead.id).wake_failed).toBeUndefined();
-  expect(planOf(f, lead.id).inbox).toEqual([]);
-});
-
-it('leaves the blocked merges and failed gates of a task session to its lead, except a change to protected paths', async () => {
-  const f = await workbenchFixture();
-  const lead = await leadWithPlan(f);
-  const worker = await idleSession(f),
-    own = await idleSession(f);
-  patch(f, worker.id, { task: { lead_session_id: lead.id, id: 'a', generation: 1 } });
-  const block = (sessionId: string, reason: string) => {
-    const blocked = patch(f, sessionId, {
-      merge: { state: 'blocked', reason, conflicts: ['README.md'] },
-    });
-    f.store.event('session.merge_blocked', blocked, blocked.project_id, blocked.merge);
-  };
-  const listed = (sessionId: string) =>
-    f.control
-      .needsYou(user, f.project.id)
-      .items.filter((item) => item.source.id === sessionId)
-      .map((item) => item.kind);
-  await setGate(f);
-  gateChecked(f, worker.id, 1, ['pnpm test']);
-  expect(listed(worker.id)).toEqual([]);
-  gateChecked(f, worker.id, 0, ['pnpm test']);
-  block(worker.id, 'out_of_scope');
-  block(own.id, 'out_of_scope');
-  expect(listed(worker.id)).toEqual([]);
-  expect(listed(own.id)).toEqual(['session.merge_blocked']);
-  block(worker.id, 'protected_paths');
-  expect(listed(worker.id)).toEqual(['session.merge_blocked']);
-  block(worker.id, 'out_of_scope');
-  patch(f, lead.id, { state: 'closed' });
-  expect(listed(worker.id)).toEqual(['session.merge_blocked']);
-});
-
-it('lists a merge blocked because the task of the session was removed', async () => {
-  const f = await workbenchFixture();
-  const session = await idleSession(f);
-  const blocked = patch(f, session.id, {
-    task: { lead_session_id: 'lead-of-removed-task', id: 'api' },
-    merge: { state: 'blocked', reason: 'task_retired' },
-  });
-  const event = f.store.event('session.merge_blocked', blocked, blocked.project_id, blocked.merge);
-  expect(f.control.needsYou(user, f.project.id).items).toEqual([
-    {
-      source: { table: 'sessions', id: session.id, revision: blocked.revision },
-      kind: 'session.failed',
-      project_id: f.project.id,
-      status: 'open',
-      created_at: event.created_at,
-      reason: 'task_retired',
-      decision: 'other',
-      blocks: 0,
-      actions: [],
-      next_step: expect.any(String),
-    },
   ]);
 });
 
@@ -600,7 +409,6 @@ it('lists a merge that has run for over 30 minutes without a gate process', asyn
       created_at: started.created_at,
       reason: 'merge_stuck',
       decision: 'other',
-      blocks: 0,
       actions: [],
       next_step: expect.any(String),
     },
@@ -681,48 +489,6 @@ it('escalates an unanswered permission request and records a stuck merge in a pr
   expect(recorded('session.merge_stuck').map((event) => event.aggregate_id)).toEqual([session.id]);
 });
 
-it('records why a continuation is skipped and lists a session past the continuation limit', async () => {
-  const f = await workbenchFixture();
-  const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
-  const lead = await leadWithPlan(f);
-  for (const id of ['first', 'second', 'third'])
-    f.store.event('turn.queued', { id: `${id}-continuation`, revision: 1 }, f.project.id, {
-      session_id: lead.id,
-      origin: 'continuation',
-    });
-  expect(continueSession(ctx, current(f, lead.id), 'Continue', '')).toBeUndefined();
-  const person = await idleSession(f);
-  expect(continueSession(ctx, person, 'Continue', '')).toBeUndefined();
-  const skipped = f.store
-    .events(0, undefined, 10000)
-    .filter((event) => event.kind === 'session.continuation_skipped');
-  expect(skipped.map((event) => [event.aggregate_id, event.payload])).toEqual([
-    [lead.id, { reason: 'limit_reached' }],
-    [person.id, { reason: 'not_daemon_driven' }],
-  ]);
-  expect(f.control.needsYou(user, f.project.id).items).toEqual([
-    {
-      source: { table: 'sessions', id: lead.id, revision: current(f, lead.id).revision },
-      kind: 'session.failed',
-      project_id: f.project.id,
-      status: 'open',
-      created_at: skipped[0]!.created_at,
-      reason: 'continuation_limit_reached',
-      decision: 'other',
-      blocks: 0,
-      primary: 'session.send',
-      actions: [{ command: 'session.send', allowed: true }],
-      next_step: expect.any(String),
-    },
-  ]);
-  f.call(
-    'session.send',
-    { session_id: lead.id, input: 'Pick the work up again' },
-    current(f, lead.id).revision,
-  );
-  expect(f.control.needsYou(user, f.project.id).items).toEqual([]);
-});
-
 it('lists a session whose worktree provisioning a restart left reconciling without a process to check', async () => {
   const f = await workbenchFixture();
   const session = await f.create();
@@ -752,7 +518,6 @@ it('lists a session whose worktree provisioning a restart left reconciling witho
       created_at: reconciling.created_at,
       reason: 'workspace_reconciling',
       decision: 'other',
-      blocks: 0,
       actions: [],
       next_step: expect.stringContaining('the user reconciles'),
     },

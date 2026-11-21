@@ -1,14 +1,13 @@
 import { expect, it, vi } from 'vitest';
 import { FixtureAdapter } from '@pantheon/adapters';
-import type { BoardPlan, Principal, ProjectRead, Session, WorkflowPolicy } from '@pantheon/domain';
+import type { Session, WorkflowPolicy } from '@pantheon/domain';
 import type { ControlContext } from '../../packages/control/src/context.js';
 import { workflowPolicy } from '../../packages/control/dist/workflow-policy.js';
 import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
-import { dispatchEveryTier, workbenchFixture } from './workbench-fixture.js';
+import { workbenchFixture } from './workbench-fixture.js';
 
 async function setup() {
   const f = await workbenchFixture({ delay: 10 });
-  dispatchEveryTier(f);
   const lead = await f.create('Plan a report');
   await awaitWorkspaceReady(f.control, lead.workspace_id!);
   await eventually(
@@ -124,107 +123,10 @@ it('shares the latest quota across sessions and retains it through a runtime sta
   ]);
 });
 
-it.each(['reset', 'snapshot'] as const)(
-  'holds a lead task at the threshold and dispatches after a %s',
-  async (release) => {
-    const f = await setup();
-    let clock = f.store.now();
-    vi.spyOn(f.store, 'now').mockImplementation(() => clock);
-    const threshold = release === 'reset' ? 90 : 80;
-    if (release === 'snapshot') {
-      const policy = f.store.must<WorkflowPolicy>('workflow_policies', f.project.id);
-      f.call(
-        'workflow.policy.set',
-        { project_id: f.project.id, runtime_quota_threshold: threshold },
-        policy.revision,
-      );
-    }
-    const other = new FixtureAdapter(10);
-    other.name = 'other';
-    f.ctx.adapters.set(other.name, other);
-    const principal: Principal = {
-      id: `session:${f.lead.id}`,
-      role: 'lead',
-      session_id: f.lead.id,
-      project_id: f.project.id,
-      expires_at: clock + 600000,
-    };
-    f.call(
-      'board.plan.update',
-      {
-        project_id: f.project.id,
-        base_version: 0,
-        headline: 'Answer',
-        lanes: [{ id: 'core', title: 'Core' }],
-        tasks: [
-          {
-            id: 'answer',
-            title: 'Answer',
-            lane: 'core',
-            goal: 'Explain the result',
-            depends_on: [],
-            source: ['Plan a report'],
-            scope: [],
-            acceptance: [],
-            done_when: 'report',
-          },
-          {
-            id: 'independent',
-            title: 'Independent',
-            lane: 'core',
-            goal: 'Read the result',
-            runtime: 'other',
-            depends_on: [],
-            source: ['Plan a report'],
-            scope: [],
-            acceptance: [],
-            done_when: 'report',
-          },
-        ],
-        milestones: [],
-        risks: [],
-        assumptions: [],
-      },
-      null,
-      principal,
-    );
-    f.quota([
-      { window: 'five_hour', used_percent: 20, resets_at: clock + 30000 },
-      { window: 'seven_day', used_percent: threshold, resets_at: clock + 60000 },
-    ]);
-    f.call(
-      'task.start',
-      { project_id: f.project.id, task_ids: ['answer', 'independent'] },
-      null,
-      principal,
-    );
-    await f.control.tick();
-    const leadView = f.control.projectRead(principal, f.project.id) as ProjectRead;
-    expect(
-      leadView.plans
-        .find((plan) => plan.lead_session_id === f.lead.id)!
-        .tasks.find((task) => task.id === 'answer'),
-    ).toHaveProperty('dispatch_wait', 'runtime_limited');
-    expect(
-      f.store
-        .list<Session>('sessions')
-        .filter((session) => session.task)
-        .map((session) => session.runtime),
-    ).toEqual(['other']);
-    if (release === 'reset') clock += 60000;
-    else {
-      clock++;
-      f.quota([{ window: 'seven_day', used_percent: threshold - 1, resets_at: clock + 60000 }]);
-    }
-    await f.control.tick();
-    expect(f.store.list<Session>('sessions').filter((session) => session.task)).toHaveLength(2);
-    expect(f.store.must<BoardPlan>('board_plans', f.lead.id).dispatch).toEqual({});
-  },
-);
-
 it('defaults the quota threshold for stored policies and validates user changes as percentages', async () => {
   const f = await setup();
   expect(workflowPolicy(f.ctx, f.project.id)).toHaveProperty('runtime_quota_threshold', 90);
+  f.call('workflow.policy.set', { project_id: f.project.id, runtime_quota_threshold: 90 }, null);
   let policy = f.store.must<WorkflowPolicy>('workflow_policies', f.project.id);
   const { runtime_quota_threshold: _, ...old } = policy;
   f.store.update('workflow_policies', old, policy.revision);

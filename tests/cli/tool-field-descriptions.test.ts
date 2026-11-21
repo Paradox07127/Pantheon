@@ -14,10 +14,6 @@ afterEach(async () => {
 const boundFields = [
   // Every tool: the session's own project.
   'project_id',
-  // Board and dispatch tools: only the user names another lead's plan.
-  'lead_session_id',
-  // merge_task: a lead names the task, not the session.
-  'session_id of merge_task',
 ] as const;
 
 type JsonSchema = {
@@ -46,7 +42,7 @@ function undescribed(schema: JsonSchema, path: string): string[] {
   return missing;
 }
 
-async function listTools(role: 'lead' | 'worker') {
+async function listTools(role: keyof typeof sessionTools) {
   vi.stubGlobal('fetch', async () =>
     Response.json({
       principal: {
@@ -70,7 +66,7 @@ async function listTools(role: 'lead' | 'worker') {
   return (await client.listTools()).tools;
 }
 
-it.each(['lead', 'worker'] as const)(
+it.each(Object.keys(sessionTools) as (keyof typeof sessionTools)[])(
   'describes every input field of every %s tool',
   async (role) => {
     const tools = await listTools(role);
@@ -80,7 +76,7 @@ it.each(['lead', 'worker'] as const)(
   },
 );
 
-it.each(['lead', 'worker'] as const)(
+it.each(['reviewer', 'planner', 'conductor'] as const)(
   'keeps the bound fields out of the %s tool inputs',
   async (role) => {
     for (const tool of await listTools(role))

@@ -183,11 +183,7 @@ describe('copied path checks', () => {
 describe('worktree group', () => {
   it('holds the location, the copied files and the setup command, in that order', async () => {
     const { h } = await mount(project);
-    expect(sections(h).map((s) => s.props.title)).toEqual([
-      say('title'),
-      zh('settings.worktrees.merging'),
-      say('cleanup'),
-    ]);
+    expect(sections(h).map((s) => s.props.title)).toEqual([say('title'), say('cleanup')]);
     expect(rowIds(section(h, say('title')) as never)).toEqual([
       'worktrees.location',
       'worktrees.copyPaths',

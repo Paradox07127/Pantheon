@@ -7,7 +7,6 @@ import {
   MessageSquare,
   Minimize2,
   Pencil,
-  Route,
   Search,
   Terminal,
   Wrench,
@@ -99,7 +98,6 @@ const KIND: Record<CallVerb, { Icon: LucideIcon; name?: string }> = {
       return t({ id: 'runs.detail.kind.subagent', defaultMessage: 'Subagent' });
     },
   },
-  dispatch: { Icon: Route },
   tool: { Icon: Wrench },
 };
 

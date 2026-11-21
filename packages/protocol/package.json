@@ -11,10 +11,6 @@
     "./paths": {
       "types": "./dist/paths.d.ts",
       "import": "./dist/paths.js"
-    },
-    "./routine-catalog": {
-      "types": "./dist/routine-catalog.d.ts",
-      "import": "./dist/routine-catalog.js"
     }
   },
   "scripts": {

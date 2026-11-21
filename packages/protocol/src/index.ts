@@ -8,15 +8,7 @@ export type {
 import { z } from 'zod';
 import { changeStoryInputSchemas, type LandingDiff } from './change-story.js';
 import type { ProjectWaiting } from './project-waiting.js';
-import { alwaysOnInputSchemas, alwaysOnToolEffects, alwaysOnTools } from './always-on-tools.js';
-import { agentWakeInputSchemas, agentWakeQuerySchemas } from './agent-wakes.js';
-export type { AgentRoutineRow, AgentWake, WakeOutcome } from './agent-wakes.js';
-import { agentLedgerQuerySchemas } from './agent-ledger.js';
-export type { AgentLedgerWeek } from './agent-ledger.js';
-import { appInputSchemas, appToolEffects, appToolGroups, appTools } from './app-tools.js';
-import { agentInputSchemas, agentToolEffects, agentToolGroups, agentTools } from './agent-tools.js';
 import { reviewerTools, workflowInputSchemas } from './workflow-tools.js';
-import { questionBatchInputSchemas } from './question-batches.js';
 import type {
   AgentToolGroup,
   ApprovalQuestion,
@@ -25,8 +17,6 @@ import type {
   GraphIcon,
   GraphStatus,
   BoardPlan,
-  CharterMode,
-  CharterPower,
   EffortLevel,
   FlowPath,
   LaneDepth,
@@ -180,7 +170,6 @@ export interface GithubPullDetail {
 export { prettifyError, ZodError, type ZodIssue } from 'zod';
 export * from './change-story.js';
 export * from './project-waiting.js';
-export * from './agent-chapters.js';
 
 // Lives here, not in domain: the web bundle imports protocol at run time, and domain imports node:crypto.
 export function sessionRole(
@@ -255,119 +244,14 @@ export const sessionTools = {
     draw: 'visual.draw',
     ...browserTools,
   },
-  lead: {
-    ...memoryTools,
-    project_read: 'project.read',
-    update_board: 'board.plan.update',
-    start_task: 'task.start',
-    message_task: 'task.message',
-    accept_task: 'task.accept',
-    read_note: 'lead.note.read',
-    ask_user: 'lead.ask',
-    answer_worker_question: 'lead.worker_question.answer',
-    stop_task: 'task.stop',
-    report: 'task.report',
-    status_line: 'task.status_line',
-    interrupt_task: 'task.interrupt',
-    stop_background: 'task.background.stop',
-    sync_board: 'board.sync',
-    rerun_baseline: 'project.baseline.start',
-    request_review: 'review.request',
-    merge_task: 'session.merge',
-    draw: 'visual.draw',
-    ...browserTools,
-    ...alwaysOnTools,
-    ...appTools,
-    ...agentTools,
-    guide: 'agent.guide',
-  },
-  worker: {
-    ...memoryTools,
-    project_read: 'project.read',
-    report: 'task.report',
-    status_line: 'task.status_line',
-    draw: 'visual.draw',
-    ...browserTools,
-  },
   conductor: {
     request_review: 'conductor.review',
     report_ready: 'conductor.ready',
     spawn_session: 'conductor.spawn',
     read_state: 'conductor.state',
+    draw: 'visual.draw',
   },
 } as const;
-
-/** What each lead tool does; a costly one asks the user before every call. */
-export const leadToolEffects = {
-  memory_context: 'read',
-  memory_search: 'read',
-  memory_related: 'read',
-  memory_get: 'read',
-  memory_propose: 'write',
-  project_read: 'read',
-  update_board: 'write',
-  start_task: 'write',
-  message_task: 'write',
-  accept_task: 'write',
-  read_note: 'read',
-  ask_user: 'write',
-  answer_worker_question: 'write',
-  stop_task: 'write',
-  report: 'write',
-  status_line: 'write',
-  interrupt_task: 'write',
-  stop_background: 'write',
-  sync_board: 'read',
-  rerun_baseline: 'costly',
-  request_review: 'write',
-  merge_task: 'write',
-  draw: 'write',
-  browser_open: 'write',
-  browser_read: 'read',
-  browser_screenshot: 'read',
-  ...alwaysOnToolEffects,
-  ...appToolEffects,
-  ...agentToolEffects,
-  guide: 'read',
-} as const satisfies Record<keyof typeof sessionTools.lead, 'read' | 'write' | 'costly'>;
-
-const inGroup = <T extends object>(tools: T, group: AgentToolGroup) =>
-  Object.fromEntries(Object.keys(tools).map((name) => [name, group])) as Record<
-    keyof T,
-    AgentToolGroup
-  >;
-/**
- * The group of each lead tool; a resident gets the tools of its profile's groups. Every lead gets
- * guide, whatever its groups.
- */
-export const leadToolGroups: Record<
-  Exclude<keyof typeof sessionTools.lead, 'guide'>,
-  AgentToolGroup
-> = {
-  ...inGroup(memoryTools, 'memory'),
-  ...inGroup(browserTools, 'browser'),
-  ...inGroup(alwaysOnTools, 'always_on'),
-  ...appToolGroups,
-  ...agentToolGroups,
-  project_read: 'board',
-  update_board: 'board',
-  read_note: 'board',
-  ask_user: 'board',
-  answer_worker_question: 'board',
-  sync_board: 'board',
-  rerun_baseline: 'board',
-  draw: 'board',
-  status_line: 'board',
-  start_task: 'dispatch',
-  message_task: 'dispatch',
-  accept_task: 'dispatch',
-  stop_task: 'dispatch',
-  report: 'dispatch',
-  interrupt_task: 'dispatch',
-  stop_background: 'dispatch',
-  request_review: 'dispatch',
-  merge_task: 'dispatch',
-};
 
 /** Extra tools exist only for daemon-created, purpose-bound project sessions. */
 export const coordinationTools = {
@@ -965,43 +849,12 @@ export const deviceConfigSchema = z.strictObject({
   max_sessions: z.number().int().positive().optional(),
 });
 const workflowParam = z.enum([
-  'path',
-  'acceptance_wake',
-  'max_parallel',
-  'handback_limit',
-  'task_size_hint',
   'runtime_quota_threshold',
-  'budget',
 ] as const satisfies readonly WorkflowParam[]);
 // Fails to compile when workflowParam misses a value of WorkflowParam.
 const workflowParamComplete: [WorkflowParam] extends [z.infer<typeof workflowParam>]
   ? true
   : false = true;
-const charterMode = z.enum(['on', 'ask', 'off'] as const satisfies readonly CharterMode[]);
-/** The charter entries a policy stores; plan_change and start_external follow their own settings. */
-const charter = z.strictObject({
-  approve_worker_prompts: charterMode.optional(),
-  answer_worker_questions: charterMode.optional(),
-  create_agent: charterMode.optional(),
-  accept_milestone: charterMode.optional(),
-  merge_out_of_scope: charterMode.optional(),
-} satisfies Partial<Record<CharterPower, unknown>>);
-const flowPath = z.enum(flowPaths);
-// A tier's tasks cannot all be parallel: a task takes that path only with lead-defined parts.
-const tierPath = flowPath.exclude(['parallel']);
-/** null clears the cell's budget. */
-const taskBudget = z
-  .strictObject({ input_tokens: z.number().int(), wall_ms: z.number().int() })
-  .nullable()
-  .optional();
-const tierBudget = z
-  .strictObject({
-    direct: taskBudget,
-    dispatch: taskBudget,
-    review_loop: taskBudget,
-    parallel: taskBudget,
-  })
-  .optional();
 const sessionDefaults = {
   runtime: str,
   permission_mode: z.enum(['ask', 'auto_edit', 'plan', 'auto', 'full_access']),
@@ -1018,43 +871,36 @@ const sessionDefaults = {
     })
     .optional(),
 };
-const storedTaskBudget = z
-  .strictObject({ input_tokens: z.number().int(), wall_ms: z.number().int() })
-  .optional();
-const storedTierBudget = z
-  .strictObject({
-    direct: storedTaskBudget,
-    dispatch: storedTaskBudget,
-    review_loop: storedTaskBudget,
-    parallel: storedTaskBudget,
-  })
-  .optional();
 /** Workflow policy settings as a policy stores them; the project budget belongs to each project alone. */
 const workflowPolicySettings = z.strictObject({
-  /** No longer used; a stored value is read without error and ignored. */
-  improvement_mode: z.enum(['auto', 'confirm', 'off']).optional(),
-  plan_changes: z.enum(['auto', 'confirm']).optional(),
-  charter: charter.optional(),
-  must_ask_extra: z.array(str).optional(),
-  urgent_direct: z.array(z.enum(['main_gate_failed'])).optional(),
-  path: z
-    .strictObject({ t1: tierPath.optional(), t2: tierPath.optional(), t3: tierPath.optional() })
-    .optional(),
-  acceptance_wake: z.enum(['each_merge', 'milestone']).optional(),
-  max_parallel: z.number().int().optional(),
-  max_parallel_limit: z.number().int().optional(),
-  runtime_parallel: z.record(z.string(), z.number().int().min(1).max(8)).optional(),
-  dispatch_paused: z.boolean().optional(),
   runtime_quota_threshold: z.number().optional(),
   gate_on_fail: z.enum(['handback', 'retry', 'stop']).optional(),
   gate_runner: z.enum(['daemon', 'session']).optional(),
-  handback_limit: z.union([z.literal(0), z.number().int().min(2).max(5)]).optional(),
-  task_size_hint: z.number().int().optional(),
-  budget: z
-    .strictObject({ t1: storedTierBudget, t2: storedTierBudget, t3: storedTierBudget })
-    .optional(),
   pinned: z.array(workflowParam).max(7).optional(),
 });
+/** Global workflow settings a configuration file may still hold; not read. */
+export const RETIRED_POLICY_SETTINGS = [
+  'improvement_mode',
+  'plan_changes',
+  'charter',
+  'must_ask_extra',
+  'urgent_direct',
+  'path',
+  'acceptance_wake',
+  'max_parallel',
+  'max_parallel_limit',
+  'runtime_parallel',
+  'dispatch_paused',
+  'handback_limit',
+  'task_size_hint',
+  'budget',
+] as const;
+const storedWorkflowPolicySettings = workflowPolicySettings.extend(
+  Object.fromEntries(RETIRED_POLICY_SETTINGS.map((key) => [key, z.unknown().optional()])) as Record<
+    (typeof RETIRED_POLICY_SETTINGS)[number],
+    z.ZodOptional<z.ZodUnknown>
+  >,
+);
 const externalEventsMode = z.enum(['off', 'approve', 'auto']);
 /** The project settings that have a global value; each is stored under the same key on a project. */
 export const PROJECT_SETTING_KEYS = [
@@ -1062,7 +908,6 @@ export const PROJECT_SETTING_KEYS = [
   'session_defaults',
   'usage_targets',
   'external_events',
-  'auto_merge',
 ] as const;
 export type ProjectSettingKey = (typeof PROJECT_SETTING_KEYS)[number];
 const projectSettingValues = {
@@ -1070,20 +915,16 @@ const projectSettingValues = {
   session_defaults: z.strictObject(sessionDefaults),
   usage_targets: z.record(z.string(), z.number().int().nonnegative()),
   external_events: externalEventsMode,
-  auto_merge: z.boolean(),
 };
 export type ProjectSettingValues = {
   [K in ProjectSettingKey]: z.infer<(typeof projectSettingValues)[K]>;
 };
 const decisionKinds = {
-  plan_change: true,
   question: true,
-  milestone_accept: true,
   repeated_failure: true,
   permission: true,
   budget: true,
   improvement: true,
-  external: true,
   other: true,
 } satisfies Record<NeedsYouItem['decision'], true>;
 /** Every `NeedsYouItem.decision`. */
@@ -1093,8 +934,8 @@ export type AttentionKind = NeedsYouItem['decision'] | 'merged';
 /** The keys of the attention delivery rules: the decisions, then the notices that ask for none. */
 export const ATTENTION_KINDS: readonly AttentionKind[] = [...NEEDS_YOU_DECISIONS, 'merged'];
 export type AttentionDelivery = 'now' | 'brief' | 'never';
-const BRIEF_BY_DEFAULT: readonly AttentionKind[] = ['milestone_accept', 'merged'];
-/** How each kind reaches the user until the user chooses: milestones to accept and merges wait for the brief. */
+const BRIEF_BY_DEFAULT: readonly AttentionKind[] = ['merged'];
+/** How each kind reaches the user until the user chooses: merges wait for the brief. */
 export const DEFAULT_ATTENTION_DELIVERY = Object.fromEntries(
   ATTENTION_KINDS.map((kind) => [kind, BRIEF_BY_DEFAULT.includes(kind) ? 'brief' : 'now']),
 ) as Record<AttentionKind, AttentionDelivery>;
@@ -1125,19 +966,11 @@ const attentionDelivery = z.partialRecord(
   z.enum(ATTENTION_KINDS),
   z.enum(['now', 'brief', 'never']),
 );
-/** Retired; a stored agent_proposal rule is accepted and ignored. */
+/** Retired kinds' stored rules are accepted and not read. */
 const storedAttentionDelivery = z.partialRecord(
-  z.enum([...ATTENTION_KINDS, 'agent_proposal']),
+  z.enum([...ATTENTION_KINDS, 'agent_proposal', 'plan_change', 'milestone_accept', 'external']),
   z.enum(['now', 'brief', 'never']),
 );
-/** The decisions the user can let the personal agent answer; none until the user turns one on. */
-export const PERSONAL_ANSWER_KINDS = [
-  'question',
-  'plan_change',
-  'milestone_accept',
-] as const satisfies readonly NeedsYouItem['decision'][];
-export type PersonalAnswerKind = (typeof PERSONAL_ANSWER_KINDS)[number];
-const personalAnswers = z.array(z.enum(PERSONAL_ANSWER_KINDS));
 const quietHours = z.strictObject({
   from: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
   to: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
@@ -1165,8 +998,8 @@ export const userConfigSchema = z
     baseline_visuals: z.boolean().optional(),
     /** Retired; a stored value is accepted and ignored. */
     baseline_range_story: z.boolean().optional(),
-    /** The decisions the personal agent may answer for the user; absent is none. */
-    personal_answers: personalAnswers.optional(),
+    /** Not read. */
+    personal_answers: z.array(str).optional(),
     /** The binary and extra arguments each runtime starts with; absent uses the one on PATH. */
     runtimes: z
       .record(
@@ -1195,11 +1028,12 @@ export const userConfigSchema = z
     /** What every project follows where it has no value of its own. */
     project_defaults: z
       .strictObject({
-        workflow_policy: projectSettingValues.workflow_policy.optional(),
+        workflow_policy: storedWorkflowPolicySettings.optional(),
         session_defaults: projectSettingValues.session_defaults.optional(),
         usage_targets: projectSettingValues.usage_targets.optional(),
         external_events: projectSettingValues.external_events.optional(),
-        auto_merge: projectSettingValues.auto_merge.optional(),
+        /** Not read. */
+        auto_merge: z.boolean().optional(),
         /** Answer matching permission requests in every project, besides each project's own rules. */
         permission_rules: z.array(z.strictObject({ rule: str, added_at: z.number() })).optional(),
       })
@@ -1909,12 +1743,7 @@ export interface SessionRecappedPayload extends SessionRecap {
 export const inputSchemas = {
   ...memoryInputSchemas,
   ...changeStoryInputSchemas,
-  ...alwaysOnInputSchemas,
-  ...agentWakeInputSchemas,
-  ...appInputSchemas,
-  ...agentInputSchemas,
   ...workflowInputSchemas,
-  ...questionBatchInputSchemas,
   'terminal.open': z.strictObject({
     project_id: z.string(),
     session_id: z.string().optional(),
@@ -1974,245 +1803,25 @@ export const inputSchemas = {
       message: 'Give one of page or error',
     }),
   'project.read': z.strictObject({ project_id: str }),
-  'board.plan.update': boardPlanInputSchema.refine(
-    (plan) =>
-      plan.tasks.every(
-        (task) =>
-          task.iteration === undefined ||
-          plan.iterations.some((iteration) => iteration.id === task.iteration),
-      ),
-    { message: 'Task iteration must name an iteration in the plan' },
-  ),
-  'board.sync': z.strictObject({ project_id: str }),
-  /** Ids of tasks in the calling lead's plan. */
-  'task.start': z.strictObject({
-    project_id: str,
-    /** The lead whose plan the user acts on; absent for a lead, which acts on its own plan. */
-    lead_session_id: str.optional(),
-    task_ids: z
-      .array(planId)
-      .min(1)
-      .max(16)
-      .describe(
-        '1-16 ids of tasks in your plan. Give every task you want started; a non-resident lead gives a direct task alone.',
-      ),
-  }),
-  'task.handback': z.strictObject({
-    lead_session_id: str,
-    task_id: planId,
-    reason: z.string(),
-  }),
-  /** A message to the latest open session of a task in the calling lead's plan, or to the part it names. */
-  'task.message': z.strictObject({
-    project_id: str,
-    task_id: planId.describe('The task whose open session gets the message.'),
-    part: partSelector.describe(
-      'For a parallel task: the number (1-4) or title of the part to message; absent reaches the latest open session.',
-    ),
-    text: z
-      .string()
-      .min(1)
-      .max(2000)
-      .describe(
-        '1-2000 characters, self-contained: the session has not seen your conversation. It arrives prefixed [Lead].',
-      ),
-  }),
-  /** Accepts the done report of a report task in the calling lead's plan. */
-  'task.accept': z.strictObject({
-    project_id: str,
-    task_id: planId.describe('The report task whose done report you accept.'),
-    evidence: z
-      .string()
-      .min(1)
-      .max(2000)
-      .describe('1-2000 characters: what in the report shows the task is done.'),
-  }),
-  /** Drops the start request of a task in the calling lead's plan and discards its open sessions. */
-  'task.stop': z.strictObject({
-    project_id: str,
-    /** The lead whose plan the user acts on; absent for a lead, which acts on its own plan. */
-    lead_session_id: str.optional(),
-    task_id: planId.describe('The task to stop.'),
-    reason: boardText.describe('Why it stops, under 400 characters; kept on the board.'),
-  }),
-  /** Interrupts the running turn of a task in the calling lead's plan, so a pending change takes effect now. */
-  'task.interrupt': z.strictObject({
-    project_id: str,
-    /** The lead whose plan the user acts on; absent for a lead, which acts on its own plan. */
-    lead_session_id: str.optional(),
-    task_id: planId.describe('The task whose running turn is interrupted.'),
-    part: partSelector.describe(
-      'For a parallel task: the number (1-4) or title of the part to interrupt; absent interrupts the latest open session.',
-    ),
-  }),
-  /** Stops one background task of the session working on a task in the calling lead's plan. */
-  'task.background.stop': z.strictObject({
-    project_id: str,
-    /** The lead whose plan the user acts on; absent for a lead, which acts on its own plan. */
-    lead_session_id: str.optional(),
-    task_id: planId.describe('The task whose session runs the background task.'),
-    background_id: str.describe('The id of the background task, as the session reports it.'),
-  }),
   /** Removes the project's own workflow policy values, so it follows the global ones; the user only. */
   'workflow.policy.reset': z.strictObject({ project_id: str }),
   /** Changes the given workflow policy parameters of a project; the user only. */
   'workflow.policy.set': z.strictObject({
     project_id: str,
-    plan_changes: z.enum(['auto', 'confirm']).optional(),
-    /** Merged into the current charter by power. */
-    charter: charter.optional(),
-    /** Permission rules whose prompts always reach the user; replaces the current list. */
-    must_ask_extra: z.array(str).optional(),
-    /** A reversible lead question takes its recommended answer after_hours after it was asked; null turns it off. */
+    /** A reversible question takes its recommended answer after_hours after it was asked; null turns it off. */
     question_defaults: z
       .strictObject({ after_hours: z.number().int().min(1).max(168) })
       .nullable()
       .optional(),
-    /** The messages of agents other than the main agent that reach the user directly; replaces the current list. */
-    urgent_direct: z.array(z.enum(['main_gate_failed'])).optional(),
-    /** Merged into the current path by tier. */
-    path: z
-      .strictObject({ t1: tierPath.optional(), t2: tierPath.optional(), t3: tierPath.optional() })
-      .optional(),
-    acceptance_wake: z.enum(['each_merge', 'milestone']).optional(),
-    max_parallel: z.number().int().optional(),
-    max_parallel_limit: z.number().int().optional(),
-    runtime_parallel: z.record(z.string(), z.number().int().min(1).max(8)).optional(),
-    dispatch_paused: z.boolean().optional(),
     runtime_quota_threshold: z.number().optional(),
     gate_on_fail: z.enum(['handback', 'retry', 'stop']).optional(),
     gate_runner: z.enum(['daemon', 'session']).optional(),
-    milestone_verify: z
-      .enum(['off', 'auto'])
-      .optional()
-      .describe(
-        'auto runs the checks and a verifier review of a lead milestone once it is ready; off runs neither.',
-      ),
-    recovery_switch: z
-      .enum(['off', 'auto'])
-      .optional()
-      .describe(
-        'auto moves a task session whose hand-backs of one problem ran out to the writer fallback runtime for one more hand-back; off leaves it to the lead.',
-      ),
-    handback_limit: z.union([z.literal(0), z.number().int().min(2).max(5)]).optional(),
-    /** null clears the hint. */
-    task_size_hint: z.number().int().nullable().optional(),
-    /** Merged into the current budget by tier and path. */
-    budget: z.strictObject({ t1: tierBudget, t2: tierBudget, t3: tierBudget }).optional(),
     /** The project's input token budget; a first one counts from now, null clears it. */
     project_budget: z
       .strictObject({ input_tokens: z.number().int().positive() })
       .nullable()
       .optional(),
     pinned: z.array(workflowParam).max(7).optional(),
-  }),
-  /** Sets the one line of what the calling session does now in its running turn, shown on its board row with its time. Plan task and lead sessions only; a new text waits 15 s after the last one. */
-  'task.status_line': z.strictObject({
-    text: z
-      .string()
-      .trim()
-      .min(1)
-      .max(80)
-      .describe(
-        'What you are doing now in 1-80 characters, for example "Running the migration tests".',
-      ),
-  }),
-  'task.report': z.strictObject({
-    project_id: str,
-    kind: z
-      .enum(['risk', 'task', 'dependency', 'done', 'requirement', 'blocked'])
-      .describe(
-        'requirement (the task as written cannot be done; holds the merge), blocked (you cannot go on), risk, task (a suggested follow-up task), dependency (an order between tasks), or done.',
-      ),
-    /** Up to 4000 characters for the done report of a report task; 400 for every other report. */
-    text: z
-      .string()
-      .min(1)
-      .max(4000)
-      .describe(
-        '1-400 characters; up to 4000 for the done report of a report task. For done: what changed or what you concluded, the acceptance commands you ran and their result, what is left open.',
-      ),
-    status: z
-      .enum(['done', 'done_with_concerns'])
-      .optional()
-      .describe(
-        'For kind done only: done (default) or done_with_concerns; name the concern in text.',
-      ),
-    /** Required for a blocked report. */
-    reason: z
-      .enum([
-        'missing_context',
-        'missing_permission',
-        'environment_problem',
-        'conflicting_requirements',
-      ])
-      .optional()
-      .describe(
-        'Required for kind blocked: missing_context, missing_permission, environment_problem or conflicting_requirements.',
-      ),
-  }),
-  'lead.ask': z.strictObject({
-    project_id: str,
-    question: str.describe('One question the user can answer without reading your conversation.'),
-    options: z.array(str).min(2).max(4).describe('2-4 short answers.'),
-    recommended: str.describe('One of the options, the one you would choose.'),
-    assumption: str.describe(
-      'What you do until the user answers; the plan should already follow it.',
-    ),
-    blocks: z
-      .array(planId)
-      .describe('Ids of the tasks that must wait for the answer; [] when none.'),
-    reversible: z
-      .boolean()
-      .optional()
-      .describe(
-        'true only when a different answer later costs at most redoing tasks not started; the user may let your recommendation apply after a while.',
-      ),
-  }),
-  'lead.question.answer': z.strictObject({
-    project_id: str,
-    lead_session_id: str,
-    question_id: str,
-    answer: str,
-    /** A relayed worker question only: question text to the answer, as approval.respond takes it. */
-    answers: z.record(str, str).optional(),
-  }),
-  /** The user only; replaces the answer a lead gave a task session's question, or a recommended answer applied at its deadline, and tells the lead and that session. */
-  'lead.question.overrule': z.strictObject({
-    project_id: str,
-    lead_session_id: str.describe('The lead whose plan holds the question.'),
-    question_id: str.describe(
-      "A task session's question its lead answered, or a question answered by its default.",
-    ),
-    answer: str.describe("The user's answer, which replaces the lead's."),
-  }),
-  /** The calling lead's answer to a task session's question on its own plan; the first answer wins. */
-  'lead.worker_question.answer': z.strictObject({
-    project_id: str,
-    question_id: str.describe('The question id the worker_question board update names.'),
-    answers: z
-      .record(str, str.describe('Your answer to that question.'))
-      .describe("Each question of the task session's request, word for word, to your answer."),
-    citations: z
-      .array(
-        z.strictObject({
-          kind: z
-            .enum(['user_words', 'assumption', 'memory', 'earlier_answer'])
-            .describe(
-              "user_words: words of the asking task's source; assumption: a plan assumption; memory: a current memory entry; earlier_answer: a question of your plan the user answered themselves.",
-            ),
-          ref: str.describe(
-            'For user_words, the words copied exactly; for assumption, its whole text; for memory, the memory id; for earlier_answer, the question id.',
-          ),
-        }),
-      )
-      .min(1)
-      .describe('What settles the answer; at least one.'),
-  }),
-  /** Reads one note of the calling lead's plan in full, by the id its digest names; read-only. */
-  'lead.note.read': z.strictObject({
-    project_id: str,
-    note_id: str.describe('The id a note digest names.'),
   }),
   'project.baseline.start': z.strictObject({
     project_id: str,
@@ -2262,7 +1871,6 @@ export const inputSchemas = {
       .optional(),
     answers: baselineAnswers,
     extensions: baselineExtensions.optional(),
-    plan_board: z.boolean().optional(),
   }),
   /** The user only; stores this round's answers and asks the baseline session for the next round. */
   'project.baseline.continue': z.strictObject({ baseline_id: str, answers: baselineAnswers }),
@@ -2327,7 +1935,6 @@ export const inputSchemas = {
     targets: z.record(z.string(), z.number().int().nonnegative().nullable()),
   }),
   'project.sessionDefaults.set': z.strictObject({ project_id: str, ...sessionDefaults }),
-  'project.autoMerge.set': z.strictObject({ project_id: str, enabled: z.boolean() }),
   /** The user only; lets the project's gate commands on macOS open the GPU, its kernel driver included. */
   'project.gateGpu.set': z.strictObject({ project_id: str, enabled: z.boolean() }),
   'project.externalEvents.set': z.strictObject({ project_id: str, mode: externalEventsMode }),
@@ -2346,7 +1953,6 @@ export const inputSchemas = {
       key: z.literal('external_events'),
       value: projectSettingValues.external_events,
     }),
-    z.strictObject({ key: z.literal('auto_merge'), value: projectSettingValues.auto_merge }),
   ]),
   /** Removes a global value, so projects without their own follow the built-in default; the user only. */
   'project.defaults.clear': z.strictObject({ key: z.enum(PROJECT_SETTING_KEYS) }),
@@ -2354,7 +1960,7 @@ export const inputSchemas = {
   'project.override.clear': z.strictObject({
     project_id: str,
     key: z.enum(PROJECT_SETTING_KEYS),
-    param: workflowPolicySettings.keyof().exclude(['improvement_mode']).optional(),
+    param: workflowPolicySettings.keyof().optional(),
   }),
   /** {project_id, at}; moves the caller's seen cursor of the project to at, now by default. project.brief lists what happened after it. */
   'project.seen': z.strictObject({ project_id: str, at: z.number().int().min(0).optional() }),
@@ -2364,25 +1970,6 @@ export const inputSchemas = {
   'personal.key.create': z.strictObject({ label: z.string().trim().min(1).max(80) }),
   /** The user only; revokes the personal agent key at once, and it stays revoked after a restart. */
   'personal.key.revoke': z.strictObject({ key_id: str }),
-  'external.approve': z.strictObject({ project_id: str, subject_key: str }),
-  /** The user only; returns the open session of the agent, by agent_id, by the kind of a built-in one or as the personal agent, opening one when there is none. */
-  'resident.open': z.union([
-    z.strictObject({ project_id: str, kind: z.enum(['assistant', 'triage']) }),
-    z.strictObject({ agent_id: str }),
-    z.strictObject({ kind: z.literal('personal') }),
-  ]),
-  /** The user only; sends the user's request to the project's Assistant, or to the target session, steering it while it runs; returns {session_id, turn_id}. */
-  'request.send': z.strictObject({
-    project_id: str,
-    input: str,
-    attachments: turnExtras.attachments,
-    target: z
-      .discriminatedUnion('kind', [
-        z.strictObject({ kind: z.literal('assistant') }),
-        z.strictObject({ kind: z.literal('session'), session_id: str }),
-      ])
-      .optional(),
-  }),
   'github.pr.create': z.strictObject({
     session_id: str,
     title: str.optional(),
@@ -2401,16 +1988,14 @@ export const inputSchemas = {
       ultracode: z.boolean().optional(),
       input: str,
       ...turnExtras,
-      /** The board task the session works on, `<lead session id>:<task id>`. */
-      task_id: str.optional(),
       /** The device the session runs on; absent is this machine. */
       device_id: str.optional(),
       /**
        * project_setup: the first message starts with the guide for a project built from nothing.
-       * lead: the session plans on the board with the Pantheon tools; without a purpose or task it runs as the bare runtime.
-       * conductor: the native session with only the four conductor tools.
+       * conductor: the native session with only the five conductor tools.
+       * Without a purpose the session runs as the bare runtime.
        */
-      purpose: z.enum(['project_setup', 'lead', 'conductor']).optional(),
+      purpose: z.enum(['project_setup', 'conductor']).optional(),
     })
     .refine(validSessionWorkspace, { message: 'An in-place session cannot have a start point' }),
   /** Opens a new worktree session with the source's files and a text handoff. */
@@ -2563,15 +2148,6 @@ export const inputSchemas = {
   'session.merge': z.strictObject({
     session_id: str.optional(),
     project_id: str.optional(),
-    task_id: planId
-      .optional()
-      .describe("The task whose session's merge stopped on files outside its scope."),
-    /** Lands files outside the scope of the session's board task. */
-    allow_out_of_scope: z.boolean().optional().describe('true to merge those files anyway.'),
-    /** Why a lead lands files outside the task's scope; kept on the merge event. */
-    reason: boardText
-      .optional()
-      .describe('Why the task needs those files, under 400 characters; kept on the merge record.'),
   }),
   'session.gates.run': z.strictObject({ session_id: str, only_failed: z.boolean().optional() }),
   'session.gates.cancel': z.strictObject({ session_id: str }),
@@ -2598,12 +2174,19 @@ export const inputSchemas = {
   }),
   'review.finding': z
     .strictObject({
-      location: findingText,
-      quote: findingText,
-      evidence: findingText,
-      impact: findingText,
-      blocking: z.boolean(),
-      reproduction: z.unknown().optional(),
+      location: findingText.describe('The file and line, as path:line.'),
+      quote: findingText.describe(
+        'Text copied exactly from your first message, such as one whole line of the diff.',
+      ),
+      evidence: findingText.describe('What you saw.'),
+      impact: findingText.describe('What goes wrong, and for whom.'),
+      blocking: z.boolean().describe('True when it must be fixed before merge.'),
+      reproduction: z
+        .unknown()
+        .optional()
+        .describe(
+          'Required when blocking: the steps, input and wrong output, or a failing test with its command.',
+        ),
     })
     .refine((finding) => !finding.blocking || finding.reproduction !== undefined, {
       path: ['reproduction'],
@@ -2612,7 +2195,7 @@ export const inputSchemas = {
   'review.finding.resolve': z.strictObject({
     review_id: str,
     finding_id: str,
-    outcome: z.enum(['adopted', 'dismissed']),
+    outcome: z.enum(['fixed', 'intentional', 'not_worth_it', 'wrong']),
     note: str.optional(),
   }),
   /** A conductor session only; its project and its own session come from its credential. */
@@ -2632,8 +2215,13 @@ export const inputSchemas = {
   'conductor.spawn': z.strictObject({
     runtime: str.describe('The runtime of the new session.'),
     input: str.describe('The first message of the new session.'),
-    model: str.optional(),
-    effort: z.enum(EFFORT_LEVELS).optional(),
+    model: str
+      .optional()
+      .describe("The model of the new session; absent uses the runtime's default."),
+    effort: z
+      .enum(EFFORT_LEVELS)
+      .optional()
+      .describe("The reasoning effort of the new session; absent uses the runtime's default."),
   }),
   'conductor.state': z.strictObject({}),
   /** The user only. */
@@ -2679,8 +2267,6 @@ export const inputSchemas = {
     quiet_hours: quietHours.nullable().optional(),
     baseline_rounds: z.number().int().min(1).max(5).optional(),
     baseline_visuals: z.boolean().optional(),
-    /** Replaces the decisions the personal agent may answer. */
-    personal_answers: personalAnswers.optional(),
   }),
   /** The user only; replaces the device of this id in `~/.pantheon/config.json`. */
   'device.save': z.strictObject({ id: deviceId, ...deviceConfigSchema.shape }),
@@ -2720,12 +2306,6 @@ export const querySchemas = {
   'project.intro.read': z.strictObject({ project_id: str }),
   'project.facts.read': z.strictObject({ project_id: str }),
   'project.read': z.strictObject({ project_id: str }),
-  /** The user only; returns the project's AgentProfile records, each with role_prompt, the built-in role prompt of its template. */
-  'agent.list': z.strictObject({ project_id: str }),
-  /** The user only; returns the defaults of the ideas, goals and custom templates a new agent starts from. */
-  'agent.templates': z.strictObject({}),
-  ...agentWakeQuerySchemas,
-  ...agentLedgerQuerySchemas,
   'project.usage.read': z.strictObject({ project_id: str }),
   'project.review.metrics': z.strictObject({ project_id: str }),
   'extensions.inventory': z.strictObject({ project_id: str, runtime: str }),
@@ -2849,9 +2429,6 @@ export const querySchemas = {
     days: z.enum(['7', '30', '90', 'all']).default('30'),
   }),
   'workflow.policy': z.strictObject({ project_id: str }),
-  'task.trace': z.strictObject({ project_id: str, lead_session_id: str, task_id: str }),
-  /** TaskThreadEntry[] of the task in event order. */
-  'task.thread': z.strictObject({ project_id: str, lead_session_id: str, task_id: str }),
   /** RuntimeStatus[]; refresh checks again instead of answering from the last check. */
   'runtime.status': z.strictObject({ refresh: z.stringbool().optional() }),
   /** McpStatus; a project reads the runtime's project setup, a session reads its live setup. */
@@ -2908,8 +2485,6 @@ export interface AppSettings {
   quiet_hours?: { from: string; to: string };
   baseline_rounds: number;
   baseline_visuals: boolean;
-  /** The decisions the personal agent may answer for the user; empty unless the user turned one on. */
-  personal_answers: PersonalAnswerKind[];
 }
 /** GET /v1/device.list; this machine (id `local`) or a configured device, with what its last probe found. */
 export interface DeviceStatus {
@@ -2949,14 +2524,9 @@ export interface DeviceStatus {
 export interface DeviceListItem extends DeviceStatus {
   /** The device's entry of `~/.pantheon/config.json` as written; absent for this machine. */
   config?: z.infer<typeof deviceConfigSchema>;
-  /** The task sessions holding a place on the device and the resources unfinished tasks use there, of every project. */
   load: {
-    sessions: number;
-    uses: Record<string, number>;
     /** Open sessions on this device, including idle native sessions, across projects. */
     active_sessions: { id: string; title: string; runtime: string; started_at: string }[];
-    /** Resource name to occupying session ids; absent for resources whose occupants are unknown. */
-    resource_sessions?: Record<string, string[]>;
   };
 }
 /** GET /v1/device.ssh_hosts; a Host of `~/.ssh/config` without wildcards, with its own HostName and User. */
@@ -3024,7 +2594,7 @@ export interface ProjectSummary {
 }
 /** What a brief item links to; a merge is the merged session's id, decided the project's id. */
 export interface ProjectBriefRef {
-  kind: 'task' | 'milestone' | 'merge' | 'approval' | 'event' | 'decided';
+  kind: 'merge' | 'approval' | 'event' | 'decided';
   id: string;
 }
 /** One thing that happened after the brief's since; times are Unix milliseconds. */
@@ -3039,9 +2609,7 @@ export type ProjectBriefItem =
       top: NeedsYouItem;
     }
   | { kind: 'failure'; ref: ProjectBriefRef; at: number; reason: NeedsYouItem['reason'] }
-  | { kind: 'milestone'; ref: ProjectBriefRef; title: string; done: number; total: number }
   | { kind: 'merge'; ref: ProjectBriefRef; at: number }
-  | { kind: 'assumption'; ref: ProjectBriefRef; at: number; text: string }
   /** Listed when something was decided for the user after since; count is all of project.decisions. */
   | { kind: 'decided'; ref: ProjectBriefRef; count: number; types: Record<DecisionType, number> };
 /** The side model's paragraph about a brief; each sentence cites the items it is about. */
@@ -3056,96 +2624,23 @@ export interface ProjectBrief {
   /** Present when it was written for these items after this since. */
   prose?: ProjectBriefProse;
 }
-/** One thing decided without the user; at is Unix milliseconds. */
-export type DecisionForUser =
-  /** A worker prompt approved on the lead's behalf; decided_by is session:<lead id>, session_id the worker's. */
-  | {
-      kind: 'prompt_approved';
-      at: number;
-      approval_id: string;
-      session_id?: string;
-      decided_by: string;
-      tool?: string;
-      input_summary?: string;
-    }
-  /** A prompt answered by the stored permission rule. */
-  | {
-      kind: 'prompt_by_rule';
-      at: number;
-      approval_id: string;
-      session_id?: string;
-      /** Absent for a personal principal: a stored rule can be a whole command line. */
-      rule?: string;
-      tool?: string;
-      input_summary?: string;
-    }
-  /** A power the lead used on its own; subject is the id of the plan, milestone or session it acted on, session_id the lead's. */
-  | {
-      kind: 'power_used';
-      at: number;
-      power: Extract<
-        CharterPower,
-        'plan_change' | 'accept_milestone' | 'merge_out_of_scope' | 'create_agent'
-      >;
-      subject: string;
-      session_id: string;
-      /** The reason the lead gave when it used the power; absent when it gave none. */
-      reason?: string;
-      /** The current verification of the milestone a lead accepted although it had not passed. */
-      verification?: { id: string; state: MilestoneVerification['state'] };
-    }
-  /**
-   * A task session's question the lead answered; answer is the lead's, session_id the asking session's
-   * while it exists, overruled the answer the user replaced it with.
-   */
-  | {
-      kind: 'question_answered';
-      at: number;
-      lead_session_id: string;
-      question_id: string;
-      session_id?: string;
-      question: string;
-      answer: string;
-      citations: NonNullable<NonNullable<BoardPlan['questions']>[number]['citations']>;
-      /** Set on the lead's own question no one answered before its deadline: answer is the lead's recommendation, applied then; citations is empty. */
-      answered_by?: 'default';
-      overruled?: { answer: string; at: number };
-    }
-  /** A decision a personal agent key answered for the user. */
-  | {
-      kind: 'personal_answer';
-      at: number;
-      key_id: string;
-      command: 'lead.question.answer' | 'board.plan.proposal.resolve' | 'milestone.accept';
-      /** The id of the question, plan proposal or milestone. */
-      subject: string;
-      /** The lead session whose question or proposal it was, or that owns the milestone. */
-      lead_session_id?: string;
-      /** The question, the reason the lead gave for the proposal, or the milestone's title. */
-      text: string;
-      /** The answer, or the proposal's status once resolved; absent for a milestone. */
-      decision?: string;
-      /** The reason given when resolving the proposal. */
-      reason?: string;
-    };
+/** A prompt answered by the stored permission rule; at is Unix milliseconds. */
+export interface DecisionForUser {
+  kind: 'prompt_by_rule';
+  at: number;
+  approval_id: string;
+  session_id?: string;
+  /** Absent for a personal principal: a stored rule can be a whole command line. */
+  rule?: string;
+  tool?: string;
+  input_summary?: string;
+}
 /** GET /v1/project.decisions. */
 export interface DecisionsForUser {
   items: DecisionForUser[];
 }
 /** The type the approved-for-you list is filtered by. */
-export type DecisionType = 'permission' | 'answer' | 'plan_change';
-/** A decision's type; a power other than a plan change, and a milestone a key accepted, have none. */
-export function decisionType(item: DecisionForUser): DecisionType | null {
-  if (item.kind === 'prompt_approved' || item.kind === 'prompt_by_rule') return 'permission';
-  if (item.kind === 'question_answered') return 'answer';
-  if (item.kind === 'personal_answer')
-    return item.command === 'lead.question.answer'
-      ? 'answer'
-      : item.command === 'board.plan.proposal.resolve'
-        ? 'plan_change'
-        : null;
-  return item.power === 'plan_change' ? 'plan_change' : null;
-}
+export type DecisionType = 'permission';
 /** GET /v1/session.search; metadata first, then messages, newest first in each group. */
 export interface SessionSearchResult {
   hits: SessionSearchHit[];
@@ -3178,6 +2673,8 @@ export interface WorkbenchSession {
   remote_pull?: NonNullable<Session['remote_pull']>;
   runtime_review?: true;
   forked_from?: { session_id: string; before_turn_id?: string; before_span_id?: string };
+  /** The conductor session that spawned this one. */
+  spawned_by?: NonNullable<Session['spawned_by']>;
   /** ISO time of the session.opened event. */
   created_at: string;
   /** Empty for a baseline session without a title, which baseline_started_at names. */
@@ -3192,7 +2689,7 @@ export interface WorkbenchSession {
   behind?: number;
   /** Merge preview against the target head; absent until computed or without commits ahead. */
   predicted_conflicts?: { files: string[]; total: number };
-  /** The task goal or first user input, with its ISO time. */
+  /** The first user input, with its ISO time. */
   goal?: { text: string; at: string };
   model: string | null;
   effort: EffortLevel | null;
@@ -3295,11 +2792,6 @@ export interface WorkbenchSession {
     /** Why the gate that blocks the merge failed. */
     failure_class?: 'environment' | 'code';
   } | null;
-  /** The lead session of the board task this session was opened from; absent for other sessions. */
-  lead?: string;
-  /** The plan task this session was opened from, with the title of its lane. */
-  task?: { id: string; title: string; lane: string; lane_title: string; milestone?: string };
-  resident?: NonNullable<Session['resident']>;
   /** ISO time the user pinned the session; absent when it is not pinned. */
   pinned_at?: string;
   /** ISO time the user archived the session; absent when it is not archived. */

@@ -22,7 +22,6 @@ import {
   type ValidationResult,
 } from './validation-executor.js';
 import { retryingIndexLock, runGit } from './git.js';
-import { retiredBinding, taskGeneration, sessionPlanTask } from './board-plan.js';
 import { workflowPolicy } from './workflow-policy.js';
 import { onDevice } from './remote-workspace.js';
 import { forgetWorktreeReads } from './workbench-session.js';
@@ -54,8 +53,6 @@ export interface LandingOwner {
   session_id?: string;
   /** The progress an earlier run of this landing saved, and where this run saves its own. */
   progress?: { saved?: LandingProgress; save(progress: LandingProgress): void };
-  /** Paths the landed change must stay within; absent allows any path, empty none. */
-  scope?: string[];
   /** A workflow approval may hold a gated candidate before the source moves. */
   beforeLand?(): boolean;
 }
@@ -79,28 +76,12 @@ const gateKey = (ctx: ControlContext, projectId: string, commands: GateCommands 
     }),
   });
 
-/** The current task contract; retired sessions cannot borrow a task that reuses their id. */
-function taskOfSession(ctx: ControlContext, session: Session) {
-  const task = session.task,
-    direct = session.direct_task;
-  const plan = task
-    ? ctx.store.get<BoardPlan>('board_plans', task.lead_session_id)
-    : direct && ctx.store.get<BoardPlan>('board_plans', session.id);
-  return (task && !retiredBinding(plan, session)) ||
-    (direct && direct.generation === taskGeneration(plan, direct.id))
-    ? plan && sessionPlanTask(plan, session)
-    : undefined;
-}
-
 /** The enabled gate commands of one project root. */
 export function projectGateCommands(project: Project, root: string): GateCommands | undefined {
   return project.gates?.[root]?.filter((command) => command.enabled !== false);
 }
 
-/**
- * The gate of the project folder a clone delivers into, then the acceptance of the session's
- * board task, which may need what the gate built.
- */
+/** The gate of the project folder a clone delivers into. */
 export function gateCommands(
   ctx: ControlContext,
   project: Project,
@@ -108,14 +89,7 @@ export function gateCommands(
   session: Session,
 ): GateCommands | undefined {
   const folder = workspace.source ? rootOf(project, [workspace.source]) : undefined;
-  const configured = folder ? projectGateCommands(project, folder) : undefined;
-  const task = taskOfSession(ctx, session);
-  const acceptance = task?.acceptance ?? [];
-  if (!acceptance.length) return configured;
-  return [
-    ...(configured ?? []),
-    ...acceptance.map((command) => ({ name: command, argv: ['/bin/sh', '-c', command] })),
-  ];
+  return folder ? projectGateCommands(project, folder) : undefined;
 }
 
 /**
@@ -745,89 +719,9 @@ export async function landWorkspace(
           { ...item, reason: 'protected_paths' },
           { conflicts: agentConfiguration },
         );
-      const session = ctx.store
-        .list<Session>('sessions')
-        .find((candidate) => owner.key === `session-${candidate.id}`);
-      const task = session && taskOfSession(ctx, session);
-      if (task) {
-        const inputs = (commands ?? []).flatMap((command) =>
-          command.argv.flatMap((argument) =>
-            (argument.match(/[^\s"'`;|&()<>*]+/g) ?? []).map((token) =>
-              token.replace(/^--[^=]+=/, '').replace(/^\.\//, ''),
-            ),
-          ),
-        );
-        const patches = await filePatches(
-          workspace.path,
-          landsOn,
-          target,
-          changed.filter(testPath),
-        );
-        // A file the acceptance names counts only when it existed before: a new one is the task's output.
-        const existed = await presentIn(
-          workspace.path,
-          landsOn,
-          changed.filter((file) =>
-            // A token with no path segment, such as a bare `.`, would contain every file.
-            inputs.some((input) => segments(input).length && within(file, input)),
-          ),
-        );
-        const verificationFiles: string[] = [];
-        for (const file of changed) {
-          const configuration =
-            /^(?:\.github\/workflows\/|\.circleci\/)|(?:^|\/)(?:package\.json|pnpm-workspace\.ya?ml|\.gitlab-ci\.ya?ml|Jenkinsfile|Makefile|(?:vitest|jest|playwright|eslint)\.config\.[^/]+|tsconfig(?:\.[^/]+)?\.json|pytest\.ini|tox\.ini|pyproject\.toml)$/.test(
-              file,
-            );
-          const patch = patches.get(file);
-          const deleted = patch !== undefined && /\ndeleted file mode /.test(patch);
-          // Hunk lines only: the `---` and `+++` headers would match the line rules.
-          let hunk = false;
-          const body = (patch ?? '')
-            .split('\n')
-            .filter((line) => {
-              if (line.startsWith('diff --git ')) hunk = false;
-              else if (line.startsWith('@@')) hunk = true;
-              else return hunk;
-              return false;
-            })
-            .join('\n');
-          const weakened =
-            deleted ||
-            /^-.*\b(?:expect\s*\(|(?:it|test|describe|xit|xtest|xdescribe)\s*(?:\(|\.))/m.test(
-              body,
-            ) ||
-            /^\+.*(?:\b(?:it|test|describe)\s*\.\s*skip\b|\.\s*only\b|\b(?:xit|xtest|xdescribe)\s*\(|\bpytest\.mark\.(?:skip|skipif|xfail)\b|\bunittest\.skip|\bt\.Skip\(|#\[ignore\b)/m.test(
-              body,
-            );
-          // A named test only gains cases from pure additions.
-          const named = existed.has(file) && (!testPath(file) || deleted || /^-/m.test(body));
-          if (weakened || configuration || named) verificationFiles.push(file);
-        }
-        const unlisted = verificationFiles.filter(
-          (file) => !task.scope.some((entry) => segments(entry).join('/') === file),
-        );
-        if (unlisted.length)
-          return Object.assign(
-            { ...item, reason: 'verification_changed' },
-            { conflicts: unlisted },
-          );
-        if (verificationFiles.length)
-          ctx.store.event('session.verification_change_allowed', session!, owner.projectId, {
-            files: verificationFiles,
-            reason: 'explicit_task_scope',
-          });
-      }
       // A rebase replays a merge's parents and drops the changes made in the merge itself.
       if (onto && (await git(workspace.path, ['rev-list', '--merges', `${onto}..${target}`])))
         return { ...item, reason: 'merge_commits' };
-      // Before a rebase, so a file outside the scope that another task merged is no conflict first.
-      // Against the fork point, so the files of merges it would be rebased onto do not count;
-      // a rebase replays only the files the commits change, so it adds none to check after it.
-      if (owner.scope) {
-        const outside = await outOfScope(workspace.path, landsOn, target, owner.scope);
-        if (outside.length)
-          return Object.assign({ ...item, reason: 'out_of_scope' }, { conflicts: outside });
-      }
       if (onto) {
         const committer = await sourceCommitter(item.source);
         if (!committer) return { ...item, reason: 'committer_unknown' };

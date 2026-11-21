@@ -43,21 +43,27 @@ describe('sidebarGroups', () => {
   ];
   it.each([
     [
-      'groups a running task by its own state even while its lead is ready',
-      [session('lead', 'ready'), session('task', 'running', { lead: 'lead' })],
-      split,
-    ],
-    [
-      'groups a task session by its own state when its lead is not listed',
-      [session('lead', 'ready'), session('task', 'running', { lead: 'gone' })],
-      split,
-    ],
-    [
-      'keeps an active worker out of the group of its settled lead',
+      'groups a running spawned session by its own state even while its spawner is ready',
       [
-        session('second', 'waiting', { lead: 'lead' }),
+        session('lead', 'ready'),
+        session('task', 'running', { spawned_by: { session_id: 'lead' } }),
+      ],
+      split,
+    ],
+    [
+      'groups a spawned session by its own state when its spawner is not listed',
+      [
+        session('lead', 'ready'),
+        session('task', 'running', { spawned_by: { session_id: 'gone' } }),
+      ],
+      split,
+    ],
+    [
+      'keeps an active spawned session out of the group of its settled spawner',
+      [
+        session('second', 'waiting', { spawned_by: { session_id: 'lead' } }),
         session('lead', 'idle'),
-        session('first', 'merged', { lead: 'lead' }),
+        session('first', 'merged', { spawned_by: { session_id: 'lead' } }),
       ],
       [
         { key: 'waiting', rows: [['second', []]] },
@@ -69,7 +75,7 @@ describe('sidebarGroups', () => {
     expect(shape(list)).toEqual(groups);
   });
 
-  it('leaves sessions without a lead in their own groups', () => {
+  it('leaves sessions without a spawner in their own groups', () => {
     const list = [session('a', 'waiting'), session('b', 'idle'), session('c', 'done')];
     expect(sidebarGroups(list, BY_STATE)).toEqual([
       {

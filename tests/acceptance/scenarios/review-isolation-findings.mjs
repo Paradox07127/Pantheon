@@ -282,13 +282,13 @@ export async function run({ workspace, evidenceDir }) {
     await commitWriter('change', REWRITTEN, 'Guard the divisor of average');
     reads.reviews_after_change = await reviewsOf();
 
-    // Round two: only one reviewer finds the defect; the user adopts it and has it fixed.
+    // Round two: only one reviewer finds the defect; the user marks it fixed and has it fixed.
     reads.review_2 = await review(1);
     const lone = reads.review_2.findings.find((row) => row.status === 'open');
     const resolve = await send(
       'resolve',
       'review.finding.resolve',
-      { review_id: reads.review_2.id, finding_id: lone?.id ?? '', outcome: 'adopted' },
+      { review_id: reads.review_2.id, finding_id: lone?.id ?? '', outcome: 'fixed' },
       reads.review_2.revision,
     );
     reads.resolve = { status: resolve.status, data: resolve.data, command_id: resolve.command_id };
@@ -311,7 +311,7 @@ export async function run({ workspace, evidenceDir }) {
     const oldValid = oldWith(VALID_QUOTE),
       oldKept = oldWith(KEPT_QUOTE);
     const finalFindings = reads.reviews_final.flatMap((row) => row.findings);
-    const adopted = finalFindings.find((row) => row.id === lone?.id);
+    const fixed = finalFindings.find((row) => row.id === lone?.id);
     observations.review = {
       isolation_forbidden_reads: probes.filter((probe) => probe.sentinel_seen).length,
       invalid_quote_rejected:
@@ -338,8 +338,8 @@ export async function run({ workspace, evidenceDir }) {
         resolve.status !== 200 ||
         !lone ||
         reads.review_2.findings.filter((row) => row.status === 'open').length !== 1 ||
-        adopted?.resolution?.outcome !== 'adopted' ||
-        adopted.resolution.resolved_by !== USER_PRINCIPAL_ID ||
+        fixed?.resolution?.outcome !== 'fixed' ||
+        fixed.resolution.resolved_by !== USER_PRINCIPAL_ID ||
         finalFindings.some((row) => row.blocking) ||
         finalFindings.some((row) => row.resolution && row.id !== lone.id) ||
         all.some(

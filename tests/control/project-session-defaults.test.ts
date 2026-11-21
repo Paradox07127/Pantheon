@@ -161,31 +161,6 @@ it('stores single_model only with a default model and drops it when turned off',
   expect(f.current().session_defaults).not.toHaveProperty('single_model');
 });
 
-it('opens the lead session of a board sync on the default model and effort', async () => {
-  const f = await defaultsFixture(true),
-    before = f.current();
-  f.call(
-    'project.sessionDefaults.set',
-    {
-      project_id: before.id,
-      runtime: 'fixture',
-      permission_mode: 'plan',
-      model: 'fixture-large',
-      effort: 'low',
-    },
-    before.revision,
-  );
-  const { session_ids } = await f.call<{ session_ids: string[] }>('board.sync', {
-    project_id: before.id,
-  });
-  expect(session_ids).toHaveLength(1);
-  expect(f.store.must<Session>('sessions', session_ids[0]!)).toMatchObject({
-    runtime: 'fixture',
-    requested_model: 'fixture-large',
-    requested_effort: 'low',
-  });
-});
-
 it('removes project defaults and opens a new session with composer values afterward', async () => {
   const f = await defaultsFixture(true);
   const stored = f.call<Project>(

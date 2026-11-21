@@ -5,14 +5,7 @@ import {
   type Tool,
 } from '@modelcontextprotocol/sdk/types.js';
 import { PANTHEON_VERSION } from '@pantheon/domain/version';
-import {
-  command,
-  commandSchema,
-  inputSchemas,
-  querySchemas,
-  prettifyError,
-  type PersonalAnswerKind,
-} from '@pantheon/protocol';
+import { querySchemas, prettifyError } from '@pantheon/protocol';
 import { CommandError, daemonClient, refused } from './mcp.js';
 
 const DATA_NOT_INSTRUCTIONS =
@@ -37,41 +30,9 @@ const queryTools = {
   },
 } as const;
 
-// A personal key cannot upload attachments or answer a relayed task question.
-const answerInputs = {
-  question: inputSchemas['lead.question.answer'].omit({ answers: true }),
-} satisfies Partial<Record<PersonalAnswerKind, unknown>>;
-
-const answerCommands = {
-  question: 'lead.question.answer',
-} as const satisfies Partial<Record<PersonalAnswerKind, string>>;
-
-// The CLI does not depend on zod, so these build on the protocol's schemas: an empty strict object and the answer kinds.
-const answerDecision = querySchemas['projects.summary'].extend({
-  kind: inputSchemas['app.settings.set'].shape.personal_answers
-    .unwrap()
-    .element.extract(['question'])
-    .describe("The needs_you item's decision: question."),
-  input: answerInputs.question.describe('project_id, lead_session_id, question_id, answer.'),
-  expected_revision: commandSchema.shape.expected_revision.default(null).describe('Leave it out.'),
-});
-
-const commandTools = {
-  answer_decision: {
-    schema: answerDecision,
-    description:
-      'Answer one decision from needs_you for the user, of a kind the user let the personal agent answer.',
-  },
-} as const;
-
-/** The MCP server of a personal key: cross-project reads and the decisions the user allowed. */
-export async function createPersonalMcpServer(
-  daemonUrl: string,
-  token: string,
-  keyId: string,
-): Promise<Server> {
-  const { request, retried, send } = daemonClient(daemonUrl, token);
-  const actor = `personal:${keyId}`;
+/** The MCP server of a personal key: cross-project reads. */
+export async function createPersonalMcpServer(daemonUrl: string, token: string): Promise<Server> {
+  const { request, retried } = daemonClient(daemonUrl, token);
   const server = new Server(
     { name: 'pantheon', version: PANTHEON_VERSION },
     { capabilities: { tools: {} } },
@@ -82,11 +43,6 @@ export async function createPersonalMcpServer(
         name,
         description: tool.description,
         inputSchema: querySchemas[tool.method].toJSONSchema() as Tool['inputSchema'],
-      })),
-      ...Object.entries(commandTools).map(([name, tool]) => ({
-        name,
-        description: tool.description,
-        inputSchema: tool.schema.toJSONSchema() as Tool['inputSchema'],
       })),
     ],
   }));
@@ -103,36 +59,7 @@ export async function createPersonalMcpServer(
         const result = await retried(() => request(`/v1/${method}${search ? `?${search}` : ''}`));
         return { content: [{ type: 'text', text: JSON.stringify(result) }] };
       }
-      let sent;
-      if (params.name === 'answer_decision') {
-        const parsed = answerDecision.safeParse(args);
-        if (!parsed.success) throw new CommandError('invalid_request', prettifyError(parsed.error));
-        const input = answerInputs[parsed.data.kind].safeParse(parsed.data.input);
-        if (!input.success) throw new CommandError('invalid_request', prettifyError(input.error));
-        sent = command(
-          actor,
-          answerCommands[parsed.data.kind],
-          input.data,
-          parsed.data.expected_revision,
-        );
-      } else throw new CommandError('permission_denied');
-      const result = await send(sent);
-      const receipt = result.receipt as Record<string, unknown> | undefined;
-      if (receipt && typeof receipt === 'object' && 'error' in receipt)
-        return {
-          isError: true,
-          content: [
-            {
-              type: 'text',
-              text: refused(
-                params.name,
-                String(receipt.error),
-                receipt.message === undefined ? undefined : String(receipt.message),
-              ),
-            },
-          ],
-        };
-      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+      throw new CommandError('permission_denied');
     } catch (error) {
       return {
         isError: true,

@@ -20,7 +20,7 @@
 Pantheon 是一个本机运行的原生编码 agent 会话工作台。
 每个会话是一个原生 Claude Code、Codex 或 ACP agent(grok、agy)会话。
 新会话直接在项目目录的当前分支上改。
-目录里已有会话在改、你选了起点、或 lead 和常驻 agent 派出 worker 时，会话开自己的 git worktree。
+目录里已有会话在改、你选了起点、或带 Pantheon 工具的会话起它时，会话开自己的 git worktree。
 工作完成后先跑项目门禁。通过后,Pantheon 把改动提交到当前分支，或把 worktree 的提交合并回源仓库。
 你也可以导入在 Pantheon 之外开始的会话。导入的会话在原目录续接。
 
@@ -34,9 +34,8 @@ Pantheon 是一个本机运行的原生编码 agent 会话工作台。
 - **会话。** 在新 worktree 或当前目录里开原生会话。发消息、审批工具调用、打断、分叉、回滚。
 - **项目门禁。** Pantheon 对会话做 rebase,跑项目的门禁命令，再用 `git merge --ff-only` 合并。
 - **导入。** 在原目录续接外部的 Claude Code 或 Codex 会话。
-- **项目看板。** lead 会话写计划，任务会话做任务。看板显示里程碑、任务和需要你处理的事项。
-- **助理。** 每个项目的助理(Assistant)是它的默认入口：[项目看板](docs/usage.zh-CN.md#项目看板)上写的需求默认发给它。
-- **工程看板。** 迭代、协作和命名工作流。
+- **审查与落地。** 你选的运行时审任意一段提交(`pnpm cli review`)。任意分支过项目门禁后落地(`pnpm cli land`)。
+- **带 Pantheon 工具的会话。** 会话可以多五个工具：请求审查、让自己的工作落地、起另一个运行时的会话、读项目的状态、画图。
 - **轨迹。** 每个会话的时间轴、工具调用和单步回放。
 - **记忆。** agent 提交、由你确认的项目决定、报告和笔记。
 - **设备。** 经 SSH 在别的机器上跑会话。
@@ -45,22 +44,6 @@ Pantheon 是一个本机运行的原生编码 agent 会话工作台。
 [使用说明](docs/usage.zh-CN.md)逐项介绍这些功能。
 
 <table>
-  <tr>
-    <td width="50%">
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/images/board-zh-CN-dark.webp">
-        <img alt="项目看板：计划里的任务和需要你处理的事项" src="docs/images/board-zh-CN-light.webp">
-      </picture>
-      <p align="center">项目看板</p>
-    </td>
-    <td width="50%">
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/images/insights-zh-CN-dark.webp">
-        <img alt="工程看板：迭代与协作" src="docs/images/insights-zh-CN-light.webp">
-      </picture>
-      <p align="center">工程看板</p>
-    </td>
-  </tr>
   <tr>
     <td colspan="2">
       <picture>
@@ -158,7 +141,7 @@ daemon 也登记本机已安装的其他 ACP agent(例如 agy)。
 
 | 文档                                  | 内容                                                 |
 | ------------------------------------- | ---------------------------------------------------- |
-| [使用说明](docs/usage.zh-CN.md)       | 安装、打开项目、会话、合并、导入、看板、设置、CLI。  |
+| [使用说明](docs/usage.zh-CN.md)       | 安装、打开项目、会话、合并、导入、设置、CLI。        |
 | [开发说明](docs/development.zh-CN.md) | 构建、测试、运行、打包、验收、评测、探测、仓库规则。 |
 | [发布](docs/releasing.zh-CN.md)       | 版本号、安装包、冒烟测试和 GitHub 预发布。           |
 | [参与开发](CONTRIBUTING.zh-CN.md)     | 提 pull request 前的检查、约定、报告 bug。           |

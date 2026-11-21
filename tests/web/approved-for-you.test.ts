@@ -27,15 +27,6 @@ import { zh, zhf } from './i18n-setup.js';
 
 const AT = new Date(2026, 10, 17, 14, 2).getTime();
 
-const byLead: DecisionForUser = {
-  kind: 'prompt_approved',
-  at: AT,
-  approval_id: 'approval-lead',
-  session_id: 'session-worker',
-  decided_by: 'session:session-lead',
-  tool: 'Bash',
-  input_summary: 'git push origin refund-list',
-};
 const byRule: DecisionForUser = {
   kind: 'prompt_by_rule',
   at: AT - 60_000,
@@ -45,46 +36,18 @@ const byRule: DecisionForUser = {
   tool: 'Bash',
   input_summary: 'pnpm test',
 };
-const power: DecisionForUser = {
-  kind: 'power_used',
-  at: AT - 120_000,
-  power: 'plan_change',
-  subject: 'plan-7',
-  session_id: 'session-lead',
-  reason: 'The export needs a narrower contract',
-};
 const deleted: DecisionForUser = {
   kind: 'prompt_by_rule',
   at: AT - 180_000,
   approval_id: 'approval-gone',
   rule: 'Bash(git status)',
 };
-const answered: DecisionForUser = {
-  kind: 'question_answered',
-  at: AT - 240_000,
-  lead_session_id: 'session-lead',
-  question_id: 'question-timezone',
-  session_id: 'session-worker',
-  question: 'Which timezone closes a reconciliation day?',
-  answer: 'UTC',
-  citations: [{ kind: 'user_words', ref: 'close days the way the ledger does' }],
-};
-const keyAnswered: DecisionForUser = {
-  kind: 'personal_answer',
-  at: AT - 480_000,
-  key_id: 'k1',
-  command: 'lead.question.answer',
-  subject: 'question-format',
-  lead_session_id: 'session-lead',
-  text: 'Which file format comes first?',
-  decision: 'CSV',
-};
 
 let decisions: Record<string, DecisionForUser[]>;
 let query: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
-  decisions = { alpha: [byLead, byRule, power, deleted], beta: [] };
+  decisions = { alpha: [byRule, deleted], beta: [] };
   query = vi.fn(async (_method: string, params: { project_id: string }) => ({
     ok: true,
     value: { items: decisions[params.project_id] ?? [] },
@@ -175,15 +138,8 @@ describe('approved for you', () => {
     ]);
   });
 
-  const milestone: DecisionForUser = {
-    kind: 'power_used',
-    at: AT - 360_000,
-    power: 'accept_milestone',
-    subject: 'milestone-2',
-    session_id: 'session-lead',
-  };
   it('lists only a prompt a stored rule answered, with who decided and its rule, and links its session', async () => {
-    decisions.alpha = [byLead, byRule, power, milestone, keyAnswered, answered];
+    decisions.alpha = [byRule];
     const h = await page();
     expect(rows(h.value)).toHaveLength(1);
     const row = rowOf(h.value, 'pnpm test');
@@ -240,10 +196,6 @@ describe('approved for you', () => {
     const actions = (tree: unknown) =>
       rows(tree).map((r) => text(nodes(r).find((n) => n.props.role === 'cell')!));
 
-    beforeEach(() => {
-      decisions.alpha = [byLead, byRule, power, deleted, answered, milestone, keyAnswered];
-    });
-
     it('names each type with its count in the range read', async () => {
       const h = await page();
       expect(segments(h.value).map((s) => s.props['aria-label'])).toEqual([
@@ -291,7 +243,7 @@ describe('approved for you', () => {
     });
 
     it('keeps a type with no rows selectable and shows the empty state', async () => {
-      decisions.alpha = [byLead];
+      decisions.alpha = [];
       const h = await page();
       expect(segments(h.value)[1]!.props['aria-label']).toBe(
         zhf('trace.approved.type.count', { type: zh('trace.approved.type.permission'), count: 0 }),
@@ -390,7 +342,7 @@ describe('the needs-you footer', () => {
     );
 
   it('counts what was approved today across the projects and opens the list', async () => {
-    decisions.beta = [byLead, { ...byRule, approval_id: 'approval-beta' }];
+    decisions.beta = [{ ...byRule, approval_id: 'approval-beta' }];
     const h = await open();
     expect(query).toHaveBeenCalledWith('project.decisions', {
       project_id: 'beta',

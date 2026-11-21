@@ -3,7 +3,6 @@ import path from 'node:path';
 import { expect, it, vi } from 'vitest';
 import type {
   Approval,
-  Milestone,
   Principal,
   Review,
   Session,
@@ -260,34 +259,19 @@ it.each(['session.send', 'session.steer'] as const)(
   },
 );
 
-it('refuses to delete for another principal, a merged session and one a milestone names', async () => {
+it('refuses to delete for another principal and a merged session', async () => {
   const f = await workbenchFixture();
   const merged = await f.create('Merged work'),
-    named = await f.create('Named work'),
     free = await f.create('Free work');
   end(f, merged.id, { outcome: 'merged' });
-  end(f, named.id, { outcome: 'discarded' });
   end(f, free.id, { outcome: 'discarded' });
-  f.store.insert<Milestone>('milestones', {
-    id: 'named-milestone',
-    revision: 1,
-    project_id: f.project.id,
-    title: 'Ship it',
-    required_sessions: [named.id],
-    criteria: ['It ships'],
-    created_at: f.store.now(),
-    updated_by: 'user',
-  });
   expect(() => run(f, 'session.delete', free.id, {}, planner(f))).toThrow(
     expect.objectContaining({ code: 'permission_denied' }),
   );
   expect(() => run(f, 'session.delete', merged.id)).toThrow(
     expect.objectContaining({ code: 'invalid_state' }),
   );
-  expect(() => run(f, 'session.delete', named.id)).toThrow(
-    expect.objectContaining({ code: 'invalid_state' }),
-  );
-  expect(f.list().map((session) => session.id)).toEqual([merged.id, named.id, free.id]);
+  expect(f.list().map((session) => session.id)).toEqual([merged.id, free.id]);
 });
 
 it('deletes a running worktree session: closes its process, removes its worktree and rows, keeps its events', async () => {
@@ -306,7 +290,7 @@ it('deletes a running worktree session: closes its process, removes its worktree
     input: 'Read the notes',
     attachments: [upload.id],
     // A session the user opened has no managed native store to remove.
-    purpose: 'lead',
+    purpose: 'project_setup',
   });
   const workspace = await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(

@@ -450,7 +450,13 @@ describe('session overview', () => {
   it('heads the overview with the machine, the folder with where it sits, and the branch the session runs on', async () => {
     mock.board.board.workspaces = [{ id: 'workspace-a', path: '/Users/me/code/pantheon' }];
     replies['device.list'] = [
-      { id: 'local', name: 'Studio', home: '/Users/me', online: true, load: { sessions: 1 } },
+      {
+        id: 'local',
+        name: 'Studio',
+        home: '/Users/me',
+        online: true,
+        load: { active_sessions: [] },
+      },
     ];
     const h = card(listed({ branch: 'webhook-signatures' }));
     await h.flush();

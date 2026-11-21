@@ -1115,56 +1115,63 @@ describe('review tab', () => {
     expect(named(h.value, 'ReviewCoverage').props.review.state).toBe('completed');
   });
 
-  it('adopts or dismisses a finding that has no place in the diff', async () => {
+  const outcomeName = {
+    fixed: () => t({ id: 'sessions.model.finding.fixed', defaultMessage: 'Fixed' }),
+    intentional: () =>
+      t({ id: 'sessions.model.finding.intentional', defaultMessage: 'Intentional' }),
+    not_worth_it: () =>
+      t({ id: 'sessions.model.finding.notWorthIt', defaultMessage: 'Not worth it' }),
+    wrong: () => t({ id: 'sessions.model.finding.wrong', defaultMessage: 'Wrong' }),
+  };
+  const resolveControl = (
+    h: HookHost<any>,
+    outcome: keyof typeof outcomeName,
+    impact: string,
+  ): ReactElement<any> =>
+    find(
+      h.value,
+      (n) =>
+        n.props['aria-label'] ===
+        t(
+          { id: 'sessions.panel.review.resolveLabel', defaultMessage: '{outcome}: {impact}' },
+          { outcome: outcomeName[outcome](), impact },
+        ),
+    );
+
+  it('marks a finding that has no place in the diff fixed, intentional, not worth it or wrong', async () => {
     reviews.data = [review()];
     const h = tab();
-    const finding = (outcome: 'adopt' | 'dismiss', label: string) =>
-      find(
-        h.value,
-        (n) =>
-          n.props['aria-label'] ===
-          t(
-            { id: `sessions.panel.review.${outcome}Label`, defaultMessage: `${label}: {impact}` },
-            { impact: 'Returns the wrong answer' },
-          ),
+    for (const outcome of ['fixed', 'intentional', 'not_worth_it', 'wrong'] as const)
+      expect(text(resolveControl(h, outcome, 'Returns the wrong answer'))).toBe(
+        outcomeName[outcome](),
       );
-    finding('adopt', 'Adopt').props.onClick();
+    resolveControl(h, 'intentional', 'Returns the wrong answer').props.onClick();
     await h.flush();
     expect(commands).toMatchObject([
       {
         type: 'review.finding.resolve',
-        input: { review_id: 'review-a', finding_id: 'finding-a', outcome: 'adopted' },
+        input: { review_id: 'review-a', finding_id: 'finding-a', outcome: 'intentional' },
         expected_revision: 3,
       },
     ]);
     expect(reviews.reload).toHaveBeenCalled();
     reviews.data = [review({ revision: 4 })];
     h.render();
-    finding('dismiss', 'Dismiss').props.onClick();
+    resolveControl(h, 'not_worth_it', 'Returns the wrong answer').props.onClick();
     await h.flush();
-    expect(commands[1]).toMatchObject({ input: { outcome: 'dismissed' }, expected_revision: 4 });
+    expect(commands[1]).toMatchObject({ input: { outcome: 'not_worth_it' }, expected_revision: 4 });
   });
 
   it('keeps the other findings off until the reviews read holds the one resolved', async () => {
     const other = finding({ id: 'finding-b', impact: 'Leaks a handle' });
     reviews.data = [review({ findings: [finding(), other] })];
     const h = tab();
-    const control = (outcome: 'adopt' | 'dismiss', label: string, impact: string) =>
-      find(
-        h.value,
-        (n) =>
-          n.props['aria-label'] ===
-          t(
-            { id: `sessions.panel.review.${outcome}Label`, defaultMessage: `${label}: {impact}` },
-            { impact },
-          ),
-      );
-    control('adopt', 'Adopt', 'Returns the wrong answer').props.onClick();
+    resolveControl(h, 'fixed', 'Returns the wrong answer').props.onClick();
     await h.flush();
-    expect(control('dismiss', 'Dismiss', 'Leaks a handle').props.disabled).toBe(true);
+    expect(resolveControl(h, 'wrong', 'Leaks a handle').props.disabled).toBe(true);
     reviews.data = [review({ revision: 4, findings: [finding(), other] })];
     h.render();
-    expect(control('dismiss', 'Dismiss', 'Leaks a handle').props.disabled).toBe(false);
+    expect(resolveControl(h, 'wrong', 'Leaks a handle').props.disabled).toBe(false);
   });
 });
 

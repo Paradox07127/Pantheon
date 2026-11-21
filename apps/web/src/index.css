@@ -387,8 +387,8 @@ body {
 .pt :is(img,a):not([draggable=true]){-webkit-user-drag:none}
 .pt :where(:focus-visible){outline:1.5px solid var(--focus-ring);outline-offset:1.5px}
 /* Only what the user copies is selectable; the controls inside it stay unselectable. */
-:is(.ss-thread,.md,pre,code,.trc-an-t,.trc-an-p,.tr-fail>span,.tr-err,.rq-what,.rq-cmd,.rq-files,.rq-err,.bd-dh h2,.bd-goal,.bd-tl-x,.bd-dmg .sha,.bd-hs-sha,.ret-dt,.app-banner,.ps-cg .mono,.ps-cg .path,input,textarea,[contenteditable]){user-select:text}
-:is(.ss-thread,.md,.rq-what,.ret-dt) :is(button,summary,[role=button],[role=tab]){user-select:none}
+:is(.ss-thread,.md,pre,code,.trc-an-t,.trc-an-p,.tr-fail>span,.tr-err,.bd-dh h2,.bd-goal,.bd-tl-x,.bd-dmg .sha,.bd-hs-sha,.ret-dt,.app-banner,.ps-cg .mono,.ps-cg .path,input,textarea,[contenteditable]){user-select:text}
+:is(.ss-thread,.md,.ret-dt) :is(button,summary,[role=button],[role=tab]){user-select:none}
 /* Compact density: lower controls, one step less spacing, no margins around panels; type keeps its sizes. */
 .pt[data-density=compact]{--h-ctl:28px;--sp-3:8px;--sp-4:12px}
 .pt[data-density=compact] .sb-pz{margin:0}
@@ -979,7 +979,6 @@ button.ss-gh:hover{background:var(--st-hov)}
 .ss-badge[data-badge=running],.ss-badge[data-badge=starting],.ss-badge[data-badge=stopping],.ss-badge[data-badge=merging]{animation:ss-breathe 1.6s ease-in-out infinite}
 .ss-badge[data-badge=queued]{--c:transparent;width:7px;height:7px;border-color:var(--idle)}
 .ss-hc .ss-av{--cut:var(--sf)}
-svg.lucide.lead-crown{width:12px;height:12px;margin-left:var(--sp-1);color:var(--mu)}
 /* Tree columns before a session listed under the one it came from, the line under the parent glyph's centre and over the 4px row gap; a fork's elbow is dashed. */
 .ss-tw{position:relative;flex:none;align-self:stretch;width:16px}
 .ss-tw:is([data-line=more],[data-line=end])::before{content:'';position:absolute;left:10px;top:-4px;width:6px;height:calc(50% + 4px);border:solid var(--bd3);border-width:0 0 var(--hair) var(--hair);border-bottom-left-radius:6px}

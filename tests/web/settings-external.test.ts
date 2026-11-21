@@ -17,7 +17,6 @@ vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
   (await import('./web-live-stores.js')).liveStores(actual as never),
 );
 import { RadioGroup } from '../../apps/web/node_modules/@base-ui/react/radio-group/index.mjs';
-import { EmptyState } from '@/components/EmptyState';
 import { useBoard } from '@/data/board';
 import { t } from '@/i18n';
 import { ExternalPage } from '@/screens/settings/ExternalPage';
@@ -75,7 +74,6 @@ const read = (fields: Partial<ExternalRead> = {}): BridgeResult<unknown> => ({
       event({ title: 'Old request', session_id: 'gone', received_at: NOW - 26 * 60 * MINUTE }),
       event({ title: 'No runtime', state: 'failed', error: 'Runtime absent not available' }),
     ],
-    held: ['github:acme/reports#12'],
     ...fields,
   } satisfies ExternalRead,
 });
@@ -113,9 +111,6 @@ async function mount() {
   return h;
 }
 const all = (h: HookHost<any>) => nodes(h.value as ReactElement);
-const rows = (h: HookHost<any>) => all(h).filter((n) => n.props.role === 'listitem');
-const cells = (row: ReactElement<any>) =>
-  (row.props.children as ReactElement<any>[]).filter(Boolean).map(text);
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'], now: NOW });
@@ -138,7 +133,7 @@ beforeEach(() => {
       cursor: 1,
       projects: [project],
       sessions: [
-        session('held', { state: 'open', resident: { kind: 'triage' } }),
+        session('held', { state: 'open' }),
         session('working', { state: 'running', title: 'Sign callbacks' }),
       ],
     },
@@ -242,57 +237,7 @@ describe('external requests settings page', () => {
     );
   });
 
-  it('lists each request with who raised it, what became of it and when', async () => {
-    bridge.answers = [read()];
-    const h = await mount();
-    const list = find(h.value, (n) => n.props.role === 'list');
-    expect(list.props['aria-label']).toBe(external('requests'));
-    const head = find(list, (n) => n.props.className === 'xr-row xr-hd');
-    expect(
-      nodes(head)
-        .filter((n) => n.props.className === 'cap')
-        .map(text),
-    ).toEqual([external('request'), external('raisedBy'), external('outcome')]);
-    expect(rows(h).map(cells)).toEqual([
-      ['Totals are wrong', 'taylor', `${external('held')}${external('approve')}`, '2 分钟'],
-      ['Sign callbacks', 'robin', external('working'), '18 分钟'],
-      ['Roll this back?', 'robin', external('settling'), '2 分钟'],
-      ['Bump lodash', 'dependabot', external('droppedBot'), '2 分钟'],
-      ['Add a dark mode', 'night-owl', external('droppedOther'), '2 分钟'],
-      ['Old request', 'taylor', zh('settings.permissions.sessionGone'), '1 天'],
-      ['No runtime', 'taylor', 'Runtime absent not available', '2 分钟'],
-    ]);
-    expect(rows(h).map((row) => row.props['data-dropped'])).toEqual([
-      undefined,
-      undefined,
-      undefined,
-      true,
-      true,
-      undefined,
-      undefined,
-    ]);
-  });
-
-  it('approves a held request from its row and reads the page again', async () => {
-    bridge.answers = [read()];
-    const h = await mount();
-    const approve = find(rows(h)[0]!, (n) => n.type === 'button');
-    expect(approve.props['aria-label']).toBe(
-      external('approveNamed', { title: 'Totals are wrong' }),
-    );
-    approve.props.onClick();
-    await h.flush();
-    expect(sent()).toEqual([
-      {
-        type: 'external.approve',
-        input: { project_id: project.id, subject_key: 'github:acme/reports#12' },
-        expected_revision: null,
-      },
-    ]);
-    expect(bridge.queries).toHaveLength(2);
-  });
-
-  it('sends one command at a time, the mode and the approve button held until it answers', async () => {
+  it('sends one mode at a time, the mode held until it answers', async () => {
     bridge.answers = [read(), read()];
     const answer = deferred<BridgeResult<unknown>>();
     const command = bridge.command;
@@ -303,38 +248,20 @@ describe('external requests settings page', () => {
     try {
       const h = await mount();
       const group = () => find(h.value, (n) => n.type === RadioGroup);
-      const approve = () => find(rows(h)[0]!, (n) => n.type === 'button');
-      approve().props.onClick();
-      approve().props.onClick();
       group().props.onValueChange('auto');
+      group().props.onValueChange('off');
       await h.flush();
       h.render();
-      expect(sent().map((c) => c.type)).toEqual(['external.approve']);
-      expect(approve().props.disabled).toBe(true);
+      expect(sent().map((c) => c.type)).toEqual(['project.externalEvents.set']);
       expect(group().props.disabled).toBe(true);
 
       answer.resolve({ ok: true, value: {} });
       await h.flush();
       h.render();
-      expect(approve().props.disabled).toBe(false);
       expect(group().props.disabled).toBe(false);
       expect(nodes(h.value).some((n) => n.props.role === 'alert')).toBe(false);
     } finally {
       bridge.command = command;
     }
-  });
-
-  it('opens the lead that has a request and closes the settings', async () => {
-    bridge.answers = [read()];
-    const h = await mount();
-    find(rows(h)[1]!, (n) => n.type === 'button').props.onClick();
-    expect(openProjectSession).toHaveBeenCalledWith(project.id, 'working');
-    expect(useSettingsView.getState().open).toBe(false);
-  });
-
-  it('says so when the project has received no request', async () => {
-    const h = await mount();
-    expect(find(h.value, (n) => n.type === EmptyState).props.title).toBe(external('empty'));
-    expect(all(h).some((n) => n.props.role === 'list')).toBe(false);
   });
 });

@@ -257,7 +257,7 @@ describe('project table row', () => {
   const waits = (
     longest_wait_ms: number,
     by_decision: NonNullable<ProjectSummary['waiting']>['by_decision'] = {},
-  ) => ({ ...full, waiting: { by_decision, longest_wait_ms, blocked_tasks: 0 } });
+  ) => ({ ...full, waiting: { by_decision, longest_wait_ms } });
 
   it('shows the decisions waiting count and how long the oldest item has waited', () => {
     const needs = cells(row(waits(18 * MINUTE)))[4]!;
@@ -310,7 +310,7 @@ describe('project table row', () => {
   it('shows the four kinds it names, folds other into one count and leaves out kinds it does not offer', () => {
     const tree = row(
       waits(0, {
-        plan_change: 6,
+        budget: 6,
         question: 5,
         repeated_failure: 4,
         permission: 3,
@@ -365,7 +365,6 @@ describe('project region', () => {
     waiting: {
       by_decision: { question: 1, repeated_failure: 3, permission: 1 },
       longest_wait_ms: 25 * MINUTE,
-      blocked_tasks: 0,
     },
   });
   const decisionsWaiting = (n: number) => zhf('projects.row.decisionsWaiting', { count: n });
@@ -804,7 +803,6 @@ describe('projects screen while it is open', () => {
     const waiting = (n: number) => ({
       by_decision: { permission: n },
       longest_wait_ms: 5 * MINUTE,
-      blocked_tasks: 0,
     });
     summaries = [
       { ...summaries[0]!, needs_you: 2, waiting: waiting(2) },

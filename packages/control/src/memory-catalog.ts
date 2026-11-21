@@ -3,7 +3,6 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import {
   hash,
-  type BoardPlan,
   requireThat,
   type MemoryDirectory,
   type MemoryFilters,
@@ -12,7 +11,6 @@ import {
   type MemoryRecord,
   type MemoryReference,
   type MemorySummary,
-  type Milestone,
   type Principal,
   type Project,
   type Session,
@@ -307,11 +305,6 @@ export function searchMemory(
       'Results contain summaries and match reasons, not full evidence. Use memory_get before relying on the content. Pending index entries can match metadata only.',
   };
 }
-function taskTitle(ctx: ControlContext, task: NonNullable<MemoryRecord['task']>) {
-  return ctx.store
-    .get<BoardPlan>('board_plans', task.lead_session_id)
-    ?.tasks.find((t) => t.id === task.id)?.title;
-}
 export function memoryRead(
   ctx: ControlContext,
   p: Principal,
@@ -389,15 +382,10 @@ export function memoryRead(
           selected.all
             .filter((r) => r.task)
             .map((r) => {
-              const task = r.task!,
-                title = taskTitle(ctx, task);
+              const task = r.task!;
               return [
                 task.lead_session_id + ':' + task.id,
-                {
-                  id: task.id,
-                  lead_session_id: task.lead_session_id,
-                  ...(title !== undefined && { title }),
-                },
+                { id: task.id, lead_session_id: task.lead_session_id },
               ] as const;
             }),
         ).values(),
@@ -414,14 +402,7 @@ export function memoryRead(
             if (!milestoneId) return facets;
             const facet = facets.get(milestoneId);
             if (facet) facet.count++;
-            else {
-              const title = ctx.store.get<Milestone>('milestones', milestoneId)?.title;
-              facets.set(milestoneId, {
-                id: milestoneId,
-                ...(title !== undefined && { title }),
-                count: 1,
-              });
-            }
+            else facets.set(milestoneId, { id: milestoneId, count: 1 });
             return facets;
           }, new Map<string, { id: string; title?: string; count: number }>())
           .values(),
@@ -804,7 +785,7 @@ export function memoryGraph(ctx: ControlContext, p: Principal, raw: unknown): Me
           id: r.task.id,
           lead_session_id: r.task.lead_session_id,
           generation: r.task.generation ?? 1,
-          title: taskTitle(ctx, r.task) ?? r.task.id,
+          title: r.task.id,
         },
       }),
     };

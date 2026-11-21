@@ -19,7 +19,7 @@ export const land = async (
   positionals: string[],
   values: { message?: string },
 ) => {
-  if (positionals.length > 1) usageError(`Usage: pnpm cli ${landUsage}`);
+  if (positionals.length > 1) usageError(`Usage: pantheon ${landUsage}`);
   const branch = positionals[0]
     ? sharedRef(positionals[0])
     : (currentBranch() ?? usageError('HEAD is detached; name the branch to land.'));

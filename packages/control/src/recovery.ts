@@ -16,16 +16,10 @@ import { confirmTermination } from './process.js';
 import { recoverChildProcesses } from './child-processes.js';
 import { failWorkbenchTurns, workspaceReady } from './provisioning.js';
 import { discardStopped, recoverGateRuns, rollbackTransaction } from './workbench-session.js';
-import { continueSession } from './continuation.js';
-import { returnNotes } from './lead-inbox.js';
 import { finishRollback, restoreCheckpoint } from './checkpoint.js';
 import { recoverQueuedHandoff, unsnooze } from './session.js';
-import { retireRemovedStepRuns } from './merge-review.js';
 import { recoverEnvironmentChecks } from './environment-check.js';
 import { reconciledStates } from './non-writer-audit.js';
-
-const CONTINUE_TEXT =
-  '[Pantheon] A daemon restart interrupted your last turn. Before you redo anything, check whether your last actions took effect (files, git status, git log, commands that were running). Then continue your work.';
 
 function recoverArtifacts(ctx: ControlContext): void {
   const referenced = new Set<string>();
@@ -109,7 +103,6 @@ export async function recover(ctx: ControlContext): Promise<void> {
   rollbackTransaction(ctx, () => {
     recoverChildProcesses(ctx);
     recoverGateRuns(ctx);
-    retireRemovedStepRuns(ctx);
     recoverEnvironmentChecks(ctx);
     for (const workspace of ctx.store
       .list<Workspace>('workspaces')
@@ -234,7 +227,6 @@ export async function recover(ctx: ControlContext): Promise<void> {
           const error = 'Session never started before the daemon stopped';
           for (const turn of turns) {
             const failed = turnDelivery(ctx, turn, 'failed', error, 'failed');
-            returnNotes(ctx, session.id, [failed]);
             ctx.store.event('turn.failed', failed, session.project_id, { error });
           }
           ctx.store.event('session.closed', next, session.project_id, { reason: 'never_started' });
@@ -331,42 +323,12 @@ export async function reconcile(ctx: ControlContext): Promise<void> {
         );
         // A stop the restart interrupted ends in the discard it asked for.
         if (next.stop_requested) {
-          returnNotes(
-            ctx,
-            next.id,
-            interrupted.filter((turn) => ['pending', 'queued'].includes(turn.delivery)),
-          );
           discardStopped(ctx, next.id, '');
           return;
         }
         ctx.store.event('session.recovered', next, next.project_id, {});
         if (!interrupted.length) return;
-        const undelivered = interrupted.filter((turn) => turn.state === 'queued');
-        const attachments = undelivered.flatMap((turn) => turn.attachments ?? []),
-          skills = undelivered.flatMap((turn) => turn.skills ?? []),
-          handoff = undelivered.find((turn) => turn.handoff !== undefined)?.handoff;
-        const continued = continueSession(
-          ctx,
-          next,
-          undelivered.length
-            ? [
-                CONTINUE_TEXT,
-                '',
-                'Messages that arrived but were not delivered:',
-                ...undelivered.map((turn) => turn.input),
-              ].join('\n')
-            : CONTINUE_TEXT,
-          '',
-          {
-            ...(attachments.length ? { attachments } : {}),
-            ...(skills.length ? { skills } : {}),
-            handoff,
-          },
-        );
-        if (!continued) {
-          returnNotes(ctx, next.id, undelivered);
-          unsnooze(ctx, next.id, 'turn_ended');
-        }
+        unsnooze(ctx, next.id, 'turn_ended');
       });
     }
   } finally {

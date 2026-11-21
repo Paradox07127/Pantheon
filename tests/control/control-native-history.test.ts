@@ -21,7 +21,7 @@ function commitProjectRoot(root: string) {
   git(root, 'commit', '--quiet', '-m', 'Initial files');
 }
 
-async function setup(purpose?: 'lead') {
+async function setup(purpose?: 'project_setup') {
   const f = await fixture({ managedWorkspaces: true });
   cleanups.push(() => f.close());
   commitProjectRoot(f.projectRoot);
@@ -107,7 +107,7 @@ it.each([
 });
 
 it('passes the managed store and readable title through actual control startup before an adapter receives input', async () => {
-  const f = await setup('lead');
+  const f = await setup('project_setup');
   const start = f.adapter.start.bind(f.adapter);
   const seen: SessionSpec[] = [];
   vi.spyOn(f.adapter, 'start').mockImplementation(async (spec, sink) => {

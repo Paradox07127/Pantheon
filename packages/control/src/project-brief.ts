@@ -1,13 +1,11 @@
 import {
   hash,
-  type BoardPlan,
   type Entity,
   type NeedsYouItem,
   type Principal,
   type Project,
 } from '@pantheon/domain';
 import {
-  decisionType,
   inputSchemas,
   type ProjectBrief,
   type ProjectBriefItem,
@@ -15,10 +13,9 @@ import {
   type ProjectBriefRef,
 } from '@pantheon/protocol';
 import { projectAccess, type ControlContext, type Handlers } from './context.js';
-import { boardTaskId } from './board-plan.js';
 import { decisionsForUser } from './decisions-for-user.js';
 import { personalCalled } from './personal-scope.js';
-import { itemTask, needsYou } from './needs-you.js';
+import { needsYou } from './needs-you.js';
 
 /** One user's seen cursor of one project, keyed by JSON of [user id, project id]. */
 export interface SeenCursor extends Entity {
@@ -49,27 +46,12 @@ const FAILURES: NeedsYouItem['kind'][] = [
   'session.gate_failed',
   'session.merge_blocked',
 ];
-const BRIEF_EVENTS = ['session.merged', 'task.accepted', 'board.plan_updated'];
+const BRIEF_EVENTS = ['session.merged'];
 
-/** What a needs-you item links to: its approval, question or task, else its source's latest event. */
-function itemRef(
-  ctx: ControlContext,
-  item: NeedsYouItem,
-  planOf: Map<string, BoardPlan>,
-): ProjectBriefRef {
+/** What a needs-you item links to: its approval, else its source's latest event. */
+function itemRef(ctx: ControlContext, item: NeedsYouItem): ProjectBriefRef {
   const { table, id } = item.source;
   if (table === 'approvals') return { kind: 'approval', id };
-  const asked =
-    item.question &&
-    (ctx.store.db
-      .prepare(
-        "SELECT event_id FROM events WHERE aggregate_id=? AND kind='lead.question_asked' AND created_at>=? AND payload ->> '$.id'=? ORDER BY sequence DESC LIMIT 1",
-      )
-      .get(id, item.question.at, item.question.id) as { event_id: string } | undefined);
-  if (asked) return { kind: 'event', id: asked.event_id };
-  const bound = itemTask(ctx, item, planOf),
-    task = item.task_id ?? (bound && boardTaskId(bound.plan.id, bound.taskId));
-  if (task) return { kind: 'task', id: task };
   const latest = ctx.store.db
     .prepare('SELECT event_id FROM events WHERE aggregate_id=? ORDER BY sequence DESC LIMIT 1')
     .get(id) as { event_id: string };
@@ -91,19 +73,13 @@ export function projectBrief(
   ctx.store.must<Project>('projects', projectId);
   const cursor = ctx.store.get<SeenCursor>('seen_cursors', cursorId(principal, projectId)),
     after = since ?? cursor?.at ?? 0;
-  const planOf = new Map(
-    ctx.store
-      .list<BoardPlan>('board_plans')
-      .filter((plan) => plan.project_id === projectId)
-      .map((plan) => [plan.id, plan]),
-  );
   const items: ProjectBriefItem[] = [];
   const needs = given ?? needsYou(ctx, principal, projectId).items,
     arrived = needs.filter((item) => item.created_at > after);
   if (arrived.length)
     items.push({
       kind: 'decisions',
-      ref: itemRef(ctx, needs[0]!, planOf),
+      ref: itemRef(ctx, needs[0]!),
       count: needs.length,
       new: arrived.length,
       top: needs[0]!,
@@ -121,53 +97,18 @@ export function projectBrief(
     if (FAILURES.includes(item.kind))
       items.push({
         kind: 'failure',
-        ref: itemRef(ctx, item, planOf),
+        ref: itemRef(ctx, item),
         at: item.created_at,
         reason: item.reason,
       });
-  // Each plan's assumptions as of the cursor, then each one a later version lists first.
-  const known = new Map<string, Set<string>>();
-  for (const event of events) {
-    if (event.kind !== 'board.plan_updated') continue;
-    let texts = known.get(event.aggregate_id);
-    if (!texts) {
-      const before = ctx.store.db
-        .prepare(
-          "SELECT payload ->> '$.assumptions' AS assumptions FROM events WHERE project_id=? AND kind='board.plan_updated' AND aggregate_id=? AND created_at<=? ORDER BY sequence DESC LIMIT 1",
-        )
-        .get(projectId, event.aggregate_id, after) as { assumptions: string } | undefined;
-      texts = new Set(
-        before
-          ? (JSON.parse(before.assumptions) as BoardPlan['assumptions']).map(({ text }) => text)
-          : [],
-      );
-      known.set(event.aggregate_id, texts);
-    }
-    for (const { text } of (event.payload as BoardPlan).assumptions)
-      if (!texts.has(text)) {
-        texts.add(text);
-        items.push({
-          kind: 'assumption',
-          ref: { kind: 'event', id: event.event_id },
-          at: event.created_at,
-          text,
-        });
-      }
-  }
   const decided = decisionsForUser(ctx, principal, projectId, after + 1).items;
-  if (decided.length) {
-    const types = { permission: 0, answer: 0, plan_change: 0 };
-    for (const item of decided) {
-      const type = decisionType(item);
-      if (type) types[type]++;
-    }
+  if (decided.length)
     items.push({
       kind: 'decided',
       ref: { kind: 'decided', id: projectId },
       count: decided.length,
-      types,
+      types: { permission: decided.length },
     });
-  }
   const prose = cursor?.prose;
   return prose && prose.since === after && prose.items_key === briefItemsKey(items)
     ? { since: after, items, prose: { sentences: prose.sentences, at: prose.at } }

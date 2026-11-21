@@ -49,15 +49,11 @@ describe('Pantheon tool names', () => {
     expect(pantheonTool('')).toBeNull();
   });
 
-  it('counts project and note reads in any spelling as reading the project', () => {
+  it('counts project reads in any spelling as reading the project', () => {
     const c = (name: string) => ({ name, input: {} });
-    expect(
-      toolGroupLabel([
-        c('mcp__pantheon__project_read'),
-        c('pantheon.read_note'),
-        c('project_read'),
-      ]),
-    ).toBe('读了项目 3 次');
+    expect(toolGroupLabel([c('mcp__pantheon__project_read'), c('project_read')])).toBe(
+      '读了项目 2 次',
+    );
     expect(toolGroupLabel([c('Bash'), c('pantheon.project_read'), c('mcp__pantheon__a')])).toBe(
       '运行 1 条命令，读了项目 1 次，另 1 项',
     );

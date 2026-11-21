@@ -16,7 +16,9 @@ import { useSessionDiff } from '@/data/workbench-sessions';
 
 const values: Record<string, unknown> = {
   'runtime.status': [{ runtime: 'claude', enabled: true, installed: true, auth: { state: 'ok' } }],
-  'device.list': [{ id: 'local', name: 'workstation', online: true, load: { sessions: 0 } }],
+  'device.list': [
+    { id: 'local', name: 'workstation', online: true, load: { active_sessions: [] } },
+  ],
   'session.diff': { files: [], truncated: false },
 };
 

@@ -3,7 +3,6 @@ import {
   requireThat,
   canonical,
   type AgentEvent,
-  type BoardPlan,
   type LeadNote,
   type Event,
   type Principal,
@@ -864,15 +863,6 @@ export async function projectCollab(
       const turn = event.payload as SessionTurn;
       turns.set(turn.id, turn);
       deliveries.set(turn.id, turn.delivery);
-      const lead = sessions.get(turn.session_id)?.task?.lead_session_id;
-      if (turn.origin === 'lead' && lead)
-        sent.push({
-          sender: lead,
-          receiver: turn.session_id,
-          at: event.created_at,
-          direction: 'lead_to_worker',
-          turn: turn.id,
-        });
     } else if (event.kind === 'session.turn.delivery') {
       deliveries.set(
         event.aggregate_id,
@@ -919,12 +909,7 @@ export async function projectCollab(
       turns.set(turn.id, turn);
       deliveries.set(turn.id, turn.delivery);
     }
-  const pendingNotes = new Set(
-    ctx.store
-      .list<BoardPlan>('board_plans')
-      .filter((plan) => plan.project_id === projectId)
-      .flatMap((plan) => plan.inbox.flatMap((note) => (note.id === undefined ? [] : [note.id]))),
-  );
+  const pendingNotes = new Set<string>();
   for (const turn of turns.values())
     if (deliveries.get(turn.id) === 'pending' || deliveries.get(turn.id) === 'queued')
       for (const noteId of turn.lead_note_ids ?? []) pendingNotes.add(noteId);

@@ -2,7 +2,6 @@ import {
   DomainError,
   requireThat,
   type Approval,
-  type BoardPlan,
   type NeedsYouItem,
   type Principal,
   type Project,
@@ -10,19 +9,9 @@ import {
   type SessionTurn,
 } from '@pantheon/domain';
 import type { ControlContext } from './context.js';
-import {
-  awaitingChange,
-  boardTaskId,
-  currentBinding,
-  taskGeneration,
-  taskSessions,
-  taskState,
-} from './board-plan.js';
-import { usageLimitWaiting } from './continuation.js';
 import { pendingApprovalItems, settledApprovalItems } from './needs-you-approvals.js';
 import { sessionItems } from './needs-you-sessions.js';
 import { memoryBudgetItems, projectBudgetItems } from './needs-you-workflow.js';
-import { taskRung, taskRungFacts } from './task-rung.js';
 
 /** A running merge with no progress event for this long is stuck; each gate command has a timeout. */
 const MERGE_STUCK_MS = 30 * 60_000;
@@ -34,46 +23,21 @@ export const STOP_UNCONFIRMED_MS = 2 * 60_000;
 /** Session items listed under the session.failed kind, told apart by their reason. */
 export type SessionAttention =
   | 'merge_stuck'
-  | 'lead_turn_failed'
-  | 'continuation_limit_reached'
   | 'workspace_reconciling'
   | 'stop_unconfirmed'
-  | 'task_retired'
-  | 'task_turn_looping'
-  | 'task_turn_stalled'
-  | 'lead_turn_looping'
-  | 'lead_turn_stalled'
-  | 'usage_limit_waiting'
   | 'usage_limit_reached'
   | 'session_turn_stalled'
   | 'background_task_long';
 
-export const NEXT_STEP: Record<SessionAttention | 'lead_permission', string> = {
+export const NEXT_STEP: Record<SessionAttention, string> = {
   merge_stuck: 'The user checks the stuck merge and cancels it if needed.',
   stop_unconfirmed:
     "The session's process has not confirmed it stopped; the user confirms the process stopped, or retries the stop.",
   workspace_reconciling:
     'A daemon restart interrupted the workspace setup, so whether its Git processes stopped is unknown; the user reconciles: once no Git process is still running in the workspace, discard this session.',
-  continuation_limit_reached:
-    'The automatic continuations are used up; the user sends the session a message to go on.',
-  lead_turn_failed: 'The user retries, or sends the lead a message to go on.',
-  usage_limit_waiting:
-    'The session used up its subscription limit; Pantheon has it go on once the limit resets and opens no new turn until then. The user waits for the reset, or moves it to another runtime.',
   usage_limit_reached:
     'Continue the session after the limit resets, or fork it to another runtime.',
   session_turn_stalled: 'Open the session to see where it stopped.',
-  task_retired:
-    "The lead removed the session's task from the plan (the same id may now be a new task), so its changes no longer merge; the user checks the changes, then discards this session.",
-  task_turn_looping:
-    "The task session's turn still repeats the same tool call after the lead was reminded; the user interrupts the turn, or sends the lead a message to correct course.",
-  task_turn_stalled:
-    "The task session's turn stalled and the lead has not handled it since it was reminded; the user interrupts the turn, or sends the lead a message to handle it.",
-  lead_turn_looping:
-    "The lead's turn repeats the same tool call; the user interrupts the turn, then sends the lead a message to correct course.",
-  lead_turn_stalled:
-    "The lead's turn has made no progress for a long time, or a tool call never ended; the user interrupts the turn, then sends the lead a message to go on.",
-  lead_permission:
-    "This is the lead's own permission request; its turn waits for the answer and gets no task session reports meanwhile. The lead goes on once the user allows or denies it.",
   background_task_long:
     'A background command or agent of the session has run for 30 minutes; the user stops it, or waits for it to end.',
 };
@@ -106,25 +70,6 @@ export function stuckMerge(
   return progress && ctx.store.now() - progress.created_at > MERGE_STUCK_MS ? progress : undefined;
 }
 
-/** The skip that hit the continuation limit, while the session has had no turn since. */
-export function continuationLimit(
-  ctx: ControlContext,
-  sessionId: string,
-): { created_at: number } | undefined {
-  const skip = ctx.store
-    .statement(
-      "SELECT sequence, created_at FROM events WHERE aggregate_id=? AND kind='session.continuation_skipped' AND json_extract(payload,'$.reason')='limit_reached' ORDER BY sequence DESC LIMIT 1",
-    )
-    .get(sessionId) as { sequence: number; created_at: number } | undefined;
-  if (!skip) return;
-  const later = ctx.store
-    .statement(
-      "SELECT 1 FROM events WHERE kind='turn.queued' AND json_extract(payload,'$.session_id')=? AND sequence>? LIMIT 1",
-    )
-    .get(sessionId, skip.sequence);
-  return later ? undefined : skip;
-}
-
 /** True once the turn started running. */
 export function ran(ctx: ControlContext, turn: SessionTurn): boolean {
   return latestEvent(ctx, turn.id, 'turn.running') !== undefined;
@@ -138,15 +83,6 @@ export function executed(ctx: ControlContext, turn: SessionTurn): boolean {
 /** The session's latest turn that runs or ran as a turn of its own. */
 export function latestExecuted(ctx: ControlContext, turns: SessionTurn[]): SessionTurn | undefined {
   return turns.findLast((turn) => executed(ctx, turn));
-}
-
-/** A failed lead turn is not replayed; the lead waits for its next message. */
-export function leadTurnFailed(
-  ctx: ControlContext,
-  lead: Session,
-  latest: SessionTurn | undefined,
-): boolean {
-  return lead.state === 'open' && latest?.state === 'failed' && !usageLimitWaiting(ctx, lead.id);
 }
 
 /** The command as an action, disabled with the code of the error its check throws. */
@@ -180,110 +116,8 @@ export interface NeedsYouScope {
   listedProject: (id: string) => boolean;
 }
 
-/** An item as a builder makes it; needsYou counts the tasks it blocks. */
-export type NeedsYouDraft = Omit<NeedsYouItem, 'blocks'>;
-
-/** The plan task an item is about: its own task, else its session's task, else its lead's direct task. */
-export function itemTask(
-  ctx: ControlContext,
-  item: Pick<NeedsYouItem, 'source' | 'session_id' | 'task_id'>,
-  planOf: Map<string, BoardPlan>,
-): { plan: BoardPlan; taskId: string } | undefined {
-  const sessionId = item.source.table === 'sessions' ? item.source.id : item.session_id,
-    session = sessionId ? ctx.store.get<Session>('sessions', sessionId) : undefined,
-    named = item.task_id
-      ? [...planOf.values()].flatMap((plan) =>
-          plan.tasks
-            .filter((task) => boardTaskId(plan.id, task.id) === item.task_id)
-            .map((task) => ({ lead_session_id: plan.id, id: task.id })),
-        )[0]
-      : undefined,
-    direct =
-      session?.direct_task &&
-      session.direct_task.generation ===
-        taskGeneration(planOf.get(session.id), session.direct_task.id)
-        ? { lead_session_id: session.id, id: session.direct_task.id }
-        : undefined,
-    binding = item.task_id ? named : (session?.task ?? direct),
-    plan = binding ? planOf.get(binding.lead_session_id) : undefined;
-  if (
-    !binding ||
-    !plan ||
-    !plan.tasks.some((task) => task.id === binding.id) ||
-    // A worker of a removed task is not the task that reuses its id.
-    (binding === session?.task &&
-      !currentBinding(plan, session.task) &&
-      !(!session.outcome && awaitingChange(plan, session)))
-  )
-    return;
-  return { plan, taskId: binding.id };
-}
-
-/** The rung of an item's task, from the facts its board row reads; none on items of no task. */
-function itemRung(
-  ctx: ControlContext,
-  planOf: Map<string, BoardPlan>,
-): (item: NeedsYouDraft) => NeedsYouItem['rung'] {
-  const sessions = ctx.store.list<Session>('sessions'),
-    now = ctx.store.now(),
-    rungs = new Map<string, NeedsYouItem['rung']>();
-  return (item) => {
-    const bound = itemTask(ctx, item, planOf);
-    if (!bound) return;
-    const key = boardTaskId(bound.plan.id, bound.taskId);
-    if (!rungs.has(key))
-      rungs.set(
-        key,
-        taskRung(
-          taskRungFacts(
-            ctx,
-            bound.plan,
-            bound.taskId,
-            taskSessions(ctx, bound.plan.id, bound.taskId, sessions, bound.plan),
-            now,
-          ),
-        )?.rung,
-      );
-    return rungs.get(key);
-  };
-}
-
-/** Counts the plan tasks not done that wait on an item: those that depend on its task, and those its lead question holds. */
-function blockedTasks(
-  ctx: ControlContext,
-  planOf: Map<string, BoardPlan>,
-): (item: NeedsYouDraft) => number {
-  const sessions = ctx.store.list<Session>('sessions'),
-    done = new Map<string, boolean>();
-  const open = (plan: BoardPlan, taskId: string) => {
-    const key = boardTaskId(plan.id, taskId);
-    if (!done.has(key))
-      done.set(
-        key,
-        taskState(
-          plan,
-          taskId,
-          taskSessions(ctx, plan.id, taskId, sessions, plan),
-          ctx.store.get<Session>('sessions', plan.id),
-        ) === 'done',
-      );
-    return !done.get(key);
-  };
-  return (item) => {
-    const waiting = new Set<string>(),
-      bound = itemTask(ctx, item, planOf),
-      asked = item.question && planOf.get(item.source.id);
-    if (bound)
-      for (const task of bound.plan.tasks)
-        if (task.depends_on.includes(bound.taskId) && open(bound.plan, task.id))
-          waiting.add(boardTaskId(bound.plan.id, task.id));
-    if (asked)
-      for (const task of asked.tasks)
-        if (item.question!.blocks.includes(task.id) && open(asked, task.id))
-          waiting.add(boardTaskId(asked.id, task.id));
-    return waiting.size;
-  };
-}
+/** An item as a builder makes it. */
+export type NeedsYouDraft = NeedsYouItem;
 
 export function needsYou(
   ctx: ControlContext,
@@ -313,12 +147,6 @@ export function needsYou(
   );
   const listedProject = (id: string) => !removed.has(id) && (!projectId || id === projectId);
   const scope: NeedsYouScope = { principal, projectId, removed, listedProject };
-  const plans = ctx.store
-    .list<BoardPlan>('board_plans')
-    .filter(
-      (plan) => !removed.has(plan.project_id) && (!projectId || plan.project_id === projectId),
-    );
-  const planOf = new Map(plans.map((plan) => [plan.id, plan]));
   items.push(...pendingApprovalItems(ctx, scope));
   if (principal.role === 'user' || principal.role === 'personal') {
     items.push(...settledApprovalItems(ctx, scope));
@@ -332,13 +160,11 @@ export function needsYou(
           (!projectId || s.project_id === projectId),
       );
     items.push(
-      ...sessionItems(ctx, scope, sessions, plans, planOf),
+      ...sessionItems(ctx, scope, sessions),
       ...projectBudgetItems(ctx, scope),
       ...memoryBudgetItems(ctx, scope),
     );
   }
-  const blocked = blockedTasks(ctx, planOf),
-    rungOf = itemRung(ctx, planOf);
   // Tool input can hold secrets, and a rule or a background command can be a whole command line.
   const shown =
     principal.role === 'personal'
@@ -348,29 +174,10 @@ export function needsYou(
           return { ...item, binding: kept };
         })
       : items;
-  // Most tasks blocked first, then the longest waiting.
-  const sorted = shown
-    .map((item) => {
-      const rung = rungOf(item);
-      return { ...item, ...(rung ? { rung } : {}), blocks: blocked(item) };
-    })
-    .sort(
-      (a, b) =>
-        b.blocks - a.blocks ||
-        a.created_at - b.created_at ||
-        a.source.id.localeCompare(b.source.id),
-    );
-  // A plan's questions stay together, at the place of the one that blocks most.
-  const questionsOf = new Map<string, NeedsYouItem[]>();
-  for (const item of sorted)
-    if (item.kind === 'lead.question')
-      questionsOf.set(item.source.id, [...(questionsOf.get(item.source.id) ?? []), item]);
+  // The longest waiting first.
   return {
-    items: sorted.flatMap((item) => {
-      if (item.kind !== 'lead.question') return [item];
-      const group = questionsOf.get(item.source.id);
-      questionsOf.delete(item.source.id);
-      return group ?? [];
-    }),
+    items: shown.sort(
+      (a, b) => a.created_at - b.created_at || a.source.id.localeCompare(b.source.id),
+    ),
   };
 }

@@ -146,7 +146,7 @@ describe('the turn as the thread shows it', () => {
       }),
     );
 
-  it('heads the reply with the runtime, the name, the crown, the model and the time, in that order', () => {
+  it('heads the reply with the runtime, the name, the model and the time, in that order', () => {
     const h = turnHost(
       buildTranscript(
         [turn({ reported_model: 'claude-opus-5-5' })],
@@ -159,23 +159,14 @@ describe('the turn as the thread shows it', () => {
     const who = find(h.value, (n) => n.props.className === 'ss-who');
     const shown = (who.props.children as ReactElement<any>[]).filter(Boolean);
     const parts = shown.map((n) =>
-      n.props.className === 'lead-crown'
-        ? 'crown'
-        : typeof n.type === 'function'
-          ? n.type.name
-          : `${String(n.type)} ${text(n)}`,
+      typeof n.type === 'function' ? n.type.name : `${String(n.type)} ${text(n)}`,
     );
     expect(parts).toEqual([
       'RuntimeGlyph',
       `b ${zh('sessions.thread.main')}`,
-      'crown',
       'span claude-opus-5-5',
       'span 10:07',
     ]);
-    // The crown marks the main agent, which the name beside it already says; the session need not be a lead.
-    const crown = shown[2]!;
-    expect(crown.props['aria-hidden']).toBe('true');
-    expect(crown.props['aria-label']).toBeUndefined();
   });
 
   it('draws a goal and a wait as centred marks with their time', () => {

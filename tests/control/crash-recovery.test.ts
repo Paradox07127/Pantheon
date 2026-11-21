@@ -130,7 +130,6 @@ it.skipIf(insideSandbox)(
           files: 2,
           additions: 2,
           deletions: 0,
-          measured_kind: { domain: 'backend-logic', tier: 't1' },
         },
       ]);
       expect(counter.count).toBe(1);

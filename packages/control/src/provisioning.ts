@@ -17,7 +17,6 @@ import { copyDependencyFolders } from './dependency-folders.js';
 import { restoreCheckpoint } from './checkpoint.js';
 import { runGit } from './git.js';
 import { onWslAutomount } from './wsl-mount.js';
-import { returnNotes } from './lead-inbox.js';
 import { unsnooze } from './session.js';
 
 type Provisioning = NonNullable<Workspace['provisioning']>;
@@ -62,7 +61,6 @@ export function failWorkbenchTurns(ctx: ControlContext, session: Session, error:
       { ...turn, delivery: 'failed' as const, delivery_reason: error, state: 'failed' as const },
       turn.revision,
     );
-    returnNotes(ctx, session.id, [failed]);
     ctx.store.event('session.turn.delivery', failed, failed.project_id, {
       delivery: 'failed',
       reason: error,

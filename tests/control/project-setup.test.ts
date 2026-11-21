@@ -44,18 +44,12 @@ it('opens a project setup session whose first message starts with the setup guid
   expect(session.workspace_id).toBeDefined();
 });
 
-it.each([undefined, 'lead'])(
-  'opens a session with purpose %s with no setup guide',
-  async (purpose) => {
-    const { input } = await firstInput(purpose ? { purpose } : {});
-    expect(input).not.toContain(projectSetupSkill);
-  },
-);
+it.each([undefined])('opens a session with purpose %s with no setup guide', async (purpose) => {
+  const { input } = await firstInput(purpose ? { purpose } : {});
+  expect(input).not.toContain(projectSetupSkill);
+});
 
-it.each([
-  ['project_setup', false],
-  ['lead', true],
-])(
+it.each([['project_setup', false]])(
   'gives a session with purpose %s the lead planning instructions: %s',
   async (purpose, planned) => {
     const f = await workbenchFixture();

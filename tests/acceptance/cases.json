@@ -2065,6 +2065,158 @@
         "observations.json"
       ],
       "status": "not_run"
+    },
+    {
+      "id": "A041",
+      "title": "带工具会话读状态、起会话、收通知、要审查，阻塞发现时拒绝落地，再审无阻塞后落地(fixture)",
+      "gate": "G2",
+      "mode": "integration",
+      "timeout_ms": 300000,
+      "setup": [
+        "fixture daemon 跑本仓库代码，只登记 fixture 适配器；没有真实模型",
+        "临时 git 仓库在 main 上，项目门禁一条必过命令"
+      ],
+      "steps": [
+        "用户起一个带工具会话，它调 read_state,结果里有自己那一行",
+        "它调 spawn_session 起一个会话，被起会话在新工作树里提交一个文件；回合结束后带工具会话收到通知并调 request_review",
+        "审查方报一条阻塞发现,report_ready 被拒、main 不动；被起会话提交修正、再审无阻塞后 report_ready 过门禁并快进进 main"
+      ],
+      "assertions": [
+        {
+          "path": "read_state.ok",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "read_state.lists_self",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "spawn.spawned_by_conductor",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "spawn.runtime",
+          "op": "eq",
+          "expected": "fixture-writer"
+        },
+        {
+          "path": "spawn.worktree",
+          "op": "eq",
+          "expected": "linked_worktree"
+        },
+        {
+          "path": "spawn.base_is_conductor_commit",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "spawn.committed_feature",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "spawn.pantheon_tools",
+          "op": "eq",
+          "expected": false
+        },
+        {
+          "path": "notified.tracker_turn",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "notified.turn_state",
+          "op": "eq",
+          "expected": "completed"
+        },
+        {
+          "path": "notified.requested_review",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "blocked.review_state",
+          "op": "eq",
+          "expected": "completed"
+        },
+        {
+          "path": "blocked.blocking_open",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "blocked.ready_ok",
+          "op": "eq",
+          "expected": false
+        },
+        {
+          "path": "blocked.ready_refusal",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "blocked.main_unmoved",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "blocked.spawned_outcome",
+          "op": "eq",
+          "expected": null
+        },
+        {
+          "path": "landed.second_review_state",
+          "op": "eq",
+          "expected": "completed"
+        },
+        {
+          "path": "landed.second_blocking_open",
+          "op": "eq",
+          "expected": false
+        },
+        {
+          "path": "landed.ready_ok",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "landed.gate_passed",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "landed.fast_forwarded",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "landed.main_has_fix",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "landed.spawned_outcome",
+          "op": "eq",
+          "expected": "merged"
+        },
+        {
+          "path": "landed.conductor_told",
+          "op": "eq",
+          "expected": true
+        }
+      ],
+      "evidence": [
+        "receipts.json",
+        "board.json",
+        "tool-calls.json",
+        "reviews.json",
+        "git-log.txt",
+        "observations.json"
+      ],
+      "status": "not_run"
     }
   ]
 }

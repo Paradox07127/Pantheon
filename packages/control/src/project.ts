@@ -42,7 +42,6 @@ import {
 import { runGit } from './git.js';
 import { projectFactHandlers } from './project-facts.js';
 import { releaseIdleConversations } from './session.js';
-import { dispatchQueue } from './task-dispatch.js';
 import {
   autoGitInit,
   homeRuntime,
@@ -262,7 +261,6 @@ const BUILT_IN_SETTINGS: Partial<ProjectSettingValues> = {
   workflow_policy: DEFAULT_WORKFLOW_POLICY,
   usage_targets: {},
   external_events: 'off',
-  auto_merge: false,
 };
 
 /** The project's own value of the setting; undefined when it follows the global one. */
@@ -647,19 +645,6 @@ export const projectHandlers: Handlers = {
     ctx.store.event('project.usage_targets_set', next, project.id, { targets }, c.command_id);
     return next;
   },
-  'project.autoMerge.set': (ctx, p, c) => {
-    requireThat(p.role === 'user', 'permission_denied', 'Only user can set auto-merge');
-    const { project_id, enabled } = inputSchemas['project.autoMerge.set'].parse(c.input),
-      project = ctx.store.must<Project>('projects', project_id);
-    revision(ctx, c, project);
-    const next = ctx.store.update(
-      'projects',
-      { ...project, auto_merge: enabled },
-      project.revision,
-    );
-    ctx.store.event('project.auto_merge_set', next, project.id, { enabled }, c.command_id);
-    return next;
-  },
   'project.gateGpu.set': (ctx, p, c) => {
     requireThat(
       p.role === 'user',
@@ -767,11 +752,6 @@ export const projectHandlers: Handlers = {
           ),
       'resource_busy',
       'Project has active work',
-    );
-    requireThat(
-      !dispatchQueue(ctx, project_id).length,
-      'resource_busy',
-      'Tasks of the project wait to start; have the lead stop them first',
     );
     const next = ctx.store.update(
       'projects',

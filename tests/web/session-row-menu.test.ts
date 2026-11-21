@@ -172,7 +172,7 @@ afterEach(() => {
 
 describe('session row menu order', () => {
   it('lists open, then edit, then the work, then where to open and copy, then archive and removal', () => {
-    const groups = sessionMenu(listed('running', { lead: 'lead-a' }), {
+    const groups = sessionMenu(listed('running'), {
       workspace,
       discardable: true,
       newWindow: true,
@@ -189,7 +189,6 @@ describe('session row menu order', () => {
         zh('sessions.model.menu.stopTurn'),
         zh('sessions.model.menu.runChecks'),
         zh('sessions.model.menu.merge'),
-        zh('sessions.model.menu.openLead'),
       ],
       [
         '打开于 ▸ 编辑器, 终端, Finder',

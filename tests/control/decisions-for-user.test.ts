@@ -1,23 +1,20 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
-import {
-  id,
-  type AgentEvent,
-  type Approval,
-  type BoardPlan,
-  type Principal,
-  type Session,
-  type SessionTurn,
-  type WorkflowPolicy,
-  type Workspace,
+import type {
+  AgentEvent,
+  Approval,
+  Principal,
+  Session,
+  SessionTurn,
+  Workspace,
 } from '@pantheon/domain';
 import type { DecisionForUser } from '@pantheon/protocol';
 import type { ControlContext } from '../../packages/control/dist/context.js';
 import { agentEvent } from '../../packages/control/dist/agent.js';
-import { awaitWorkspaceReady, eventually, fixture, insertSession, user } from '../helpers.js';
-import { git, workbenchFixture } from './workbench-fixture.js';
+import { awaitWorkspaceReady, eventually, fixture, user } from '../helpers.js';
+import { workbenchFixture } from './workbench-fixture.js';
 
 type Plain = Awaited<ReturnType<typeof fixture>>;
 type Caller = Pick<Plain, 'call' | 'store' | 'project' | 'control'>;
@@ -35,79 +32,28 @@ async function plain() {
 
 const ctxOf = (f: Caller) => (f.control as unknown as { ctx: ControlContext }).ctx;
 
-const leadOf = (f: Caller, sessionId: string): Principal => ({
-  id: `session:${sessionId}`,
-  role: 'lead',
-  project_id: f.project.id,
-  session_id: sessionId,
-  expires_at: f.store.now() + 60_000_000,
-});
-
-function setPolicy(f: Caller, input: Record<string, unknown>) {
-  const row = f.store.get<WorkflowPolicy>('workflow_policies', f.project.id);
-  f.call('workflow.policy.set', { project_id: f.project.id, ...input }, row?.revision ?? null);
-}
-
-const task: BoardPlan['tasks'][number] = {
-  id: 'a',
-  title: 'Task a',
-  goal: 'Finish task a',
-  lane: 'core',
-  depends_on: [],
-  source: ['Plan the export feature'],
-  scope: ['src/a'],
-  acceptance: ['pnpm test'],
-};
-
-/** A lead with a one-task plan and a worker of that task running a turn; prompt feeds it a runtime permission request. */
-async function workerFixture(policy?: Record<string, unknown>) {
+/** A session running a turn; prompt feeds it a runtime permission request. */
+async function promptFixture() {
   const f = await workbenchFixture();
-  const lead = await f.create('Plan the export feature');
-  await awaitWorkspaceReady(f.control, lead.workspace_id!);
-  await eventually(
-    () => f.turns(lead.id).every((turn) => turn.state === 'completed'),
-    () => f.control.tick(),
-  );
-  f.call(
-    'board.plan.update',
-    {
-      project_id: f.project.id,
-      base_version: 0,
-      headline: 'Export ships this week',
-      lanes: [{ id: 'core', title: 'Core' }],
-      tasks: [task],
-      milestones: [],
-      risks: [],
-      assumptions: [],
-    },
-    null,
-    leadOf(f, lead.id),
-  );
-  if (policy) setPolicy(f, policy);
   vi.spyOn(f.adapter, 'send').mockImplementation(async (_handle, turn) => ({
     turn_id: turn.turn_id,
     status: 'delivered',
   }));
   vi.spyOn(f.adapter, 'answerPermission').mockResolvedValue({ ok: true });
-  const worker = await f.call<Promise<Session>>('session.create', {
-    project_id: f.project.id,
-    runtime: f.adapter.name,
-    input: 'Build it',
-    task_id: `${lead.id}:${task.id}`,
-  });
-  await awaitWorkspaceReady(f.control, worker.workspace_id!);
-  const turn: SessionTurn = f.turns(worker.id)[0]!;
+  const session = await f.create('Build it');
+  await awaitWorkspaceReady(f.control, session.workspace_id!);
+  const turn: SessionTurn = f.turns(session.id)[0]!;
   await eventually(
     () =>
       f.control.handles.has(turn.id) &&
-      f.store.must<Session>('sessions', worker.id).state === 'running',
+      f.store.must<Session>('sessions', session.id).state === 'running',
     () => f.control.tick(),
   );
-  const worktree = f.store.must<Workspace>('workspaces', worker.workspace_id!).path;
+  const worktree = f.store.must<Workspace>('workspaces', session.workspace_id!).path;
   let sequence = 100;
   const prompt = async (name: string, extra: Partial<AgentEvent> = {}) => {
     sequence++;
-    agentEvent(ctxOf(f), worker.id, {
+    agentEvent(ctxOf(f), session.id, {
       key: `prompt-${sequence}`,
       provider_sequence: sequence,
       turn_id: turn.id,
@@ -122,185 +68,26 @@ async function workerFixture(policy?: Record<string, unknown>) {
     await f.control.tick();
     return f.store.list<Approval>('approvals').at(-1)!;
   };
-  return { f, lead, worker, prompt };
-}
-
-/** A lead named lead whose plan has task api under milestone release. */
-function leadWithPlan(f: Plain): Principal {
-  insertSession(f, { id: 'lead', turn_count: 1 });
-  f.store.insert('session_turns', {
-    id: id(),
-    revision: 1,
-    project_id: f.project.id,
-    session_id: 'lead',
-    input: 'Ship the export API this week.',
-    kind: 'send',
-    delivery: 'delivered',
-    state: 'completed',
-  });
-  const lead = leadOf(f, 'lead');
-  f.call(
-    'board.plan.update',
-    {
-      project_id: f.project.id,
-      base_version: 0,
-      headline: 'Export ships this week',
-      lanes: [{ id: 'core', title: 'Core' }],
-      tasks: [
-        {
-          id: 'api',
-          title: 'API',
-          goal: 'Serve exports',
-          lane: 'core',
-          depends_on: [],
-          source: ['Ship the export API'],
-          scope: [],
-          acceptance: [],
-          done_when: 'report',
-          milestone: 'release',
-        },
-      ],
-      milestones: [
-        { id: 'release', title: 'Release', criteria: ['Exports download'], tasks: ['api'] },
-      ],
-      risks: [],
-      assumptions: [],
-    },
-    null,
-    lead,
-  );
-  return lead;
-}
-
-const mergeReason = 'The README names the new module';
-
-function commit(repository: string, name: string, contents: string) {
-  mkdirSync(path.dirname(path.join(repository, name)), { recursive: true });
-  writeFileSync(path.join(repository, name), contents);
-  git(repository, 'add', '--', name);
-  git(repository, 'commit', '--quiet', '-m', `Update ${name}`);
-}
-
-/** A lead that merges its task's session whose merge stopped on a file outside the task's scope. */
-async function mergedOutOfScope() {
-  const f = await workbenchFixture();
-  git(f.source, 'config', 'user.name', 'Source User');
-  git(f.source, 'config', 'user.email', 'source@example.invalid');
-  setPolicy(f, { charter: { merge_out_of_scope: 'on' } });
-  const current = (sessionId: string) => f.store.must<Session>('sessions', sessionId);
-  const lead = await f.create('Plan the export feature');
-  await awaitWorkspaceReady(f.control, lead.workspace_id!);
-  await eventually(
-    () => f.turns(lead.id).every((turn) => turn.state === 'completed'),
-    () => f.control.tick(),
-  );
-  f.call(
-    'board.plan.update',
-    {
-      project_id: f.project.id,
-      base_version: 0,
-      headline: 'Export ships this week',
-      lanes: [{ id: 'core', title: 'Core' }],
-      tasks: [task],
-      milestones: [],
-      risks: [],
-      assumptions: [],
-    },
-    null,
-    leadOf(f, lead.id),
-  );
-  const session = await f.call<Promise<Session>>('session.create', {
-    project_id: f.project.id,
-    runtime: f.adapter.name,
-    input: 'Build it',
-    task_id: `${lead.id}:${task.id}`,
-  });
-  const workspace = await awaitWorkspaceReady(f.control, session.workspace_id!);
-  await eventually(
-    () =>
-      f.turns(session.id).every((turn) => turn.state === 'completed') &&
-      current(session.id).state === 'open',
-    () => f.control.tick(),
-  );
-  commit(workspace.path, 'src/a/x.ts', 'export const x = 1;\n');
-  commit(workspace.path, 'README.md', 'Names the new module\n');
-  await f.call('session.merge', { session_id: session.id }, current(session.id).revision);
-  await eventually(
-    () => current(session.id).merge?.state === 'blocked',
-    () => f.control.tick(),
-    10000,
-  );
-  await f.call(
-    'session.merge',
-    { project_id: f.project.id, task_id: task.id, allow_out_of_scope: true, reason: mergeReason },
-    null,
-    leadOf(f, lead.id),
-  );
-  return {
-    f,
-    match: {
-      power: 'merge_out_of_scope',
-      subject: session.id,
-      session_id: lead.id,
-      reason: mergeReason,
-    },
-  };
-}
-
-const formatQuestion = 'Which format should the export use?';
-const citations = [{ kind: 'user_words', ref: 'Plan the export feature' }];
-
-/** A worker's question relayed to its lead's board; answer lets the lead answer it. */
-async function questionFixture() {
-  const { f, lead, worker, prompt } = await workerFixture();
-  const approval = await prompt('question', {
-    tool: 'AskUserQuestion',
-    detail: {
-      questions: [
-        {
-          question: formatQuestion,
-          header: 'Format',
-          options: [
-            { label: 'CSV', description: 'Plain rows' },
-            { label: 'JSON', description: 'Nested records' },
-          ],
-          multiSelect: false,
-        },
-      ],
-    },
-  });
-  const card = f.store
-    .must<BoardPlan>('board_plans', lead.id)
-    .questions!.find((entry) => entry.source?.approval_id === approval.id)!;
-  const answer = () =>
-    f.call(
-      'lead.worker_question.answer',
-      {
+  /** A prompt the stored project rule for Edit answers. */
+  let ruleAdded = false;
+  const ruled = async (name: string) => {
+    if (!ruleAdded)
+      f.call('permission.rule.add', {
         project_id: f.project.id,
-        question_id: card.id,
-        answers: { [formatQuestion]: 'CSV' },
-        citations,
-      },
-      null,
-      leadOf(f, lead.id),
-    );
-  const match = {
-    lead_session_id: lead.id,
-    question_id: card.id,
-    session_id: worker.id,
-    question: formatQuestion,
-    answer: 'CSV',
-    citations,
+        rule: 'Edit',
+        session_id: session.id,
+      });
+    ruleAdded = true;
+    return prompt(name, { project_rule_supported: true });
   };
-  return { f, lead, card, answer, match };
+  return { f, session, prompt, ruled };
 }
 
 type Act = () => Promise<{ f: Caller; match: Record<string, unknown> }>;
 
 const personal: Principal = { id: 'personal:k1', role: 'personal' };
-const leadQuestion = 'Which file format comes first?';
 
-/** What by did in a project whose lead has a plan, with the personal key let to answer every kind. */
+/** What by did in a project, with the personal key let to answer every kind. */
 const answeredBy =
   (by: Principal, act: (f: Plain, by: Principal) => Record<string, unknown>): Act =>
   async () => {
@@ -313,123 +100,21 @@ const answeredBy =
         rmSync(userConfigDir, { recursive: true, force: true });
       },
     });
-    f.call('app.settings.set', {
-      personal_answers: ['question', 'plan_change', 'milestone_accept'],
-    });
-    setPolicy(f, { plan_changes: 'confirm' });
-    leadWithPlan(f);
     return { f, match: act(f, by) };
   };
 
-function answerLeadQuestion(f: Plain, by: Principal) {
-  const question = f.call<{ id: string }>(
-    'lead.ask',
-    {
-      project_id: f.project.id,
-      question: leadQuestion,
-      options: ['CSV', 'JSON'],
-      recommended: 'CSV',
-      assumption: 'CSV comes first',
-      blocks: ['api'],
-    },
-    null,
-    leadOf(f, 'lead'),
-  ).id;
-  f.call(
-    'lead.question.answer',
-    { project_id: f.project.id, lead_session_id: 'lead', question_id: question, answer: 'CSV' },
-    null,
-    by,
-  );
-  return {
-    key_id: 'k1',
-    command: 'lead.question.answer',
-    subject: question,
-    lead_session_id: 'lead',
-    text: leadQuestion,
-    decision: 'CSV',
-  };
-}
-
 it.each<[string, Act, DecisionForUser['kind'] | undefined]>([
-  [
-    'a worker prompt approved for the lead',
-    async () => {
-      const { f, lead, worker, prompt } = await workerFixture();
-      const approval = await prompt('a');
-      return {
-        f,
-        match: {
-          approval_id: approval.id,
-          decided_by: `session:${lead.id}`,
-          session_id: worker.id,
-          tool: 'Edit',
-          input_summary: expect.stringContaining('src/a.ts'),
-        },
-      };
-    },
-    'prompt_approved',
-  ],
   [
     'a prompt answered by a stored project rule',
     async () => {
-      const { f, worker, prompt } = await workerFixture();
-      f.call('permission.rule.add', {
-        project_id: f.project.id,
-        rule: 'Edit',
-        session_id: worker.id,
-      });
-      const approval = await prompt('a', { project_rule_supported: true });
+      const { f, session, ruled } = await promptFixture();
+      const approval = await ruled('a');
       return {
         f,
-        match: { approval_id: approval.id, rule: 'Edit', session_id: worker.id, tool: 'Edit' },
+        match: { approval_id: approval.id, rule: 'Edit', session_id: session.id, tool: 'Edit' },
       };
     },
     'prompt_by_rule',
-  ],
-  ['a merge of files outside the task scope', mergedOutOfScope, 'power_used'],
-  [
-    'a task session question the lead answered',
-    async () => {
-      const { f, answer, match } = await questionFixture();
-      answer();
-      return { f, match };
-    },
-    'question_answered',
-  ],
-  [
-    'a lead answer the user overruled',
-    async () => {
-      const { f, lead, card, answer, match } = await questionFixture();
-      answer();
-      f.call('lead.question.overrule', {
-        project_id: f.project.id,
-        lead_session_id: lead.id,
-        question_id: card.id,
-        answer: 'JSON',
-      });
-      return { f, match: { ...match, overruled: { answer: 'JSON', at: expect.any(Number) } } };
-    },
-    'question_answered',
-  ],
-  [
-    'a task session question the user answered',
-    async () => {
-      const { f, lead, card } = await questionFixture();
-      f.call('lead.question.answer', {
-        project_id: f.project.id,
-        lead_session_id: lead.id,
-        question_id: card.id,
-        answer: 'CSV',
-      });
-      return { f, match: {} };
-    },
-    undefined,
-  ],
-  [
-    "the lead's question the personal key answered",
-    answeredBy(personal, answerLeadQuestion),
-    'personal_answer',
   ],
   [
     'the personal key marking the project seen',
@@ -439,21 +124,21 @@ it.each<[string, Act, DecisionForUser['kind'] | undefined]>([
     }),
     undefined,
   ],
-  ["the lead's question the user answered", answeredBy(user, answerLeadQuestion), undefined],
 ])('lists what %s decided', async (_label, act, kind) => {
   const { f, match } = await act();
   const { items } = f.control.decisionsForUser(user, f.project.id);
   expect(items).toEqual(kind ? [expect.objectContaining({ kind, ...match })] : []);
   if (kind) expect(items[0]!.at).toBeGreaterThan(0);
-  if (kind === 'power_used' && !('reason' in match)) expect(items[0]).not.toHaveProperty('reason');
 });
 
 it('drops the decisions made before since and lists the rest newest first', async () => {
-  const { f, prompt } = await workerFixture();
-  const first = await prompt('a');
-  await eventually(() => f.store.now() > first.created_at);
+  const { f, ruled } = await promptFixture();
+  const first = await ruled('a');
+  // since is compared with the approval.approved event, which can be written after the approval row.
+  const firstAt = f.control.decisionsForUser(user, f.project.id).items[0]!.at;
+  await eventually(() => f.store.now() > firstAt);
   const since = f.store.now();
-  const second = await prompt('b');
+  const second = await ruled('b');
   const ids = (since?: number) =>
     f.control
       .decisionsForUser(user, f.project.id, since)
@@ -464,14 +149,20 @@ it('drops the decisions made before since and lists the rest newest first', asyn
 
 it('refuses a principal of another project', async () => {
   const f = await plain();
-  const stranger = { ...leadWithPlan(f), project_id: 'another-project' };
+  const stranger: Principal = {
+    id: 'session:elsewhere',
+    role: 'conductor',
+    project_id: 'another-project',
+    session_id: 'elsewhere',
+    expires_at: f.store.now() + 60_000,
+  };
   expect(() => f.control.decisionsForUser(stranger, f.project.id)).toThrow(
     expect.objectContaining({ code: 'permission_denied' }),
   );
 });
 
 it('lists no row for a prompt the user approved', async () => {
-  const { f, prompt } = await workerFixture({ charter: { approve_worker_prompts: 'ask' } });
+  const { f, prompt } = await promptFixture();
   const approval = await prompt('a');
   expect(approval).toMatchObject({ state: 'pending', decider: 'user' });
   f.call('approval.respond', { approval_id: approval.id, decision: 'approve' }, approval.revision);
@@ -481,15 +172,11 @@ it('lists no row for a prompt the user approved', async () => {
 });
 
 it('keeps the row of a prompt whose approval left with its deleted session', async () => {
-  const { f, lead, prompt } = await workerFixture();
-  const approval = await prompt('a');
+  const { f, ruled } = await promptFixture();
+  const approval = await ruled('a');
   const settled = f.store.must<Approval>('approvals', approval.id);
   f.store.remove('approvals', settled.id, settled.revision);
   expect(f.control.decisionsForUser(user, f.project.id).items).toEqual([
-    expect.objectContaining({
-      kind: 'prompt_approved',
-      approval_id: approval.id,
-      decided_by: `session:${lead.id}`,
-    }),
+    expect.objectContaining({ kind: 'prompt_by_rule', approval_id: approval.id }),
   ]);
 });

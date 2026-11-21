@@ -11,7 +11,6 @@ import type {
   Workspace,
 } from '@pantheon/domain';
 import { readProcessIdentity } from '../../packages/adapters/dist/index.js';
-import { transferPlan } from '../../packages/control/dist/board-plan.js';
 import type { ControlContext } from '../../packages/control/src/context.js';
 import { insideSandbox, awaitWorkspaceReady, eventually, heldIndexLock, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
@@ -101,7 +100,6 @@ it('fast-forwards the source branch to the session commit and removes the worktr
       files: 1,
       additions: 1,
       deletions: 1,
-      measured_kind: { domain: 'backend-logic', tier: 't1' },
     },
   ]);
 });
@@ -168,7 +166,6 @@ it('rebases the session onto a newer source commit and keeps the history linear'
       files: 1,
       additions: 1,
       deletions: 0,
-      measured_kind: { domain: 'backend-logic', tier: 't1' },
     },
   ]);
 });
@@ -452,27 +449,6 @@ it('refuses no commits, a non-user principal and a discarded session', async () 
   expect(() => merge(f, session.id)).toThrow(expect.objectContaining({ code: 'invalid_state' }));
 });
 
-it('refuses the uncommitted and untracked files of a task session, whose agent commits its own work', async () => {
-  const f = await mergeFixture();
-  const { session, workspace } = await taskSession(f, 'api');
-  writeFileSync(path.join(workspace.path, 'untracked.txt'), 'new\n');
-  await expect(merge(f, session.id)).rejects.toThrow(
-    expect.objectContaining({ code: 'uncommitted_changes' }),
-  );
-  commit(workspace.path, 'committed.txt', 'kept\n');
-  await expect(merge(f, session.id)).rejects.toThrow(
-    expect.objectContaining({ code: 'uncommitted_changes' }),
-  );
-  writeFileSync(path.join(workspace.path, 'answer.txt'), 'edited\n');
-  git(workspace.path, 'add', 'untracked.txt');
-  git(workspace.path, 'commit', '--quiet', '-m', 'Add the untracked file');
-  await expect(merge(f, session.id)).rejects.toThrow(
-    expect.objectContaining({ code: 'uncommitted_changes' }),
-  );
-  expect(current(f, session.id).merge).toBeUndefined();
-  expect(git(workspace.path, 'log', '-1', '--format=%s')).toBe('Add the untracked file');
-});
-
 it.skipIf(insideSandbox)(
   'commits the uncommitted and untracked files of a session the user opened under its title, then gates and merges that commit',
   async () => {
@@ -526,15 +502,12 @@ it('commits the uncommitted files of a conductor session under its title, then m
   expect(git(f.source, 'show', 'main:answer.txt')).toBe('edited');
 });
 
-it.each([
-  { name: 'a session the user opened', task: false, state: 'ready' },
-  { name: 'a task session', task: true, state: 'idle' },
-])('lists $name with only uncommitted files as $state', async ({ task, state }) => {
+it('lists a session the user opened with only uncommitted files as ready', async () => {
   const f = await mergeFixture();
-  const { session, workspace } = task ? await taskSession(f, 'api') : await idleSession(f);
+  const { session, workspace } = await idleSession(f);
   writeFileSync(path.join(workspace.path, 'untracked.txt'), 'new\n');
   await f.prefetch();
-  expect(f.list().find((row) => row.id === session.id)?.state).toBe(state);
+  expect(f.list().find((row) => row.id === session.id)?.state).toBe('ready');
 });
 
 it('refuses to merge a session while its turn runs', async () => {
@@ -866,7 +839,6 @@ it.skipIf(insideSandbox)(
         files: 2,
         additions: 2,
         deletions: 0,
-        measured_kind: { domain: 'backend-logic', tier: 't1' },
       },
     ]);
     expect(payloads(f, session.id, 'session.gate_started')).toHaveLength(1);
@@ -911,56 +883,6 @@ it('merges two sessions asked to merge at once into the same source one after th
   expect(git(f.source, 'status', '--porcelain')).toBe('');
 });
 
-const leadId = 'lead-session-of-plan';
-
-/** Writes the lead's plan with one task per entry, each limited to its scope paths. */
-function setScopes(f: Fixture, scopes: Record<string, string[]>) {
-  const tasks = Object.entries(scopes).map(([id, scope]) => ({
-    id,
-    title: `Task ${id}`,
-    goal: `Finish ${id}`,
-    lane: 'core',
-    depends_on: [],
-    source: [],
-    scope,
-    acceptance: [],
-  }));
-  f.store.transaction(() => {
-    const existing = f.store.get<BoardPlan>('board_plans', leadId);
-    if (existing) {
-      f.store.update<BoardPlan>('board_plans', { ...existing, tasks }, existing.revision);
-      return;
-    }
-    f.store.insert<BoardPlan>('board_plans', {
-      id: leadId,
-      revision: 1,
-      project_id: f.project.id,
-      headline: 'Scoped work',
-      lanes: [{ id: 'core', title: 'Core' }],
-      tasks,
-      risks: [],
-      assumptions: [],
-      plan_version: 0,
-      pending_edits: [],
-      inbox: [],
-      notified: {},
-      updated_at: f.store.now(),
-    });
-  });
-}
-
-/** An idle session opened from the board task. */
-async function taskSession(f: Fixture, taskId: string) {
-  const idle = await idleSession(f);
-  const session = current(f, idle.session.id);
-  f.store.update<Session>(
-    'sessions',
-    { ...session, task: { lead_session_id: leadId, id: taskId } },
-    session.revision,
-  );
-  return idle;
-}
-
 const settled = (f: Fixture, sessionId: string) =>
   eventually(
     () =>
@@ -969,230 +891,6 @@ const settled = (f: Fixture, sessionId: string) =>
     () => f.control.tick(),
     10000,
   );
-
-it('blocks a task merge that changes files outside the task scope and lands once the scope covers them', async () => {
-  const f = await mergeFixture();
-  setScopes(f, { api: ['src/a'] });
-  const { session, workspace, sourceHead } = await taskSession(f, 'api');
-  commit(workspace.path, 'src/a/x.ts', 'export const x = 1;\n');
-  const head = commit(workspace.path, 'README.md', 'Outside the scope\n');
-  await merge(f, session.id);
-  await settled(f, session.id);
-  expect(current(f, session.id).merge).toEqual({
-    state: 'blocked',
-    reason: 'out_of_scope',
-    conflicts: ['README.md'],
-  });
-  expect(git(f.source, 'rev-parse', 'main')).toBe(sourceHead);
-
-  setScopes(f, { api: ['src/a', './README.md'] });
-  await merge(f, session.id);
-  await settled(f, session.id);
-  expect(current(f, session.id).outcome).toBe('merged');
-  expect(git(f.source, 'rev-parse', 'main')).toBe(head);
-});
-
-it.skipIf(insideSandbox).each([
-  ['without a gate', false],
-  ['through a gate', true],
-])(
-  'does not count the files of an earlier task merge against a later task rebased onto it, %s',
-  async (_, gated) => {
-    const f = await mergeFixture();
-    if (gated)
-      await setGate(f, [{ name: 'Passes', argv: [process.execPath, '-e', 'process.exit(0)'] }]);
-    setScopes(f, { first: ['src/a'], second: ['src/b'] });
-    const first = await taskSession(f, 'first'),
-      second = await taskSession(f, 'second');
-    commit(first.workspace.path, 'src/a/x.ts', 'export const x = 1;\n');
-    commit(second.workspace.path, 'src/b/y.ts', 'export const y = 2;\n');
-    await merge(f, first.session.id);
-    await settled(f, first.session.id);
-    expect(current(f, first.session.id).outcome).toBe('merged');
-    await merge(f, second.session.id);
-    await settled(f, second.session.id);
-    expect(current(f, second.session.id).merge).toBeUndefined();
-    expect(current(f, second.session.id).outcome).toBe('merged');
-    expect(git(f.source, 'show', 'main:src/a/x.ts')).toBe('export const x = 1;');
-    expect(git(f.source, 'show', 'main:src/b/y.ts')).toBe('export const y = 2;');
-  },
-);
-
-it.each([
-  {
-    name: 'blocks a changed path above a scope path, which contains the scope instead of lying in it',
-    scope: ['./src/a/x.ts'],
-    change: (worktree: string) =>
-      commit(worktree, 'src', 'A file where the scope folder would be\n'),
-    conflict: 'src',
-  },
-  {
-    name: 'blocks a task merge that renames a file in its scope to a path outside it',
-    scope: ['src/a'],
-    seed: 'src/a/old.ts',
-    change: (worktree: string) => {
-      git(worktree, 'mv', 'src/a/old.ts', 'moved.ts');
-      git(worktree, 'commit', '--quiet', '-m', 'Move the file out of the scope');
-    },
-    conflict: 'moved.ts',
-  },
-  {
-    name: 'blocks every file of a task with no scope paths',
-    scope: [],
-    change: (worktree: string) => commit(worktree, 'README.md', 'Anywhere\n'),
-    conflict: 'README.md',
-  },
-])('$name', async ({ scope, seed, change, conflict }) => {
-  const f = await mergeFixture();
-  if (seed) commit(f.source, seed, 'export const old = 1;\n');
-  setScopes(f, { api: scope });
-  const { session, workspace, sourceHead } = await taskSession(f, 'api');
-  change(workspace.path);
-  await merge(f, session.id);
-  await settled(f, session.id);
-  expect(current(f, session.id).merge).toEqual({
-    state: 'blocked',
-    reason: 'out_of_scope',
-    conflicts: [conflict],
-  });
-  expect(git(f.source, 'rev-parse', 'main')).toBe(sourceHead);
-});
-
-it.skipIf(insideSandbox)(
-  'does not land a task merge whose scope narrowed while its gate ran',
-  async () => {
-    const f = await mergeFixture();
-    setScopes(f, { api: ['src/a', 'README.md'] });
-    const { session, workspace, sourceHead } = await taskSession(f, 'api');
-    await setGate(f, [
-      {
-        name: 'Wait for release',
-        argv: [
-          process.execPath,
-          '-e',
-          "const fs = require('node:fs'); const timer = setInterval(() => { if (fs.existsSync('release')) clearInterval(timer); }, 10);",
-        ],
-      },
-    ]);
-    commit(workspace.path, 'src/a/x.ts', 'export const x = 1;\n');
-    commit(workspace.path, 'README.md', 'In the scope when the gate started\n');
-    await merge(f, session.id);
-    await eventually(
-      () => payloads(f, session.id, 'session.gate_started').length === 1,
-      () => f.control.tick(),
-      10000,
-    );
-    setScopes(f, { api: ['src/a'] });
-    const candidate = payloads(f, session.id, 'session.gate_started')[0]!.candidate_path as string;
-    writeFileSync(path.join(candidate, 'release'), 'release\n');
-    await settled(f, session.id);
-    expect(current(f, session.id).merge).toMatchObject({ state: 'blocked', reason: 'cancelled' });
-    expect(git(f.source, 'rev-parse', 'main')).toBe(sourceHead);
-  },
-);
-
-it('lands files outside the task scope when the user allows them, and refuses that to a session credential', async () => {
-  const f = await mergeFixture();
-  setScopes(f, { api: ['src/a'] });
-  const { session, workspace } = await taskSession(f, 'api');
-  const head = commit(workspace.path, 'README.md', 'Allowed by the user\n');
-  const worker: Principal = {
-    id: `session:${session.id}`,
-    role: 'worker',
-    project_id: f.project.id,
-    session_id: session.id,
-    expires_at: f.store.now() + 60000,
-  };
-  const allowed = (principal: Principal) =>
-    f.call<Session>(
-      'session.merge',
-      { session_id: session.id, allow_out_of_scope: true },
-      current(f, session.id).revision,
-      principal,
-    );
-  expect(() => allowed(worker)).toThrow(expect.objectContaining({ code: 'permission_denied' }));
-  expect(current(f, session.id).merge).toBeUndefined();
-  await allowed(user);
-  await settled(f, session.id);
-  expect(current(f, session.id).outcome).toBe('merged');
-  expect(git(f.source, 'rev-parse', 'main')).toBe(head);
-});
-
-it('hands a merge blocked by files outside the scope back to the task session with those files', async () => {
-  const f = await mergeFixture();
-  setScopes(f, { api: ['src/a'] });
-  const { session } = await taskSession(f, 'api');
-  f.store.event('session.merge_started', current(f, session.id), f.project.id, { auto: true }, '');
-  const blocked = current(f, session.id);
-  f.store.update<Session>(
-    'sessions',
-    {
-      ...blocked,
-      merge: { state: 'blocked', reason: 'out_of_scope', conflicts: ['README.md'] },
-    },
-    blocked.revision,
-  );
-  await f.control.tick();
-  const handed = f.turns(session.id).filter((turn) => turn.origin === 'tracker');
-  expect(handed).toHaveLength(1);
-  expect(handed[0]!.input).toContain('- README.md');
-  expect(handed[0]!.input).toContain('scope');
-});
-
-it('blocks the merge of a session left from a removed task whose id a new task reuses', async () => {
-  const f = await mergeFixture();
-  setScopes(f, { api: ['src/a'] });
-  const { session, workspace, sourceHead } = await taskSession(f, 'api');
-  // The lead removed task api and planned a new task under the same id.
-  setScopes(f, { api: ['README.md'] });
-  const plan = f.store.must<BoardPlan>('board_plans', leadId);
-  f.store.update<BoardPlan>(
-    'board_plans',
-    { ...plan, generations: { api: { generation: 2, contract: 'reused' } }, retired: { api: 1 } },
-    plan.revision,
-  );
-  commit(workspace.path, 'README.md', 'Done for the removed task\n');
-  await merge(f, session.id);
-  await settled(f, session.id);
-  expect(current(f, session.id).merge).toEqual({ state: 'blocked', reason: 'task_retired' });
-  expect(git(f.source, 'rev-parse', 'main')).toBe(sourceHead);
-});
-
-it('checks the task scope of the plan a new lead took over while the merge read the worktree', async () => {
-  const f = await mergeFixture();
-  setScopes(f, { api: ['src/a'] });
-  const { session, workspace, sourceHead } = await taskSession(f, 'api');
-  commit(workspace.path, 'README.md', 'Outside the scope\n');
-  await merge(f, session.id);
-  await f.control.tick();
-  // The merge now waits for Git to read the worktree HEAD.
-  await new Promise(setImmediate);
-  const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
-  ctx.store.transaction(() =>
-    transferPlan(ctx, ctx.store.must<BoardPlan>('board_plans', leadId), 'lead-that-took-over', ''),
-  );
-  await settled(f, session.id);
-  expect(current(f, session.id).task?.lead_session_id).toBe('lead-that-took-over');
-  expect(current(f, session.id).merge).toEqual({
-    state: 'blocked',
-    reason: 'out_of_scope',
-    conflicts: ['README.md'],
-  });
-  expect(git(f.source, 'rev-parse', 'main')).toBe(sourceHead);
-});
-
-it('blocks the merge of a task session whose plan cannot be found', async () => {
-  const f = await mergeFixture();
-  setScopes(f, { api: ['src/a'] });
-  const { session, workspace, sourceHead } = await taskSession(f, 'api');
-  const plan = f.store.must<BoardPlan>('board_plans', leadId);
-  f.store.remove('board_plans', plan.id, plan.revision);
-  commit(workspace.path, 'README.md', 'Outside the scope\n');
-  await merge(f, session.id);
-  await settled(f, session.id);
-  expect(current(f, session.id).merge).toEqual({ state: 'blocked', reason: 'task_plan_missing' });
-  expect(git(f.source, 'rev-parse', 'main')).toBe(sourceHead);
-});
 
 it('refuses a merge after the source repository checked out another branch than the session started from', async () => {
   const f = await mergeFixture();

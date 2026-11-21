@@ -712,7 +712,7 @@ function SplitHead(props: {
   return (
     <header className="sp-head" data-current={props.current || undefined}>
       <SessionStateIcon session={listed} place="header" />
-      {parent && parentLink(parent, listed)}
+      {parent && parentLink(parent)}
       <h2 className="sh-title" title={title}>
         {title}
       </h2>

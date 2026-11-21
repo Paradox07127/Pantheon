@@ -29,20 +29,13 @@ async function setup(turnSummarizer: Summarizer) {
 }
 type Fixture = Awaited<ReturnType<typeof setup>>;
 
-/** A merge and a new plan assumption after the cursor; returns their brief refs. */
-function happened(f: Fixture): { merge: ProjectBriefRef; assumption: ProjectBriefRef } {
+/** Two merges after the cursor; returns their brief refs. */
+function happened(f: Fixture): { merge: ProjectBriefRef; search: ProjectBriefRef } {
   f.store.event('session.merged', { id: 'session-filters', revision: 1 }, f.project.id, {});
-  const plan = f.store.event(
-    'board.plan_updated',
-    { id: 'lead-refunds', revision: 1 },
-    f.project.id,
-    {
-      assumptions: [{ text: 'UTC is the day boundary' }],
-    },
-  );
+  f.store.event('session.merged', { id: 'session-search', revision: 1 }, f.project.id, {});
   return {
     merge: { kind: 'merge', id: 'session-filters' },
-    assumption: { kind: 'event', id: plan.event_id },
+    search: { kind: 'merge', id: 'session-search' },
   };
 }
 
@@ -59,9 +52,9 @@ const settled = () => new Promise((resolve) => setImmediate(resolve));
 
 type Refs = ReturnType<typeof happened>;
 const merged = (refs: Refs) => ({ text: 'Refund list filters merged.', refs: [key(refs.merge)] });
-const assumed = (refs: Refs) => ({
-  text: 'The plan now takes UTC as the day boundary.',
-  refs: [key(refs.assumption)],
+const searched = (refs: Refs) => ({
+  text: 'Refund search merged.',
+  refs: [key(refs.search)],
 });
 
 it.each<
@@ -73,10 +66,10 @@ it.each<
 >([
   [
     'every sentence cites known items',
-    (refs) => JSON.stringify({ sentences: [merged(refs), assumed(refs)] }),
+    (refs) => JSON.stringify({ sentences: [merged(refs), searched(refs)] }),
     (refs) => [
       { text: 'Refund list filters merged.', refs: [refs.merge] },
-      { text: 'The plan now takes UTC as the day boundary.', refs: [refs.assumption] },
+      { text: 'Refund search merged.', refs: [refs.search] },
     ],
   ],
   [
@@ -85,23 +78,23 @@ it.each<
       JSON.stringify({
         sentences: [
           merged(refs),
-          { text: 'A review passed.', refs: [key(refs.assumption), 'event:unknown-review'] },
+          { text: 'A review passed.', refs: [key(refs.search), 'event:unknown-review'] },
         ],
       }),
     (refs) => [{ text: 'Refund list filters merged.', refs: [refs.merge] }],
   ],
   [
     'one sentence cites nothing',
-    (refs) => JSON.stringify({ sentences: [{ text: 'Work went on.', refs: [] }, assumed(refs)] }),
-    (refs) => [{ text: 'The plan now takes UTC as the day boundary.', refs: [refs.assumption] }],
+    (refs) => JSON.stringify({ sentences: [{ text: 'Work went on.', refs: [] }, searched(refs)] }),
+    (refs) => [{ text: 'Refund search merged.', refs: [refs.search] }],
   ],
   [
     'one sentence gives a number its items do not',
     (refs) =>
       JSON.stringify({
-        sentences: [{ text: '3 sessions merged.', refs: [key(refs.merge)] }, assumed(refs)],
+        sentences: [{ text: '3 sessions merged.', refs: [key(refs.merge)] }, searched(refs)],
       }),
-    (refs) => [{ text: 'The plan now takes UTC as the day boundary.', refs: [refs.assumption] }],
+    (refs) => [{ text: 'Refund search merged.', refs: [refs.search] }],
   ],
   [
     'five sentences cite known items',
@@ -127,9 +120,7 @@ it.each<
 
   const prompt = summarizer.mock.calls[0]![0];
   expect(prompt).toContain(`[${key(refs.merge)}]`);
-  expect(prompt).toContain(
-    `[${key(refs.assumption)}] The plan assumes something new: UTC is the day boundary`,
-  );
+  expect(prompt).toContain(`[${key(refs.search)}] An untitled session merged.`);
   const sentences = kept(refs);
   expect(brief(f).prose?.sentences).toEqual(sentences);
   expect(written(f).map((event) => (event.payload as { sentences: unknown }).sentences)).toEqual(
@@ -195,7 +186,7 @@ it('keeps the paragraph of a brief when only the count of what was decided for t
     kind: 'decided',
     ref: { kind: 'decided', id: 'project-a' },
     count,
-    types: { permission: count, answer: 0, plan_change: 0 },
+    types: { permission: count },
   });
   expect(briefItemsKey([merged, decided(2)])).toBe(briefItemsKey([merged]));
   expect(briefItemsKey([merged, decided(3)])).toBe(briefItemsKey([merged, decided(2)]));

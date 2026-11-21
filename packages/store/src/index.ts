@@ -309,6 +309,31 @@ export const migrations: readonly Migration[] = [
       `);
     },
   },
+  {
+    // A finding's outcome splits into fixed, intentional, not_worth_it and wrong.
+    version: 17,
+    up(db) {
+      const outcomes: Record<string, string> = { adopted: 'fixed', dismissed: 'wrong' };
+      const rows = db.prepare('SELECT id, data FROM reviews').all() as {
+        id: string;
+        data: string;
+      }[];
+      for (const row of rows) {
+        const review = JSON.parse(row.data) as {
+          findings?: { resolution?: { outcome: string } }[];
+        };
+        let changed = false;
+        for (const finding of review.findings ?? []) {
+          const outcome = finding.resolution && outcomes[finding.resolution.outcome];
+          if (!outcome) continue;
+          finding.resolution!.outcome = outcome;
+          changed = true;
+        }
+        if (changed)
+          db.prepare('UPDATE reviews SET data=? WHERE id=?').run(JSON.stringify(review), row.id);
+      }
+    },
+  },
 ];
 function fsyncPath(name: string): void {
   const fd = openSync(name, 'r');

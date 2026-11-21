@@ -29,7 +29,7 @@ async function readDevices(refresh: boolean): Promise<DevicesRead> {
         typeof d?.id === 'string' &&
         typeof d.name === 'string' &&
         typeof d.online === 'boolean' &&
-        typeof d.load?.sessions === 'number',
+        Array.isArray(d.load?.active_sessions),
     )
   )
     return {

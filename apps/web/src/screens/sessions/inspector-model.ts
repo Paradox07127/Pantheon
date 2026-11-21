@@ -462,11 +462,36 @@ export function anchorFinding(
   return null;
 }
 
+export type FindingOutcome = NonNullable<ReviewFinding['resolution']>['outcome'];
+export const FINDING_OUTCOMES: readonly FindingOutcome[] = [
+  'fixed',
+  'intentional',
+  'not_worth_it',
+  'wrong',
+];
+
+export function findingOutcomeName(outcome: FindingOutcome): string {
+  switch (outcome) {
+    case 'fixed':
+      return t({ id: 'sessions.model.finding.fixed', defaultMessage: 'Fixed' });
+    case 'intentional':
+      return t({ id: 'sessions.model.finding.intentional', defaultMessage: 'Intentional' });
+    case 'not_worth_it':
+      return t({ id: 'sessions.model.finding.notWorthIt', defaultMessage: 'Not worth it' });
+    case 'wrong':
+      return t({ id: 'sessions.model.finding.wrong', defaultMessage: 'Wrong' });
+  }
+}
+
+/** The accessible name of the button that marks a finding with an outcome. */
+export const findingOutcomeLabel = (finding: ReviewFinding, outcome: FindingOutcome): string =>
+  t(
+    { id: 'sessions.panel.review.resolveLabel', defaultMessage: '{outcome}: {impact}' },
+    { outcome: findingOutcomeName(outcome), impact: finding.impact },
+  );
+
 export function findingState(finding: ReviewFinding): string {
-  if (finding.resolution)
-    return finding.resolution.outcome === 'adopted'
-      ? t({ id: 'sessions.model.finding.adopted', defaultMessage: 'Adopted' })
-      : t({ id: 'sessions.model.finding.dismissed', defaultMessage: 'Dismissed' });
+  if (finding.resolution) return findingOutcomeName(finding.resolution.outcome);
   return finding.status === 'stale'
     ? t({ id: 'sessions.model.finding.stale', defaultMessage: 'Out of date' })
     : t({ id: 'sessions.model.finding.open', defaultMessage: 'Open' });

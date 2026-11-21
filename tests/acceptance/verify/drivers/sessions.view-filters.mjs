@@ -15,50 +15,20 @@ await call(
   (await projectRow()).revision,
 );
 
-// A lead session with a one-task plan, and that task's session, which keeps running.
-const plan = {
-  base_version: 0,
-  headline: 'One running worker',
-  lanes: [{ id: 'work', title: `Lane ${stamp}` }],
-  tasks: [
-    {
-      id: 'hold',
-      title: `Hold ${stamp}`,
-      goal: 'Hold the slot',
-      lane: 'work',
-      depends_on: [],
-      source: ['Hold the slot'],
-      scope: ['hold.txt'],
-      acceptance: ['test -f hold.txt'],
-      kind: { domain: 'backend-logic', tier: 't1' },
-    },
-  ],
-  milestones: [],
-  risks: [],
-  assumptions: [],
-};
-const lead = await call('session.create', {
+// A session with the coordination tools spawns one that keeps running: a Worker row.
+const spawnInput = `Hold the slot ${stamp}\nfixture-script\n${JSON.stringify([{ hang: true }])}`;
+const conductor = await call('session.create', {
   project_id,
   runtime: 'fixture',
-  purpose: 'lead',
-  input: `verify-filter-lead-${stamp}\nfixture-script\n${JSON.stringify([{ tool: { name: 'update_board', arguments: plan } }])}`,
-});
-await poll(
-  async () =>
-    (await query('session.list', { project_id })).find((s) => s.id === lead.id)?.last_turn
-      ?.state === 'completed',
-  30_000,
-);
-await call('session.create', {
-  project_id,
-  runtime: 'fixture',
-  task_id: `${lead.id}:hold`,
-  input: `Hold the slot\nfixture-script\n${JSON.stringify([{ hang: true }])}`,
+  purpose: 'conductor',
+  input: `verify-filter-conductor-${stamp}\nfixture-script\n${JSON.stringify([
+    { tool: { name: 'spawn_session', arguments: { runtime: 'fixture', input: spawnInput } } },
+  ])}`,
 });
 const worker = await poll(
   async () =>
     (await query('session.list', { project_id })).find(
-      (s) => s.lead === lead.id && s.state === 'running',
+      (s) => s.spawned_by?.session_id === conductor.id && s.state === 'running',
     ),
   30_000,
 );

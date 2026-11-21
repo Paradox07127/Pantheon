@@ -20,12 +20,12 @@ try {
     (await board()).projects.find((p) => p.id === project_id).revision,
   );
   const HEAD = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo }).toString().trim();
-  // A lead session, which carries the memory tools; its first turn ends before the turns below are sent.
+  // A project setup session, which carries the memory tools; its first turn ends before the turns below are sent.
   const TITLE = `verify-memory-read-${stamp}`;
   await call('session.create', {
     project_id,
     runtime: 'fixture',
-    purpose: 'lead',
+    purpose: 'project_setup',
     input: `${TITLE}\nfixture-script\n${JSON.stringify([{ say: `Ready ${stamp}` }])}`,
   });
   const first = await poll(

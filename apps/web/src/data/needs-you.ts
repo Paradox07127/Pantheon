@@ -133,7 +133,6 @@ export function touchesNeedsYou(kind: string): boolean {
       'session.archived',
       'session.unarchived',
       'session.deleted',
-      'session.continuation_skipped',
       'turn.queued',
       'turn.running',
       'turn.completed',

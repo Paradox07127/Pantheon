@@ -113,12 +113,6 @@ export function EntriesPage({ projectId }: { projectId: string }) {
   const shown = useShell((s) => s.screen === 'memory');
   const board = useBoard((s) => s.board);
   const [filters, setFilters] = useState<EntriesFilters>({ state: 'active', tag: [] });
-  const asked = useMemoryView((s) => s.askedFilters);
-  useEffect(() => {
-    if (!asked) return;
-    setFilters({ state: 'active', tag: [], ...asked });
-    useMemoryView.setState({ askedFilters: null });
-  }, [asked]);
   const params = {
     state: filters.state,
     kind: filters.kind,

@@ -23,11 +23,7 @@ import {
   X,
 } from 'lucide-react';
 import { Popover } from '@base-ui/react/popover';
-import type {
-  AgentChapterStartedPayload,
-  FilesReadResult,
-  SessionToolImage,
-} from '@pantheon/protocol';
+import type { FilesReadResult, SessionToolImage } from '@pantheon/protocol';
 import { appToolName } from '../../components/mcp-app/AppFrame';
 import { DiffCounts } from '../../components/DiffCounts';
 import { Equalizer } from '../../components/Equalizer';
@@ -912,113 +908,6 @@ function McpStartNotice(props: { event: DaemonEvent; enter: string }) {
         <span className="ss-marki" title={error}>
           {error}
         </span>
-      )}
-    </ThreadMark>
-  );
-}
-
-/** A resident session took over from the one before it; its button shows how the handoff note changed. */
-export function ChapterMark({ event }: { event: DaemonEvent }) {
-  const {
-    chapter,
-    handoff_key: handoffKey,
-    handoff_memory_id: handoff,
-    previous_memory_id: previous,
-  } = event.payload as AgentChapterStartedPayload;
-  const [notes, setNotes] = useState<{ lines: DiffLine[] } | { error: string } | null>(null);
-  // Both notes are superseded once later chapters start, so memory.get refuses them; the key's history has them.
-  const load = async () => {
-    setNotes(null);
-    let key = handoffKey;
-    let text: string | undefined;
-    if (!key) {
-      const note = await runCommand('memory.get', { memory_id: handoff }, null);
-      if (!note.ok) return setNotes({ error: failureText(note.error) });
-      ({ key, text } = note.value as { key: string; text: string });
-    }
-    const history = await runCommand(
-      'memory.history',
-      { project_id: event.project_id, key, ids: [previous, handoff] },
-      null,
-    );
-    if (!history.ok) return setNotes({ error: failureText(history.error) });
-    const items = (history.value as { items: { id: string; text: string }[] }).items;
-    const before = items.find((item) => item.id === previous);
-    text ??= items.find((item) => item.id === handoff)?.text ?? '';
-    setNotes({ lines: diffLines(before?.text ?? '', text) });
-  };
-  const lines = notes && 'lines' in notes ? notes.lines : null;
-  const noteLabel = t({ id: 'sessions.thread.handoffNote', defaultMessage: 'Handoff note' });
-  return (
-    <ThreadMark glyph={<span className="ss-gmile" />} at={event.created_at}>
-      <span>
-        {t(
-          { id: 'sessions.thread.chapter', defaultMessage: 'Chapter {chapter} started' },
-          { chapter },
-        )}
-      </span>
-      {handoff && previous ? (
-        <Popover.Root
-          onOpenChange={(open) => {
-            if (open && !lines) void load();
-          }}
-        >
-          <Popover.Trigger className="btn sm">
-            {t({ id: 'sessions.thread.handoffChanges', defaultMessage: 'Handoff changes' })}
-          </Popover.Trigger>
-          <Popover.Portal>
-            <Popover.Positioner side="bottom" sideOffset={6} style={{ zIndex: 40 }}>
-              <Popover.Popup
-                className="pop ss-hop"
-                aria-label={t({
-                  id: 'sessions.thread.handoffDiff',
-                  defaultMessage: 'Handoff note changes',
-                })}
-              >
-                <div className="ss-hoh">
-                  <span>{noteLabel}</span>
-                  {lines && (
-                    <span className="ss-hoc">
-                      <DiffCounts
-                        additions={lines.filter((line) => line.kind === 'add').length}
-                        deletions={lines.filter((line) => line.kind === 'del').length}
-                      />
-                    </span>
-                  )}
-                  <Popover.Close
-                    className="ib"
-                    aria-label={t({ id: 'sessions.thread.handoffClose', defaultMessage: 'Close' })}
-                  >
-                    <X aria-hidden="true" />
-                  </Popover.Close>
-                </div>
-                {lines ? (
-                  <div className="ss-hod">
-                    {lines.map((line, i) => (
-                      <div key={i} data-kind={line.kind}>
-                        <span>{line.kind === 'add' ? '+' : line.kind === 'del' ? '−' : ''}</span>
-                        <span>{line.text}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : notes && 'error' in notes ? (
-                  <LoadError message={notes.error} onRetry={() => void load()} />
-                ) : (
-                  <div className="ss-hod" aria-busy="true">
-                    <Skeleton style={{ height: 10, width: '70%' }} />
-                    <Skeleton style={{ height: 10, width: '45%' }} />
-                  </div>
-                )}
-              </Popover.Popup>
-            </Popover.Positioner>
-          </Popover.Portal>
-        </Popover.Root>
-      ) : (
-        handoff && (
-          <button type="button" className="btn sm" onClick={() => openMemory(handoff)}>
-            {noteLabel}
-          </button>
-        )
       )}
     </ThreadMark>
   );

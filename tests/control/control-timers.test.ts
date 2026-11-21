@@ -205,7 +205,10 @@ it('rolls back handler writes, events and outbox on failure and retries the pend
       'project.reminded',
       'timer.fired',
     ]);
-    expect(f.store.pending()).toHaveLength(1);
+    // The tick marks an outbox kind nothing handles done, so read the row itself.
+    expect(
+      f.store.db.prepare("SELECT id FROM outbox WHERE kind='reminder.deliver'").all(),
+    ).toHaveLength(1);
   } finally {
     await f.close();
   }
@@ -271,20 +274,22 @@ it('rechecks pending state when an earlier handler cancels another due timer', a
   }
 });
 
-it('keeps unknown kinds pending until a handler is registered', async () => {
+it('cancels a due timer of a kind no handler takes and never fires it later', async () => {
   const f = await timerFixture();
   try {
     const timer = scheduleTimer(f.ctx, f.input);
     f.clock.advance(1000);
     fireDueTimers(f.ctx);
-    expect(f.store.must<Timer>('timers', timer.id)).toEqual(timer);
-    expect(f.store.events().filter((event) => event.kind === 'timer.fired')).toEqual([]);
+    expect(f.store.must<Timer>('timers', timer.id)).toEqual({
+      ...timer,
+      revision: 2,
+      state: 'cancelled',
+    });
     const handler = vi.fn();
     timerHandlers.set(f.input.kind, handler);
     fireDueTimers(f.ctx);
-    fireDueTimers(f.ctx);
-    expect(handler).toHaveBeenCalledTimes(1);
-    expect(f.store.must<Timer>('timers', timer.id).state).toBe('fired');
+    expect(handler).not.toHaveBeenCalled();
+    expect(f.store.events().filter((event) => event.kind === 'timer.fired')).toEqual([]);
   } finally {
     await f.close();
   }

@@ -147,30 +147,6 @@ describe('session menu groups', () => {
     expect(copy.items.map((i) => i.label)).toEqual(COPY);
   });
 
-  it('renames an idle resident session, which has no worktree, and does not offer to archive it', () => {
-    const resident = listed('idle', { workspace_id: null, resident: { kind: 'assistant' } });
-    const groups = sessionMenu(resident, { workspace: null });
-    expect(shape(groups)).toEqual([...TOP, WHERE, ['delete'].map(m)]);
-    expect(entry(groups, m('rename'))).not.toHaveProperty('reason');
-    for (const label of OPEN) expect(entry(groups, label)).toMatchObject({ reason: NO_FOLDER });
-  });
-
-  it('opens the lead only from a board task session', () => {
-    const groups = sessionMenu(listed('idle', { lead: 'lead-a' }), { workspace });
-    expect(shape(groups)).toEqual([
-      ...TOP,
-      ['runChecks', 'merge', 'openLead'].map(m),
-      WHERE,
-      ['archive', 'delete'].map(m),
-    ]);
-    expect(entry(groups, m('openLead'))).toMatchObject({
-      command: 'session.open_lead',
-      input: { session_id: 'lead-a' },
-    });
-    for (const state of ['running', 'ready', 'done'] as const)
-      expect(entry(sessionMenu(listed(state), { workspace }), m('openLead'))).toBeUndefined();
-  });
-
   it('offers stop only while running, and turns it off while stopping', () => {
     for (const state of ['idle', 'ready', 'waiting', 'merging', 'done'] as const)
       expect(entry(sessionMenu(listed(state), { workspace }), m('stopTurn'))).toBeUndefined();
@@ -476,12 +452,6 @@ describe('session menu in the row and the header', () => {
       { type: 'session.interrupt', input: { session_id: 'session-a' }, expected_revision: 5 },
       { type: 'session.gates.run', input: { session_id: 'session-a' }, expected_revision: 5 },
     ]);
-  });
-
-  it('opens the lead of a board task session', () => {
-    const h = row(listed('idle', { lead: 'lead-a' }));
-    item(h.value, m('openLead')).props.onClick();
-    expect(mock.shell.openSession).toHaveBeenCalledWith('lead-a');
   });
 
   it('shows the same items in the header menu as in the row', () => {

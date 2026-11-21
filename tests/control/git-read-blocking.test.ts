@@ -10,9 +10,9 @@ import {
   autoMergeAfterTurn,
   forgetWorktreeReads,
 } from '../../packages/control/dist/workbench-session.js';
-import type { BoardPlan, Principal, Project, Review, Session } from '@pantheon/domain';
-import { awaitWorkspaceReady, eventually, settle, user, waitOutStatusReuse } from '../helpers.js';
-import { dispatchEveryTier, git, workbenchFixture } from './workbench-fixture.js';
+import type { Project, Review, Session } from '@pantheon/domain';
+import { awaitWorkspaceReady, eventually, user, waitOutStatusReuse } from '../helpers.js';
+import { git, workbenchFixture } from './workbench-fixture.js';
 
 type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
@@ -345,7 +345,7 @@ it('reads a session diff again once its worktree reads are forgotten', async () 
   expect(diffs()).toBeGreaterThan(0);
 });
 
-it('merges a task session after its turn while the event loop runs', async () => {
+it('merges a session declared ready after its turn while the event loop runs', async () => {
   const f = await workbenchFixture();
   git(f.source, 'config', 'user.name', 'Source User');
   git(f.source, 'config', 'user.email', 'source@example.invalid');
@@ -358,52 +358,18 @@ it('merges a task session after its turn while the event loop runs', async () =>
     },
     f.store.must<Project>('projects', f.project.id).revision,
   );
-  f.call(
-    'project.autoMerge.set',
-    { project_id: f.project.id, enabled: true },
-    f.store.must<Project>('projects', f.project.id).revision,
-  );
   const { session, workspace } = await idleSession(f);
-  f.store.insert<BoardPlan>('board_plans', {
-    id: 'lead-of-merged-task',
-    revision: 1,
-    project_id: f.project.id,
-    headline: 'Merged work',
-    lanes: [{ id: 'core', title: 'Core' }],
-    tasks: [
-      {
-        id: 'merged-task',
-        title: 'Merged task',
-        goal: 'Merge on its own',
-        lane: 'core',
-        depends_on: [],
-        source: [],
-        scope: ['.'],
-        acceptance: [],
-      },
-    ],
-    risks: [],
-    assumptions: [],
-    plan_version: 0,
-    pending_edits: [],
-    inbox: [],
-    notified: {},
-    updated_at: Date.now(),
-  });
+  const turnId = f.turns(session.id).at(-1)!.id;
   f.store.update<Session>(
     'sessions',
-    { ...session, task: { lead_session_id: 'lead-of-merged-task', id: 'merged-task' } },
+    { ...session, ready: { turn_id: turnId, command_id: 'declared-ready' } },
     session.revision,
   );
   commit(workspace.path, 'change.txt');
   gitWrapper(['status']);
   const fired = timerFired();
   const started = () => f.store.kindEvents(f.project.id, ['session.merge_started']).length > 0;
-  autoMergeAfterTurn(
-    (f.control as unknown as { ctx: ControlContext }).ctx,
-    session.id,
-    f.turns(session.id).at(-1)!.id,
-  );
+  autoMergeAfterTurn((f.control as unknown as { ctx: ControlContext }).ctx, session.id, turnId);
   let firedBeforeMerge: boolean | undefined;
   await eventually(() => {
     if (!started()) return false;
@@ -432,63 +398,6 @@ it('creates a session while the event loop runs as it reads the start point', as
   const session = await f.create();
   expect(fired()).toBe(true);
   await awaitWorkspaceReady(f.control, session.workspace_id!);
-});
-
-it('opens the session of a started task without blocking the event loop', async () => {
-  const f = await workbenchFixture();
-  dispatchEveryTier(f);
-  const lead = await f.create('Plan the export feature');
-  await settle(f, lead);
-  const principal: Principal = {
-    id: `session:${lead.id}`,
-    role: 'lead',
-    project_id: f.project.id,
-    session_id: lead.id,
-    expires_at: f.store.now() + 60000,
-  };
-  f.call(
-    'board.plan.update',
-    {
-      project_id: f.project.id,
-      base_version: 0,
-      headline: 'Export ships this week',
-      lanes: [{ id: 'core', title: 'Core' }],
-      tasks: [
-        {
-          id: 'a',
-          title: 'Task a',
-          goal: 'Finish task a',
-          lane: 'core',
-          depends_on: [],
-          source: ['Plan the export feature'],
-          scope: ['src/a'],
-          acceptance: ['pnpm test'],
-        },
-      ],
-      milestones: [],
-      risks: [],
-      assumptions: [],
-    },
-    null,
-    principal,
-  );
-  f.call('task.start', { project_id: f.project.id, task_ids: ['a'] }, null, principal);
-  gitWrapper(['rev-parse']);
-  // The longest time between two runs of a 10 ms interval while the tick runs.
-  let last = performance.now(),
-    longest = 0;
-  const interval = setInterval(() => {
-    longest = Math.max(longest, performance.now() - last);
-    last = performance.now();
-  }, 10);
-  restores.push(() => clearInterval(interval));
-  await f.control.tick();
-  clearInterval(interval);
-  longest = Math.max(longest, performance.now() - last);
-  expect(
-    f.store.list<Session>('sessions').filter((session) => session.task?.id === 'a'),
-  ).toHaveLength(1);
-  expect(longest).toBeLessThan(800);
 });
 
 it('opens a project on an existing repository while the event loop runs', async () => {

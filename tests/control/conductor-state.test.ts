@@ -13,7 +13,7 @@ import {
 } from '@pantheon/domain';
 import { command } from '@pantheon/protocol';
 import { awaitWorkspaceReady, eventually, user, waitOutStatusReuse } from '../helpers.js';
-import { boundTaskSession, git, workbenchFixture } from './workbench-fixture.js';
+import { git, workbenchFixture } from './workbench-fixture.js';
 
 type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
@@ -76,7 +76,7 @@ const finding = (reviewId: string, blocking: boolean, resolved = false): ReviewF
   status: 'open',
   blocking,
   ...(resolved
-    ? { resolution: { outcome: 'adopted' as const, resolved_at: 1, resolved_by: 'local-user' } }
+    ? { resolution: { outcome: 'intentional' as const, resolved_at: 1, resolved_by: 'local-user' } }
     : {}),
 });
 
@@ -221,8 +221,7 @@ it("lists the project's changes, their review and to-dos to a conductor session 
   expect(rows.has(`session:${foreign.id}`)).toBe(false);
   expect(rows.has(`landing:${foreignLanding.id}`)).toBe(false);
 
-  const worker = await boundTaskSession(f, conductor.id, 'a');
-  for (const principal of [user, credential(quiet, 'lead'), credential(worker, 'worker')])
+  for (const principal of [user, credential(quiet, 'lead'), credential(running, 'writer')])
     expect(await refusal(f, principal), principal.role).toBe('permission_denied');
 });
 

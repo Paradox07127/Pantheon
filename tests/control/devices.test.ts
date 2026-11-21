@@ -248,8 +248,7 @@ it('lists each device with its configuration entry and what holds it now', async
     expect(listed.map((device) => device.id)).toEqual(['local', 'build-box']);
     expect(listed[0]).not.toHaveProperty('config');
     expect(listed[1]!.config).toEqual(entry);
-    for (const device of listed)
-      expect(device.load).toEqual({ sessions: 0, uses: {}, active_sessions: [] });
+    for (const device of listed) expect(device.load).toEqual({ active_sessions: [] });
   } finally {
     await f.close();
   }

@@ -9,7 +9,6 @@ import {
   KeyRound,
   Minimize2,
   Pencil,
-  Route,
   Search,
   Terminal,
   Wrench,
@@ -88,12 +87,6 @@ export const VERB: Record<CallVerb, { icon: LucideIcon; label: string }> = {
     icon: Brain,
     get label() {
       return t({ id: 'runs.table.verb.think', defaultMessage: 'Think' });
-    },
-  },
-  dispatch: {
-    icon: Route,
-    get label() {
-      return t({ id: 'runs.table.verb.dispatch', defaultMessage: 'Dispatch' });
     },
   },
   subagent: {

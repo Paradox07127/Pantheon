@@ -1,10 +1,5 @@
 import { expect, it } from 'vitest';
-import {
-  BROWSER_TEXT_LIMIT,
-  inputSchemas,
-  leadToolEffects,
-  sessionTools,
-} from '@pantheon/protocol';
+import { BROWSER_TEXT_LIMIT, inputSchemas, sessionTools } from '@pantheon/protocol';
 
 it('accepts only http and https addresses for the page a session opens', () => {
   const open = inputSchemas['browser.open'];
@@ -22,20 +17,14 @@ it('accepts only http and https addresses for the page a session opens', () => {
   expect(open.safeParse({ url: 'https://example.com', extra: 1 }).success).toBe(false);
 });
 
-it('offers the browser tools to conversation, lead and task sessions but not to reviewers', () => {
+it('offers the browser tools to conversation sessions but not to reviewers', () => {
   const browserTools = {
     browser_open: 'browser.open',
     browser_read: 'browser.read',
     browser_screenshot: 'browser.screenshot',
   };
-  for (const role of ['planner', 'lead', 'worker'] as const)
-    expect(sessionTools[role], role).toMatchObject(browserTools);
+  expect(sessionTools.planner).toMatchObject(browserTools);
   expect(Object.values(sessionTools.reviewer)).not.toContain('browser.open');
-  expect(leadToolEffects).toMatchObject({
-    browser_open: 'write',
-    browser_read: 'read',
-    browser_screenshot: 'read',
-  });
 });
 
 it('takes a desktop answer with a page or an error, and page text within the limit', () => {

@@ -317,11 +317,16 @@ describe('a session window', () => {
     expect(sheet().props.open).toBe(true);
   });
 
-  it('opens the parent and sub-agent sessions in this window, and goes back and forward between them', () => {
+  it('opens the forked-from and spawned sessions in this window, and goes back and forward between them', () => {
     inWindow({ kind: 'session', project_id: 'alpha', session_id: 'refund-1' });
     const lead = { ...listed, id: 'lead-0', title: 'Payments plan', state: 'idle' };
-    const agent = { ...listed, id: 'agent-2', title: 'Write the tests', lead: 'refund-1' };
-    mock.list.data = [lead, { ...listed, lead: 'lead-0' }, agent];
+    const agent = {
+      ...listed,
+      id: 'agent-2',
+      title: 'Write the tests',
+      spawned_by: { session_id: 'refund-1' },
+    };
+    mock.list.data = [lead, { ...listed, forked_from: { session_id: 'lead-0' } }, agent];
     // The place the window starts on.
     useShell.setState({
       history: [{ projectId: 'alpha', screen: 'sessions', sessionId: 'refund-1' }],

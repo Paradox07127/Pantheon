@@ -1,10 +1,4 @@
-import type {
-  FlowPath,
-  TaskBudget,
-  TaskKind,
-  WorkflowParam,
-  WorkflowPolicy,
-} from '@pantheon/domain';
+import type { WorkflowParam, WorkflowPolicy } from '@pantheon/domain';
 import type { WorkflowPolicyView } from '@pantheon/protocol';
 import { t } from '../i18n';
 import { sendProjectCommand, useProjectQuery, type MutationResult } from './project-read';
@@ -13,28 +7,13 @@ export type { WorkflowParam, WorkflowPolicy, WorkflowPolicyView };
 
 /** The fields of workflow.policy.set besides project_id; an absent field stays as it is. */
 export interface PolicyPatch {
-  plan_changes?: WorkflowPolicy['plan_changes'];
   /** null turns it off. */
   question_defaults?: WorkflowPolicy['question_defaults'] | null;
-  path?: WorkflowPolicy['path'];
-  acceptance_wake?: WorkflowPolicy['acceptance_wake'];
-  max_parallel?: number;
-  max_parallel_limit?: number;
-  /** Replaces the whole record; a runtime left out has no limit of its own. */
-  runtime_parallel?: Record<string, number>;
-  dispatch_paused?: boolean;
   runtime_quota_threshold?: number;
-  handback_limit?: number;
   gate_on_fail?: WorkflowPolicy['gate_on_fail'];
   gate_runner?: WorkflowPolicy['gate_runner'];
-  recovery_switch?: WorkflowPolicy['recovery_switch'];
-  milestone_verify?: WorkflowPolicy['milestone_verify'];
-  /** null clears the hint. */
-  task_size_hint?: number | null;
   /** null clears the budget. */
   project_budget?: { input_tokens: number } | null;
-  /** Merged by tier and path; a null cell clears its budget. */
-  budget?: Partial<Record<TaskKind['tier'], Partial<Record<FlowPath, TaskBudget | null>>>>;
   pinned?: WorkflowParam[];
 }
 
@@ -48,8 +27,6 @@ export const isPolicy = (value: unknown): value is WorkflowPolicy =>
   isObject(value) &&
   typeof value.project_id === 'string' &&
   typeof value.policy_version === 'number' &&
-  typeof value.max_parallel === 'number' &&
-  isObject(value.path) &&
   Array.isArray(value.pinned);
 
 /** GET /v1/workflow.policy; the defaults at version 0 until the project stores its own. */
@@ -69,9 +46,6 @@ export const setPolicy = (policy: WorkflowPolicy, patch: PolicyPatch): Promise<M
     policyRevision(policy),
   );
 
-/** The handback limits the daemon accepts. */
-export const HANDBACK_LIMIT_RANGE: [number, number] = [2, 5];
-
 /** The pinned list with the parameter added or taken out. */
 export const togglePin = (policy: WorkflowPolicy, param: WorkflowParam): WorkflowParam[] =>
   policy.pinned.includes(param)
@@ -80,16 +54,9 @@ export const togglePin = (policy: WorkflowPolicy, param: WorkflowParam): Workflo
 
 // Labels are getters, so each is read in the language loaded by then.
 export const PARAM_LABEL: Record<
-  | 'handback_limit'
-  | 'gate_on_fail'
-  | 'question_defaults'
-  | 'project_budget'
-  | 'runtime_quota_threshold',
+  'gate_on_fail' | 'question_defaults' | 'project_budget' | 'runtime_quota_threshold',
   string
 > = {
-  get handback_limit() {
-    return t({ id: 'data.workflowPolicy.param.handbackLimit', defaultMessage: 'Handback limit' });
-  },
   get gate_on_fail() {
     return t({ id: 'settings.gate.onFail', defaultMessage: 'When a gate fails' });
   },

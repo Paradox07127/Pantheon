@@ -17,43 +17,55 @@ import { agentEvent } from '../../packages/control/dist/agent.js';
 import type { ControlContext } from '../../packages/control/dist/context.js';
 import { openInside } from '../../packages/control/dist/workspace-files.js';
 import { awaitWorkspaceReady, user } from '../helpers.js';
-import { boundTaskSession, workbenchFixture } from './workbench-fixture.js';
+import { workbenchFixture } from './workbench-fixture.js';
 
 vi.mock('node:fs', async (original) => ({ ...(await original<typeof import('node:fs')>()) }));
 
 const denied = expect.objectContaining({ code: 'permission_denied' });
 
-function workerOf(f: Awaited<ReturnType<typeof workbenchFixture>>, session: Session): Principal {
+/** A session whose credential reads project files: one that sets up the project, in a worktree. */
+const setupSession = (f: Awaited<ReturnType<typeof workbenchFixture>>) =>
+  f.call<Promise<Session>>('session.create', {
+    project_id: f.project.id,
+    runtime: f.adapter.name,
+    input: 'Set up the project',
+    purpose: 'project_setup',
+  });
+
+function credentialOf(
+  f: Awaited<ReturnType<typeof workbenchFixture>>,
+  session: Session,
+): Principal {
   return {
-    id: 'task-worker-credential',
-    role: 'worker',
+    id: 'project-setup-credential',
+    role: 'planner',
     project_id: f.project.id,
     session_id: session.id,
     expires_at: f.store.now() + 60_000,
   };
 }
 
-it('lets a task worker read only its own worktree, never another session or the project root', async () => {
+it('lets a project setup session read only its own worktree, never another session or the project root', async () => {
   const f = await workbenchFixture();
-  const own = await boundTaskSession(f, 'lead-of-the-task', 'task-under-test');
+  const own = await setupSession(f);
   const other = await f.create('Draw something else');
   const ownWorkspace = await awaitWorkspaceReady(f.control, own.workspace_id!);
   const otherWorkspace = await awaitWorkspaceReady(f.control, other.workspace_id!);
   writeFileSync(path.join(ownWorkspace.path, 'mine.ts'), 'function mineSymbol() {}');
   writeFileSync(path.join(otherWorkspace.path, 'theirs.ts'), 'function theirsSymbol() {}');
-  const worker = workerOf(f, own);
-  expect(() => f.control.filesRead(worker, f.project.id, other.id, 'theirs.ts')).toThrow(denied);
-  expect(() => f.control.symbolsSearch(worker, f.project.id, other.id, 'theirs')).toThrow(denied);
-  expect(() => f.control.filesRead(worker, f.project.id, undefined, 'answer.txt')).toThrow(denied);
-  expect(f.control.filesRead(worker, f.project.id, own.id, 'mine.ts').text).toContain('mineSymbol');
+  const reader = credentialOf(f, own);
+  expect(() => f.control.filesRead(reader, f.project.id, other.id, 'theirs.ts')).toThrow(denied);
+  expect(() => f.control.symbolsSearch(reader, f.project.id, other.id, 'theirs')).toThrow(denied);
+  expect(() => f.control.filesRead(reader, f.project.id, undefined, 'answer.txt')).toThrow(denied);
+  expect(f.control.filesRead(reader, f.project.id, own.id, 'mine.ts').text).toContain('mineSymbol');
   expect(f.control.filesRead(user, f.project.id, other.id, 'theirs.ts').text).toContain(
     'theirsSymbol',
   );
 });
 
-it('lets a task worker see only the images its own session tool calls returned', async () => {
+it('lets a project setup session see only the images its own session tool calls returned', async () => {
   const f = await workbenchFixture();
-  const own = await boundTaskSession(f, 'lead-of-the-task', 'task-under-test');
+  const own = await setupSession(f);
   const other = await f.create('Draw something else');
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 4, 5, 6]);
@@ -68,21 +80,21 @@ it('lets a task worker see only the images its own session tool calls returned',
       images: [{ mime: 'image/png', data: png.toString('base64') }],
     });
   const image = { mime: 'image/png', data: png.toString('base64'), size: png.length };
-  const worker = workerOf(f, own);
-  expect(() => f.control.sessionToolImage(worker, other.id, hash)).toThrow(denied);
-  expect(f.control.sessionToolImage(worker, own.id, hash)).toEqual(image);
+  const reader = credentialOf(f, own);
+  expect(() => f.control.sessionToolImage(reader, other.id, hash)).toThrow(denied);
+  expect(f.control.sessionToolImage(reader, own.id, hash)).toEqual(image);
   expect(f.control.sessionToolImage(user, other.id, hash)).toEqual(image);
 });
 
 it('refuses a session read of data its sandbox protects inside its own worktree', async () => {
   const f = await workbenchFixture();
-  const own = await boundTaskSession(f, 'lead-of-the-task', 'task-under-test');
+  const own = await setupSession(f);
   const workspace = await awaitWorkspaceReady(f.control, own.workspace_id!);
   f.protectionPaths.backupDir = path.join(workspace.path, 'backups');
   mkdirSync(f.protectionPaths.backupDir);
   writeFileSync(path.join(f.protectionPaths.backupDir, 'saved.txt'), 'protected');
   expect(() =>
-    f.control.filesRead(workerOf(f, own), f.project.id, own.id, 'backups/saved.txt'),
+    f.control.filesRead(credentialOf(f, own), f.project.id, own.id, 'backups/saved.txt'),
   ).toThrow(denied);
   expect(f.control.filesRead(user, f.project.id, own.id, 'backups/saved.txt').text).toBe(
     'protected',
@@ -127,18 +139,18 @@ it('refuses to open a checked path whose parent became a symlink out of the work
   }).toThrow(expect.objectContaining({ code: 'invalid_input' }));
 });
 
-it('lets a task worker search only its own worktree for file names', async () => {
+it('lets a project setup session search only its own worktree for file names', async () => {
   const f = await workbenchFixture();
-  const own = await boundTaskSession(f, 'lead-of-the-task', 'task-under-test');
+  const own = await setupSession(f);
   const other = await f.create('Draw something else');
   await awaitWorkspaceReady(f.control, own.workspace_id!);
   const otherWorkspace = await awaitWorkspaceReady(f.control, other.workspace_id!);
   writeFileSync(path.join(otherWorkspace.path, 'theirs.ts'), 'export {};');
-  const worker = workerOf(f, own);
-  await expect(f.control.filesSearch(worker, f.project.id, other.id, 'theirs')).rejects.toThrow(
+  const reader = credentialOf(f, own);
+  await expect(f.control.filesSearch(reader, f.project.id, other.id, 'theirs')).rejects.toThrow(
     denied,
   );
-  await expect(f.control.filesSearch(worker, f.project.id, undefined, 'answer')).rejects.toThrow(
+  await expect(f.control.filesSearch(reader, f.project.id, undefined, 'answer')).rejects.toThrow(
     denied,
   );
   expect(await f.control.filesSearch(user, f.project.id, other.id, 'theirs')).toContain(
@@ -148,7 +160,7 @@ it('lets a task worker search only its own worktree for file names', async () =>
 
 it('refuses a protected file reached by swapping a checked folder for a link while it opens', async () => {
   const f = await workbenchFixture();
-  const own = await boundTaskSession(f, 'lead-of-the-task', 'task-under-test');
+  const own = await setupSession(f);
   const workspace = await awaitWorkspaceReady(f.control, own.workspace_id!);
   f.protectionPaths.backupDir = path.join(workspace.path, 'backups');
   mkdirSync(f.protectionPaths.backupDir);
@@ -170,7 +182,7 @@ it('refuses a protected file reached by swapping a checked folder for a link whi
   }) as typeof fs.openSync);
   try {
     expect(() =>
-      f.control.filesRead(workerOf(f, own), f.project.id, own.id, 'public/saved.txt'),
+      f.control.filesRead(credentialOf(f, own), f.project.id, own.id, 'public/saved.txt'),
     ).toThrow(denied);
   } finally {
     spy.mockRestore();

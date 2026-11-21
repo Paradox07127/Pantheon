@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import type { EntriesFilters } from '../screens/memory/EntriesBar';
 import { useCurrentProject } from './current-project';
 
 interface MemoryViewState {
@@ -7,8 +6,6 @@ interface MemoryViewState {
   selectedId: string | null;
   /** The search words of the entries tab. */
   query: string;
-  /** Filters another screen asked the entries tab to show; the tab takes them and clears this. */
-  askedFilters: Partial<EntriesFilters> | null;
   select: (id: string | null) => void;
   setQuery: (query: string) => void;
 }
@@ -16,7 +13,6 @@ interface MemoryViewState {
 export const useMemoryView = create<MemoryViewState>((set) => ({
   selectedId: null,
   query: '',
-  askedFilters: null,
   select: (selectedId) => set({ selectedId }),
   setQuery: (query) => set({ query }),
 }));

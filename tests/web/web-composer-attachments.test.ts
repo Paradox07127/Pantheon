@@ -481,12 +481,12 @@ describe('composer attachments', () => {
     expect(nodes(h.value).some((n) => text(n) === zh('sessions.composer.addFile'))).toBe(false);
   });
 
-  it('sends the attachments of a resident session, which has no worktree', async () => {
-    session = { ...running, state: 'open', resident: { kind: 'assistant' } };
+  it('sends the attachments of a session without a worktree', async () => {
+    session = { ...running, state: 'open' };
     const h = host(() =>
       SessionCompose({
         session,
-        listed: { ...listed, state: 'idle', workspace_id: null, resident: { kind: 'assistant' } },
+        listed: { ...listed, state: 'idle', workspace_id: null },
         title: 'Assistant',
       }),
     );

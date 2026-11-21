@@ -23,7 +23,6 @@ import {
   memoryItemBytes,
   visible,
   taskScope,
-  sessionTaskScope,
   sessionFor,
   ensureProject,
   expired,
@@ -33,7 +32,6 @@ import {
   DomainError,
   id,
   requireThat,
-  type BoardPlan,
   type MemoryContext,
   type MemoryItem,
   type MemoryJob,
@@ -265,18 +263,13 @@ function propose(ctx: ControlContext, p: Principal, c: Command, verifiedCommit?:
   const i = inputSchemas['memory.propose'].parse(c.input);
   ensureProject(ctx, p, i.project_id, c.type);
   const session = sessionFor(ctx, p);
-  const own = sessionTaskScope(session);
-  const task = taskScope(i.task) ?? own;
+  const task = taskScope(i.task);
   requireThat(
-    !session || !i.task || (!!own && hash(taskScope(i.task)) === hash(own)),
+    !session || !i.task,
     'permission_denied',
     'A session may propose only in its own task scope',
   );
-  requireThat(
-    taskCurrent(ctx, { project_id: i.project_id, task }),
-    'invalid_state',
-    'Task generation is no longer current',
-  );
+  requireThat(taskCurrent({ task }), 'invalid_state', 'Task generation is no longer current');
   const stamp = signature(ctx, i.project_id);
   requireThat(
     !session || !!i.based_on,
@@ -382,7 +375,7 @@ export const memoryHandlers: Handlers = {
       'Sources changed; review a fresh proposal',
     );
     requireThat(
-      taskCurrent(ctx, r) && (!r.expires_at || r.expires_at > ctx.store.now()),
+      taskCurrent(r) && (!r.expires_at || r.expires_at > ctx.store.now()),
       'invalid_state',
       'Proposal expired',
     );
@@ -856,11 +849,7 @@ export function tickMemory(ctx: ControlContext): void {
         synced.set(project.id, ctx.store.now());
         syncMemoryFiles(ctx, project);
       }
-      if (
-        !records(ctx, project.id).length &&
-        !rows<BoardPlan>(ctx, 'board_plans', project.id).length
-      )
-        return;
+      if (!records(ctx, project.id).length) return;
       // An archive in sweep changes the signature, so enqueue then computes it again.
       const kept = sweep(ctx, project.id);
       enqueue(ctx, project.id, kept && signature(ctx, project.id, ...kept));

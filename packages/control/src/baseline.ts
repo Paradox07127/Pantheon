@@ -500,7 +500,7 @@ export function projectBaselineRead(
 }
 
 function startTarget(ctx: ControlContext, p: Principal, c: Command) {
-  if (p.role !== 'lead') userOnly(p);
+  userOnly(p);
   const input = inputSchemas['project.baseline.start'].parse(c.input);
   revision(ctx, c);
   projectAccess(ctx, p, input.project_id, c.type);
@@ -674,7 +674,6 @@ function start(
     project_id: project.id,
     facts_id: snapshot.id,
     dropped: 0,
-    ...(p.role === 'lead' && { lead_session_id: p.session_id }),
   };
   if (empty) {
     const baseline: ProjectBaseline = { ...base, state: 'empty', created_at: ctx.store.now() };
@@ -1065,29 +1064,6 @@ function confirm(ctx: ControlContext, p: Principal, c: Command, gitRoots: Set<st
         type: 'visual.pin',
         input: { visual_id: visual.id, size: 'M' },
       });
-  if (!input.plan_board) return next;
-  const brief = input.brief ?? result.brief;
-  const starter = baseline.lead_session_id
-    ? ctx.store.get<Session>('sessions', baseline.lead_session_id)
-    : undefined;
-  // A starter lead that no longer takes input gets no result.
-  let takesInput = !!starter;
-  try {
-    if (starter) acceptInput(ctx, starter, starter.state === 'running' ? 'steer' : 'send');
-  } catch (error) {
-    if (!(error instanceof DomainError)) throw error;
-    takesInput = false;
-  }
-  if (starter && takesInput) {
-    queueTurn(
-      ctx,
-      starter,
-      firstPlanMessage(result, brief, rounds, true),
-      'baseline',
-      c.command_id,
-    );
-    return { ...next, lead_session_id: starter.id };
-  }
   return next;
 }
 
@@ -1167,78 +1143,6 @@ function answered(questions: BaselineQuestion[], answer: BaselineAnswer): string
       ? answer.answer
       : `left to you${recommended ? `; the recommended option is ${recommended}` : ''}`;
   return `${answer.question} Answer: ${text}`;
-}
-
-// About four times the summary of a real baseline with 9 workstreams and 12 tasks (8.5k characters).
-const RESULT_LIMIT = 32000;
-
-function firstPlanMessage(
-  result: BaselineResult,
-  brief: { goal: string; goals: string[]; non_goals: string[] } | undefined,
-  rounds: { questions: BaselineQuestion[]; answers: BaselineAnswer[] }[],
-  /** True when the message goes back to the lead that started the baseline. */
-  rerun = false,
-): string {
-  // Workstreams go last so the length limit cuts them before the user's answers.
-  const tasks = result.tasks ?? [];
-  const title = (list: { id: string; title: string }[], key: string) =>
-    list.find((entry) => entry.id === key)?.title ?? key;
-  const summary = [
-    ...(brief ? [`Goal: ${brief.goal}`] : []),
-    ...(brief?.goals.length ? ['Goals:', ...brief.goals.map((goal) => `- ${goal}`)] : []),
-    ...(brief?.non_goals.length
-      ? ['Non-goals:', ...brief.non_goals.map((goal) => `- ${goal}`)]
-      : []),
-    ...rounds.flatMap((round, index) => [
-      ...(round.questions.length
-        ? [
-            `Questions of round ${index + 1}:`,
-            ...round.questions.map((entry) => `- ${entry.question}`),
-          ]
-        : []),
-      ...(round.answers.length
-        ? [
-            `The user's answers in round ${index + 1}:`,
-            ...round.answers.map((entry) => `- ${answered(round.questions, entry)}`),
-          ]
-        : []),
-    ]),
-    ...(tasks.length
-      ? [
-          'Next tasks:',
-          ...tasks.map(
-            (task) =>
-              `- ${task.title} (workstream: ${title(result.workstreams, task.workstream)}): ${task.why} Scope: ${task.scope.join(', ')}${task.acceptance.length ? ` Acceptance: ${task.acceptance.join('; ')}` : ''}${task.depends_on.length ? ` Depends on: ${task.depends_on.map((key) => title(tasks, key)).join('; ')}` : ''}`,
-          ),
-        ]
-      : []),
-    ...(result.findings.length
-      ? ['Findings:', ...result.findings.map((entry) => `- (${entry.severity}) ${entry.text}`)]
-      : []),
-    ...(result.contradictions.length
-      ? ['Docs the code contradicts:', ...result.contradictions.map((entry) => `- ${entry.text}`)]
-      : []),
-    'Workstreams:',
-    ...result.workstreams.map(
-      (stream) =>
-        `- ${stream.title} (${stream.status}): ${stream.reason}${stream.modules?.length ? ` Modules: ${stream.modules.join(', ')}` : ''}${stream.depends_on?.length ? ` Depends on: ${stream.depends_on.map((key) => title(result.workstreams, key)).join('; ')}` : ''}${stream.next.length ? ` Next: ${stream.next.join('; ')}` : ''}${stream.blockers.length ? ` Blockers: ${stream.blockers.join('; ')}` : ''}${stream.risks?.length ? ` Risks: ${stream.risks.join('; ')}` : ''}`,
-    ),
-  ].join('\n');
-  return [
-    ...(rerun
-      ? [
-          'This is the confirmed new baseline of the project that you started with rerun_baseline.',
-          'Rewrite your plan from it with update_board: keep the ids of tasks that still apply, add tasks for the work still to do, and remove tasks that are no longer needed. Stages that can be accepted become milestones, the open questions become risks or assumptions, risk findings become risks and contradictions become assumptions.',
-          "Each next task becomes a board task with its scope, acceptance and dependencies. Its title and the user's answer it follows from are the user's words here: quote the title as its source, and that answer too when one applies.",
-        ]
-      : [
-          'This is the confirmed baseline of the project.',
-          'Write the first plan of the board with update_board: workstreams become lanes, the work still to do becomes tasks with their dependencies, stages that can be accepted become milestones, the open questions become risks or assumptions, risk findings become risks and contradictions become assumptions.',
-          "Each next task becomes a board task with its scope, acceptance and dependencies. Its title and the user's answer it follows from are the user's words here: quote the title as its source, and that answer too when one applies.",
-        ]),
-    'When the plan is written, end your turn; do not implement anything.',
-    summary.length > RESULT_LIMIT ? `${summary.slice(0, RESULT_LIMIT)}…` : summary,
-  ].join('\n\n');
 }
 
 /** The session has no live process, queued or running turn, or pending stop left. */

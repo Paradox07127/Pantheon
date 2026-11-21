@@ -1,14 +1,10 @@
 import {
-  credentialRole,
   hash,
   id,
   permissionRule,
   requireThat,
   type AgentEvent,
   type Approval,
-  type BoardPlan,
-  type LeadNote,
-  type LeadQuestion,
   type PermissionDecision,
   type Project,
   type Principal,
@@ -26,18 +22,12 @@ import {
   sessionAdapter,
   projectAccess,
   revision,
-  sessionWorkspaceKind,
   userOnly,
   type ControlContext,
   type Handlers,
 } from './context.js';
-import { isolationWaived } from './admission.js';
-import { charterMode, chartered } from './charter.js';
 import { SHELL_TOOLS } from './handoff.js';
-import { answerQuestion, appendNote, askQuestion, recordNote } from './lead-inbox.js';
-import { mustAsk } from './must-ask.js';
 import { unsnooze } from './session.js';
-import { wakeLead } from './task-tracking.js';
 import { projectDefaults, userConfigDirectory, writeUserConfig } from './user-config.js';
 
 const detailInput = (detail: unknown): unknown =>
@@ -106,144 +96,6 @@ function voidApproval(
   );
   ctx.store.event('approval.void', next, next.project_id, approvalEventPayload(next), cause);
   if (liveSessionHandle(ctx, next.session_id)) enqueueAnswer(ctx, next);
-  closeRelay(ctx, next, cause);
-}
-
-/** The lead's board question that relays the approval to the user. */
-export function relayingQuestion(
-  ctx: ControlContext,
-  approval: Approval,
-): { plan: BoardPlan; question: LeadQuestion } | undefined {
-  for (const plan of ctx.store.list<BoardPlan>('board_plans')) {
-    const question =
-      plan.project_id === approval.project_id &&
-      plan.questions?.find((candidate) => candidate.source?.approval_id === approval.id);
-    if (question) return { plan, question };
-  }
-}
-
-/**
- * Puts a task session's question on its lead's board, which answers the approval in turn; when the
- * charter lets the lead answer it, the lead is woken with the question too.
- */
-function relayQuestion(ctx: ControlContext, session: Session, approval: Approval): void {
-  if (
-    approval.tool !== 'AskUserQuestion' ||
-    !approval.questions ||
-    credentialRole(session, sessionWorkspaceKind(ctx, session)) !== 'worker'
-  )
-    return;
-  const plan = ctx.store.get<BoardPlan>('board_plans', session.task!.lead_session_id);
-  if (!plan) return;
-  const first = approval.questions[0]!;
-  const asked = askQuestion(ctx, plan, {
-    question: first.question,
-    options: first.options.map((option) => option.label),
-    recommended: first.recommended ?? '',
-    assumption: '',
-    blocks: [session.task!.id],
-    source: { session_id: session.id, approval_id: approval.id },
-    questions: approval.questions,
-  });
-  if (charterMode(ctx, session.project_id, 'answer_worker_questions') !== 'on') return;
-  const noted = appendNote(ctx, ctx.store.must<BoardPlan>('board_plans', plan.id), {
-    at: asked.at,
-    session_id: session.id,
-    task_id: session.task!.id,
-    kind: 'worker_question',
-    question_id: asked.id,
-    text: approval.questions
-      .map(
-        (entry) =>
-          `${entry.question} Options: ${entry.options.map((option) => option.label).join(' / ')}.`,
-      )
-      .join('\n'),
-  });
-  wakeLead(ctx, noted, '');
-}
-
-/** The plan of a worker's lead when the project's charter lets the lead approve this prompt at once. */
-function leadApproves(
-  ctx: ControlContext,
-  session: Session,
-  approval: Approval,
-): BoardPlan | undefined {
-  if (
-    credentialRole(session, sessionWorkspaceKind(ctx, session)) !== 'worker' ||
-    approval.tool === 'AskUserQuestion' ||
-    approval.tool === 'ExitPlanMode' ||
-    session.permission_mode === 'plan' ||
-    // mustAsk cannot read the inputs of a runtime without verified isolation.
-    isolationWaived(ctx, session.runtime) ||
-    // mustAsk cannot see the part of the input the summary cut off.
-    approval.input_summary?.endsWith('…') ||
-    charterMode(ctx, session.project_id, 'approve_worker_prompts') !== 'on' ||
-    mustAsk(ctx, session.project_id, approval)
-  )
-    return;
-  return ctx.store.get<BoardPlan>('board_plans', session.task!.lead_session_id);
-}
-
-/** Prompts a lead's note lists by tool and input. */
-const APPROVED_PROMPT_LINES = 5;
-
-/** Keeps one unread note per task session of the prompts approved for its lead; it does not wake the lead. */
-function notePromptsApproved(
-  ctx: ControlContext,
-  plan: BoardPlan,
-  session: Session,
-  approval: Approval,
-): void {
-  const index = plan.inbox.findIndex(
-      (note) => note.kind === 'prompts_approved' && note.session_id === session.id,
-    ),
-    // From the first prompt's own time, so the count that replaces this note includes it.
-    at = index < 0 ? approval.created_at : plan.inbox[index]!.at,
-    approved =
-      index < 0
-        ? [approval]
-        : ctx.store
-            .list<Approval>('approvals')
-            .filter(
-              (a) => a.session_id === session.id && a.decider === 'lead' && a.created_at >= at,
-            ),
-    note: LeadNote = {
-      at,
-      session_id: session.id,
-      task_id: session.task!.id,
-      kind: 'prompts_approved',
-      text: [
-        `${approved.length} permission ${approved.length === 1 ? 'prompt' : 'prompts'} of this session approved on your behalf, as the project's charter allows; the latest:`,
-        ...approved
-          .slice(-APPROVED_PROMPT_LINES)
-          .map((a) => `${a.tool ?? 'tool'} ${a.input_summary ?? ''}`.trim()),
-      ].join('\n'),
-    };
-  if (index < 0) appendNote(ctx, plan, note);
-  else
-    ctx.store.update<BoardPlan>(
-      'board_plans',
-      {
-        ...plan,
-        inbox: plan.inbox.map((entry, position) =>
-          position === index ? recordNote(ctx, plan, note) : entry,
-        ),
-      },
-      plan.revision,
-    );
-}
-
-/** Marks the board question relaying an approval answered once the approval is settled elsewhere. */
-function closeRelay(ctx: ControlContext, approval: Approval, cause = ''): void {
-  const relay = relayingQuestion(ctx, approval);
-  if (!relay || relay.question.answer) return;
-  answerQuestion(
-    ctx,
-    relay.plan,
-    relay.question,
-    Object.values(approval.answers ?? {}).join('\n') || approval.state,
-    cause,
-  );
 }
 
 function allowSessionRule(ctx: ControlContext, approval: Approval, cause: string): void {
@@ -380,7 +232,6 @@ export function requestApproval(
         .must<Project>('projects', session.project_id)
         .permission_rules?.find((entry) => entry.rule === rule) ??
         projectDefaults(ctx.userConfigDir).permission_rules?.find((entry) => entry.rule === rule));
-    const plan = projectRule ? undefined : leadApproves(ctx, session, approval);
     if (projectRule) {
       const next = ctx.store.update<Approval>(
         'approvals',
@@ -389,26 +240,7 @@ export function requestApproval(
       );
       ctx.store.event('approval.approved', next, next.project_id, approvalEventPayload(next));
       enqueueAnswer(ctx, next);
-    } else if (plan) {
-      const lead = `session:${plan.id}`;
-      const next = ctx.store.update<Approval>(
-        'approvals',
-        { ...approval, state: 'approved', decider: 'lead', decided_by: lead },
-        approval.revision,
-      );
-      ctx.store.event('approval.approved', next, next.project_id, approvalEventPayload(next));
-      enqueueAnswer(ctx, next);
-      chartered(
-        ctx,
-        { id: lead, role: 'lead', project_id: next.project_id, session_id: plan.id },
-        'approve_worker_prompts',
-        next,
-      );
-      notePromptsApproved(ctx, plan, session, next);
-    } else {
-      unsnooze(ctx, session.id, 'needs_you');
-      relayQuestion(ctx, session, approval);
-    }
+    } else unsnooze(ctx, session.id, 'needs_you');
   }
 }
 
@@ -457,7 +289,6 @@ export function resolvePermission(
     approval.revision,
   );
   ctx.store.event('approval.resolved', next, next.project_id, approvalEventPayload(next));
-  closeRelay(ctx, next);
 }
 
 export type PermissionAnswer = { approval_id: string } | { session_id: string; request_id: string };
@@ -779,6 +610,5 @@ export function settleApproval(
     cause,
   );
   enqueueAnswer(ctx, next);
-  closeRelay(ctx, next, cause);
   return next;
 }

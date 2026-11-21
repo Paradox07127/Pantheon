@@ -157,11 +157,11 @@ describe('session order inside a group', () => {
     expect(order('created')).toEqual(['c', 'b', 'a']);
   });
 
-  it('sorts the task sessions under a lead the same way', () => {
+  it('sorts the sessions forked from one session the same way', () => {
     const tasks = [
       session('lead', 'idle'),
-      session('old', 'running', { lead: 'lead', last_activity_at: at(1) }),
-      session('new', 'running', { lead: 'lead', last_activity_at: at(4) }),
+      session('old', 'running', { forked_from: { session_id: 'lead' }, last_activity_at: at(1) }),
+      session('new', 'running', { forked_from: { session_id: 'lead' }, last_activity_at: at(4) }),
     ];
     const [group] = sidebarGroups(tasks, view({ grouping: 'lead' }));
     expect(group!.rows.map((r) => [r.session.id, r.children.map((c) => c.id)])).toEqual([
@@ -174,15 +174,15 @@ describe('session list grouped by origin', () => {
   const list = [
     session('alone', 'idle', { last_activity_at: at(3) }),
     session('lead', 'idle', { title: 'Lead', last_activity_at: at(1) }),
-    session('task', 'running', { lead: 'lead', last_activity_at: at(2) }),
+    session('task', 'running', { forked_from: { session_id: 'lead' }, last_activity_at: at(2) }),
     session('review', 'running', { forked_from: { session_id: 'task' }, last_activity_at: at(1) }),
     session('fork', 'failed', { forked_from: { session_id: 'lead' }, last_activity_at: at(0) }),
-    session('orphan', 'running', { lead: 'gone', last_activity_at: at(4) }),
+    session('orphan', 'running', { forked_from: { session_id: 'gone' }, last_activity_at: at(4) }),
     session('merged', 'merged', { last_activity_at: at(5) }),
     session('shelved', 'merged', { archived_at: at(0) }),
   ];
 
-  it('lists trees of who opened or forked whom without a header, then the finished ones folded', () => {
+  it('lists trees of who forked whom without a header, then the finished ones folded', () => {
     expect(
       sidebarGroups(list, view({ grouping: 'lead' })).map((g) => [
         g.key,
@@ -270,8 +270,8 @@ describe('only the sessions that need you', () => {
   it('keeps the sessions that need you, and a session above one that does', () => {
     const list = [
       session('lead', 'idle'),
-      session('task', 'waiting', { lead: 'lead', waiting: 1 }),
-      session('busy', 'running', { lead: 'lead' }),
+      session('task', 'waiting', { forked_from: { session_id: 'lead' }, waiting: 1 }),
+      session('busy', 'running', { forked_from: { session_id: 'lead' } }),
       session('failed', 'failed'),
       session('running', 'running'),
     ];
@@ -350,7 +350,7 @@ describe('held order', () => {
     const before = sidebarGroups(
       [
         session('lead', 'idle'),
-        session('worker', 'running', { lead: 'lead' }),
+        session('worker', 'running', { spawned_by: { session_id: 'lead' } }),
         session('other', 'running', { last_activity_at: at(1) }),
       ],
       view(),
@@ -358,7 +358,7 @@ describe('held order', () => {
     const after = sidebarGroups(
       [
         session('lead', 'idle'),
-        session('worker', 'merged', { lead: 'lead' }),
+        session('worker', 'merged', { spawned_by: { session_id: 'lead' } }),
         session('other', 'running', { last_activity_at: at(9) }),
       ],
       view(),
@@ -399,14 +399,13 @@ describe('held order', () => {
 describe('session row', () => {
   const render = (
     s: WorkbenchSession,
-    extra: { on?: boolean; unread?: boolean; lead?: boolean; number?: number } = {},
+    extra: { on?: boolean; unread?: boolean; number?: number } = {},
   ) =>
     renderToStaticMarkup(
       createElement(SessionListRow, {
         session: s,
         on: extra.on ?? false,
         unread: extra.unread,
-        lead: extra.lead,
         number: extra.number,
         now: Date.parse(at(5)),
         onSelect() {},
@@ -459,15 +458,6 @@ describe('session row', () => {
       expect(rowButton(render(session('e', state)))).not.toContain('ss-badge');
   });
 
-  it('crowns a lead session and names it so', () => {
-    const button = rowButton(render(session('l', 'running'), { lead: true }));
-    expect(button).toMatch(
-      /<span class="ss-ttl">title of l<\/span><svg[^>]*class="lucide lucide-crown lead-crown"[^>]*role="img"[^>]*aria-label="主对话"/,
-    );
-    expect(button).toContain('aria-label="title of l，Claude，运行中，主对话"');
-    expect(rowButton(render(session('l', 'running')))).not.toContain('lead-crown');
-  });
-
   it('puts the hidden ⌘ number hint on the first nine rows', () => {
     expect(rowButton(render(session('n', 'running'), { number: 3 }))).toContain(
       '<span class="kbd hk" aria-hidden="true">⌘3</span>',
@@ -515,7 +505,7 @@ describe('session preview', () => {
         waiting: 1,
         changes: { files: 3, additions: 61, deletions: 19 },
         gate: { state: 'failed', passed: 0, failed: 0, running: 0, finished_at: at(1) },
-        lead: 'lead',
+        forked_from: { session_id: 'lead' },
         created_at: at(0),
       }),
       { source: 'Lead' },
@@ -527,7 +517,7 @@ describe('session preview', () => {
     expect(facts(html)).toEqual([
       [fact('changes'), '+61 −193 个文件'],
       [fact('checks'), zh('sessions.screen.gateFailed')],
-      [fact('source'), expect.stringMatching(/^由 Lead 派出，/)],
+      [fact('source'), expect.stringMatching(/^分叉自 Lead，/)],
       [fact('elapsed'), '40 分钟'],
     ]);
     expect(html).toContain('aria-label="新增 61 行，删除 19 行"');

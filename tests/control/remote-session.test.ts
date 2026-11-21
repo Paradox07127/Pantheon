@@ -418,7 +418,7 @@ it('lets a device session call a session tool that runs on this machine', async 
   cleanups.push(async () => rmSync(root, { recursive: true, force: true }));
   const session = await f.create(
     script({ tool: { name: 'report', arguments: { summary: 'Done on the device' } } }),
-    { purpose: 'lead' },
+    { purpose: 'conductor' },
   );
   await f.settle(session);
 

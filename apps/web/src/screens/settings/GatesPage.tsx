@@ -1,20 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
-import { GripVertical, Pin, Plus, X } from 'lucide-react';
+import { GripVertical, Plus, X } from 'lucide-react';
 import { create } from 'zustand';
 import type { BoardSnapshot } from '@pantheon/protocol';
 import { EnvironmentCheck } from '../../components/EnvironmentCheck';
 import { PathText } from '../../components/PathText';
-import { Select } from '../../components/Select';
 import { useBaselineRead } from '../../data/baseline-read';
 import { runCommand } from '../../data/commands';
 import {
-  HANDBACK_LIMIT_RANGE,
   isPolicy,
   PARAM_LABEL,
   setPolicy,
-  togglePin,
   useWorkflowPolicy,
   type PolicyPatch,
   type WorkflowPolicy,
@@ -470,39 +467,12 @@ export function FolderGate({
   );
 }
 
-/** A parameter's pin, which keeps improvements from changing it. */
-export const pinButton = (props: {
-  param: string;
-  pinned: boolean;
-  disabled: boolean;
-  onPin: () => void;
-}) => (
-  <button
-    type="button"
-    className="ib wf-pin"
-    aria-pressed={props.pinned}
-    aria-label={t(
-      { id: 'settings.workflow.pin', defaultMessage: 'Pin {param}' },
-      { param: props.param },
-    )}
-    disabled={props.disabled}
-    onClick={props.disabled ? undefined : props.onPin}
-  >
-    <Pin aria-hidden="true" />
-  </button>
-);
-
-type GatePolicyPatch = Pick<
-  PolicyPatch,
-  'handback_limit' | 'gate_on_fail' | 'gate_runner' | 'recovery_switch'
->;
+type GatePolicyPatch = Pick<PolicyPatch, 'gate_on_fail' | 'gate_runner'>;
 
 /** The gate fields of a policy; those it stores none of read as the daemon's defaults. */
 const gatePolicyOf = (policy: WorkflowPolicy): Required<GatePolicyPatch> => ({
-  handback_limit: policy.handback_limit,
   gate_on_fail: policy.gate_on_fail ?? 'handback',
   gate_runner: policy.gate_runner ?? 'daemon',
-  recovery_switch: policy.recovery_switch ?? 'off',
 });
 
 const useGatePolicySave = create<{
@@ -514,11 +484,8 @@ const useGatePolicySave = create<{
   saves: number;
 }>(() => ({ saved: null, pending: false, failure: null, saves: 0 }));
 
-/** Sends the fields of wanted that differ from the policy, and the pinned list; nothing when none do. */
-async function saveGatePolicy(
-  policy: WorkflowPolicy,
-  wanted: GatePolicyPatch & Pick<PolicyPatch, 'pinned'>,
-) {
+/** Sends the fields of wanted that differ from the policy; nothing when none do. */
+async function saveGatePolicy(policy: WorkflowPolicy, wanted: GatePolicyPatch) {
   const current: Record<string, unknown> = gatePolicyOf(policy);
   const patch = Object.fromEntries(
     Object.entries(wanted).filter(([key, value]) => current[key] !== value),
@@ -565,8 +532,8 @@ function policySegments<T extends string>(props: PolicyChoice<T>) {
 }
 
 /**
- * What follows a failed gate: the agent is sent back to fix it, up to the handback limit, the failed
- * step reruns once first, or the work stops at once; then where the gates run.
+ * What follows a failed gate: the agent is sent back to fix it, the failed step reruns once first,
+ * or the work stops at once; then where the gates run.
  */
 export function GatePolicy({ project }: { project: Project }) {
   const read = useWorkflowPolicy(project.id);
@@ -591,23 +558,10 @@ export function GatePolicy({ project }: { project: Project }) {
       </div>
     ) : null;
   const current = gatePolicyOf(policy);
-  const [low, high] = HANDBACK_LIMIT_RANGE;
-  // A stored count outside the range still shows as the chosen one.
-  const counts = [
-    ...new Set([
-      ...Array.from({ length: high - low + 1 }, (_, i) => low + i),
-      current.handback_limit,
-    ]),
-  ].sort((a, b) => a - b);
   const disabled = pending || read.stale;
-  const save = (patch: GatePolicyPatch & Pick<PolicyPatch, 'pinned'>) =>
-    void saveGatePolicy(policy, patch);
+  const save = (patch: GatePolicyPatch) => void saveGatePolicy(policy, patch);
   const onFail = t({ id: 'settings.gate.onFail', defaultMessage: 'When a gate fails' });
   const runner = t({ id: 'settings.gate.runner', defaultMessage: 'Where gates run' });
-  const recovery = t({
-    id: 'settings.gate.recoverySwitch',
-    defaultMessage: 'Switch runtime when hand-backs run out',
-  });
   return (
     <div className="ps-grp">
       <div className="ps-rows" aria-busy={pending || undefined}>
@@ -633,47 +587,8 @@ export function GatePolicy({ project }: { project: Project }) {
               disabled,
               onChange: (gate_on_fail) => save({ gate_on_fail }),
             })}
-            {current.gate_on_fail === 'handback' && (
-              <Select
-                aria-label={PARAM_LABEL.handback_limit}
-                value={String(current.handback_limit)}
-                options={counts.map((count) => ({
-                  value: String(count),
-                  label:
-                    count === 0
-                      ? t({ id: 'settings.gate.fixOff', defaultMessage: "Don't fix" })
-                      : t(
-                          {
-                            id: 'settings.gate.fixTimes',
-                            defaultMessage: '{count, plural, one {# time} other {# times}}',
-                          },
-                          { count },
-                        ),
-                }))}
-                disabled={disabled}
-                onChange={(count) => save({ handback_limit: Number(count) })}
-              />
-            )}
-            {current.gate_on_fail === 'handback' && (
-              <label className="ps-tg" data-setting-id="gates.recoverySwitch">
-                <span aria-hidden="true">{recovery}</span>
-                <input
-                  type="checkbox"
-                  className="ps-sw"
-                  aria-label={recovery}
-                  checked={current.recovery_switch === 'auto'}
-                  disabled={disabled}
-                  onChange={(e) => save({ recovery_switch: e.target.checked ? 'auto' : 'off' })}
-                />
-              </label>
-            )}
           </span>
-          {pinButton({
-            param: PARAM_LABEL.handback_limit,
-            pinned: policy.pinned.includes('handback_limit'),
-            disabled,
-            onPin: () => save({ pinned: togglePin(policy, 'handback_limit') }),
-          })}
+          <span />
         </div>
         <div className="ps-row wf-pr" data-setting-id="gates.runner">
           <span className="wf-nm">{runner}</span>

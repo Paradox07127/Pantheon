@@ -104,7 +104,7 @@ async function sessionReviewFixture() {
   const resolve = (
     review: Review,
     findingId: string,
-    outcome: 'adopted' | 'dismissed',
+    outcome: 'fixed' | 'intentional' | 'not_worth_it' | 'wrong',
     extra: { note?: string } = {},
     principal: Principal = user,
     revision = row(review).revision,
@@ -134,7 +134,7 @@ async function sessionReviewFixture() {
   return { ...w, reviewers, request, row, resolve, workspace, writerTurn };
 }
 
-it('records an adopted or dismissed outcome on open session review findings and emits review.finding_resolved', async () => {
+it('records a fixed or wrong outcome on open session review findings and emits review.finding_resolved', async () => {
   const f = await sessionReviewFixture();
   const review = await f.request();
   f.reviewers[0]!.finding(finding);
@@ -142,12 +142,12 @@ it('records an adopted or dismissed outcome on open session review findings and 
   const [first, second] = f.row(review).findings;
   expect([first!.status, second!.status]).toEqual(['open', 'open']);
   const before = f.store.now();
-  const adopted = f.resolve(review, first!.id, 'adopted', { note: 'Fixed by trimming first' });
+  const fixed = f.resolve(review, first!.id, 'fixed', { note: 'Fixed by trimming first' });
   const after = f.store.now();
-  expect(adopted.revision).toBe(f.row(review).revision);
+  expect(fixed.revision).toBe(f.row(review).revision);
   const resolution = f.row(review).findings[0]!.resolution!;
   expect(resolution).toEqual({
-    outcome: 'adopted',
+    outcome: 'fixed',
     note: 'Fixed by trimming first',
     resolved_at: expect.any(Number),
     resolved_by: user.id,
@@ -155,9 +155,9 @@ it('records an adopted or dismissed outcome on open session review findings and 
   expect(resolution.resolved_at).toBeGreaterThanOrEqual(before);
   expect(resolution.resolved_at).toBeLessThanOrEqual(after);
   expect(f.row(review).findings[1]!.resolution).toBeUndefined();
-  f.resolve(review, second!.id, 'dismissed');
+  f.resolve(review, second!.id, 'wrong');
   expect(f.row(review).findings[1]!.resolution).toEqual({
-    outcome: 'dismissed',
+    outcome: 'wrong',
     resolved_at: expect.any(Number),
     resolved_by: user.id,
   });
@@ -167,8 +167,8 @@ it('records an adopted or dismissed outcome on open session review findings and 
       .filter((e) => e.kind === 'review.finding_resolved')
       .map((e) => ({ aggregate: e.aggregate_id, payload: e.payload })),
   ).toEqual([
-    { aggregate: review.id, payload: { finding_id: first!.id, outcome: 'adopted' } },
-    { aggregate: review.id, payload: { finding_id: second!.id, outcome: 'dismissed' } },
+    { aggregate: review.id, payload: { finding_id: first!.id, outcome: 'fixed' } },
+    { aggregate: review.id, payload: { finding_id: second!.id, outcome: 'wrong' } },
   ]);
 });
 
@@ -179,11 +179,11 @@ it('refuses to resolve a session review finding that already has an outcome or w
   f.reviewers[0]!.finding({ ...finding, quote: 'not in the changes' });
   const [open, rejected] = f.row(review).findings;
   expect(rejected!.status).toBe('rejected');
-  f.resolve(review, open!.id, 'adopted');
+  f.resolve(review, open!.id, 'fixed');
   const before = f.row(review);
   for (const [id, outcome] of [
-    [open!.id, 'dismissed'],
-    [rejected!.id, 'adopted'],
+    [open!.id, 'wrong'],
+    [rejected!.id, 'fixed'],
   ] as const)
     expect(() => f.resolve(review, id, outcome)).toThrow(
       expect.objectContaining({ code: 'invalid_state' }),
@@ -201,7 +201,7 @@ it('refuses session review finding resolution from a principal other than the us
     role: 'planner',
     project_id: f.project.id,
   };
-  expect(() => f.resolve(review, open.id, 'adopted', {}, planner)).toThrow(
+  expect(() => f.resolve(review, open.id, 'fixed', {}, planner)).toThrow(
     expect.objectContaining({ code: 'permission_denied' }),
   );
   expect(f.row(review).findings[0]!.resolution).toBeUndefined();
@@ -213,7 +213,7 @@ it('refuses session review finding resolution against a review revision that is 
   f.reviewers[0]!.finding(finding);
   const current = f.row(review);
   expect(() =>
-    f.resolve(review, current.findings[0]!.id, 'adopted', {}, user, current.revision - 1),
+    f.resolve(review, current.findings[0]!.id, 'fixed', {}, user, current.revision - 1),
   ).toThrow(expect.objectContaining({ code: 'revision_conflict' }));
   expect(f.row(review)).toEqual(current);
 });
@@ -228,7 +228,7 @@ it('marks an open finding stale once a new commit of the reviewed session no lon
   f.reviewers[1]!.finding({ ...finding, quote: changed });
   f.reviewers[1]!.finding({ ...finding, quote: 'not in the changes' });
   const [gone, stays, resolved, rejected] = f.row(review).findings.map((row) => row.id);
-  f.resolve(review, resolved!, 'adopted');
+  f.resolve(review, resolved!, 'fixed');
   const staleEvents = () =>
     f.store.events().filter((event) => event.kind === 'review.finding_marked_stale');
   const statuses = () => f.row(review).findings.map((row) => row.status);
@@ -241,7 +241,7 @@ it('marks an open finding stale once a new commit of the reviewed session no lon
   const head = git(f.workspace.path, 'rev-parse', 'HEAD');
   await eventually(() => statuses()[0] === 'stale');
   expect(statuses()).toEqual(['stale', 'open', 'open', 'rejected']);
-  expect(f.row(review).findings[2]!.resolution?.outcome).toBe('adopted');
+  expect(f.row(review).findings[2]!.resolution?.outcome).toBe('fixed');
   expect(staleEvents().map((event) => [event.aggregate_id, event.payload])).toEqual([
     [review.id, { finding_id: gone, to_sha: head }],
   ]);
@@ -300,8 +300,10 @@ const zero = {
   reviews: 1,
   reviews_without_findings: 0,
   findings: 0,
-  adopted: 0,
-  dismissed: 0,
+  fixed: 0,
+  intentional: 0,
+  not_worth_it: 0,
+  wrong: 0,
   unresolved: 0,
   invalid: 0,
 };
@@ -313,19 +315,26 @@ it('reports session review precision per runtime and counts a runtime with only 
   one!.finding(finding);
   one!.finding({ ...finding, location: 'src/slug.js:7' });
   one!.finding({ ...finding, location: 'src/slug.js:8' });
+  one!.finding({ ...finding, location: 'src/slug.js:9' });
+  one!.finding({ ...finding, location: 'src/slug.js:10' });
+  one!.finding({ ...finding, location: 'src/slug.js:11' });
   one!.finding({ ...finding, quote: 'not in the changes' });
   two!.finding({ ...finding, quote: 'also not in the changes' });
-  const [adopted, dismissed] = f.row(review).findings;
-  f.resolve(review, adopted!.id, 'adopted');
-  f.resolve(review, dismissed!.id, 'dismissed');
+  const [fixed, intentional, notWorthIt, wrong] = f.row(review).findings;
+  f.resolve(review, fixed!.id, 'fixed');
+  f.resolve(review, intentional!.id, 'intentional');
+  f.resolve(review, notWorthIt!.id, 'not_worth_it');
+  f.resolve(review, wrong!.id, 'wrong');
   expect(f.control.projectReviewMetrics(user, f.project.id)).toEqual<ReviewMetrics[]>([
     {
       ...zero,
       runtime: 'reviewer-one',
-      findings: 4,
-      adopted: 1,
-      dismissed: 1,
-      unresolved: 1,
+      findings: 7,
+      fixed: 1,
+      intentional: 1,
+      not_worth_it: 1,
+      wrong: 1,
+      unresolved: 2,
       invalid: 1,
     },
     {

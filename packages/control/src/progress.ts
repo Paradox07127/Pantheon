@@ -1,17 +1,5 @@
-import {
-  hash,
-  type Approval,
-  type BackgroundTask,
-  type BoardPlan,
-  type Event,
-  type Project,
-  type Session,
-  type SessionTurn,
-  type Workspace,
-} from '@pantheon/domain';
+import type { Approval, BackgroundTask, Session, SessionTurn } from '@pantheon/domain';
 import type { ControlContext } from './context.js';
-import { taskGeneration, taskSessions } from './board-plan.js';
-import { gateCommands } from './landing.js';
 import { sessionTasks } from './session-tasks.js';
 
 /** A running turn without progress or a tool call under way this long shows as quiet on the board. */
@@ -271,103 +259,10 @@ export function sessionLoop(
   if (key !== undefined) return { call: newest!.get(key)!, turns: failed.length };
 }
 
-type TaskRef = Pick<NonNullable<Session['task']>, 'lead_session_id' | 'id'>;
-
-const VERIFIED_KINDS = ['session.merged', 'session.gate_checked', 'task.accepted'];
-
-/**
- * The newest evidence that the task meets its current contract: a merge of one of its sessions, a
- * commit passing the session's current gate commands for the first time, or the lead accepting a
- * done report of its current generation.
- */
-export const verifiedProgress = (ctx: ControlContext, task: TaskRef): Event | undefined =>
-  verifiedProgressReader(ctx)(task);
-
-/**
- * verifiedProgress for many tasks, reading the sessions and each project's evidence events once;
- * use it only while the store does not change.
- */
-export function verifiedProgressReader(ctx: ControlContext): (task: TaskRef) => Event | undefined {
-  let listed: Session[] | undefined;
-  const evidence = new Map<string, Event[]>(),
-    specs = new Map<string, string>();
-  return (task) => {
-    const plan = ctx.store.get<BoardPlan>('board_plans', task.lead_session_id);
-    if (!plan) return;
-    listed ??= ctx.store.list<Session>('sessions');
-    const sessions = new Map(
-        taskSessions(ctx, plan.id, task.id, listed).map((session) => [session.id, session]),
-      ),
-      passed = new Set<string>();
-    const currentSpec = (session: Session) => {
-      if (!specs.has(session.id))
-        specs.set(
-          session.id,
-          hash(
-            gateCommands(
-              ctx,
-              ctx.store.must<Project>('projects', plan.project_id),
-              ctx.store.must<Workspace>('workspaces', session.workspace_id!),
-              session,
-            ),
-          ),
-        );
-      return specs.get(session.id)!;
-    };
-    if (!evidence.has(plan.project_id))
-      evidence.set(plan.project_id, ctx.store.kindEvents(plan.project_id, VERIFIED_KINDS));
-    let newest: Event | undefined;
-    for (const event of evidence.get(plan.project_id)!) {
-      if (event.kind === 'task.accepted') {
-        const accepted = event.payload as { task_id: string; generation?: number };
-        if (
-          event.aggregate_id === plan.id &&
-          accepted.task_id === task.id &&
-          (accepted.generation ?? 1) === taskGeneration(plan, task.id)
-        )
-          newest = event;
-      } else if (!sessions.has(event.aggregate_id)) continue;
-      else if (event.kind === 'session.merged') newest = event;
-      else {
-        const { commit, check_spec_hash, results } = event.payload as {
-          commit: string;
-          check_spec_hash?: string;
-          results: { exit_code: number | null; timed_out?: boolean; state?: string }[];
-        };
-        const key = JSON.stringify([event.aggregate_id, commit, check_spec_hash]);
-        if (
-          check_spec_hash === currentSpec(sessions.get(event.aggregate_id)!) &&
-          results.length &&
-          results.every(
-            (result) => result.state === 'skipped' || (result.exit_code === 0 && !result.timed_out),
-          ) &&
-          !passed.has(key)
-        ) {
-          passed.add(key);
-          newest = event;
-        }
-      }
-    }
-    return newest;
-  };
-}
-
-/** The depth of the turn's causal chain: 0 once its session merged or its task made verified progress after it was queued. */
-export function chainDepth(
-  ctx: ControlContext,
-  turn: SessionTurn | undefined,
-  task: TaskRef | undefined,
-  verify = (task: TaskRef) => verifiedProgress(ctx, task),
-): number {
+/** The depth of the turn's causal chain: 0 once its session merged. */
+export function chainDepth(ctx: ControlContext, turn: SessionTurn | undefined): number {
   if (!turn) return 0;
   if (ctx.store.get<Session>('sessions', turn.session_id)?.outcome === 'merged') return 0;
-  const verified = task ? verify(task) : undefined;
-  if (verified) {
-    const { queued } = ctx.store.db
-      .prepare('SELECT min(sequence) AS queued FROM events WHERE aggregate_id=?')
-      .get(turn.id) as { queued: number | null };
-    if (verified.sequence > (queued ?? 0)) return 0;
-  }
   return turn.causal_depth ?? 0;
 }
 
@@ -380,5 +275,5 @@ export function causeTurn(ctx: ControlContext, sessionId: string): SessionTurn |
 }
 
 /** The causal depth of a daemon turn that follows from the session's running or newest turn. */
-export const nextDepth = (ctx: ControlContext, sessionId: string, task: TaskRef | undefined) =>
-  chainDepth(ctx, causeTurn(ctx, sessionId), task) + 1;
+export const nextDepth = (ctx: ControlContext, sessionId: string) =>
+  chainDepth(ctx, causeTurn(ctx, sessionId)) + 1;

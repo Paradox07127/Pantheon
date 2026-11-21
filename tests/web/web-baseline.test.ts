@@ -301,13 +301,6 @@ describe('StartBaseline', () => {
 });
 
 describe('baselineConfirmRequest', () => {
-  it('asks for a board plan', () => {
-    const s = baseline();
-    const req = baselineConfirmRequest(s, baselineDraft(s));
-    if (!req.ok) throw new Error(req.errors.join());
-    expect(req.input.plan_board).toBe(true);
-  });
-
   it('sends only the checked gate commands, without their sources', () => {
     const s = baseline();
     const draft = baselineDraft(s);

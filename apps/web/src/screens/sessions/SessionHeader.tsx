@@ -25,7 +25,6 @@ import {
 import type { SessionTurn } from '@pantheon/domain';
 import type { BridgeResult, WorkbenchSession } from '@pantheon/protocol';
 import { DiffCounts } from '../../components/DiffCounts';
-import { LeadCrown } from '../../components/LeadCrown';
 import {
   GateMark,
   LastTurnMark,
@@ -284,7 +283,7 @@ export function SessionHeader({
     <header className="sh-bar">
       {listed && <SessionStateIcon session={listed} place="header" />}
       {listed && <LastTurn session={listed} />}
-      {parent && parentLink(parent, listed)}
+      {parent && parentLink(parent)}
       {editing ? (
         <input
           ref={titleInput}
@@ -613,26 +612,21 @@ function RunClock({ since }: { since: number }) {
   return <span className="sh-clock">{durationText(Date.now() - since)}</span>;
 }
 
-/** The session this one was opened or forked from, before the title; it opens that session. */
-export function parentLink(parent: WorkbenchSession, listed: WorkbenchSession | null) {
+/** The session this one was forked from, before the title; it opens that session. */
+export function parentLink(parent: WorkbenchSession) {
   const title = sessionRow(parent).title;
-  const forked = listed?.lead !== parent.id;
   return (
     <>
       <button
         type="button"
         className="sh-lead"
-        aria-label={
-          forked
-            ? t(
-                { id: 'sessions.header.forkedFrom', defaultMessage: 'Forked from {title}' },
-                { title },
-              )
-            : undefined
-        }
+        aria-label={t(
+          { id: 'sessions.header.forkedFrom', defaultMessage: 'Forked from {title}' },
+          { title },
+        )}
         onClick={() => useShell.getState().openSession(parent.id)}
       >
-        {forked ? <GitFork className="sh-fork" aria-hidden="true" /> : <LeadCrown />}
+        <GitFork className="sh-fork" aria-hidden="true" />
         <span className="sh-cut">{title}</span>
       </button>
       <span className="sh-faint" aria-hidden="true">

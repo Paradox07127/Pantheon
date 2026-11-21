@@ -4,7 +4,6 @@ import path from 'node:path';
 import { expect, it } from 'vitest';
 import {
   hash,
-  type BoardPlan,
   type ChangeStory,
   type Principal,
   type Project,
@@ -116,53 +115,9 @@ it('refuses to explain a workbench session without committed changes', async () 
   });
 });
 
-function attachStoryTask(
-  w: Awaited<ReturnType<typeof workbenchFixture>>,
-  sessionId: string,
-  acceptance: string[],
-) {
-  const plan: BoardPlan = {
-    id: 'story-lead',
-    revision: 1,
-    project_id: w.project.id,
-    headline: 'Explain work',
-    lanes: [{ id: 'work', title: 'Work' }],
-    tasks: [
-      {
-        id: 'answer',
-        title: 'Answer',
-        goal: 'Explain the committed answer',
-        lane: 'work',
-        source: [],
-        scope: ['answer.txt'],
-        acceptance,
-        depends_on: [],
-      },
-    ],
-    plan_version: 0,
-    pending_edits: [],
-    inbox: [],
-    notified: {},
-    risks: [],
-    assumptions: [],
-    updated_at: w.store.now(),
-  };
-  w.store.insert('board_plans', plan);
-  w.store.event('board.plan_updated', plan, w.project.id, plan);
-  const session = w.store.must<Session>('sessions', sessionId);
-  w.store.update(
-    'sessions',
-    { ...session, task: { lead_session_id: plan.id, id: 'answer', generation: 1 } },
-    session.revision,
-  );
-  return plan;
-}
-
-it('freezes task acceptance and exact commit/configuration command evidence for interpretation', async () => {
+it('freezes exact commit/configuration command evidence for interpretation', async () => {
   const { w, session, workspace, startStory } = await idleWorkbenchSession();
   const head = commitAnswer(workspace.path, 'explained\n');
-  const acceptance = ['test -f answer.txt'];
-  attachStoryTask(w, session.id, acceptance);
   await w.call(
     'project.gate.set',
     {
@@ -172,10 +127,7 @@ it('freezes task acceptance and exact commit/configuration command evidence for 
     },
     w.store.must<Project>('projects', w.project.id).revision,
   );
-  const commands = [
-    { name: 'Check answer', argv: ['node', 'check-answer.js'] },
-    { name: acceptance[0]!, argv: ['/bin/sh', '-c', acceptance[0]!] },
-  ];
+  const commands = [{ name: 'Check answer', argv: ['node', 'check-answer.js'] }];
   const event = w.store.event(
     'session.gate_checked',
     w.store.must<Session>('sessions', session.id),
@@ -194,82 +146,18 @@ it('freezes task acceptance and exact commit/configuration command evidence for 
   );
   const story = await startStory();
   expect(story.context).toMatchObject({
-    acceptance,
-    goal: 'Explain the committed answer',
     checks: {
       state: 'recorded',
       commit: head,
       spec_hash: hash(commands),
       run_id: event.event_id,
-      results: [{ exit_code: 0 }, { exit_code: 0 }],
+      results: [{ exit_code: 0 }],
     },
   });
   const brief = w.turns(story.session_id!)[0]!.input;
-  expect(brief).toContain('[0] test -f answer.txt');
   expect(brief).toContain('node","check-answer.js');
   expect(brief).toContain('answer verified');
   expect(brief).toContain('does not certify that requirement passed');
-  const ready = await submitStory(w, story, {
-    overall: { before: ['old'], after: ['new'] },
-    cards: [card('Answer', ['H1'])],
-    noise: [],
-  });
-  expect(ready.result?.unmatched_acceptance).toEqual([]);
-});
-
-it("binds a parallel part's gate run to its story", async () => {
-  const { w, session, workspace, startStory } = await idleWorkbenchSession();
-  const head = commitAnswer(workspace.path, 'explained\n');
-  const plan = attachStoryTask(w, session.id, ['test -f parent.txt']);
-  const part = (name: string) => ({
-    title: name,
-    goal: `Explain the ${name}`,
-    scope: ['answer.txt'],
-    acceptance: [`test -f ${name}.txt`],
-  });
-  const split = w.store.update<BoardPlan>(
-    'board_plans',
-    { ...plan, tasks: [{ ...plan.tasks[0]!, parallel: [part('first'), part('second')] }] },
-    plan.revision,
-  );
-  w.store.event('board.plan_updated', split, w.project.id, split);
-  const bound = w.store.must<Session>('sessions', session.id);
-  w.store.update(
-    'sessions',
-    { ...bound, task: { ...bound.task!, parallel_index: 0 } },
-    bound.revision,
-  );
-  const commands = [{ name: 'test -f first.txt', argv: ['/bin/sh', '-c', 'test -f first.txt'] }];
-  w.store.event(
-    'session.gate_checked',
-    w.store.must<Session>('sessions', session.id),
-    w.project.id,
-    { commit: head, check_spec_hash: hash(commands), results: [] },
-  );
-  expect((await startStory()).context).toMatchObject({
-    acceptance: ['test -f first.txt'],
-    goal: 'Explain the first',
-    checks: { state: 'recorded', spec_hash: hash(commands) },
-  });
-});
-
-it('uses the session task generation rather than a replacement task contract', async () => {
-  const { w, session, workspace, startStory } = await idleWorkbenchSession();
-  commitAnswer(workspace.path, 'explained\n');
-  const plan = attachStoryTask(w, session.id, ['test -f old-answer.txt']);
-  const next = w.store.update<BoardPlan>(
-    'board_plans',
-    {
-      ...plan,
-      tasks: [{ ...plan.tasks[0]!, acceptance: ['test -f replacement.txt'] }],
-      generations: { answer: { generation: 2, contract: 'replacement-contract' } },
-    },
-    plan.revision,
-  );
-  w.store.event('board.plan_updated', next, w.project.id, next);
-  const story = await startStory();
-  expect(story.context?.acceptance).toEqual(['test -f old-answer.txt']);
-  expect(w.turns(story.session_id!)[0]!.input).not.toContain('replacement.txt');
 });
 
 it('marks command evidence from another commit or configuration stale and never cites it as passed', async () => {
@@ -326,10 +214,7 @@ it('keeps story hunks bound to the explained range and flags later commits or ch
       ?.outdated,
   ).toBe(true);
   expect(() =>
-    w.control.changeStoryDiff(
-      { id: 'other', role: 'worker', project_id: 'other-project' },
-      story.id,
-    ),
+    w.control.changeStoryDiff({ id: 'other', role: 'lead', project_id: 'other-project' }, story.id),
   ).toThrow(expect.objectContaining({ code: 'permission_denied' }));
 });
 

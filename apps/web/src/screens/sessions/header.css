@@ -41,10 +41,6 @@
   color: var(--mu);
   font: inherit;
 }
-.sh-lead .lead-crown {
-  flex: none;
-  margin-left: 0;
-}
 .sh-fork {
   flex: none;
   width: 12px;

@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import type { Project } from '@pantheon/domain';
 import { command, commandSchema, inputSchemas, USER_PRINCIPAL_ID } from '@pantheon/protocol';
-import { autoMergeRequest } from '@/data/auto-merge';
 import {
   addRow,
   checkGate,
@@ -228,32 +226,5 @@ describe('the save command', () => {
     expect(request.input).toEqual({ project_id: 'project-1', root: '/work/app', commands: [] });
     expect(request.expected_revision).toBe(7);
     expect(inputSchemas['project.gate.set'].parse(request.input)).toEqual(request.input);
-  });
-});
-
-describe('the auto-merge switch', () => {
-  const base: Project = {
-    id: 'project-1',
-    revision: 7,
-    name: 'Project',
-    roots: ['/work/app'],
-  };
-  it('sends project.autoMerge.set with the project revision', () => {
-    for (const enabled of [true, false]) {
-      const request = autoMergeRequest(base, enabled);
-      expect(request).toEqual({
-        type: 'project.autoMerge.set',
-        input: { project_id: 'project-1', enabled },
-        expected_revision: 7,
-      });
-      const sent = command(
-        USER_PRINCIPAL_ID,
-        request.type,
-        request.input,
-        request.expected_revision,
-      );
-      expect(commandSchema.parse(sent)).toEqual(sent);
-      expect(inputSchemas['project.autoMerge.set'].parse(sent.input)).toEqual(request.input);
-    }
   });
 });

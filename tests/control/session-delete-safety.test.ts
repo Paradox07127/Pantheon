@@ -88,19 +88,6 @@ async function runningSession(f: Fixture) {
   return current(f, session.id);
 }
 
-/** A stored milestone row that requires the session. */
-function requireSession(f: Fixture, sessionId: string) {
-  f.store.insert<Milestone>('milestones', {
-    id: id(),
-    revision: 1,
-    project_id: f.project.id,
-    title: 'Ship it',
-    required_sessions: [sessionId],
-    criteria: ['It ships'],
-    created_at: f.store.now(),
-    updated_by: 'user',
-  });
-}
 it('refuses to delete a session whose native process is still starting', async () => {
   const f = await workbenchFixture();
   const release = holdStart(f);
@@ -132,56 +119,6 @@ it('refuses to delete a reconciling or stop-pending session without a native han
     expect(() => remove(f, session.id)).toThrow(expect.objectContaining({ code: 'resource_busy' }));
     expect(f.store.get<Session>('sessions', session.id)).toBeDefined();
   }
-});
-
-it('keeps a session a milestone came to require while its native process was closing', async () => {
-  const f = await workbenchFixture({ delay: 4000 });
-  const session = await runningSession(f);
-
-  remove(f, session.id);
-  requireSession(f, session.id);
-  await eventually(
-    () =>
-      !f.store.get<Session>('sessions', session.id) ||
-      kinds(f, session.id).includes('session.delete_failed'),
-    () => f.control.tick(),
-  );
-  expect(f.store.get<Session>('sessions', session.id)).toBeDefined();
-  expect(kinds(f, session.id)).not.toContain('session.deleted');
-});
-
-it('leaves a session whose delete was refused after its native process closed as it was', async () => {
-  const f = await workbenchFixture({ delay: 4000 });
-  const session = await runningSession(f);
-  const workspace = f.store.must<Workspace>('workspaces', session.workspace_id!);
-
-  remove(f, session.id);
-  requireSession(f, session.id);
-  await eventually(
-    () => kinds(f, session.id).includes('session.delete_failed'),
-    () => f.control.tick(),
-  );
-  for (let i = 0; i < 3; i++) await f.control.tick();
-  expect(current(f, session.id).outcome).toBeUndefined();
-  expect(current(f, session.id).stop_requested).toBeUndefined();
-  expect(kinds(f, session.id)).not.toContain('session.discarded');
-  expect(existsSync(workspace.path)).toBe(true);
-  expect(
-    f.store
-      .pending()
-      .some(
-        (job) =>
-          job.kind === 'workspace.remove' &&
-          (JSON.parse(job.payload) as { workspace_id: string }).workspace_id === workspace.id,
-      ),
-  ).toBe(false);
-  expect(() =>
-    f.call(
-      'session.send',
-      { session_id: session.id, input: 'Carry on' },
-      current(f, session.id).revision,
-    ),
-  ).not.toThrow();
 });
 
 it('keeps the files and the session of a delete whose command rolled back', async () => {
@@ -355,54 +292,6 @@ it('removes a deleted session once a retried close confirms its process stopped'
   expect(kinds(f, session.id)).toContain('session.deleted');
 });
 
-it('keeps a session a milestone came to require before a retried close confirmed its delete', async () => {
-  const f = await workbenchFixture();
-  const session = await f.create();
-  await provisioned(f, session);
-  await eventually(
-    () =>
-      f.turns(session.id)[0]?.state === 'completed' &&
-      current(f, session.id).state === 'open' &&
-      hasProcess(f, session.id),
-    () => f.control.tick(),
-  );
-  const workspace = f.store.must<Workspace>('workspaces', session.workspace_id!);
-  let release!: () => void;
-  const released = new Promise<void>((resolve) => (release = resolve));
-  const close = f.adapter.close.bind(f.adapter);
-  vi.spyOn(f.adapter, 'close')
-    .mockImplementationOnce(async (_handle, deadline) => ({
-      stopped: false,
-      deadline,
-      finished_at: new Date().toISOString(),
-      evidence: { method: 'none', members: [] },
-    }))
-    .mockImplementation(async (handle, deadline) => {
-      await released;
-      return close(handle, deadline);
-    });
-
-  remove(f, session.id);
-  await eventually(
-    () => kinds(f, session.id).includes('session.delete_failed'),
-    () => f.control.tick(),
-  );
-  requireSession(f, session.id);
-  await f.control.tick();
-  release();
-  await eventually(
-    () =>
-      kinds(f, session.id).includes('session.discarded') ||
-      kinds(f, session.id).filter((kind) => kind === 'session.delete_failed').length === 2,
-    () => f.control.tick(),
-  );
-  for (let i = 0; i < 3; i++) await f.control.tick();
-  expect(current(f, session.id).outcome).toBeUndefined();
-  expect(current(f, session.id).stop_requested).toBeUndefined();
-  expect(kinds(f, session.id)).not.toContain('session.discarded');
-  expect(existsSync(workspace.path)).toBe(true);
-});
-
 it('removes a session deleted before a restart once recovery discards it', async () => {
   const f = await workbenchFixture();
   const session = await f.create();
@@ -471,69 +360,6 @@ it('keeps the files of a delete recovery finished in a transaction that failed',
   expect(existsSync(uploaded)).toBe(true);
 });
 
-it('discards without deleting a task session its lead stopped with the reason a delete records', async () => {
-  const f = await workbenchFixture();
-  dispatchEveryTier(f);
-  const lead = await f.create('Plan the export');
-  await settle(f, lead);
-  const leadPrincipal: Principal = {
-    id: `session:${lead.id}`,
-    role: 'lead',
-    project_id: f.project.id,
-    session_id: lead.id,
-    expires_at: f.store.now() + 60000,
-  };
-  f.call(
-    'board.plan.update',
-    {
-      project_id: f.project.id,
-      base_version: 0,
-      headline: 'Export',
-      lanes: [{ id: 'core', title: 'Core' }],
-      tasks: [
-        {
-          id: 'a',
-          title: 'Serve exports',
-          goal: 'Exports work',
-          lane: 'core',
-          depends_on: [],
-          source: ['Plan the export'],
-          scope: [],
-          acceptance: [],
-          done_when: 'report',
-        },
-      ],
-      milestones: [],
-      risks: [],
-      assumptions: [],
-    },
-    null,
-    leadPrincipal,
-  );
-  f.call('task.start', { project_id: f.project.id, task_ids: ['a'] }, null, leadPrincipal);
-  await f.control.tick();
-  const worker = f.store
-    .list<Session>('sessions')
-    .find((session) => session.task?.lead_session_id === lead.id)!;
-  await eventually(
-    () => hasProcess(f, worker.id),
-    () => f.control.tick(),
-  );
-
-  f.call(
-    'task.stop',
-    { project_id: f.project.id, task_id: 'a', reason: 'Deleted by the user' },
-    null,
-    leadPrincipal,
-  );
-  await eventually(
-    () => kinds(f, worker.id).includes('session.discarded'),
-    () => f.control.tick(),
-  );
-  expect(f.store.get<Session>('sessions', worker.id)).toMatchObject({ outcome: 'discarded' });
-  expect(kinds(f, worker.id)).not.toContain('session.deleted');
-});
-
 it('keeps native history another session reaches through an alias or a descendant', async () => {
   const f = await workbenchFixture();
   const root = path.join(f.root, 'state/native-sessions'),
@@ -571,49 +397,6 @@ it('removes the worktree of a session deleted while it was still provisioning', 
     () => f.control.tick(),
   );
   expect(existsSync(workspace.path)).toBe(false);
-});
-
-it('refuses to delete a lead that owns a board plan', async () => {
-  const f = await workbenchFixture();
-  const lead = await f.create('Plan the export');
-  const leadPrincipal: Principal = {
-    id: `session:${lead.id}`,
-    role: 'lead',
-    project_id: f.project.id,
-    session_id: lead.id,
-    expires_at: f.store.now() + 60000,
-  };
-  f.call(
-    'board.plan.update',
-    {
-      project_id: f.project.id,
-      base_version: 0,
-      headline: 'Export',
-      lanes: [{ id: 'core', title: 'Core' }],
-      tasks: [
-        {
-          id: 'a',
-          title: 'Serve exports',
-          goal: 'Exports work',
-          lane: 'core',
-          depends_on: [],
-          source: ['Plan the export'],
-          scope: ['src/export'],
-          acceptance: ['pnpm test'],
-        },
-      ],
-      milestones: [],
-      risks: [],
-      assumptions: [],
-    },
-    null,
-    leadPrincipal,
-  );
-  end(f, lead.id, { outcome: 'discarded' });
-
-  expect(() => remove(f, lead.id)).toThrow(expect.objectContaining({ code: 'invalid_state' }));
-  expect(f.store.get<Session>('sessions', lead.id)).toBeDefined();
-  expect(f.store.get<BoardPlan>('board_plans', lead.id)).toBeDefined();
 });
 
 it('does not dispatch the turn of a session deleted while the scheduler awaited another start', async () => {

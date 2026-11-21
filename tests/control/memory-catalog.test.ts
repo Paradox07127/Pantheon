@@ -1,11 +1,10 @@
 import { expect, it, vi } from 'vitest';
 import { workbenchFixture } from './workbench-fixture.js';
 import { user } from '../helpers.js';
-import type { MemorySummary } from '@pantheon/domain';
+import type { MemorySummary, Session } from '@pantheon/domain';
 import path from 'node:path';
 import { Store } from '@pantheon/store';
 import { backfillMemoryIndex, indexMemory } from '../../packages/control/dist/memory-catalog.js';
-import { writePlanMemory } from '../../packages/control/dist/memory.js';
 
 async function catalogFixture() {
   const f = await workbenchFixture();
@@ -21,7 +20,15 @@ async function catalogFixture() {
   };
   const directory = (filters: Record<string, unknown> = {}) =>
     (f.control as any).memoryRead(user, f.project.id, filters);
-  return { ...f, save, directory };
+  // A project setup session carries the planner credential, whose tools include memory.
+  const setupSession = () =>
+    f.call<Promise<Session>>('session.create', {
+      project_id: f.project.id,
+      runtime: f.adapter.name,
+      input: 'Set up the project',
+      purpose: 'project_setup',
+    });
+  return { ...f, save, directory, setupSession };
 }
 
 /** A new Store on the fixture's database, as a daemon that starts on an older database opens it. */
@@ -90,10 +97,10 @@ it('uses one current-state gate for directory, graph, reverse dependencies and h
   expect(history.nodes.some((n: any) => n.id === dependent.id && n.state === 'archived')).toBe(
     true,
   );
-  const s = await f.create();
+  const s = await f.setupSession();
   const p = {
     id: 'agent',
-    role: 'lead' as const,
+    role: 'planner' as const,
     session_id: s.id,
     project_id: f.project.id,
     expires_at: Date.now() + 60000,
@@ -446,19 +453,10 @@ it('graphs all filtered project records and counts nodes before truncation', asy
   });
 });
 
-it('projects graph summaries, task titles and full source URIs without mixing node fields', async () => {
+it('projects graph summaries and full source URIs without mixing node fields', async () => {
   const f = await catalogFixture();
-  const lead = await f.create();
-  f.store.insert('board_plans', {
-    id: lead.id,
-    revision: 1,
-    project_id: f.project.id,
-    tasks: [{ id: 'catalog-task', title: 'Review the catalog', depends_on: [] }],
-    generations: { 'catalog-task': { generation: 1, contract: 'catalog' } },
-  } as any);
   const r = f.save('task-note', 'Full record text', {
     summary: 'First summary line '.repeat(8) + '\nSecond line',
-    task: { lead_session_id: lead.id, id: 'catalog-task', generation: 1 },
     references: [
       { kind: 'url', uri: 'https://example.com/complete/source?view=all', label: 'Source' },
     ],
@@ -471,7 +469,6 @@ it('projects graph summaries, task titles and full source URIs without mixing no
   });
   expect(graph.nodes.find((n) => n.id === r.id)).toMatchObject({
     summary: r.summary.split('\n')[0].slice(0, 120),
-    task: { id: 'catalog-task', title: 'Review the catalog' },
   });
   expect(graph.nodes.find((n) => n.kind === 'source')).toMatchObject({
     uri: 'https://example.com/complete/source?view=all',
@@ -483,14 +480,6 @@ it('projects graph summaries, task titles and full source URIs without mixing no
     } else expect(node).not.toHaveProperty('uri');
   }
   expect(graph.total).toBe(3);
-  expect(f.directory().facets.tasks).toEqual([
-    { id: 'catalog-task', lead_session_id: lead.id, title: 'Review the catalog' },
-  ]);
-  const plan = f.store.must<any>('board_plans', lead.id);
-  f.store.update('board_plans', { ...plan, tasks: [] }, plan.revision);
-  expect(f.directory({ state: 'all' }).facets.tasks).toEqual([
-    { id: 'catalog-task', lead_session_id: lead.id },
-  ]);
 });
 
 it('filters the graph by several memory and source kinds before it cuts', async () => {
@@ -600,33 +589,6 @@ it('keeps the focused memory in a graph that is cut', async () => {
   expect(f.control.memoryGraph(user, { ...input, keep: 'gone-memory' }).nodes).toHaveLength(3);
 });
 
-it('carries the lead session and generation on graph task nodes', async () => {
-  const f = await catalogFixture();
-  const leads = [await f.create(), await f.create()];
-  for (const lead of leads)
-    f.store.insert('board_plans', {
-      id: lead.id,
-      revision: 1,
-      project_id: f.project.id,
-      tasks: [{ id: 'shared-task', title: 'Task of ' + lead.id, depends_on: [] }],
-      generations: { 'shared-task': { generation: 2, contract: 'shared' } },
-    } as any);
-  const records = leads.map((lead) =>
-    f.save('scoped-' + lead.id, 'Scoped', {
-      task: { lead_session_id: lead.id, id: 'shared-task', generation: 2 },
-    }),
-  );
-  const graph = f.control.memoryGraph(user, { project_id: f.project.id });
-  leads.forEach((lead, i) =>
-    expect(graph.nodes.find((n) => n.id === records[i].id)!.task).toEqual({
-      id: 'shared-task',
-      lead_session_id: lead.id,
-      generation: 2,
-      title: 'Task of ' + lead.id,
-    }),
-  );
-});
-
 it('returns recent lifecycle events newest first without record text or other projects', async () => {
   const f = await catalogFixture();
   const r = f.save('recent-note', 'Private record body', { title: 'Recent title' });
@@ -694,10 +656,10 @@ it.each(['superseded', 'retracted', 'expired', 'stale'] as const)(
 it('includes the proposing session in directory, search and related summaries', async () => {
   const f = await catalogFixture();
   const basis = f.save('basis', 'Source');
-  const session = await f.create();
+  const session = await f.setupSession();
   const principal = {
     id: 'agent',
-    role: 'lead' as const,
+    role: 'planner' as const,
     session_id: session.id,
     project_id: f.project.id,
     expires_at: Date.now() + 60000,
@@ -727,51 +689,25 @@ it('includes the proposing session in directory, search and related summaries', 
     expect(summary.author_session_id).toBe(session.id);
 });
 
-it('numbers committed versions by commit order within the exact key and task scope', async () => {
+it('numbers committed versions by commit order within the exact key', async () => {
   const f = await catalogFixture();
-  const lead = await f.create();
-  const otherLead = await f.create();
-  for (const session of [lead, otherLead])
-    f.store.insert('board_plans', {
-      id: session.id,
-      revision: 1,
-      project_id: f.project.id,
-      tasks: [
-        { id: 'review', title: 'Review', depends_on: [] },
-        { id: 'implementation', title: 'Implementation', depends_on: [] },
-      ],
-      generations: { review: { generation: 1, contract: 'review' } },
-    } as any);
+  const session = await f.create();
   const first = f.save('versioned', 'First');
-  const task = { lead_session_id: lead.id, id: 'review', generation: 1 };
-  const scoped = f.save('versioned', 'Task first', { task });
-  const otherTask = f.save('versioned', 'Other task', { task: { ...task, id: 'implementation' } });
-  const other = f.save('versioned', 'Other lead', {
-    task: { ...task, lead_session_id: otherLead.id },
-  });
+  const other = f.save('other-key', 'Other key');
   const later = f.save('versioned', 'Second');
-  const taskLater = f.save('versioned', 'Task second', { task });
-  const plan = f.store.must<any>('board_plans', lead.id);
-  f.store.update(
-    'board_plans',
-    { ...plan, generations: { review: { generation: 2, contract: 'revised review' } } },
-    plan.revision,
-  );
-  const generation = f.save('versioned', 'New generation', { task: { ...task, generation: 2 } });
   const draft = f.save('versioned', 'Draft', {}, false);
   const read = f.directory({ state: 'all', limit: 50 });
   const versions = new Map(read.records.map((r: MemorySummary) => [r.id, r.version]));
-  for (const record of [first, scoped, otherTask, other, generation])
-    expect(versions.get(record.id)).toBe(1);
-  for (const record of [later, taskLater]) expect(versions.get(record.id)).toBe(2);
+  for (const record of [first, other]) expect(versions.get(record.id)).toBe(1);
+  expect(versions.get(later.id)).toBe(2);
   expect(read.records.find((r: MemorySummary) => r.id === draft.id)).not.toHaveProperty('version');
-  f.store.event('memory.delivered', lead, f.project.id, {
+  f.store.event('memory.delivered', session, f.project.id, {
     turn_id: 'catalog-turn',
-    memory_ids: [first.id, later.id, scoped.id, taskLater.id],
+    memory_ids: [first.id, later.id, other.id],
   });
-  expect(f.control.memoryTurn(user, lead.id, 'catalog-turn').items.map((r) => r.version)).toEqual([
-    1, 2, 1, 2,
-  ]);
+  expect(
+    f.control.memoryTurn(user, session.id, 'catalog-turn').items.map((r) => r.version),
+  ).toEqual([1, 2, 1]);
 });
 
 it('exposes archive metadata and the invalid basis before and after maintenance', async () => {
@@ -920,95 +856,4 @@ it('matches every selected tag and counts tags using all other filters before pa
       .items.map((r: MemorySummary) => r.id),
   ).toEqual([first.id]);
   expect(f.directory({ tag: 'storage' }).total).toBe(2);
-});
-
-it('filters project records apart from task records in directory, search and graph', async () => {
-  const f = await catalogFixture();
-  const lead = await f.create();
-  f.store.insert('board_plans', {
-    id: lead.id,
-    revision: 1,
-    project_id: f.project.id,
-    tasks: [{ id: 'review', title: 'Review', depends_on: [] }],
-  } as any);
-  const project = f.save('project', 'Project');
-  f.save('task', 'Task', { task: { lead_session_id: lead.id, id: 'review', generation: 1 } });
-  expect(f.directory({ project_only: true }).records.map((r: MemorySummary) => r.id)).toEqual([
-    project.id,
-  ]);
-  expect(
-    f
-      .call<any>('memory.search', { project_id: f.project.id, project_only: true })
-      .items.map((r: MemorySummary) => r.id),
-  ).toEqual([project.id]);
-  expect(
-    f.control
-      .memoryGraph(user, { project_id: f.project.id, project_only: true })
-      .nodes.map((r) => r.id),
-  ).toEqual([project.id]);
-});
-
-it('filters plan decisions by origin and milestone and counts them by milestone', async () => {
-  const f = await catalogFixture();
-  const ctx = (f.control as any).ctx;
-  for (const [milestone, title] of [
-    ['ms-read', 'Importer reads files'],
-    ['ms-write', 'Importer writes rows'],
-  ] as const)
-    f.store.insert('milestones', {
-      id: milestone,
-      revision: 1,
-      project_id: f.project.id,
-      title,
-      required_sessions: [],
-      criteria: [],
-      created_at: f.store.now(),
-      updated_by: 'user',
-    });
-  const decide = (subject: string, milestone: string) =>
-    writePlanMemory(
-      ctx,
-      {
-        project_id: f.project.id,
-        key: `plan:lead:assumption:${subject}`,
-        title: `Assumption ${subject}`,
-        summary: `Assumption ${subject} holds.`,
-        tags: ['plan-decision', 'assumption'],
-        text: `Plan assumption ${subject} holds.`,
-        origin: {
-          kind: 'plan',
-          lead_session_id: 'lead',
-          milestone_id: milestone,
-          subject: 'assumption',
-          subject_id: subject,
-          outcome: 'confirmed',
-          plan_version: 1,
-        },
-      },
-      '',
-    );
-  decide('utf8', 'ms-read');
-  decide('header', 'ms-read');
-  decide('rows', 'ms-write');
-  f.save('manual', 'A note of the user');
-  const ids = (records: MemorySummary[]) => records.map((r) => r.origin?.subject_id).sort();
-
-  expect(f.directory().total).toBe(4);
-  expect(ids(f.directory({ origin: 'plan' }).records)).toEqual(['header', 'rows', 'utf8']);
-  const read = f.directory({ origin: 'plan', milestone_id: 'ms-read' });
-  expect(ids(read.records)).toEqual(['header', 'utf8']);
-  expect(read.records[0].origin).toMatchObject({ kind: 'plan', outcome: 'confirmed' });
-  expect(read.facets.milestones).toEqual([
-    { id: 'ms-read', title: 'Importer reads files', count: 2 },
-    { id: 'ms-write', title: 'Importer writes rows', count: 1 },
-  ]);
-  expect(
-    ids(
-      f.call<any>('memory.search', {
-        project_id: f.project.id,
-        origin: 'plan',
-        milestone_id: 'ms-write',
-      }).items,
-    ),
-  ).toEqual(['rows']);
 });

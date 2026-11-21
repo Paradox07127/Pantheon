@@ -15,10 +15,7 @@ import type {
   Workspace,
 } from '@pantheon/domain';
 import type { ControlContext } from '../../packages/control/dist/context.js';
-import {
-  workbenchSessionSpec,
-  workerInstructions,
-} from '../../packages/control/dist/workbench-session.js';
+import { workbenchSessionSpec } from '../../packages/control/dist/workbench-session.js';
 import { MEMORY_INSTRUCTIONS } from '../../packages/control/dist/memory.js';
 import { awaitWorkspaceReady, eventually, fixture, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
@@ -275,22 +272,6 @@ it('refuses session renames by non-users and renames of baseline sessions', asyn
     f.call('session.rename', { session_id: baseline.id, title: 'New title' }, baseline.revision),
   ).toThrow(expect.objectContaining({ code: 'invalid_state' }));
   expect(f.store.must<Session>('sessions', baseline.id)).toEqual(baseline);
-});
-
-it('renames a resident session, which has no worktree', async () => {
-  const f = await workbenchFixture();
-  const resident = f.call<Session>('resident.open', {
-    project_id: f.project.id,
-    kind: 'assistant',
-  });
-  expect(resident.workspace_id).toBeUndefined();
-  const renamed = f.call<Session>(
-    'session.rename',
-    { session_id: resident.id, title: 'Release helper' },
-    resident.revision,
-  );
-  expect(renamed).toMatchObject({ title: 'Release helper', title_source: 'user' });
-  expect(f.list().find((each) => each.id === resident.id)!.title).toBe('Release helper');
 });
 
 it('refuses a stale revision when renaming a session', async () => {
@@ -608,67 +589,6 @@ it('refuses a non-user principal and a daemon without a managed workspace root',
   expect(unmanaged.store.list<Workspace>('workspaces')).toEqual([]);
 });
 
-it('binds a session created from a board task', async () => {
-  const f = await workbenchFixture();
-  const lead = await f.create('Plan the export feature');
-  const plan = (id: string, projectId: string): BoardPlan => ({
-    id,
-    revision: 1,
-    project_id: projectId,
-    headline: 'Export',
-    lanes: [{ id: 'core', title: 'Core' }],
-    tasks: [
-      {
-        id: 'api',
-        title: 'Serve exports over HTTP from the export service',
-        goal: 'Exports download',
-        lane: 'core',
-        depends_on: [],
-        source: ['Plan the export feature'],
-        scope: ['src/export'],
-        acceptance: ['pnpm test'],
-      },
-    ],
-    risks: [],
-    assumptions: [],
-    plan_version: 0,
-    pending_edits: [],
-    inbox: [],
-    notified: {},
-    updated_at: f.store.now(),
-  });
-  // The task's contract changed once, so its sessions belong to its second generation.
-  f.store.insert('board_plans', {
-    ...plan(lead.id, f.project.id),
-    generations: { api: { generation: 2, contract: 'changed' } },
-  });
-  const create = (task_id: string) =>
-    f.call<Promise<Session>>('session.create', {
-      project_id: f.project.id,
-      runtime: f.adapter.name,
-      input: 'Build it',
-      task_id,
-    });
-  const worker = await create(`${lead.id}:api`);
-  expect(worker.task).toEqual({
-    lead_session_id: lead.id,
-    id: 'api',
-    generation: 2,
-  });
-  expect(worker.title).toBe(`${'Serve exports over HTTP from the export service'.slice(0, 39)}…`);
-  expect(() => create(`${lead.id}:missing`)).toThrow(
-    expect.objectContaining({ code: 'not_found' }),
-  );
-  const otherRoot = path.join(f.root, 'other');
-  mkdirSync(otherRoot);
-  const other = await f.call<Project>('project.open', { name: 'Other', roots: [otherRoot] });
-  f.store.insert('board_plans', plan('other-lead', other.id));
-  expect(() => create('other-lead:api')).toThrow(
-    expect.objectContaining({ code: 'scope_violation' }),
-  );
-  expect(lead).not.toHaveProperty('task');
-});
-
 const closings: (() => Promise<void>)[] = [];
 afterEach(async () => {
   for (const close of closings.splice(0)) await close();
@@ -684,129 +604,6 @@ function stubDaemonEnvironment() {
   for (const name of deniedVariables) vi.stubEnv(name, 'denied');
 }
 
-/** The session spec of a task session started for the CSV export task of a lead's plan. */
-async function csvTaskSession(task: Record<string, unknown> = {}) {
-  const adapter = new FixtureAdapter();
-  const starts = vi.spyOn(adapter, 'start');
-  const f = await fixture({
-    adapter,
-    managedWorkspaces: true,
-    controlOptions: {
-      readProcess: () => undefined,
-      issueSessionCredential: () => ({
-        token_file: '/data/session-tokens/session',
-        daemon_url: 'http://127.0.0.1:1',
-      }),
-    },
-  });
-  closings.push(() => f.close());
-  writeFileSync(path.join(f.projectRoot, 'README.md'), 'Export\n');
-  git(f.projectRoot, 'init', '--quiet', '--initial-branch=main');
-  git(f.projectRoot, 'add', '.');
-  git(f.projectRoot, 'commit', '--quiet', '-m', 'Initial files');
-  const opened = async (input: Record<string, unknown>) => {
-    const session = await f.call<Session>('session.create', {
-      project_id: f.project.id,
-      runtime: adapter.name,
-      ...input,
-    });
-    await awaitWorkspaceReady(f.control, session.workspace_id!);
-    await eventually(
-      () => starts.mock.calls.some(([spec]) => spec.platform_session_id === session.id),
-      () => f.control.tick(),
-    );
-    return starts.mock.calls.find(([spec]) => spec.platform_session_id === session.id)![0];
-  };
-  const lead = await opened({ input: 'Export the report as CSV and keep the header row.' });
-  f.call(
-    'board.plan.update',
-    {
-      project_id: f.project.id,
-      base_version: 0,
-      headline: 'Export',
-      lanes: [{ id: 'core', title: 'Core' }],
-      tasks: [
-        {
-          id: 'csv',
-          title: 'CSV export',
-          goal: 'Reports download as CSV',
-          lane: 'core',
-          depends_on: [],
-          source: ['Export the report as CSV', 'keep the header row'],
-          scope: ['src/export', 'tests/export.test.ts'],
-          acceptance: ['pnpm build', 'pnpm exec vitest run tests/export.test.ts'],
-          ...task,
-        },
-      ],
-      milestones: [],
-      risks: [],
-      assumptions: [],
-    },
-    null,
-    {
-      id: `session:${lead.platform_session_id}`,
-      role: 'lead',
-      project_id: f.project.id,
-      session_id: lead.platform_session_id,
-      expires_at: f.store.now() + 60000,
-    },
-  );
-  return opened({
-    input: 'Build it',
-    task_id: `${lead.platform_session_id}:csv`,
-  });
-}
-
-it('keeps a task session on the managed native home and the allowlisted environment', async () => {
-  stubDaemonEnvironment();
-  const spec = await csvTaskSession();
-  expect(spec.native_state_dir).toContain('/native-sessions/');
-  expect(spec.env_allowlist).toEqual(NATIVE_ENV_ALLOWLIST);
-});
-
-it('gives a task session the user quote, scope and acceptance commands of its task', async () => {
-  const instructions = (await csvTaskSession()).control_instructions!;
-  for (const text of [
-    '"Export the report as CSV"',
-    '"keep the header row"',
-    'Reports download as CSV',
-    'src/export',
-    'tests/export.test.ts',
-    'pnpm build',
-    'pnpm exec vitest run tests/export.test.ts',
-    'requirement',
-  ])
-    expect(instructions).toContain(text);
-});
-
-it.each([
-  [
-    'a task its merge completes',
-    {},
-    'Merging this worktree completes the task; you do not declare it done. When your last commit passes every acceptance command, end your turn, and Pantheon runs the gates and merges it.',
-  ],
-  [
-    'a report task',
-    { done_when: 'report' },
-    'This task needs no commit. Deliver your conclusion with report kind done; the lead accepts the task on the evidence you give.',
-  ],
-])('gives the session of %s the worker guide, then its contract', async (_, task, done) => {
-  const instructions = (await csvTaskSession(task)).control_instructions!;
-  const guide = instructions.indexOf('You are a task session.'),
-    contract = instructions.indexOf('You work on task csv "CSV export"');
-  expect(guide).toBeGreaterThanOrEqual(0);
-  expect(contract).toBeGreaterThan(guide);
-  for (const text of [
-    '## Paths outside your scope',
-    'Pantheon holds the merge until the lead answers, so a partial fix does not land as if it were complete.',
-    '## When an acceptance command keeps failing',
-    `- done: ${done}`,
-    '- memory_search and memory_get:',
-  ])
-    expect(instructions.slice(guide, contract)).toContain(text);
-  expect(instructions.slice(contract)).toContain('Goal: Reports download as CSV');
-});
-
 it.each([
   ['claude', 'AskUserQuestion', 'request_user_input'],
   ['codex', 'request_user_input', 'AskUserQuestion'],
@@ -818,7 +615,7 @@ it.each([
   Object.assign(f.adapter, { questionTool: real.questionTool });
   f.control.adapters.set(runtime, f.adapter);
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
-  const session = await f.create(undefined, user, 'lead');
+  const session = await setupSession(f);
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   const instructions = workbenchSessionSpec(
     ctx,
@@ -828,19 +625,14 @@ it.each([
   expect(instructions).not.toContain(other);
 });
 
-it('tells a task session with a question tool that its lead answers when the plan or memory settles it', async () => {
-  const f = await workbenchFixture();
-  const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
-  const text = workerInstructions(
-    ctx,
-    { lead_session_id: 'lead', id: 'a', generation: 1 } as NonNullable<Session['task']>,
-    'AskUserQuestion',
-  );
-  expect(text).toContain(
-    'Your lead answers it when the plan or project memory settles it; otherwise the user does. The answer comes back to this session.',
-  );
-  expect(text).not.toContain('where the user answers it');
-});
+/** A project setup session, which asks the user with the runtime's question tool. */
+const setupSession = (f: Awaited<ReturnType<typeof workbenchFixture>>) =>
+  f.call<Promise<Session>>('session.create', {
+    project_id: f.project.id,
+    runtime: f.adapter.name,
+    input: 'Set up the project',
+    purpose: 'project_setup',
+  });
 
 /** A workbench fixture whose adapter is registered under the runtime name with the given declarations. */
 async function declaredRuntime(runtime: string, declared: Partial<HarnessAdapter>) {
@@ -854,7 +646,7 @@ async function declaredRuntime(runtime: string, declared: Partial<HarnessAdapter
 
 it('asks with the question tool and lets the runtime title the session as its adapter declares', async () => {
   const f = await declaredRuntime('agy', { questionTool: 'ask_human', generatesTitles: true });
-  const session = await f.create(undefined, user, 'lead');
+  const session = await setupSession(f);
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   const spec = workbenchSessionSpec(f.ctx, f.store.must<Session>('sessions', session.id));
   expect(spec.control_instructions).toContain('ask with the ask_human tool');
@@ -933,52 +725,6 @@ it("runs a worktree session the user opened on the user's native home, extension
       disable_apps: false,
     },
   });
-});
-
-it.each<{
-  name: string;
-  open: (f: Awaited<ReturnType<typeof credentialedRuntime>>) => Promise<Session>;
-}>([
-  { name: 'opened to lead', open: (f) => f.create(undefined, user, 'lead') },
-  {
-    name: 'that already owns a board plan',
-    open: async (f) => {
-      const session = await f.create();
-      f.store.insert<BoardPlan>('board_plans', {
-        id: session.id,
-        revision: 1,
-        project_id: f.project.id,
-        headline: 'Export',
-        lanes: [],
-        tasks: [],
-        risks: [],
-        assumptions: [],
-        plan_version: 0,
-        pending_edits: [],
-        inbox: [],
-        notified: {},
-        updated_at: f.store.now(),
-      });
-      return session;
-    },
-  },
-])('gives a worktree session $name the lead credential, guide and memory', async ({ open }) => {
-  stubDaemonEnvironment();
-  const f = await credentialedRuntime();
-  const session = await open(f);
-  const { spec, input } = await f.started(session);
-  const workspace = f.store.must<Workspace>('workspaces', session.workspace_id!);
-  expect(spec.control_instructions).toContain(
-    `You are working for the user in the git worktree at ${workspace.path}. When your changes are complete, commit them there with git. Do not write files outside this worktree.`,
-  );
-  expect(spec.pantheon_mcp).toBeDefined();
-  expect(spec.native_state_dir).toContain('/native-sessions/');
-  expect(spec.env_allowlist).toEqual(NATIVE_ENV_ALLOWLIST);
-  expect(spec.control_instructions).toContain(MEMORY_INSTRUCTIONS);
-  expect(spec.control_instructions).toContain('You are a lead session');
-  // A lead asks with ask_user, not with the runtime's question tool.
-  expect(spec.control_instructions).not.toContain('ask with the ask_human tool');
-  expect(input).toContain('[Pantheon current project memory]');
 });
 
 type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;

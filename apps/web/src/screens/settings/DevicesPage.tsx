@@ -9,10 +9,8 @@ import { runCommand } from '../../data/commands';
 import { useDevices } from '../../data/devices';
 import { ageText, failureText, useNow } from '../../data/needs-you';
 import { useRuntimeStatus } from '../../data/runtime-status';
-import { sessionTitle } from '../../data/transcript';
 import { readQuery } from '../../data/workbench-sessions';
 import { t } from '../../i18n';
-import { listText } from '../../lib/list-text';
 import { useShell } from '../../store';
 import { Loading } from './ProjectSettingsScreen';
 import { registerPageHeader } from './settings-header';
@@ -408,31 +406,6 @@ export function DevicesPage() {
     );
   };
 
-  const sessionsRow = (d: DeviceListItem) => (
-    <>
-      <span className="dv-k">
-        {t({ id: 'settings.devices.sessionsKey', defaultMessage: 'Sessions' })}
-      </span>
-      <div className="dv-v dv-tx2">
-        {isLocal(d)
-          ? t(
-              {
-                id: 'settings.devices.sessions',
-                defaultMessage: '{count, plural, one {# session} other {# sessions}}',
-              },
-              { count: d.load.sessions },
-            )
-          : t(
-              {
-                id: 'settings.devices.sessionsOf',
-                defaultMessage: '{count} of {max, plural, one {# session} other {# sessions}}',
-              },
-              { count: d.load.sessions, max: d.max_sessions },
-            )}
-      </div>
-    </>
-  );
-
   const labelsRow = (d: DeviceListItem, name: string, editable: boolean) => {
     const own = d.config?.labels ?? [];
     const drafting = labelDraft?.id === d.id ? labelDraft : null;
@@ -530,7 +503,7 @@ export function DevicesPage() {
           {Object.entries(d.resources).map(([resource, total]) => (
             <span key={resource} className="dv-res">
               <span className="mono">{resource}</span>
-              <span className="dv-num">{`${d.load.uses[resource] ?? 0} / ${total}`}</span>
+              <span className="dv-num">{total}</span>
               {editable && resource in own && (
                 <button
                   type="button"
@@ -557,7 +530,6 @@ export function DevicesPage() {
                   <X aria-hidden="true" />
                 </button>
               )}
-              {occupants(d, resource)}
             </span>
           ))}
           {editable &&
@@ -677,29 +649,6 @@ export function DevicesPage() {
     );
   };
 
-  /** The sessions holding the resource by title; nothing where they are unknown. */
-  const occupants = (d: DeviceListItem, resource: string) => {
-    const titles = (d.load.resource_sessions?.[resource] ?? []).flatMap((id) => {
-      const session = board?.sessions.find((s) => s.id === id);
-      const title =
-        d.load.active_sessions.find((s) => s.id === id)?.title ||
-        (session ? sessionTitle(session, board!) : '');
-      return title
-        ? [t({ id: 'settings.devices.quoted', defaultMessage: '“{title}”' }, { title })]
-        : [];
-    });
-    return (
-      titles.length > 0 && (
-        <span className="dv-by">
-          {t(
-            { id: 'settings.devices.usedBy', defaultMessage: 'In use by {sessions}' },
-            { sessions: listText(...titles) },
-          )}
-        </span>
-      )
-    );
-  };
-
   /** The open sessions on the device; one opens where the board knows its project. */
   const runningRow = (d: DeviceListItem) =>
     d.load.active_sessions.length > 0 && (
@@ -759,7 +708,6 @@ export function DevicesPage() {
         <>
           {runtimeRows(d)}
           {loadRow(d)}
-          {sessionsRow(d)}
           {d.labels.length > 0 && labelsRow(d, name, false)}
           {Object.keys(d.resources).length > 0 && resourcesRow(d, name, false)}
           {toolsRow(d)}
@@ -772,7 +720,6 @@ export function DevicesPage() {
           <>
             {runtimeRows(d)}
             {loadRow(d)}
-            {sessionsRow(d)}
             {labelsRow(d, name, true)}
             {resourcesRow(d, name, true)}
             {limitRow(d, name)}

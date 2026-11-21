@@ -43,13 +43,12 @@ async function connect(server: Awaited<ReturnType<typeof createMcpServer>>) {
   return client;
 }
 
-it('lists the five personal tools for a personal key', async () => {
+it('lists the four personal tools for a personal key', async () => {
   stubDaemon(() => ({}));
   const client = await connect(
-    await createPersonalMcpServer('http://127.0.0.1:4321', 'personal-token', 'key'),
+    await createPersonalMcpServer('http://127.0.0.1:4321', 'personal-token'),
   );
   expect((await client.listTools()).tools.map((tool) => tool.name).sort()).toEqual([
-    'answer_decision',
     'needs_you',
     'project_brief',
     'project_decisions',
@@ -58,9 +57,9 @@ it('lists the five personal tools for a personal key', async () => {
 });
 
 it('sends needs_you to the daemon with the personal key and returns its answer', async () => {
-  const seen = stubDaemon(() => ({ items: [{ kind: 'lead.question', project_id: 'project' }] }));
+  const seen = stubDaemon(() => ({ items: [{ kind: 'session.approval', project_id: 'project' }] }));
   const client = await connect(
-    await createPersonalMcpServer('http://127.0.0.1:4321', 'personal-token', 'key'),
+    await createPersonalMcpServer('http://127.0.0.1:4321', 'personal-token'),
   );
   const listed = await client.callTool({
     name: 'needs_you',
@@ -70,7 +69,7 @@ it('sends needs_you to the daemon with the personal key and returns its answer',
   expect(listed.content).toEqual([
     {
       type: 'text',
-      text: JSON.stringify({ items: [{ kind: 'lead.question', project_id: 'project' }] }),
+      text: JSON.stringify({ items: [{ kind: 'session.approval', project_id: 'project' }] }),
     },
   ]);
   expect(seen).toMatchObject([
@@ -85,15 +84,15 @@ it('sends needs_you to the daemon with the personal key and returns its answer',
 it('still serves the session tools to a session token', async () => {
   stubDaemon(() => ({
     principal: {
-      id: 'session:lead',
-      role: 'lead',
-      session_id: 'lead',
+      id: 'session:conductor',
+      role: 'conductor',
+      session_id: 'conductor',
       project_id: 'project',
       expires_at: Date.now() + 60_000,
     },
   }));
   const client = await connect(await createMcpServer('http://127.0.0.1:4321', 'session-token'));
-  expect((await client.listTools()).tools.map((tool) => tool.name)).toContain('update_board');
+  expect((await client.listTools()).tools.map((tool) => tool.name)).toContain('spawn_session');
 });
 
 it('refuses mcp --personal without a personal token file', () => {

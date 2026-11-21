@@ -452,6 +452,8 @@ export interface AppMenuOptions {
   zoom: (step: ZoomStep) => void;
   newWindow: () => void;
   openLogs: () => void;
+  /** Writes the `pantheon` launcher; a development build leaves it out of the menu. */
+  installCli?: () => void;
   /** Shows the native About panel; the macOS menu reaches it through the about role. */
   about: () => void;
   mini: MiniWindowItem;
@@ -497,7 +499,17 @@ function viewMenu(
 
 /** The menu bar on macOS, in the order of Apple's guidelines; elsewhere the menu the title bar's menu button pops up. */
 export function appMenuTemplate(options: AppMenuOptions): MenuItemConstructorOptions[] {
-  const { platform, name, send, newWindow, openLogs, about, mini, accelerators = {} } = options;
+  const {
+    platform,
+    name,
+    send,
+    newWindow,
+    openLogs,
+    installCli,
+    about,
+    mini,
+    accelerators = {},
+  } = options;
   const text = menuText();
   const action = (label: string, action: MenuAction): MenuItemConstructorOptions => ({
     label,
@@ -510,6 +522,9 @@ export function appMenuTemplate(options: AppMenuOptions): MenuItemConstructorOpt
     click: newWindow,
   };
   const closeItem = { role: 'close', label: text.closeWindow, accelerator: 'CmdOrCtrl+W' } as const;
+  const cliItems: MenuItemConstructorOptions[] = installCli
+    ? [{ label: text.installCli, click: installCli }]
+    : [];
   const helpItems: MenuItemConstructorOptions[] = [
     action(text.keyboardShortcuts, 'shortcuts'),
     separator,
@@ -524,6 +539,7 @@ export function appMenuTemplate(options: AppMenuOptions): MenuItemConstructorOpt
           { role: 'about', label: text.about(name) },
           separator,
           action(text.settings, 'settings'),
+          ...cliItems,
           separator,
           { role: 'services', label: text.services },
           separator,
@@ -597,6 +613,7 @@ export function appMenuTemplate(options: AppMenuOptions): MenuItemConstructorOpt
         newWindowItem,
         separator,
         action(text.settings, 'settings'),
+        ...cliItems,
         separator,
         closeItem,
         { role: 'quit', label: text.exit },

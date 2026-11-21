@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { TraceIndex } from '@pantheon/control';
-import type { BoardPlan, Entity, LeadNote, Session, SessionTurn } from '@pantheon/domain';
+import type { Entity, Session, SessionTurn } from '@pantheon/domain';
 import { fixture, user } from '../helpers.js';
 
 const cleanups: (() => unknown)[] = [];
@@ -93,7 +93,7 @@ it('replays only the selected edit input without a worktree', async () => {
   ).rejects.toThrow();
   await expect(
     f.control.sessionStepDiff(
-      { ...user, role: 'worker', project_id: 'other' },
+      { ...user, role: 'writer', project_id: 'other' },
       owner.id,
       turn.id,
       'first-edit',
@@ -224,82 +224,6 @@ it('takes context and gate snapshots at span start across turns without borrowin
       (span) => span.id === 'next',
     ),
   ).toMatchObject({ context_tokens: 90, gate_state: 'failed' });
-});
-
-it('counts directed lead messages and worker reports in the inclusive project range', async () => {
-  const f = await setup(),
-    lead = f.session('lead'),
-    worker = f.session('worker', { task: { lead_session_id: lead.id, id: 'export' } });
-  f.turn(worker, 'lead-message', { origin: 'lead' });
-  f.turn(worker, 'user-message');
-  f.record(1500, 'task.reported', lead, { session_id: worker.id, at: 1500, kind: 'risk' });
-  f.record(
-    1500,
-    'task.reported',
-    lead,
-    { session_id: worker.id, at: 1500, kind: 'blocked' },
-    'handback',
-  );
-  f.record(1500, 'task.handed_back', lead, { session_id: worker.id }, 'handback');
-  f.record(2500, 'task.reported', lead, { session_id: worker.id, at: 2500, kind: 'done' });
-  const result = await f.control.projectCollab(user, f.project.id, 1100, 1500);
-  expect(result.messages).toEqual([
-    { sender: lead.id, receiver: worker.id, direction: 'lead_to_worker', count: 1 },
-    { sender: worker.id, receiver: lead.id, direction: 'worker_to_lead', count: 1 },
-  ]);
-  await expect(
-    f.control.projectCollab(
-      { ...user, role: 'worker', project_id: 'other' },
-      f.project.id,
-      0,
-      5000,
-    ),
-  ).rejects.toThrow();
-});
-
-it('keeps notes in flight until their receiving turn is delivered, even outside the requested range', async () => {
-  const f = await setup(),
-    lead = f.session('lead'),
-    worker = f.session('worker', { task: { lead_session_id: lead.id, id: 'export' } });
-  const queued = f.turn(worker, 'lead-message', { origin: 'lead' });
-  const note: LeadNote = {
-    id: 'report-note',
-    at: 1500,
-    session_id: worker.id,
-    task_id: 'export',
-    kind: 'risk',
-    text: 'The export needs review',
-  };
-  f.record(1500, 'lead.note_added', lead, note, 'report');
-  f.record(1500, 'task.reported', lead, note, 'report');
-  const plan = f.store.insert<BoardPlan>('board_plans', {
-    id: lead.id,
-    revision: 1,
-    project_id: f.project.id,
-    headline: 'Export review',
-    lanes: [],
-    tasks: [],
-    plan_version: 1,
-    pending_edits: [],
-    risks: [],
-    assumptions: [],
-    inbox: [note],
-    notified: {},
-    updated_at: 1500,
-  });
-  expect((await f.control.projectCollab(user, f.project.id, 4000, 5000)).in_flight).toEqual([
-    { sender: lead.id, receiver: worker.id, sent_at: 1100 },
-    { sender: worker.id, receiver: lead.id, sent_at: 1500 },
-  ]);
-  f.store.update('board_plans', { ...plan, inbox: [] }, plan.revision);
-  const digest = f.turn(lead, 'digest', { lead_note_ids: ['report-note'] });
-  expect((await f.control.projectCollab(user, f.project.id, 4000, 5000)).in_flight).toEqual([
-    { sender: lead.id, receiver: worker.id, sent_at: 1100 },
-    { sender: worker.id, receiver: lead.id, sent_at: 1500 },
-  ]);
-  for (const row of [queued, digest])
-    f.store.update('session_turns', { ...row, delivery: 'delivered' }, row.revision);
-  expect((await f.control.projectCollab(user, f.project.id, 4000, 5000)).in_flight).toEqual([]);
 });
 
 it('reconstructs model changes from records before the requested range and omits effort-only changes', async () => {

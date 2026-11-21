@@ -10,10 +10,7 @@ export type ExternalMode = 'off' | NonNullable<ExternalRead['mode']>;
 
 const acceptRead = (value: unknown): ExternalRead | null => {
   const read = value as Partial<ExternalRead> | null;
-  return read &&
-    Array.isArray(read.sources) &&
-    Array.isArray(read.events) &&
-    Array.isArray(read.held)
+  return read && Array.isArray(read.sources) && Array.isArray(read.events)
     ? (read as ExternalRead)
     : null;
 };
@@ -28,9 +25,3 @@ export const setExternalMode = (
   mode: ExternalMode,
 ): Promise<BridgeResult<unknown>> =>
   runCommand('project.externalEvents.set', { project_id: project.id, mode }, project.revision);
-
-export const approveExternal = (
-  project: Project,
-  subjectKey: string,
-): Promise<BridgeResult<unknown>> =>
-  runCommand('external.approve', { project_id: project.id, subject_key: subjectKey }, null);

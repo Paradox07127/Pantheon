@@ -152,44 +152,14 @@ it('summarizes two projects and limits a planner to its own project', async () =
 
 it("gives each project its waiting decisions by kind, the longest wait and its brief's first sentence", async () => {
   const f = await workbenchFixture();
-  const lead = await idleSession(f, 'Ship exports');
-  f.call(
-    'board.plan.update',
-    {
-      project_id: f.project.id,
-      base_version: 0,
-      headline: 'Ship exports',
-      lanes: [{ id: 'exports', title: 'Exports' }],
-      tasks: ['api', 'docs'].map((id) => ({
-        id,
-        title: id,
-        goal: 'Build exports',
-        lane: 'exports',
-        depends_on: [],
-        source: ['Ship exports'],
-        scope: [`src/${id}`],
-        acceptance: ['pnpm test'],
-      })),
-      milestones: [],
-      risks: [],
-      assumptions: [],
-    },
-    null,
-    {
-      id: `session:${lead.id}`,
-      role: 'lead',
-      project_id: f.project.id,
-      session_id: lead.id,
-      expires_at: f.store.now() + 60000,
-    },
-  );
+  const session = await idleSession(f, 'Ship exports');
   const now = f.store.now();
   vi.spyOn(f.store, 'now').mockReturnValue(now);
   f.store.insert<Approval>('approvals', {
     id: 'lead-permission',
     revision: 1,
     project_id: f.project.id,
-    session_id: lead.id,
+    session_id: session.id,
     kind: 'permission',
     input_hash: 'permission-input',
     decider: 'user',
@@ -230,7 +200,6 @@ it("gives each project its waiting decisions by kind, the longest wait and its b
     waiting: {
       by_decision: { permission: 1 },
       longest_wait_ms: 5000,
-      blocked_tasks: 0,
     },
   });
   const other = projects.find((project) => project.project_id === otherProject.id)!;

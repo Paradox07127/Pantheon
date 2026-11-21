@@ -297,8 +297,6 @@ export function worktreeSandbox(
     workspacePath: string;
     worktreeId: string;
     tempDir: string;
-    /** A session a lead dispatched for a task also may not read other worktrees, native records or reviews. */
-    taskSession?: { reviewsDirs: string[] };
     /** The folders of the checks only milestone verification runs, which no session may read. */
     hiddenChecksDirs?: string[];
   },
@@ -330,23 +328,7 @@ export function worktreeSandbox(
   const writable_roots = roots.map(resolvedPath);
   // The source entries are replaced below, and the workspace's .git is a pointer file whose
   // hooks and config paths cannot be resolved, so only its agent configuration entries remain.
-  const entries = protectionListWithoutWorkspace({
-    ...input,
-    sourceRepo: undefined,
-    otherWorkspaces: input.taskSession ? [] : input.otherWorkspaces,
-  });
-  if (input.taskSession)
-    for (const target of [
-      ...input.otherWorkspaces,
-      ...nativeRecords(input),
-      ...input.taskSession.reviewsDirs,
-    ])
-      for (const entry of entryPaths(target))
-        entries.push({
-          path: entry,
-          deny: 'read_write',
-          reason: 'Other workspaces, reviews and native session records',
-        });
+  const entries = protectionListWithoutWorkspace({ ...input, sourceRepo: undefined });
   for (const target of input.hiddenChecksDirs ?? [])
     for (const entry of entryPaths(target))
       entries.push({ path: entry, deny: 'read_write', reason: 'Hidden milestone checks' });

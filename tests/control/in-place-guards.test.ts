@@ -295,53 +295,6 @@ it('offers no discard or merge for a session in the user folder', async () => {
   expect(actions(blocked.id)).not.toContain('session.merge');
 });
 
-it('refuses to open a task that completes by merging in the user folder, and opens a report task there', async () => {
-  const f = await workbenchFixture();
-  const lead = await f.create('Plan the export');
-  await eventually(
-    () => current(f, lead.id).state === 'open',
-    () => f.control.tick(),
-  );
-  const task = (id: string, extra: object = {}) => ({
-    id,
-    title: id,
-    goal: `Do ${id}`,
-    lane: 'core',
-    depends_on: [],
-    source: ['Plan the export'],
-    scope: [`${id}.txt`],
-    acceptance: ['true'],
-    ...extra,
-  });
-  f.store.insert('board_plans', {
-    id: lead.id,
-    revision: 1,
-    project_id: f.project.id,
-    headline: 'Export',
-    lanes: [{ id: 'core', title: 'Core' }],
-    tasks: [task('export'), task('notes', { done_when: 'report' })],
-    risks: [],
-    assumptions: [],
-    plan_version: 0,
-    pending_edits: [],
-    inbox: [],
-    notified: {},
-    updated_at: f.store.now(),
-  });
-  const open = (taskId: string) =>
-    f.call<Promise<Session>>('session.create', {
-      project_id: f.project.id,
-      runtime: f.adapter.name,
-      task_id: `${lead.id}:${taskId}`,
-      workspace: 'in_place',
-      input: 'Do it',
-    });
-  expect(refusal(() => open('export')).code).toBe('invalid_input');
-  expect(f.store.list<Session>('sessions').filter((s) => s.task)).toEqual([]);
-  const report = await open('notes');
-  expect(f.store.must<Workspace>('workspaces', report.workspace_id!).kind).toBe('in_place');
-});
-
 it('records the error code of a turn whose launch failed with a domain error, and none for other errors', async () => {
   const f = await workbenchFixture({ adoptable: true });
   const session = inPlaceSession(f, inPlaceWorkspace(f));

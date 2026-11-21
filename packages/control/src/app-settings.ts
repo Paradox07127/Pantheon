@@ -53,6 +53,5 @@ export function readAppSettings(ctx: ControlContext): AppSettings {
     ...(config.quiet_hours && { quiet_hours: config.quiet_hours }),
     baseline_rounds: config.baseline_rounds ?? 5,
     baseline_visuals: config.baseline_visuals ?? true,
-    personal_answers: config.personal_answers ?? [],
   };
 }

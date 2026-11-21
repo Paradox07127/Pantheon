@@ -17,17 +17,6 @@ import type { ControlContext } from '../../packages/control/dist/context.js';
 import { awaitWorkspaceReady, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-it('searches the project folder for a resident session without a workspace', async () => {
-  const f = await workbenchFixture();
-  const resident = f.call<Session>('resident.open', {
-    project_id: f.project.id,
-    kind: 'assistant',
-  });
-  expect(await f.control.filesSearch(user, f.project.id, resident.id, 'answer')).toEqual([
-    'answer.txt',
-  ]);
-});
-
 it('reads text, empty and binary files and truncates UTF-8 at a character boundary', async () => {
   const f = await workbenchFixture();
   const read = (file: string) => f.control.filesRead(user, f.project.id, undefined, file);

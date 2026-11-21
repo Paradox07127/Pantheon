@@ -14,7 +14,6 @@ import { Ellipsis, FolderOpen } from 'lucide-react';
 import type { WorkbenchSession } from '@pantheon/protocol';
 import { DiffCounts } from '../../components/DiffCounts';
 import { DiffStat } from '../../components/DiffReview';
-import { LeadCrown } from '../../components/LeadCrown';
 import { ModelMark, RuntimeGlyph, runtimeName } from '../../components/RuntimeGlyph';
 import {
   GateMark,
@@ -137,8 +136,6 @@ export function SessionRowButton(props: {
   onKeyDown?: (e: KeyboardEvent<HTMLButtonElement>) => void;
   /** The tree columns before a session listed under the one it came from. */
   tree?: readonly TreeLine[];
-  /** Whether board task sessions were opened from this one. */
-  lead?: boolean;
   /** Its place among the rows ⌘1 to ⌘9 open. */
   number?: number;
   /** Picked with the list's select key; apart from the shown session and the keyboard focus. */
@@ -177,9 +174,6 @@ export function SessionRowButton(props: {
     ...(blocked
       ? [t({ id: 'sessions.screen.mergeBlocked', defaultMessage: 'Merge blocked' })]
       : []),
-    ...(props.lead
-      ? [t({ id: 'components.leadCrown.label', defaultMessage: 'Lead session' })]
-      : []),
     ...(props.unread ? [t({ id: 'sessions.screen.unread', defaultMessage: 'Unread' })] : []),
     ...(props.selected ? [t({ id: 'sessions.row.selected', defaultMessage: 'Selected' })] : []),
   ].join(t({ id: 'sessions.screen.separator', defaultMessage: ', ' }));
@@ -216,7 +210,6 @@ export function SessionRowButton(props: {
       ) : (
         <span className="ss-ttl">{row.title}</span>
       )}
-      {props.lead && <LeadCrown />}
       {device && <span className="chip mono ss-dev">{device}</span>}
       <span className="ss-time">{ageText(Date.parse(session.last_activity_at), props.now)}</span>
       {props.number !== undefined && <KeyHint id="session-number" digit={props.number} />}
@@ -374,21 +367,13 @@ export function SessionPreview(props: {
       ? [
           [
             t({ id: 'sessions.row.preview.source', defaultMessage: 'From' }),
-            s.lead
-              ? t(
-                  {
-                    id: 'sessions.sidebar.preview.openedBy',
-                    defaultMessage: 'Opened by {source}, {time}',
-                  },
-                  { source: props.source, time: openedText(s, props.now) },
-                )
-              : t(
-                  {
-                    id: 'sessions.sidebar.preview.forkedFrom',
-                    defaultMessage: 'Forked from {source}, {time}',
-                  },
-                  { source: props.source, time: openedText(s, props.now) },
-                ),
+            t(
+              {
+                id: 'sessions.sidebar.preview.forkedFrom',
+                defaultMessage: 'Forked from {source}, {time}',
+              },
+              { source: props.source, time: openedText(s, props.now) },
+            ),
           ] as [string, ReactNode],
         ]
       : []),
@@ -453,7 +438,6 @@ export function SessionListRow(props: {
   /** Called as either menu of the row opens or closes. */
   onMenu?: (open: boolean) => void;
   tree?: readonly TreeLine[];
-  lead?: boolean;
   number?: number;
   selected?: boolean;
   /** The title of the session it was opened or forked from. */
@@ -520,7 +504,6 @@ export function SessionListRow(props: {
       tabIndex={props.tabIndex}
       onKeyDown={onKeyDown}
       tree={props.tree}
-      lead={props.lead}
       number={props.number}
       selected={props.selected}
       onContextMenu={nativeMenu ?? undefined}

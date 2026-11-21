@@ -138,7 +138,6 @@
   "components.recentActivity.merged": "已合并",
   "components.recentActivity.mergeBlocked": "合并被挡",
   "components.recentActivity.cancelled": "已取消",
-  "components.leadCrown.label": "主对话",
   "components.backgroundHooks.windowTitle": "{project} · {count} 个等你",
   "components.runtime.codexReadOnly": "只读",
   "components.runtime.codexWorkspaceWrite": "工作区可写",

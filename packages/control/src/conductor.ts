@@ -36,7 +36,7 @@ import {
 
 /** The instructions Pantheon adds to a conductor session after the line on where it works. */
 export const CONDUCTOR_INSTRUCTIONS =
-  "Pantheon gives this session four tools. request_review: another vendor reviews your committed changes; the result comes back to you as a message. report_ready: your committed changes go through the project's gate and land. spawn_session: another vendor's session starts in a new worktree from your current commit; you hear when its turn ends. read_state: this project's changes, checks, landing queue and items waiting for the user. Plan, split work and run subagents with your own tools.";
+  "Pantheon gives this session five tools. request_review: another vendor reviews your committed changes; the result comes back to you as a message. report_ready: your committed changes go through the project's gate and land. spawn_session: another vendor's session starts in a new worktree from your current commit; you hear when its turn ends. read_state: this project's changes, checks, landing queue and items waiting for the user. draw: a chart or diagram the user sees in this session. Plan, split work and run subagents with your own tools.";
 
 /** conductor.review; the session's committed range and its diff are read before the transaction. */
 function prepareConductorReview(

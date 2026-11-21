@@ -283,7 +283,7 @@ export function UsagePage({ project, only }: { project: Project | null; only?: U
     project
       ? savePolicy(policy, row, patch)
       : saveGlobal(row, () =>
-          setGlobal('workflow_policy', patchedPolicy(policySetting?.global, policy, patch)),
+          setGlobal('workflow_policy', patchedPolicy(policySetting?.global, patch)),
         );
 
   const commitBudget = async () => {

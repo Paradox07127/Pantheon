@@ -5,6 +5,7 @@ import type { AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { review } from '../../apps/cli/src/review.js';
 
 const requests: { method: string; url: string; body: string }[] = [];
 let replies: { status: number; body: unknown }[] = [];
@@ -109,6 +110,7 @@ describe('pnpm cli review', () => {
     const done = reviewOf({
       findings: [
         finding({
+          id: 'f-leak',
           location: 'src/a.ts:10',
           impact: 'Leaks',
           quote: 'open()',
@@ -116,6 +118,7 @@ describe('pnpm cli review', () => {
         }),
         finding({}),
         finding({
+          id: 'f-name',
           location: 'overall',
           unlocated: true,
           impact: 'Naming',
@@ -146,13 +149,16 @@ describe('pnpm cli review', () => {
     expect(result.stdout).toBe(
       [
         'src/a.ts:2 [report] codex: Hangs',
+        '  id: f',
         '  quote: for (;;)',
         '  evidence: the loop has no exit',
         'src/a.ts:10 [report] codex: Leaks',
+        '  id: f-leak',
         '  quote: open()',
         '  evidence: never closed',
         'Without file:line:',
         'overall [report] codex: Naming',
+        '  id: f-name',
         '  quote: x',
         '  evidence: y',
         'codex: pass — looks fine',
@@ -232,7 +238,7 @@ describe('pnpm cli review', () => {
       answers: [],
       code: 64,
       stream: 'stderr',
-      line: 'Usage: pnpm cli review',
+      line: 'Usage: pantheon review',
     },
     {
       name: 'a base given twice',
@@ -302,6 +308,99 @@ describe('pnpm cli review', () => {
       base: 'main',
       head: git(detached, 'rev-parse', 'HEAD').trim(),
     });
+  });
+
+  it('resolves a finding at the current review revision and prints its outcome', async () => {
+    const resolved = reviewOf({
+      revision: 4,
+      findings: [
+        finding({
+          resolution: { outcome: 'intentional', resolved_at: 1, resolved_by: 'local-user' },
+        }),
+      ],
+    });
+    const result = await cli(
+      repo,
+      ['review', 'resolve', 'review-1', 'f', 'intentional'],
+      [
+        { body: reviewOf({ revision: 3, findings: [finding({})] }) },
+        { body: { receipt: resolved } },
+      ],
+    );
+    expect(requests.map((request) => `${request.method} ${request.url}`)).toEqual([
+      'GET /v1/review.read?review_id=review-1',
+      'POST /v1/commands',
+    ]);
+    expect(JSON.parse(requests[1]!.body)).toMatchObject({
+      type: 'review.finding.resolve',
+      actor: 'local-user',
+      expected_revision: 3,
+      input: { review_id: 'review-1', finding_id: 'f', outcome: 'intentional' },
+    });
+    expect(result.stdout).toBe('f: intentional\n');
+    expect(result.code).toBe(0);
+  });
+
+  it('sends the note given with --note', async () => {
+    requests.length = 0;
+    replies = [
+      { status: 200, body: reviewOf({ findings: [finding({})] }) },
+      { status: 200, body: { receipt: reviewOf({}) } },
+    ];
+    const port = (server.address() as AddressInfo).port;
+    const code = await review(
+      () => ({ url: `http://127.0.0.1:${port}`, token: 'user-token' }),
+      ['resolve', 'review-1', 'f', 'not_worth_it'],
+      { note: 'Costs more than it saves' },
+    );
+    expect(JSON.parse(requests[1]!.body).input).toEqual({
+      review_id: 'review-1',
+      finding_id: 'f',
+      outcome: 'not_worth_it',
+      note: 'Costs more than it saves',
+    });
+    expect(code).toBe(0);
+  });
+
+  it.each([
+    {
+      name: 'an outcome it does not know',
+      args: ['review-1', 'f', 'adopted'],
+      answers: [],
+      code: 64,
+      line: 'Usage: pantheon review resolve',
+    },
+    {
+      name: 'a missing finding id',
+      args: ['review-1'],
+      answers: [],
+      code: 64,
+      line: 'Usage: pantheon review resolve',
+    },
+    {
+      name: 'a rejected resolution',
+      args: ['review-1', 'f', 'wrong'],
+      answers: [
+        { body: reviewOf({ findings: [finding({})] }) },
+        {
+          status: 409,
+          body: { code: 'invalid_state', message: 'Review finding cannot be resolved' },
+        },
+      ],
+      code: 2,
+      line: '"code": "invalid_state"',
+    },
+    {
+      name: 'a review it cannot read',
+      args: ['review-1', 'f', 'fixed'],
+      answers: [{ status: 404, body: { code: 'not_found', message: 'no review' } }],
+      code: 2,
+      line: 'not_found',
+    },
+  ])('exits $code on resolving with $name', async ({ args, answers, code, line }) => {
+    const result = await cli(repo, ['review', 'resolve', ...args], answers);
+    expect(result.stderr).toContain(line);
+    expect(result.code).toBe(code);
   });
 });
 

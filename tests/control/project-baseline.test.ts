@@ -365,7 +365,7 @@ it('keeps each workstream its modules inside a project folder, its known depende
   const f = await setup({ managedWorkspaces: true });
   try {
     const head = f.populate();
-    const baseline = await leadStart(f);
+    const baseline = await f.startBaseline();
     await f.submitFolder(baseline, f.folder());
     const valid = f.result(head);
     const exporter = {
@@ -396,17 +396,6 @@ it('keeps each workstream its modules inside a project folder, its known depende
       depends_on: ['importer'],
       risks: ['The JSON format is not settled'],
     });
-    const planned = await f.call<ProjectBaseline & { lead_session_id?: string }>(
-      'project.baseline.confirm',
-      { baseline_id: submitted.id, answers: [], plan_board: true },
-      submitted.revision,
-    );
-    const [first] = f.store
-      .list<SessionTurn>('session_turns')
-      .filter((turn) => turn.session_id === planned.lead_session_id && turn.origin === 'baseline');
-    expect(first!.input).toContain(
-      'Modules: src, src/index.ts Depends on: Importer Next: Parse JSON Risks: The JSON format is not settled',
-    );
   } finally {
     await f.close();
   }
@@ -438,52 +427,6 @@ it('lists the baseline session for the user, waits on its newest review, and lea
   } finally {
     await f.close();
   }
-});
-
-it('lists a board task session with the lead session it was opened from', async () => {
-  const f = await workbenchFixture();
-  const lead = await f.create('Plan the export feature');
-  f.call(
-    'board.plan.update',
-    {
-      project_id: f.project.id,
-      base_version: 0,
-      headline: 'Export ships this week',
-      lanes: [{ id: 'core', title: 'Core' }],
-      tasks: [
-        {
-          id: 'a',
-          title: 'Serve exports over HTTP',
-          goal: 'Exports download',
-          lane: 'core',
-          depends_on: [],
-          source: ['Plan the export feature'],
-          scope: ['src/export'],
-          acceptance: ['pnpm test'],
-        },
-      ],
-      milestones: [],
-      risks: [],
-      assumptions: [],
-    },
-    null,
-    {
-      id: `session:${lead.id}`,
-      role: 'lead',
-      project_id: f.project.id,
-      session_id: lead.id,
-      expires_at: f.store.now() + 60000,
-    },
-  );
-  const worker = await f.call<Session>('session.create', {
-    project_id: f.project.id,
-    runtime: f.adapter.name,
-    input: 'Build it',
-    task_id: `${lead.id}:a`,
-  });
-  const rows = f.list();
-  expect(rows.find((row) => row.id === worker.id)?.lead).toBe(lead.id);
-  expect(rows.find((row) => row.id === lead.id)).not.toHaveProperty('lead');
 });
 
 it('refuses a second baseline while one is running', async () => {
@@ -786,34 +729,6 @@ it('closes a baseline session left reconciling before it ever started and then s
   }
 });
 
-it('denies the baseline session a board update', async () => {
-  const f = await setup();
-  try {
-    f.populate();
-    const baseline = await f.startBaseline();
-    const session = f.store.must<Session>('sessions', baseline.session_id!);
-    expect(() =>
-      f.call(
-        'board.plan.update',
-        {
-          project_id: f.project.id,
-          base_version: 0,
-          headline: 'Draft',
-          lanes: [{ id: 'core', title: 'Core' }],
-          tasks: [],
-          milestones: [],
-          risks: [],
-          assumptions: [],
-        },
-        null,
-        f.principal(session),
-      ),
-    ).toThrow(expect.objectContaining({ code: 'permission_denied' }));
-  } finally {
-    await f.close();
-  }
-});
-
 it('stores a facts snapshot and hands the session a short seed without checklist or doc text', async () => {
   const f = await setup();
   try {
@@ -1095,69 +1010,6 @@ it('keeps sourced next tasks of known workstreams and drops dependencies on drop
       { ...json, depends_on: [] },
       { ...docs, depends_on: ['json'] },
     ]);
-  } finally {
-    await f.close();
-  }
-});
-
-it('hands the next tasks with scope, acceptance and dependencies to the planning lead', async () => {
-  const f = await setup({ managedWorkspaces: true });
-  try {
-    const head = f.populate();
-    const baseline = await leadStart(f);
-    await f.submitFolder(baseline, f.folder());
-    const submitted = await f.submit(baseline, { ...f.result(head), tasks: nextTasks() });
-    const planned = await f.call<ProjectBaseline & { lead_session_id?: string }>(
-      'project.baseline.confirm',
-      { baseline_id: submitted.id, answers: [], plan_board: true },
-      submitted.revision,
-    );
-    const [first] = f.store
-      .list<SessionTurn>('session_turns')
-      .filter((turn) => turn.session_id === planned.lead_session_id && turn.origin === 'baseline');
-    expect(first!.input).toContain('Next tasks:');
-    expect(first!.input).toContain(
-      '- Document the importer (workstream: Importer): Docs are open Scope: README.md, docs Acceptance: pnpm lint; pnpm build Depends on: Parse JSON rows',
-    );
-    expect(first!.input).toContain(
-      "Its title and the user's answer it follows from are the user's words here: quote the title as its source, and that answer too when one applies.",
-    );
-    expect(first!.input).not.toContain('Export CSV');
-  } finally {
-    await f.close();
-  }
-});
-
-it('hands the planning lead every workstream and contradiction of a long baseline', async () => {
-  const f = await setup({ managedWorkspaces: true });
-  try {
-    const head = f.populate();
-    const baseline = await leadStart(f);
-    await f.submitFolder(baseline, f.folder());
-    const long = (n: number, what: string) => `${what} ${n} `.padEnd(390, 'x');
-    const submitted = await f.submit(baseline, {
-      ...f.result(head),
-      contradictions: Array.from({ length: 16 }, (_, n) => ({
-        text: long(n, 'Contradiction'),
-        refs: ['file:README.md:3'],
-      })),
-      findings: Array.from({ length: 16 }, (_, n) => ({
-        text: long(n, 'Finding'),
-        refs: [`commit:${head}`],
-        severity: 'info',
-      })),
-    });
-    const planned = await f.call<ProjectBaseline & { lead_session_id?: string }>(
-      'project.baseline.confirm',
-      { baseline_id: submitted.id, answers: [], plan_board: true },
-      submitted.revision,
-    );
-    const [first] = f.store
-      .list<SessionTurn>('session_turns')
-      .filter((turn) => turn.session_id === planned.lead_session_id && turn.origin === 'baseline');
-    expect(first!.input.length).toBeGreaterThan(12000);
-    expect(first!.input).toContain(long(15, 'Contradiction'));
-    expect(first!.input).toContain('- Importer (running): CSV parsing is done');
   } finally {
     await f.close();
   }
@@ -1546,104 +1398,13 @@ it('hands the baseline result to no session when no lead started the baseline', 
     const plain = await confirm(await f.handIn(f.startBaseline(), head));
     expect(plain.state).toBe('confirmed');
     expect(plain).not.toHaveProperty('lead_session_id');
-
-    const planned = await confirm(await f.handIn(f.startBaseline(), head), { plan_board: true });
-    expect(planned.state).toBe('confirmed');
-    expect(planned).not.toHaveProperty('lead_session_id');
-    expect(planned).not.toHaveProperty('plan_session_id');
     expect(sessions()).toEqual([]);
   } finally {
     await f.close();
   }
 });
 
-/** Starts a baseline from a new workbench lead session, which the confirmed result goes back to. */
-async function leadStart(f: Awaited<ReturnType<typeof setup>>) {
-  const lead = await f.call<Session>('session.create', {
-    project_id: f.project.id,
-    runtime: 'claude',
-    input: 'Plan the importer',
-  });
-  return f.call<Promise<ProjectBaseline>>(
-    'project.baseline.start',
-    { project_id: f.project.id },
-    null,
-    {
-      ...f.principal(lead),
-      role: 'lead',
-    },
-  );
-}
-
-/** A workbench lead session and a baseline it started; confirming it with plan_board returns its receipt. */
-async function leadBaseline(f: Awaited<ReturnType<typeof setup>>) {
-  const head = f.populate();
-  const lead = await f.call<Session>('session.create', {
-    project_id: f.project.id,
-    runtime: 'claude',
-    input: 'Plan the importer',
-  });
-  const started = await f.call<ProjectBaseline>(
-    'project.baseline.start',
-    { project_id: f.project.id },
-    null,
-    { ...f.principal(lead), role: 'lead' },
-  );
-  const confirm = async () => {
-    const baseline = await f.handIn(started, head);
-    return f.call<Promise<ProjectBaseline & { lead_session_id?: string }>>(
-      'project.baseline.confirm',
-      { baseline_id: baseline.id, answers: [], plan_board: true },
-      baseline.revision,
-    );
-  };
-  return { lead, started, confirm };
-}
-
-it('hands the confirmed baseline a lead started back to that lead', async () => {
-  const f = await setup({ managedWorkspaces: true });
-  try {
-    const { lead, started, confirm } = await leadBaseline(f);
-    expect(started).toMatchObject({ state: 'running', lead_session_id: lead.id });
-    const sessions = f.store.list<Session>('sessions').length;
-
-    const planned = await confirm();
-    expect(planned.lead_session_id).toBe(lead.id);
-    expect(f.store.list<Session>('sessions')).toHaveLength(sessions);
-    const handed = f.store
-      .list<SessionTurn>('session_turns')
-      .filter((turn) => turn.session_id === lead.id && turn.origin === 'baseline');
-    expect(handed).toHaveLength(1);
-    expect(handed[0]!.input).toContain(
-      'This is the confirmed new baseline of the project that you started with rerun_baseline.',
-    );
-    expect(handed[0]!.input).toContain('Importer');
-  } finally {
-    await f.close();
-  }
-});
-
-it('hands a baseline whose lead has closed to no session', async () => {
-  const f = await setup({ managedWorkspaces: true });
-  try {
-    const { lead, confirm } = await leadBaseline(f);
-    const closed = f.store.must<Session>('sessions', lead.id);
-    f.store.update<Session>('sessions', { ...closed, state: 'closed' }, closed.revision);
-    const sessions = f.store.list<Session>('sessions').length;
-
-    const planned = await confirm();
-    expect(planned.state).toBe('confirmed');
-    expect(planned).not.toHaveProperty('plan_session_id');
-    expect(f.store.list<Session>('sessions')).toHaveLength(sessions);
-    expect(
-      f.store.list<SessionTurn>('session_turns').filter((turn) => turn.origin === 'baseline'),
-    ).toEqual([]);
-  } finally {
-    await f.close();
-  }
-});
-
-it('refuses a baseline started by a worker session', async () => {
+it('refuses a baseline started by a session', async () => {
   const f = await setup({ managedWorkspaces: true });
   try {
     f.populate();
@@ -1655,192 +1416,9 @@ it('refuses a baseline started by a worker session', async () => {
     await expect(async () =>
       f.call('project.baseline.start', { project_id: f.project.id }, null, {
         ...f.principal(session),
-        role: 'worker',
+        role: 'lead',
       }),
     ).rejects.toThrow(expect.objectContaining({ code: 'permission_denied' }));
-  } finally {
-    await f.close();
-  }
-});
-
-it('lets the lead opened on confirm quote the baseline message as a task source', async () => {
-  const f = await setup({ managedWorkspaces: true });
-  try {
-    const head = f.populate();
-    const baseline = await f.handIn(leadStart(f), head);
-    const planned = await f.call<ProjectBaseline & { lead_session_id?: string }>(
-      'project.baseline.confirm',
-      { baseline_id: baseline.id, answers: [], plan_board: true },
-      baseline.revision,
-    );
-    const lead = f.store.must<Session>('sessions', planned.lead_session_id!);
-    f.call(
-      'board.plan.update',
-      {
-        project_id: f.project.id,
-        base_version: 0,
-        headline: 'Importer ships',
-        lanes: [{ id: 'importer', title: 'Importer' }],
-        tasks: [
-          {
-            id: 'json',
-            title: 'Parse JSON',
-            goal: 'JSON files import',
-            lane: 'importer',
-            depends_on: [],
-            source: ['Goal: Ship the fixture library'],
-            scope: ['src'],
-            acceptance: ['pnpm build'],
-          },
-        ],
-        milestones: [],
-        risks: [],
-        assumptions: [],
-      },
-      null,
-      { ...f.principal(lead), role: 'lead' },
-    );
-    expect(f.store.must<BoardPlan>('board_plans', lead.id).tasks).toHaveLength(1);
-  } finally {
-    await f.close();
-  }
-});
-
-it('opens the lead with the brief and answers the user confirmed, not the proposed goal', async () => {
-  const f = await setup({ managedWorkspaces: true });
-  try {
-    const head = f.populate();
-    const baseline = await f.handIn(leadStart(f), head);
-    const planned = await f.call<ProjectBaseline & { lead_session_id?: string }>(
-      'project.baseline.confirm',
-      {
-        baseline_id: baseline.id,
-        brief: { goal: 'Publish the library to npm', goals: ['Build it'], non_goals: [] },
-        answers: [
-          {
-            question_id: 'publish',
-            question: 'Is publishing in scope?',
-            answer: 'Yes, to npm',
-            by: 'user',
-          },
-        ],
-        plan_board: true,
-      },
-      baseline.revision,
-    );
-    const lead = f.store.must<Session>('sessions', planned.lead_session_id!);
-    const [first] = f.store
-      .list<SessionTurn>('session_turns')
-      .filter((turn) => turn.session_id === lead.id && turn.origin === 'baseline');
-    expect(first!.input).toContain('Yes, to npm');
-    const plan = (source: string) =>
-      f.call(
-        'board.plan.update',
-        {
-          project_id: f.project.id,
-          base_version: 0,
-          headline: 'Importer ships',
-          lanes: [{ id: 'importer', title: 'Importer' }],
-          tasks: [
-            {
-              id: 'json',
-              title: 'Parse JSON',
-              goal: 'JSON files import',
-              lane: 'importer',
-              depends_on: [],
-              source: [source],
-              scope: ['src'],
-              acceptance: ['pnpm build'],
-            },
-          ],
-          milestones: [],
-          risks: [],
-          assumptions: [],
-        },
-        null,
-        { ...f.principal(lead), role: 'lead' },
-      );
-    expect(() => plan('Goal: Ship the fixture library')).toThrow(
-      expect.objectContaining({ code: 'invalid_input' }),
-    );
-    plan('Goal: Publish the library to npm');
-    expect(f.store.must<BoardPlan>('board_plans', lead.id).tasks).toHaveLength(1);
-  } finally {
-    await f.close();
-  }
-});
-
-it('keeps the user answers in the first plan message and cuts long workstreams instead', async () => {
-  const f = await setup({ managedWorkspaces: true });
-  try {
-    const head = f.populate();
-    const baseline = await leadStart(f);
-    await f.submitFolder(baseline, f.folder());
-    const proposed = f.result(head);
-    const importer = proposed.workstreams[0]!;
-    const submitted = await f.submit(baseline, {
-      ...proposed,
-      workstreams: Array.from({ length: 12 }, (_, index) => ({
-        ...importer,
-        id: `importer-${index}`,
-        title: `Importer part ${index}`,
-        reason: 'The importer still parses every row by hand. '.repeat(8),
-        next: Array.from({ length: 12 }, () =>
-          'Move the row parser into its own module and cover it with tests. '.repeat(5),
-        ),
-      })),
-    });
-    const planned = await f.call<ProjectBaseline & { lead_session_id?: string }>(
-      'project.baseline.confirm',
-      {
-        baseline_id: submitted.id,
-        answers: [
-          {
-            question_id: 'publish',
-            question: 'Is publishing in scope?',
-            answer: 'Only to the internal registry',
-            by: 'user',
-          },
-        ],
-        plan_board: true,
-      },
-      submitted.revision,
-    );
-    const [first] = f.store
-      .list<SessionTurn>('session_turns')
-      .filter((turn) => turn.session_id === planned.lead_session_id && turn.origin === 'baseline');
-    expect(first!.input).toContain('Importer part 0');
-    expect(first!.input).not.toContain('Importer part 11');
-    expect(first!.input).toContain('Only to the internal registry');
-  } finally {
-    await f.close();
-  }
-});
-
-it('opens the lead with the goals and non-goals of the confirmed brief', async () => {
-  const f = await setup({ managedWorkspaces: true });
-  try {
-    const head = f.populate();
-    const baseline = await f.handIn(leadStart(f), head);
-    const planned = await f.call<ProjectBaseline & { lead_session_id?: string }>(
-      'project.baseline.confirm',
-      {
-        baseline_id: baseline.id,
-        brief: {
-          goal: 'Ship the library',
-          goals: ['Import CSV files'],
-          non_goals: ['Never upload user files'],
-        },
-        answers: [],
-        plan_board: true,
-      },
-      baseline.revision,
-    );
-    const [first] = f.store
-      .list<SessionTurn>('session_turns')
-      .filter((turn) => turn.session_id === planned.lead_session_id && turn.origin === 'baseline');
-    expect(first!.input).toContain('Import CSV files');
-    expect(first!.input).toContain('Never upload user files');
   } finally {
     await f.close();
   }
@@ -2466,14 +2044,14 @@ it('takes the assessment only after the baseline session hands in the introducti
 });
 
 it.each([true, false])(
-  'hands every round, the findings and the contradictions to the planning lead (visuals pinned: %s)',
+  'writes the answered decisions and pins the baseline charts on confirm (visuals pinned: %s)',
   async (visuals) => {
     const f = await setup({ managedWorkspaces: true, userConfig: true });
     try {
       f.call('app.settings.set', { baseline_visuals: visuals });
       const head = f.populate();
       const valid = f.result(head);
-      const baseline = await leadStart(f);
+      const baseline = await f.startBaseline();
       const now = f.store.now();
       const chart = (id: string, session_id: string | null) => ({
         id,
@@ -2501,31 +2079,16 @@ it.each([true, false])(
         findings: [...valid.findings, risk],
         questions: [license],
       });
-      const planned = await f.call<ProjectBaseline & { lead_session_id?: string }>(
+      await f.call<ProjectBaseline>(
         'project.baseline.confirm',
         {
           baseline_id: revised.id,
           answers: [
             { question_id: 'license', question: 'Which license?', answer: 'MIT', by: 'user' },
           ],
-          plan_board: true,
         },
         revised.revision,
       );
-      const [first] = f.store
-        .list<SessionTurn>('session_turns')
-        .filter(
-          (turn) => turn.session_id === planned.lead_session_id && turn.origin === 'baseline',
-        );
-      for (const text of [
-        'risk findings become risks and contradictions become assumptions',
-        'Is publishing in scope? Answer: left to you; the recommended option is',
-        'Which license? Answer: MIT',
-        'Findings:\n- (info) Initial source is committed\n- (risk) No test guards the parser',
-        'Docs the code contradicts:\n- The README says nothing is shipped',
-      ])
-        expect(first!.input).toContain(text);
-      expect(first!.input.indexOf('Findings:')).toBeLessThan(first!.input.indexOf('Workstreams:'));
       const config = pantheonConfigSchema.parse(
         JSON.parse(readFileSync(path.join(f.projectRoot, '.pantheon', 'config.json'), 'utf8')),
       );

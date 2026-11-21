@@ -106,12 +106,18 @@ describe('pinned and archived groups', () => {
     expect(shown(false).map(([key]) => key)).toEqual(['pinned', 'working']);
   });
 
-  it('lists a pinned or archived task session in its state group instead of under its lead', () => {
+  it('lists a pinned or archived forked session in its state group instead of under its source', () => {
     const list = [
       session('lead', 'idle'),
-      session('pinned', 'running', { lead: 'lead', pinned_at: '2026-01-01T00:00:00.000Z' }),
-      session('archived', 'discarded', { lead: 'lead', archived_at: '2026-01-01T00:00:00.000Z' }),
-      session('nested', 'running', { lead: 'lead' }),
+      session('pinned', 'running', {
+        forked_from: { session_id: 'lead' },
+        pinned_at: '2026-01-01T00:00:00.000Z',
+      }),
+      session('archived', 'discarded', {
+        forked_from: { session_id: 'lead' },
+        archived_at: '2026-01-01T00:00:00.000Z',
+      }),
+      session('nested', 'running', { forked_from: { session_id: 'lead' } }),
     ];
     expect(
       sidebarGroups(list, { grouping: 'state', sort: 'activity', archived: true }).map((g) => [

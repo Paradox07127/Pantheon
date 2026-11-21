@@ -894,9 +894,6 @@
   font-size: var(--fs-sm);
   font-weight: 500;
 }
-.ss-who > svg.lucide.lead-crown {
-  margin-left: 0;
-}
 .ss-whot {
   font-variant-numeric: tabular-nums;
 }

@@ -1,36 +1,21 @@
 import { useRef, useState } from 'react';
 import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
-import { CircleDot, GitPullRequest, Inbox, MessageSquare } from 'lucide-react';
-import type { ExternalEvent, ExternalSourceStatus } from '@pantheon/domain';
+import type { ExternalSourceStatus } from '@pantheon/domain';
 import type { BoardSnapshot } from '@pantheon/protocol';
-import { EmptyState } from '../../components/EmptyState';
-import { useBoard } from '../../data/board';
-import {
-  approveExternal,
-  setExternalMode,
-  useExternalRead,
-  type ExternalMode,
-} from '../../data/external-requests';
+import { setExternalMode, useExternalRead, type ExternalMode } from '../../data/external-requests';
 import { ageText, useNow } from '../../data/needs-you';
 import { clearGlobal, setGlobal, settingOf, useProjectDefaults } from '../../data/project-defaults';
 import { t } from '../../i18n';
-import { useShell } from '../../store';
 import { Overrides } from './Overrides';
 import { failureText, Loading, Row, type Failure } from './ProjectSettingsScreen';
-import { useSettingsView } from './view';
 import './harness-page.css';
 import './external-page.css';
 
 type Project = BoardSnapshot['projects'][number];
-type Session = BoardSnapshot['sessions'][number];
 
 const MINUTE = 60_000;
 const SOURCE_NAME: Record<string, string> = { github: 'GitHub' };
-const KIND_ICON: Record<string, typeof CircleDot> = {
-  review_requested: GitPullRequest,
-  mention: MessageSquare,
-};
 
 /** The source's dot and what it says: when it last answered, or why it could not. */
 function sourceStatus(source: ExternalSourceStatus, now: number) {
@@ -110,23 +95,16 @@ export function GlobalExternal() {
   );
 }
 
-/** How the project takes requests from its sources, and the requests it received with what became of each. */
+/** How the project takes requests from its sources. */
 export function ExternalPage({ project }: { project: Project }) {
-  const board = useBoard((s) => s.board);
-  const sessions = (board?.sessions ?? []).filter((s) => s.project_id === project.id);
-  // A source is asked about once a minute; a request handed on or approved changes the triage session's revision.
+  // A source is asked about once a minute.
   const now = useNow(MINUTE);
-  const read = useExternalRead(
-    project,
-    project.revision +
-      Math.floor(now / MINUTE) +
-      sessions.reduce((sum, s) => sum + (s.resident?.kind === 'triage' ? s.revision : 0), 0),
-  );
+  const read = useExternalRead(project, project.revision + Math.floor(now / MINUTE));
   const [failure, setFailure] = useState<Failure | null>(null);
   const [sending, setSending] = useState(false);
   const inFlight = useRef(false);
 
-  const send = async (command: () => ReturnType<typeof approveExternal>) => {
+  const send = async (command: () => ReturnType<typeof setExternalMode>) => {
     if (inFlight.current) return;
     inFlight.current = true;
     setSending(true);
@@ -151,90 +129,11 @@ export function ExternalPage({ project }: { project: Project }) {
       </div>
     );
 
-  /** What became of the request: not taken, waiting, or the lead that has it. */
-  const outcome = (event: ExternalEvent, session: Session | undefined, first: boolean) => {
-    const plain = (s: string, text: string) => (
-      <span className="xr-out">
-        <span className="hp-dot" data-s={s} aria-hidden="true" />
-        <span className="xr-cut" title={text}>
-          {text}
-        </span>
-      </span>
-    );
-    if (event.state === 'dropped')
-      return plain(
-        'idle',
-        event.actor_trust === 'bot'
-          ? t({ id: 'settings.external.droppedBot', defaultMessage: 'Not taken: a bot' })
-          : t({
-              id: 'settings.external.droppedOther',
-              defaultMessage: 'Not taken: no write access',
-            }),
-      );
-    if (event.state === 'failed') return plain('bad', event.error!);
-    if (event.state === 'pending')
-      return plain(
-        'idle',
-        t({ id: 'settings.external.settling', defaultMessage: 'Waiting for follow-ups' }),
-      );
-    if (!session)
-      return plain(
-        'idle',
-        t({ id: 'settings.permissions.sessionGone', defaultMessage: 'Deleted session' }),
-      );
-    if (read.data!.held.includes(event.subject_key))
-      return (
-        <span className="xr-out">
-          <span className="hp-dot" data-s="wait" aria-hidden="true" />
-          <span className="xr-cut">
-            {t({ id: 'settings.external.held', defaultMessage: 'Waiting for your approval' })}
-          </span>
-          {first && (
-            <button
-              type="button"
-              className="btn sm"
-              disabled={sending}
-              aria-label={t(
-                { id: 'settings.external.approveNamed', defaultMessage: 'Approve: {title}' },
-                { title: event.title },
-              )}
-              onClick={() => void send(() => approveExternal(project, event.subject_key))}
-            >
-              {t({ id: 'settings.external.approve', defaultMessage: 'Approve' })}
-            </button>
-          )}
-        </span>
-      );
-    return (
-      <button
-        type="button"
-        className="xr-out"
-        onClick={() => {
-          useSettingsView.getState().close();
-          useShell.getState().openProjectSession(project.id, session.id);
-        }}
-      >
-        <span
-          className="hp-dot"
-          data-s={session.state === 'running' ? 'run' : 'ok'}
-          aria-hidden="true"
-        />
-        <span className="xr-cut">
-          {session.state === 'running'
-            ? t({ id: 'settings.external.working', defaultMessage: 'The lead is working' })
-            : t({ id: 'settings.external.handed', defaultMessage: 'Handed to the lead' })}
-        </span>
-      </button>
-    );
-  };
-
   const modeLabel = (name: string) =>
     t(
       { id: 'settings.external.mode', defaultMessage: 'How to take requests from {source}' },
       { source: name },
     );
-  // The approve button sits on the newest request of each held subject.
-  const shown = new Set<string>();
   return (
     <div className="xr-pg" data-setting-id="external.mode">
       <div className="ps-grp">
@@ -266,58 +165,6 @@ export function ExternalPage({ project }: { project: Project }) {
       {failure && (
         <div className="ps-err" role="alert">
           {failureText(failure)}
-        </div>
-      )}
-      {read.data.events.length === 0 ? (
-        <EmptyState
-          graphic={<Inbox aria-hidden="true" />}
-          title={t({
-            id: 'settings.external.empty',
-            defaultMessage: 'This project has received no request yet',
-          })}
-        />
-      ) : (
-        <div
-          className="ps-grp"
-          role="list"
-          aria-label={t({ id: 'settings.external.requests', defaultMessage: 'Requests received' })}
-        >
-          <div className="xr-row xr-hd">
-            <span className="cap">
-              {t({ id: 'settings.external.request', defaultMessage: 'Request' })}
-            </span>
-            <span className="cap">
-              {t({ id: 'settings.external.raisedBy', defaultMessage: 'Raised by' })}
-            </span>
-            <span className="cap">
-              {t({ id: 'settings.external.outcome', defaultMessage: 'Outcome' })}
-            </span>
-            <span />
-          </div>
-          {read.data.events.map((event) => {
-            const Icon = KIND_ICON[event.kind] ?? CircleDot;
-            const session = sessions.find((s) => s.id === event.session_id);
-            const first = event.session_id !== undefined && !shown.has(event.subject_key);
-            if (event.session_id !== undefined) shown.add(event.subject_key);
-            return (
-              <div
-                key={event.id}
-                className="xr-row"
-                role="listitem"
-                data-dropped={event.state === 'dropped' || undefined}
-              >
-                <span className="xr-title">
-                  <Icon className="ic-sm" aria-hidden="true" />
-                  <span className="xr-cut" title={event.title}>
-                    {event.title}
-                  </span>
-                </span>
-                <span className="xr-cut xr-who">{event.actor}</span>
-                {outcome(event, session, first)}
-                <span className="mu xr-at">{ageText(event.received_at, now)}</span>
-              </div>
-            );
-          })}
         </div>
       )}
     </div>

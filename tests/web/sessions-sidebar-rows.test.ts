@@ -200,14 +200,7 @@ describe('session preview', () => {
       value!.replace(/<[^>]*>/g, ''),
     ]);
 
-  it('names who opened or forked it and when', () => {
-    expect(facts(render(session('a', 'idle', { lead: 'l' }), { source: 'lead' }))).toContainEqual([
-      SOURCE,
-      t(
-        { id: 'sessions.sidebar.preview.openedBy', defaultMessage: '' },
-        { source: 'lead', time: '10:02' },
-      ),
-    ]);
+  it('names what it was forked from and when', () => {
     const forked = session('b', 'idle', { forked_from: { session_id: 's' } });
     expect(facts(render(forked, { source: 'Source' }))).toContainEqual([
       SOURCE,
@@ -216,9 +209,12 @@ describe('session preview', () => {
         { source: 'Source', time: '10:02' },
       ),
     ]);
-    const before = session('c', 'idle', { lead: 'l', created_at: local(10, 2, 11) });
-    const [, value] = facts(render(before, { source: 'lead' })).find(([l]) => l === SOURCE)!;
-    expect(value).toMatch(/^由 lead 派出，.*11.*10:02$/);
+    const before = session('c', 'idle', {
+      forked_from: { session_id: 's' },
+      created_at: local(10, 2, 11),
+    });
+    const [, value] = facts(render(before, { source: 'Source' })).find(([l]) => l === SOURCE)!;
+    expect(value).toMatch(/^分叉自 Source，.*11.*10:02$/);
   });
 
   it('draws changes as five cells of added and deleted lines', () => {

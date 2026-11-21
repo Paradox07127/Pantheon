@@ -11,7 +11,7 @@ import {
 } from 'node:fs';
 import path from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
-import type { Principal, Project, Session, Workspace } from '@pantheon/domain';
+import type { Principal, Project, Session, SessionSpec, Workspace } from '@pantheon/domain';
 import { sessionPrincipal, type ControlContext } from '../../packages/control/dist/context.js';
 import { inPlaceSessionSpec } from '../../packages/control/dist/in-place-session.js';
 import {
@@ -107,7 +107,7 @@ it('resumes the adopted native session in the original folder on its first turn'
   expect(spec.env ?? {}).not.toHaveProperty('CLAUDE_CONFIG_DIR');
 });
 
-it('builds a spec for the user folder that holds a planner credential, never a lead one', async () => {
+it('builds a spec for the user folder that holds no session credential', async () => {
   const f = await workbenchFixture({ adoptable: true });
   Object.assign(f.adapter, { generatesTitles: true });
   const roles: string[] = [];
@@ -126,11 +126,9 @@ it('builds a spec for the user folder that holds a planner credential, never a l
   expect(spec).not.toHaveProperty('auto_title');
   expect(spec.native_state_dir).toBeUndefined();
   expect(spec.native_title).toBeUndefined();
-  expect(spec.control_instructions).toContain('own folder');
-  // The fixture folder's own path may contain "worktrees".
-  expect(spec.control_instructions).not.toMatch(/\bworktree\b/);
+  expect(spec.control_instructions ?? '').toBe('');
   expect(spec.sandbox?.writable_roots).toContain(folder);
-  expect(roles).toEqual(['planner']);
+  expect(roles).toEqual([]);
   const principal = (role: Principal['role']): Principal => ({
     id: `session:${session.id}`,
     role,
@@ -138,8 +136,68 @@ it('builds a spec for the user folder that holds a planner credential, never a l
     project_id: f.project.id,
     expires_at: f.store.now() + 60_000,
   });
-  expect(sessionPrincipal(ctx, principal('planner')).id).toBe(session.id);
-  expect(refusal(() => sessionPrincipal(ctx, principal('lead'))).code).toBe('permission_denied');
+  expect(refusal(() => sessionPrincipal(ctx, principal('planner'))).code).toBe('permission_denied');
+});
+
+it('runs a session adopted from the terminal as bare as a worktree session the user opened', async () => {
+  vi.stubEnv('PLAIN_DAEMON_VARIABLE', 'kept');
+  const f = await workbenchFixture({ adoptable: true });
+  Object.assign(f.adapter, { questionTool: 'ask_human' });
+  Object.assign(contextOf(f), {
+    issueSessionCredential: () => ({
+      token_file: path.join(f.root, 'token'),
+      daemon_url: 'http://127.0.0.1:1',
+    }),
+  });
+  const draft = f.call<{ id: string; revision: number }>('memory.propose', {
+    project_id: f.project.id,
+    key: 'language',
+    kind: 'decision',
+    text: 'Use precise terminology',
+  });
+  f.call('memory.commit', { memory_id: draft.id }, draft.revision);
+  const send = vi.spyOn(f.adapter, 'send');
+  const adopted = await f.adopt();
+  f.call('session.send', { session_id: adopted.id, input: 'Continue' }, adopted.revision);
+  const opened = await f.call<Promise<Session>>('session.create', {
+    project_id: f.project.id,
+    runtime: f.adapter.name,
+    input: 'Look around',
+    workspace: 'worktree',
+  });
+  await eventually(
+    () =>
+      [adopted, opened].every(
+        (session) =>
+          f.turns(session.id).length > 0 &&
+          f.turns(session.id).every((turn) => !['queued', 'running'].includes(turn.state)),
+      ),
+    () => f.control.tick(),
+  );
+  const facts = (session: Session) => {
+    const spec = [...f.start.mock.calls, ...f.resume.mock.calls]
+      .map(([spec]) => spec as SessionSpec)
+      .find((spec) => spec.platform_session_id === session.id)!;
+    return {
+      pantheon_mcp: spec.pantheon_mcp,
+      control_instructions: spec.control_instructions ?? '',
+      env_allowlist: spec.env_allowlist,
+      user_session: spec.user_session,
+      memory: send.mock.calls.some(
+        ([handle, turn]) =>
+          handle.platform_session_id === session.id &&
+          turn.input.includes('[Pantheon current project memory]'),
+      ),
+    };
+  };
+  expect(facts(opened)).toMatchObject({
+    pantheon_mcp: undefined,
+    control_instructions: '',
+    env_allowlist: expect.arrayContaining(['PLAIN_DAEMON_VARIABLE']),
+    user_session: true,
+    memory: false,
+  });
+  expect(facts(adopted)).toEqual(facts(opened));
 });
 
 it("runs a session the user opened in the project folder on the user's extensions and daemon environment", async () => {

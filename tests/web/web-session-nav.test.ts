@@ -19,7 +19,7 @@ vi.mock('@/store', () => ({
     getState: () => mock.shell,
   }),
 }));
-import { BaselineReview, SessionsScreen } from '@/screens/sessions/SessionsScreen';
+import { SessionsScreen } from '@/screens/sessions/SessionsScreen';
 
 const listed = (id: string, extra: Partial<WorkbenchSession> = {}): WorkbenchSession => ({
   id,
@@ -128,45 +128,6 @@ it('stays on a session it just created before the list has it', async () => {
   h.render();
   await h.flush();
   expect(named(h.value, 'Thread').props.sessionId).toBe('session-new');
-  expect(mock.shell.followFirstSession).not.toHaveBeenCalled();
-});
-
-it('stays on the lead a confirmed baseline opens before the list has it', async () => {
-  mock.shell = {
-    ...mock.shell,
-    sessionId: 'baseline-session',
-    openSession(id: string) {
-      mock.shell = { ...mock.shell, sessionId: id };
-    },
-  };
-  mock.board = {
-    ...mock.board,
-    board: { ...mock.board.board, cursor: 1, sessions: [{ id: 'baseline-session' }] },
-  };
-  (window as any).pantheon.query = vi.fn(async (method: string) => ({
-    ok: true,
-    value:
-      method === 'project.baseline.read'
-        ? { id: 'baseline-a', state: 'submitted', project_id: 'project-a', dropped: 0 }
-        : [],
-  }));
-  const list = listOf([listed('baseline-session', { workspace_id: null })]);
-  const h = mount(() => SessionsScreen({ projectId: 'project-a', needs, list }));
-  const review = mount(() =>
-    BaselineReview({
-      session: {
-        id: 'baseline-session',
-        project_id: 'project-a',
-        baseline: { baseline_id: 'baseline-a' },
-      } as any,
-    }),
-  );
-  await h.flush();
-  await review.flush();
-  (review.value as any).props.onConfirmed({ lead_session_id: 'lead-new' });
-  h.render();
-  await h.flush();
-  expect(named(h.value, 'Thread').props.sessionId).toBe('lead-new');
   expect(mock.shell.followFirstSession).not.toHaveBeenCalled();
 });
 

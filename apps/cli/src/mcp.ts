@@ -12,7 +12,6 @@ import {
   command,
   commandSchema,
   inputSchemas,
-  boardPlanInputSchema,
   visualDrawInputSchema,
   prettifyError,
   sessionTools,
@@ -72,48 +71,8 @@ const descriptions: Record<ToolCommand, string> = {
     'Record one problem in the artifact under review, including code it deletes. location: file and line, or the task id for a plan. quote: text copied exactly from your first message. evidence: what you saw. impact: what goes wrong, for whom. blocking true only for what must be fixed before merge, and then reproduction is required. Call once per problem; when you find none, do not call it. Refused "quote_not_in_artifact": copy the quote again from your first message, once. Rejected with artifact_unavailable: retrying will not help; say what you could not record.',
   'review.verdict':
     'End your review with one call: verdict pass when nothing you found must be fixed before merge, otherwise fail, and a summary of what you checked and found. Call it after your review_finding calls. A later call replaces your verdict. Refused invalid_state once the review has ended.',
-  'review.request':
-    "Ask for an independent read-only review of a committed task session in your plan: session_id from project_read, runtimes naming the reviewers (a runtime other than the writer's when one is available). Use it when a change is risky and its path has no review step. Findings come back as a board update; send concrete ones to the session with message_task. A review is evidence for your decision: it never accepts or merges a task, and a failed reviewer is not a clean review. On a task whose review step failed without a fail verdict, it runs that step's review again with the step's own reviewer, not the runtimes you name, and returns the reopened run. On a task whose review step a reviewer failed by verdict, it sends the verdict and findings to the task session, runs the review again after that turn, and returns handed_back. Refused when the round limit is reached or the same reviewer is already reviewing that session.",
   'project.read':
     "Read the project: details, brief, and every lead's board plan with each task's state and sessions. A lead also gets a lead section: workflow policy (paths), devices, and recent retrospectives and runtime reviews. Call it before you plan or decide, and after a board update when you need the current state; a task session calls it to see the tasks around its own. It returns plan_version, which update_board needs as base_version. To rewrite the plan from the repository, use sync_board instead.",
-  'board.plan.update':
-    'Write your whole board plan: headline, lanes, tasks with dependencies, milestones, risks and assumptions. Send the full plan every time; a task left out is removed. Use it for a new plan or any change to it. A task done when merged needs scope and acceptance; one with done_when report may have neither. Returns the plan with its new plan_version. Refused "The plan is at version N": read the plan and resend with base_version N. Refused for a source quote no user message contains: copy the user\'s words exactly.',
-  'task.start':
-    "Ask Pantheon to start 1-16 tasks of your plan by id; pass every task you want started at once. Pantheon opens a session for each when its upstream tasks are done, its scope does not overlap a running task and a slot is free. Returns the ids requested; results come later as board updates, so end your turn. A resident's direct tasks are dispatched like any other. A non-resident lead claims a direct task by passing it alone and does it itself; when the receipt says the turn stays read-only, end the turn and the next one can write. Refused: no plan yet; a task that already has a session (stop it first); dispatch paused (tell the user); an external request not yet approved.",
-  'task.message':
-    'Send a message to the open session of one task of your plan, by task id and, for a parallel task, the part: answer its requirement report, tell it how to go on after an interrupt, or ask it to fix something. The session reads it with the prefix [Lead]; it sees nothing of your conversation, so make the message self-contained. An idle session starts a turn at once; a running one reads it after its turn. Under 2000 characters. Refused when the task has no open session: use start_task.',
-  'task.accept':
-    'Accept a done_when report task after its session sent a done report: evidence says what you checked that shows the task is done. Pantheon records your evidence and does not check it, so check the report\'s decisive claim first. The task becomes done and its milestone can be accepted. Refused for a task done when merged (it completes by merging), and for a task with no done report since its contract changed. Refused "Project memory changed": call memory_context, recheck, and call again.',
-  'lead.note.read':
-    'Read one note of your board updates in full, by the note id the update names. Use it when an update was cut short or listed by id only, before you act on that note. Refused for an id that is not one of your notes.',
-  'lead.ask':
-    "Ask the user one question on a card in needs-you and return at once. Use it only when the answer changes a task's scope, what counts as done, or an irreversible step; decide smaller points yourself. Give question, 2-4 options, recommended (one of the options), assumption (how you proceed meanwhile) and blocks (the task ids that must wait; [] when none). Set reversible true only when a different answer later costs at most redoing tasks not started: if the user turned on default answers, your recommendation then applies after their deadline and you get it as an answer. Keep working on the tasks it does not block; the answer arrives later as a board update. Refused without a plan: write one with update_board first, even if it holds only what you know.",
-  'lead.worker_question.answer':
-    "Answer a task session's question only when the plan, project memory or the user's quoted words settle it; cite them. Otherwise leave it for the user, who sees the question too. Give question_id from the worker_question board update, answers keyed by each question's text word for word, and at least one citation: user_words (words copied exactly from the asking task's source), assumption (a plan assumption's text), memory (a current memory id) or earlier_answer (the id of an answered question of your plan). The answer goes back to the session at once. Refused once the question is answered, for a citation that does not resolve, and when the project's charter leaves these questions to the user.",
-  'agent.follow_up':
-    'Wake yourself once, later, with note: give exactly one of after_minutes (1-10080) or at (Unix epoch milliseconds). Set one for a time you promised the user, a deadline, or an outcome no board update will bring, such as commits waiting for the user to merge; board updates already wake you for task results. Each call adds a timer, and timers survive a new session of you. The note is all you get when you wake, so write what to check and why. Refused with both or neither of after_minutes and at.',
-  'agent.tell_user':
-    'Leave the user a message in your conversation and notify them. On a turn Pantheon woke you for, this and ask_user are the only ways to reach the user. Use it for a decision they must make, a request that finished, or a new failure; not for progress or for a state you already told them. urgency high only when they must act soon. Write the message so it reads on its own: what happened, and what you suggest. From an agent other than the main agent it goes to the main agent, which decides what the user hears, unless urgency is high.',
-  'agent.routine.set':
-    'Add a routine, or replace the one with this id: prompt runs every_minutes (at least 60) or daily at a local HH:MM, exactly one of them; active_hours moves a run outside them to their next from. Write the prompt so it stands alone: what to check, and when the run should end with one short line. At most 10 routines; enabled false keeps one without running it. Refused with both or neither of every_minutes and at.',
-  'agent.routine.cancel':
-    'Remove one of your routines, by routine_id, and its next run. Use it when the user no longer wants it or its purpose ended; to pause it instead, call routine_set with enabled false.',
-  'task.stop':
-    'Stop one task of your plan by id, with the reason in under 400 characters: Pantheon drops its start request and discards its open sessions and their unmerged work. Use it when a task went wrong or is no longer wanted; to correct or pause a running session, interrupt_task and message_task keep its work. The receipt lists each session as discarded or stopping. The task is then todo and start_task can start it again. For a non-resident lead, stopping your own direct task gives it up and leaves your worktree as it is. Refused when the task has no start request or open session.',
-  'session.merge':
-    'Merge the session of one task of your plan, by task id, after its merge stopped on files outside the task\'s scope that the task needs: give allow_out_of_scope true and the reason in under 400 characters. Do not use it for other merge stops; the session fixes those. Refused when one of the files lies in the scope of another unfinished task (named in the error; let that task land first) or changes agent configuration (ask the user). Refused "Project memory changed": call memory_context, recheck, and call again.',
-  'task.interrupt':
-    "Stop the running turn of one task's session, by task id and, for a parallel task, the part, without discarding the session or its work. Use it when the turn goes off course, then send directions with message_task to the same part; or after you change the task's runtime, model or effort, so the change applies now rather than when the session is next idle. Refused when the task has no running turn.",
-  'task.background.stop':
-    "Stop one background command or agent of a task's session, by task id and the background_id a board update named, for example a dev server or watcher left running after the task no longer needs it. The session itself keeps running. Refused when the task has no background job with that id.",
-  'board.sync':
-    "Use when the user asks to sync, refresh or update the board (for example 更新看板, 同步看板, 看板不对了) or says the board no longer matches the project. Returns your plan with each task's state and sessions, the recent commits of each git folder, and the rules for rewriting the plan; it changes nothing. Then send the changes the user asked for with update_board, and implement nothing. To only look at the board, use project_read.",
-  'project.baseline.start':
-    'Use only when the user asks to assess the project again (for example 重新摸底, 再摸一遍底, rerun the baseline). Starts a separate read-only session that assesses the project; it costs a model run, so the user approves every call. The user confirms the result on the board, and it comes back to you as a message to rewrite your plan. Refused while a baseline is running. To read the current assessment, use project_read.',
-  'task.status_line':
-    'Set one short line, under 80 characters, of what you are doing now, for example "Running the migration tests"; the user sees it on the board with its time. Set it when you start a new step of your turn. At most once every 15 s; the same text again changes nothing. Refused invalid_state when no turn of yours is running.',
-  'task.report':
-    "Send your lead a note under 400 characters, or 4000 for the done report of a report task. kind requirement: the task conflicts with the user's words, needs paths outside its scope, or has an acceptance command that cannot pass; Pantheon holds the merge, so end your turn after it. kind blocked with a reason (missing_context, missing_permission, environment_problem, conflicting_requirements): you cannot go on; your task waits. kind risk, task or dependency: information; keep working. kind done with status done, or done_with_concerns for a concern that can safely ship. Requirement and blocked reports, and done reports of report tasks, reach the lead at once. A non-resident lead uses kind done only for its own direct task, once its commits are in; a resident lead cannot report. Refused: blocked without a reason.",
   'project.intro.submit':
     'Write the project introduction. summary: 1–280 characters; sources: 1–16 file:<relative path>, file:<relative path>:<line> or commit:<7–40 hex digits> references, with at least one resolving in a project root. features: at most 12 { title: 1–80 characters, text: 1–400 characters, sources: same rules }. modules: at most 40 { path: unique root-relative directory inside a project root, role: 1–400 characters, entry?: a file inside that directory, relative to the same root }; if several roots match path, the first is used. architecture?: graph { nodes: [{ id, label, group? }], edges: [{ from, to, label? }], direction?: "LR" | "TB" }, 1–200 nodes with unique ids, at most 400 edges naming existing nodes; one node for each module, grouped by layer, with labelled edges. body?: Markdown, at most 20000 characters. Pantheon measures all numbers: do not send lines, commits_30d, languages, weeks or heads. The project is bound to your session. Returns { written: true }; correct named fields if refused.',
   'project.baseline.submit_folder':
@@ -128,18 +87,6 @@ const descriptions: Record<ToolCommand, string> = {
     "Read the page open in this session's browser panel: url, title and visible text, at most 50000 characters, noting when the text was cut. Open a page with browser_open first, or read the one the user opened. Fails when no page is open.",
   'browser.screenshot':
     "Take a PNG screenshot of the page open in this session's browser panel, with its url and title, to check layout or show the user what you see. Open a page with browser_open first, or capture the one the user opened. Fails when no page is open.",
-  'agent.sessions':
-    "List this project's sessions: id, title, type (resident, worker, direct or review), state, runtime, task, changed files and lines, and last activity. Optional state keeps only sessions in that state. Use it to find a session before session_read, or to see what is running before you report on progress.",
-  'agent.session_read':
-    'Read one session of this project: its state and the input and final output of its last turns (default 5, at most 20). Each text is cut to 1500 characters and the whole answer to 12000, dropping the oldest turns first; cut_turns says how many were dropped. Read a session before you tell the user about it, since its state may have moved on.',
-  'agent.github_items':
-    "List the open pull requests (kind pr) or issues (kind issue) of the project's GitHub repository, newest update first, at most 30: number, title, url, state, author and last update, and for pull requests checks, review decision and branch. Issue bodies are not included. Use it to check whether an item is open before you plan work on it; an item missing from the list is not proof it was fixed.",
-  'agent.github_pr':
-    'Read one pull request of the GitHub repository by number, with its checks and review threads (the first comment of each). Read it before you plan work on it or tell the user what blocks it.',
-  'agent.guide':
-    "Read one Pantheon guide by name: the steps for a task that comes up rarely, such as writing a handoff note. Your instructions list the guides with when to read each; read the matching guide before you start that task, not after it. A guide holds procedure, not project facts or the user's decisions. Returns the guide's text. An unknown name returns the list of guides instead; pick a name from it and call again.",
-  'agent.agents':
-    "List this project's agents: id, name, template, role, tool groups, routines, and archived_at for an archived one.",
   'conductor.review':
     'Ask one or two other runtimes to review your committed changes (or those of a session you spawned). The result comes back to you as a message when the review ends.',
   'conductor.ready':
@@ -225,33 +172,11 @@ const boundRevision = (type: CommandType) =>
   type.startsWith('memory.') ||
   baselineBound(type) ||
   storyBound(type) ||
-  type === 'board.plan.update' ||
-  type === 'task.start' ||
-  type === 'task.message' ||
-  type === 'task.accept' ||
-  type === 'task.stop' ||
-  type === 'task.interrupt' ||
-  type === 'task.background.stop' ||
-  type === 'session.merge' ||
-  type === 'task.report' ||
-  type === 'task.status_line' ||
   type === 'visual.draw' ||
   type === 'project.intro.submit' ||
-  type === 'review.request' ||
   type === 'trace.evidence' ||
   type === 'trace.report' ||
-  type === 'lead.note.read' ||
-  type === 'lead.ask' ||
-  type === 'lead.worker_question.answer' ||
-  type === 'agent.follow_up' ||
-  type === 'agent.tell_user' ||
-  type === 'agent.routine.set' ||
-  type === 'agent.routine.cancel' ||
-  type === 'agent.agents' ||
-  type === 'agent.guide' ||
   type === 'review.verdict' ||
-  type === 'board.sync' ||
-  type === 'project.baseline.start' ||
   type.startsWith('conductor.') ||
   browserTool(type);
 
@@ -377,11 +302,9 @@ export async function createMcpServer(daemonUrl: string, token: string): Promise
             ? inputSchemas[type].omit({ baseline_id: true })
             : type === 'change_story.submit'
               ? inputSchemas[type].omit({ story_id: true })
-              : type === 'board.plan.update'
-                ? boardPlanInputSchema
-                : type === 'visual.draw'
-                  ? visualDrawInputSchema
-                  : inputSchemas[type];
+              : type === 'visual.draw'
+                ? visualDrawInputSchema
+                : inputSchemas[type];
       boundInputs[name] = boundFields.filter(
         (field) => 'shape' in unbound && field in unbound.shape,
       );
@@ -389,7 +312,9 @@ export async function createMcpServer(daemonUrl: string, token: string): Promise
         return [
           name,
           inputSchemas[type].safeExtend({
-            expected_revision: commandSchema.shape.expected_revision.default(null),
+            expected_revision: commandSchema.shape.expected_revision
+              .default(null)
+              .describe('Leave it out; this tool changes nothing that has a revision.'),
           }),
         ];
       // Shapes differ per command, so their omit signatures do not unify; the mask lists only own keys.

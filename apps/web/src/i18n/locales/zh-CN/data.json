@@ -156,7 +156,6 @@
   "data.transcript.compose.reconcilingSteer": "会话在对账，确认停下前不能插话",
   "data.transcript.compose.closedSend": "会话已关闭，不能再发送",
   "data.transcript.compose.closedSteer": "会话已关闭，不能再插话",
-  "data.workflowPolicy.param.handbackLimit": "交回次数上限",
   "data.workflowPolicy.param.projectBudget": "项目预算（输入 token）",
   "data.toolCalls.title.commandExecution": "命令",
   "data.toolCalls.title.localShellCall": "命令",

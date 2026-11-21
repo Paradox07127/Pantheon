@@ -1,7 +1,7 @@
 import { readFileSync, realpathSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
-import type { BoardPlan, ChangeStory, Principal, Project, Session } from '@pantheon/domain';
+import type { ChangeStory, Principal, Project, Session } from '@pantheon/domain';
 import { awaitWorkspaceReady, countingGit, eventually, gitRunsOf, user } from '../helpers.js';
 import { forgetWorktreeReads } from '../../packages/control/dist/workbench-session.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
@@ -414,93 +414,6 @@ it('reads the source HEAD once before it gates a landing and once before it merg
       (run) => run.split('|')[1] === 'file' && run.endsWith('rev-parse --verify HEAD^{commit}'),
     );
   expect(sourceHeads).toHaveLength(2);
-});
-
-it('checks the verification files of a task landing with one diff and one object lookup', async () => {
-  const f = await workbenchFixture();
-  writeFiles(f.source, {
-    'tests/a.test.ts': "it('a', () => {\n  expect(a).toBe(1);\n});\n",
-    'tests/b.test.ts': "it('b', () => {});\n",
-    'tests/c.test.ts': "it('c', () => {});\n",
-    'tests/d e.test.ts': "it('d', () => {\n  expect(d).toBe(1);\n});\n",
-    'tests/ü.test.ts': "it('u', () => {});\n",
-    'checks/one.mjs': 'process.exit(1);\n',
-  });
-  const lead = await f.create('Maintain the checks');
-  await awaitWorkspaceReady(f.control, lead.workspace_id!);
-  await eventually(
-    () => f.turns(lead.id).every((turn) => turn.state === 'completed'),
-    () => f.control.tick(),
-  );
-  f.store.insert<BoardPlan>('board_plans', {
-    id: lead.id,
-    revision: 1,
-    project_id: f.project.id,
-    headline: 'Maintain the checks',
-    lanes: [{ id: 'core', title: 'Core' }],
-    tasks: [
-      {
-        id: 'checks',
-        title: 'Checks',
-        goal: 'Maintain the checks',
-        lane: 'core',
-        depends_on: [],
-        source: [],
-        scope: ['tests', 'checks'],
-        acceptance: ['node checks/one.mjs checks/three.mjs'],
-      },
-    ],
-    risks: [],
-    assumptions: [],
-    plan_version: 0,
-    pending_edits: [],
-    inbox: [],
-    notified: {},
-    updated_at: f.store.now(),
-  });
-  const worker = await f.create();
-  const workspace = await awaitWorkspaceReady(f.control, worker.workspace_id!);
-  await eventually(
-    () => f.turns(worker.id).every((turn) => turn.state === 'completed'),
-    () => f.control.tick(),
-  );
-  const idle = f.store.must<Session>('sessions', worker.id);
-  f.store.update(
-    'sessions',
-    { ...idle, task: { lead_session_id: lead.id, id: 'checks' } },
-    idle.revision,
-  );
-  writeFiles(workspace.path, {
-    'tests/a.test.ts': "it('a', () => {});\n",
-    'tests/b.test.ts': "it('b', () => {});\nit('b2', () => {});\n",
-    'tests/c.test.ts': null,
-    'tests/d e.test.ts': "it('d', () => {});\n",
-    'tests/ü.test.ts': "it('u', () => {});\nit('u2', () => {});\n",
-    'checks/one.mjs': 'process.exit(0);\n',
-    'checks/three.mjs': 'process.exit(0);\n',
-  });
-  const runs = counting();
-  f.call(
-    'session.merge',
-    { session_id: worker.id, allow_out_of_scope: true },
-    f.store.must<Session>('sessions', worker.id).revision,
-  );
-  await eventually(
-    () =>
-      f.store.must<Session>('sessions', worker.id).merge?.state === 'blocked' ||
-      f.store.must<Session>('sessions', worker.id).outcome === 'merged',
-    () => f.control.tick(),
-    10000,
-  );
-  expect(f.store.must<Session>('sessions', worker.id).merge).toMatchObject({
-    state: 'blocked',
-    reason: 'verification_changed',
-    // b and ü only gain a case, so they are not changed verification files.
-    conflicts: ['checks/one.mjs', 'tests/a.test.ts', 'tests/c.test.ts', 'tests/d e.test.ts'],
-  });
-  const landed = runs.runs();
-  expect(gitRunsOf(landed, 'diff').filter((args) => args.includes('--unified=0'))).toHaveLength(1);
-  expect(gitRunsOf(landed, 'cat-file')).toHaveLength(1);
 });
 
 /** The directory and arguments of each `git status --porcelain=v2` run. */

@@ -122,7 +122,7 @@ it('requires the user and a current revision to cancel an operation', async () =
   await f.call('session.merge', { session_id: session.id }, current(f, session.id).revision);
   const worker: Principal = {
     ...user,
-    role: 'worker',
+    role: 'writer',
     project_id: f.project.id,
     session_id: session.id,
   };

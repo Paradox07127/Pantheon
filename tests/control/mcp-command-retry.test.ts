@@ -37,9 +37,9 @@ function fakeDaemon() {
         return Response.json({ error: daemon.principalRefusal }, { status: 403 });
       return Response.json({
         principal: {
-          id: 'session:worker-session',
-          role: 'worker',
-          session_id: 'worker-session',
+          id: 'session:setup-session',
+          role: 'planner',
+          session_id: 'setup-session',
           project_id: 'project-one',
           expires_at: new Date(Date.now() + 60_000).toISOString(),
         },
@@ -51,7 +51,7 @@ function fakeDaemon() {
       return Response.json({ error: daemon.refusal, message: 'Refused here' }, { status: 400 });
     if (!receipts.has(body.idempotency_key)) {
       executed.push(body);
-      receipts.set(body.idempotency_key, { id: `report-${executed.length}` });
+      receipts.set(body.idempotency_key, { id: `memory-${executed.length}` });
     }
     if (daemon.lostReplies > 0) {
       daemon.lostReplies--;
@@ -88,7 +88,11 @@ async function connect() {
   return client;
 }
 
-const report = { kind: 'risk', text: 'The export endpoint has no rate limit' };
+const proposal = {
+  key: 'api/rate-limits',
+  kind: 'note',
+  text: 'The export endpoint has no rate limit',
+};
 const text = (result: Awaited<ReturnType<Client['callTool']>>) =>
   (result.content as { text: string }[])[0]!.text;
 
@@ -102,9 +106,9 @@ it.each([
   const daemon = fakeDaemon();
   daemon[fault] = 1;
   const client = await connect();
-  const result = await client.callTool({ name: 'report', arguments: report });
+  const result = await client.callTool({ name: 'memory_propose', arguments: proposal });
   expect(result.isError, text(result)).toBeFalsy();
-  expect(JSON.parse(text(result))).toEqual({ receipt: { id: 'report-1' } });
+  expect(JSON.parse(text(result))).toEqual({ receipt: { id: 'memory-1' } });
   expect(daemon.executed).toHaveLength(1);
   expect(daemon.sent).toHaveLength(2);
   expect(daemon.sent[1]).toEqual(daemon.sent[0]);
@@ -114,8 +118,8 @@ it('gives up after three resends when the daemon stays unreachable', async () =>
   const daemon = fakeDaemon();
   daemon.lostReplies = 4;
   const client = await connect();
-  const result = await client.callTool({ name: 'report', arguments: report });
-  expect(text(result)).toBe('Refused report: daemon_unavailable');
+  const result = await client.callTool({ name: 'memory_propose', arguments: proposal });
+  expect(text(result)).toBe('Refused memory_propose: daemon_unavailable');
   expect(daemon.sent).toHaveLength(4);
   expect(new Set(daemon.sent.map((sent) => sent.idempotency_key)).size).toBe(1);
   expect(daemon.executed).toHaveLength(1);
@@ -125,15 +129,19 @@ it('does not send a command again when the daemon refuses it', async () => {
   const daemon = fakeDaemon();
   daemon.refusal = 'conflict';
   const client = await connect();
-  const result = await client.callTool({ name: 'report', arguments: report });
-  expect(text(result)).toBe('Refused report: conflict — Refused here');
+  const result = await client.callTool({ name: 'memory_propose', arguments: proposal });
+  expect(text(result)).toBe('Refused memory_propose: conflict — Refused here');
   expect(daemon.sent).toHaveLength(1);
 });
 
 it("keys a command by the runtime's tool call id, also across a restarted MCP server", async () => {
   const daemon = fakeDaemon();
   const call = (client: Client, meta?: Record<string, string>) =>
-    client.callTool({ name: 'report', arguments: report, ...(meta ? { _meta: meta } : {}) });
+    client.callTool({
+      name: 'memory_propose',
+      arguments: proposal,
+      ...(meta ? { _meta: meta } : {}),
+    });
   const first = await connect();
   await call(first, { 'claudecode/toolUseId': 'toolu_one' });
   await call(first, { 'claudecode/toolUseId': 'toolu_two' });
@@ -156,7 +164,7 @@ it('asks the daemon for the session identity again when its first request goes u
   const client = await connect();
   expect(daemon.principalRequests).toBe(2);
   const { tools } = await client.listTools();
-  expect(tools.map((tool) => tool.name)).toContain('report');
+  expect(tools.map((tool) => tool.name)).toContain('memory_propose');
 });
 
 it('fails at once when the daemon refuses the session identity', async () => {

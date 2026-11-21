@@ -13,12 +13,11 @@ import { failureText, reasonText, type NeedsYouState } from '../../data/needs-yo
 import { isTruncated, toolLabel } from '../../data/tool-calls';
 import type { RequestItem, Session } from '../../data/transcript';
 import { t } from '../../i18n';
-import { useShell } from '../../store';
 import { baselineAnswers, baselineDraft } from '../projects/baseline';
 import { AnsweredRound, interviewDraft, ReviewBaseline } from '../projects/BaselineBlocks';
 import type { PendingPermission } from './model';
 import { AnsweredRequest, json } from './parts';
-import { fail, setCreatedHere } from './shared';
+import { fail } from './shared';
 import { clockText } from '../../lib/time-text';
 import './requests.css';
 
@@ -37,15 +36,6 @@ const WaitMark = () => (
  */
 export function BaselineReview({ session }: { session: Session }) {
   const { read: baseline } = useBaselineRead(session.baseline ? session.project_id : null);
-  const openSession = useShell((s) => s.openSession);
-  // A confirmation answered after the thread closed leaves the viewer where they went.
-  const shown = useRef(true);
-  useEffect(() => {
-    shown.current = true;
-    return () => {
-      shown.current = false;
-    };
-  }, []);
   // After Ask me more the baseline runs again and the review waits for the next round.
   const asking = baseline?.state === 'running' && !!baseline.rounds?.length;
   if (!baseline || baseline.id !== session.baseline?.baseline_id) return null;
@@ -63,16 +53,7 @@ export function BaselineReview({ session }: { session: Session }) {
     );
   if (baseline.state !== 'submitted' && !asking) return null;
   return (
-    <ReviewBaseline
-      key={`${baseline.id}:${baseline.rounds?.length ?? 0}`}
-      baseline={baseline}
-      onConfirmed={(confirmed) => {
-        const lead = (confirmed as { lead_session_id?: string }).lead_session_id;
-        if (!lead || !shown.current) return;
-        setCreatedHere(lead);
-        openSession(lead);
-      }}
-    />
+    <ReviewBaseline key={`${baseline.id}:${baseline.rounds?.length ?? 0}`} baseline={baseline} />
   );
 }
 

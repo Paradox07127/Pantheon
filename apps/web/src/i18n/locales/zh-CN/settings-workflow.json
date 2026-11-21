@@ -1,8 +1,5 @@
 {
-  "settings.workflow.pin": "钉住{param}",
   "settings.workflow.range": "{param}要是 {low} 到 {high} 之间的整数",
-  "settings.workflow.on": "开",
-  "settings.workflow.off": "关",
   "settings.workflow.questionDefaults": "可撤回的提问在 N 小时后采用 lead 推荐的答案",
   "settings.workflow.questionDefaultsHours": "小时数"
 }

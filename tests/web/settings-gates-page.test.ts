@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
 import type { ReactElement, ReactNode } from 'react';
 import type { WorkflowPolicy } from '@pantheon/domain';
 import type { BridgeResult } from '@pantheon/protocol';
@@ -11,7 +10,7 @@ vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
 );
 import { useBoard } from '@/data/board';
 import { t as format } from '@/i18n';
-import { DEFAULT_FIX_LIMIT, lastDuration, placeRow, rowsOf } from '@/screens/settings/gate';
+import { lastDuration, placeRow, rowsOf } from '@/screens/settings/gate';
 import { FolderGate, GateGpu, GatePolicy } from '@/screens/settings/GatesPage';
 import { useSettingsView } from '@/screens/settings/view';
 
@@ -46,13 +45,6 @@ const policy = (patch: Partial<WorkflowPolicy> = {}): WorkflowPolicy => ({
   revision: 2,
   project_id: 'alpha',
   policy_version: 2,
-  plan_changes: 'auto',
-  path: { t1: 'direct', t2: 'dispatch', t3: 'dispatch' },
-  acceptance_wake: 'each_merge',
-  max_parallel: 3,
-  max_parallel_limit: 4,
-  handback_limit: 3,
-  budget: {},
   pinned: [],
   ...patch,
 });
@@ -78,8 +70,6 @@ const NAME = gate('name');
 const LINE = gate('line');
 const ON_FAIL = gate('onFail');
 const RUNNER = gate('runner');
-const HANDBACK_LIMIT = zh('data.workflowPolicy.param.handbackLimit');
-const RECOVERY_SWITCH = zh('settings.gate.recoverySwitch');
 async function folder(named = false, git = false) {
   const h = mount(() => FolderGate({ project, root: ROOT, named, git, runs }));
   await h.flush();
@@ -331,113 +321,6 @@ describe('gate step helpers', () => {
   it('keeps row keys it is given when it reads the saved gate again', () => {
     expect(rowsOf(steps, [5, 2, 7]).map((r) => r.id)).toEqual([5, 2, 7]);
     expect(rowsOf(steps, [5]).map((r) => r.id)).toEqual([5, 6, 7]);
-  });
-
-  it('resets the fix count to the default the workflow policy starts from', () => {
-    const control = readFileSync(
-      new URL('../../packages/control/src/workflow-policy.ts', import.meta.url),
-      'utf8',
-    );
-    expect(Number(/handback_limit: (\d+),/.exec(control)?.[1])).toBe(DEFAULT_FIX_LIMIT);
-  });
-});
-
-describe('the handback count after a failed gate', () => {
-  const count = (h: HookHost<any>) => labelled(tree(h), HANDBACK_LIMIT);
-  const row = (h: HookHost<any>) =>
-    find(tree(h), (n) => n.props['data-setting-id'] === 'gates.handbackLimit');
-
-  it('has no row of its own besides what a failed gate does', async () => {
-    const h = await fixLimit();
-    expect(nodes(tree(h)).some((n) => n.props['aria-label'] === '失败后让 agent 自己修')).toBe(
-      false,
-    );
-    expect(nodes(row(h)).includes(labelled(tree(h), ON_FAIL))).toBe(true);
-    expect(nodes(row(h)).includes(count(h))).toBe(true);
-  });
-
-  it('offers each count the policy accepts beside hand back to fix and sends only the count', async () => {
-    const h = await fixLimit();
-    expect(count(h).props.options.map((o: { label: string }) => o.label)).toEqual(
-      [2, 3, 4, 5].map((count) => gate('fixTimes', { count })),
-    );
-    expect(count(h).props.value).toBe('3');
-    count(h).props.onChange('5');
-    await h.flush();
-    expect(bridge.commands.map((c) => c.input)).toEqual([
-      { project_id: 'alpha', handback_limit: 5 },
-    ]);
-  });
-
-  it('shows no count when the work reruns or stops', async () => {
-    for (const gate_on_fail of ['retry', 'stop'] as const) {
-      bridge.answers['workflow.policy'] = policy({ gate_on_fail });
-      const h = await fixLimit();
-      expect(nodes(tree(h)).some((n) => n.props['aria-label'] === HANDBACK_LIMIT)).toBe(false);
-    }
-  });
-
-  it.each([
-    [
-      'turns on the runtime switch after the count when the policy has none',
-      'gates.handbackLimit',
-      RECOVERY_SWITCH,
-      {},
-      false,
-      { recovery_switch: 'auto' },
-    ],
-    [
-      'turns off the runtime switch after the count when the policy has it on',
-      'gates.handbackLimit',
-      RECOVERY_SWITCH,
-      { recovery_switch: 'auto' },
-      true,
-      { recovery_switch: 'off' },
-    ],
-  ] as const)('%s', async (_, anchor, label, stored, checked, input) => {
-    bridge.answers['workflow.policy'] = policy(stored);
-    const h = await fixLimit();
-    const toggle = labelled(
-      find(tree(h), (n) => n.props['data-setting-id'] === anchor),
-      label,
-    );
-    expect(toggle.props.type).toBe('checkbox');
-    expect(toggle.props.checked).toBe(checked);
-    toggle.props.onChange({ target: { checked: !checked } });
-    await h.flush();
-    expect(bridge.commands.map((c) => c.input)).toEqual([{ project_id: 'alpha', ...input }]);
-  });
-
-  it('shows no runtime switch when the work reruns or stops', async () => {
-    for (const gate_on_fail of ['retry', 'stop'] as const) {
-      bridge.answers['workflow.policy'] = policy({ gate_on_fail });
-      const h = await fixLimit();
-      expect(nodes(tree(h)).some((n) => n.props['aria-label'] === RECOVERY_SWITCH)).toBe(false);
-    }
-  });
-
-  it('shows a stored count outside the range as the chosen one', async () => {
-    bridge.answers['workflow.policy'] = policy({ handback_limit: 0, policy_version: 9 });
-    const h = await fixLimit();
-    expect(count(h).props.value).toBe('0');
-    expect(count(h).props.options.map((o: { value: string }) => o.value)).toContain('0');
-    expect(count(h).props.options.find((o: { value: string }) => o.value === '0').label).toBe(
-      gate('fixOff'),
-    );
-  });
-
-  it('pins the count from its row', async () => {
-    const h = await fixLimit();
-    const pin = labelled(
-      row(h),
-      format({ id: 'settings.workflow.pin', defaultMessage: '' }, { param: HANDBACK_LIMIT }),
-    );
-    expect(pin.props['aria-pressed']).toBe(false);
-    pin.props.onClick();
-    await h.flush();
-    expect(bridge.commands.map((c) => c.input)).toEqual([
-      { project_id: 'alpha', pinned: ['handback_limit'] },
-    ]);
   });
 });
 

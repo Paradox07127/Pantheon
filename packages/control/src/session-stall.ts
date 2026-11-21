@@ -1,16 +1,15 @@
 import type { Session, SessionTurn } from '@pantheon/domain';
 import type { ControlContext } from './context.js';
-import { daemonDriven } from './continuation.js';
 import { latestEvent } from './needs-you.js';
 import { HUNG_CALL_MS, STALL_MS, stalled, turnActivity } from './progress.js';
 
-/** When the running turn of a session a person drives began to stall; undefined while it does not stall. */
+/** When the running turn of a session began to stall; undefined while it does not stall. */
 export function sessionStall(
   ctx: ControlContext,
   session: Session,
   running: SessionTurn | undefined,
 ): number | undefined {
-  if (!running || daemonDriven(ctx, session)) return;
+  if (!running) return;
   const now = ctx.store.now(),
     started = latestEvent(ctx, running.id, 'turn.running');
   if (!started || now - started.created_at <= STALL_MS) return;

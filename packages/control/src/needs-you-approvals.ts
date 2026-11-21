@@ -1,8 +1,7 @@
-import { DomainError, type Approval, type BoardPlan } from '@pantheon/domain';
+import { DomainError, type Approval } from '@pantheon/domain';
 import type { ControlContext } from './context.js';
-import { approvalAccess, approvalBindingCurrent, relayingQuestion } from './approvals.js';
+import { approvalAccess, approvalBindingCurrent } from './approvals.js';
 import {
-  NEXT_STEP,
   latestEvent,
   lostRequestOpen,
   type NeedsYouDraft,
@@ -16,8 +15,6 @@ export function pendingApprovalItems(ctx: ControlContext, scope: NeedsYouScope):
   for (const approval of ctx.store
     .list<Approval>('approvals')
     .filter((a) => a.state === 'pending' && listedProject(a.project_id))) {
-    // The lead's board question for it is the one item.
-    if (relayingQuestion(ctx, approval)) continue;
     let disabledReason: string | undefined;
     try {
       approvalAccess(ctx, principal, approval);
@@ -55,9 +52,6 @@ export function pendingApprovalItems(ctx: ControlContext, scope: NeedsYouScope):
       ...(approval.questions ? { questions: approval.questions } : {}),
       ...(escalated
         ? { waited_ms: ctx.store.now() - approval.created_at, escalated: true as const }
-        : {}),
-      ...(approval.session_id && ctx.store.get<BoardPlan>('board_plans', approval.session_id)
-        ? { next_step: NEXT_STEP.lead_permission }
         : {}),
     });
   }

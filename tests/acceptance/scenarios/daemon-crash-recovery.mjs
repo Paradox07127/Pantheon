@@ -32,7 +32,6 @@ const crashChild = fileURLToPath(
   new URL('../lib/crash-daemon-at-agent-event.mjs', import.meta.url),
 );
 /** A turn input the fixture runtime runs as these steps. */
-const script = (...steps) => `fixture-script\n${JSON.stringify(steps)}`;
 const ended = (turn) => !['queued', 'running'].includes(turn.state);
 /** Signal 0 only asks the process table; EPERM still means the pid exists. */
 const alive = (pid) => {
@@ -84,25 +83,6 @@ const rounds = [
     ],
   },
 ];
-const plan = {
-  base_version: 0,
-  headline: 'Daemon crash recovery',
-  lanes: [{ id: 'main', title: 'Main' }],
-  tasks: rounds.map(({ task }) => ({
-    id: task,
-    title: `Task ${task}`,
-    goal: `Add ${task.toLowerCase()}.txt`,
-    lane: 'main',
-    depends_on: [],
-    source: [`Add ${task.toLowerCase()}.txt`],
-    scope: [`${task.toLowerCase()}.txt`],
-    acceptance: [`test -f ${task.toLowerCase()}.txt`],
-  })),
-  milestones: [],
-  risks: [],
-  assumptions: [],
-};
-
 export async function run({ workspace, evidenceDir }) {
   const dataDir = path.join(workspace, 'daemon');
   const managed = createWorkspaceRoot('daemon-crash-recovery');
@@ -121,7 +101,7 @@ export async function run({ workspace, evidenceDir }) {
     probes = [],
     ids = {},
     observations = {};
-  let projectId, leadId, failure, evidence, needsYouItem, ledgers;
+  let projectId, failure, evidence, needsYouItem, ledgers;
 
   const start = async () => {
     agents = fakeAgents.map((config) => new FakeAgentAdapter(config));
@@ -243,21 +223,7 @@ export async function run({ workspace, evidenceDir }) {
       roots: [repo],
     });
     projectId = project.id;
-    leadId = (
-      await call('plan', 'session.create', {
-        project_id: projectId,
-        runtime: 'fixture',
-        purpose: 'lead',
-        input: script({ tool: { name: 'update_board', arguments: plan } }),
-      })
-    ).id;
-    await waitSession(
-      leadId,
-      (session, turns) => session.state === 'open' && turns.length > 0 && turns.every(ended),
-      'the lead to write the plan',
-    );
-
-    // One task session per round, opened by a daemon that dies at the round's moment.
+    // One session per round, opened by a daemon that dies at the round's moment.
     for (const round of rounds) {
       const body = command(
         USER_PRINCIPAL_ID,
@@ -265,7 +231,6 @@ export async function run({ workspace, evidenceDir }) {
         {
           project_id: projectId,
           runtime: round.runtime,
-          task_id: `${leadId}:${round.task}`,
           input: `Start task ${round.task}`,
         },
         null,
@@ -448,7 +413,7 @@ export async function run({ workspace, evidenceDir }) {
     await probe('evidence collection');
     return {
       'recovery-receipt.json': {
-        ids: { lead: leadId, ...ids },
+        ids,
         crashes,
         commands: receipts,
         needs_you_item: needsYouItem ?? null,

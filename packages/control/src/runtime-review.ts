@@ -38,7 +38,7 @@ export const RUNTIME_REVIEW_CONTRACT = [
 interface EvidenceSnapshot {
   diagnostics: RuntimeDiagnostics;
   workflow: {
-    policy: { policy_version: number; max_parallel: number; pinned: string[] };
+    policy: { policy_version: number; pinned: string[] };
     tasks: { id: string; depends_on: string[]; priority?: string }[];
     retrospectives: {
       id: string;
@@ -269,7 +269,6 @@ export const runtimeReviewHandlers: Handlers = {
       workflow: {
         policy: {
           policy_version: policy.policy_version,
-          max_parallel: policy.max_parallel,
           pinned: policy.pinned.slice(0, 12),
         },
         tasks: (plan?.tasks ?? []).slice(0, 12).map(({ id, depends_on, priority }) => ({

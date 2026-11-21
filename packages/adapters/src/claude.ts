@@ -334,7 +334,6 @@ export function buildClaudeOptions(
     | 'sandbox'
     | 'native_title'
     | 'control_instructions'
-    | 'task_session'
     | 'runtime_analysis'
     | 'read_only_shell'
   > &
@@ -390,7 +389,6 @@ export function buildClaudeOptions(
   const mcpServers = spec.mcp_servers ?? [];
   const settings = {
     ...(spec.fast || spec.permission_mode ? { fastMode: spec.fast === true } : {}),
-    ...(spec.task_session ? { disableWorkflows: true } : {}),
     ...(spec.ultracode ? { ultracode: true } : {}),
     ...(spec.role === 'reviewer' ? { autoMemoryEnabled: false } : {}),
     ...(overrides
@@ -575,20 +573,6 @@ export function buildClaudeOptions(
         {
           hooks: [
             async (input) => {
-              // SubagentStart cannot deny a launch; reserve slots here, including nested calls.
-              if (
-                spec.task_session &&
-                input.hook_event_name === 'PreToolUse' &&
-                ['Agent', 'Task'].includes(input.tool_name) &&
-                ++subagents.launches > 4
-              )
-                return {
-                  hookSpecificOutput: {
-                    hookEventName: 'PreToolUse',
-                    permissionDecision: 'deny',
-                    permissionDecisionReason: 'Task session subagent launch limit (4) reached',
-                  },
-                };
               const mode = permissionMode();
               // The classifier or bypass decides what Pantheon's own checks do not refuse; in a user
               // session the native permission rules decide in every mode.

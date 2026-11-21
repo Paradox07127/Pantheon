@@ -5,6 +5,15 @@ import { workbenchFixture } from './workbench-fixture.js';
 import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
 import { MEMORY_INSTRUCTIONS, syncMemoryFiles } from '../../packages/control/src/memory.js';
 
+/** A project setup session, whose planner tools include memory and which project memory is delivered to. */
+const withTools = (f: Awaited<ReturnType<typeof workbenchFixture>>) =>
+  f.call<Promise<import('@pantheon/domain').Session>>('session.create', {
+    project_id: f.project.id,
+    runtime: f.adapter.name,
+    input: 'Rename the answer file and explain why',
+    purpose: 'project_setup',
+  });
+
 it('replaces decisions atomically, hides archived ids and dependent reports, and restores only as a proposal', async () => {
   const f = await workbenchFixture();
   const propose = (key: string, text: string, dependencies: string[] = []) =>
@@ -46,7 +55,7 @@ it('delivers current scoped memory to the actual adapter on every send', async (
     text: 'Use precise terminology',
   });
   f.call('memory.commit', { memory_id: draft.id }, draft.revision);
-  const session = await f.create(undefined, user, 'lead');
+  const session = await withTools(f);
   await f.control.tick();
   await eventually(
     () => send.mock.calls.length > 0,
@@ -156,10 +165,10 @@ it('expires memory at read time without relying on a scheduler and retains immut
 
 it('makes an agent report current at once, keeps its decisions as drafts, and prevents cross-project or task reads', async () => {
   const f = await workbenchFixture();
-  const s = await f.create();
+  const s = await withTools(f);
   const p = {
     id: 'agent',
-    role: 'lead' as const,
+    role: 'planner' as const,
     session_id: s.id,
     project_id: f.project.id,
     expires_at: Date.now() + 60000,
@@ -241,153 +250,13 @@ it('does not mistake a delayed delivery receipt for acknowledgement of a newer d
     save('changed during send');
     return actual(handle, input);
   });
-  const s = await f.create(undefined, user, 'lead');
+  const s = await withTools(f);
   await eventually(
     () => !!f.store.must<any>('sessions', s.id).memory_delivery?.delivered_signature,
     () => f.control.tick(),
   );
   const read = f.control.memoryRead(user, f.project.id);
   expect(read.sessions.find((x) => x.id === s.id)?.delivered).toBe(false);
-});
-
-it('keeps task exceptions separate and expires them when the contract generation changes', async () => {
-  const f = await workbenchFixture();
-  const lead = await f.create();
-  f.store.insert('board_plans', {
-    id: lead.id,
-    revision: 1,
-    project_id: f.project.id,
-    tasks: [
-      {
-        id: 'worker',
-        title: 'Task',
-        goal: 'Build',
-        lane: 'main',
-        depends_on: [],
-        source: [],
-        scope: [],
-        acceptance: [],
-      },
-    ],
-    generations: { worker: { generation: 1, contract: 'first' } },
-    lanes: [],
-    plan_version: 1,
-    headline: '',
-    pending_edits: [],
-    risks: [],
-    assumptions: [],
-    inbox: [],
-    notified: {},
-    updated_at: Date.now(),
-  } as any);
-  const save = (text: string, task?: unknown) => {
-    const r = f.call<any>('memory.propose', {
-      project_id: f.project.id,
-      key: 'style',
-      kind: 'decision',
-      text,
-      task,
-    });
-    return f.call<any>('memory.commit', { memory_id: r.id }, r.revision);
-  };
-  const global = save('project rule');
-  const local = save('task exception', { lead_session_id: lead.id, id: 'worker', generation: 1 });
-  expect(f.call<any>('memory.get', { memory_id: global.id }).text).toBe('project rule');
-  const p = {
-    id: 'lead',
-    role: 'lead' as const,
-    session_id: lead.id,
-    project_id: f.project.id,
-    expires_at: Date.now() + 60000,
-  };
-  expect(() => f.call('memory.get', { memory_id: local.id }, null, p)).toThrow();
-  const plan = f.store.must<any>('board_plans', lead.id);
-  f.store.update(
-    'board_plans',
-    { ...plan, generations: { worker: { generation: 2, contract: 'second' } } },
-    plan.revision,
-  );
-  expect(() => f.call('memory.get', { memory_id: local.id })).toThrow();
-  expect(
-    f.control.memoryRead(user, f.project.id, { task_id: 'worker', lead_session_id: lead.id })
-      .records,
-  ).toEqual([]);
-  expect(() =>
-    f.call('memory.related', { project_id: f.project.id, memory_id: local.id }),
-  ).toThrow();
-  expect(f.call<any>('memory.get', { memory_id: global.id }).text).toBe('project rule');
-});
-
-it('scopes task memory by lead, task and generation, not by the worker session details', async () => {
-  const f = await workbenchFixture();
-  const lead = await f.create('Plan the export');
-  await awaitWorkspaceReady(f.control, lead.workspace_id!);
-  const as = (session: string, role: 'lead' | 'worker') => ({
-    id: `session:${session}`,
-    role,
-    project_id: f.project.id,
-    session_id: session,
-    expires_at: f.store.now() + 60000,
-  });
-  f.call(
-    'board.plan.update',
-    {
-      project_id: f.project.id,
-      base_version: 0,
-      headline: 'Export works',
-      lanes: [{ id: 'core', title: 'Core' }],
-      tasks: [
-        {
-          id: 'export',
-          title: 'Export',
-          goal: 'Export rows',
-          lane: 'core',
-          depends_on: [],
-          source: ['Plan the export'],
-          scope: ['src/export'],
-          acceptance: ['true'],
-        },
-      ],
-      milestones: [],
-      risks: [],
-      assumptions: [],
-    },
-    null,
-    as(lead.id, 'lead'),
-  );
-  const worker = await f.call<any>('session.create', {
-    project_id: f.project.id,
-    runtime: f.adapter.name,
-    task_id: `${lead.id}:export`,
-    input: 'Build export',
-  });
-  const w = as(worker.id, 'worker');
-  const propose = (key: string, text: string, task?: unknown, p?: typeof w) =>
-    f.call<any>(
-      'memory.propose',
-      {
-        project_id: f.project.id,
-        key,
-        kind: 'note',
-        text,
-        task,
-        based_on:
-          p && f.call<any>('memory.context', { project_id: f.project.id }, null, p).signature,
-      },
-      null,
-      p,
-    );
-  const scope = { lead_session_id: lead.id, id: 'export', generation: 1 };
-  const first = propose('k', 'worker note', undefined, w);
-  expect(first.task).toEqual(scope);
-  expect(propose('own', 'named own scope', scope, w).task).toEqual(scope);
-  const second = propose('k', 'user note', scope);
-  f.call('memory.commit', { memory_id: second.id }, second.revision);
-  expect(f.store.must<any>('memory_records', first.id)).toMatchObject({
-    state: 'archived',
-    reason: 'superseded',
-    superseded_by: second.id,
-  });
 });
 
 it('rolls back an interrupted commit and reclaims an abandoned maintenance lease after restart', async () => {
@@ -415,44 +284,6 @@ it('rolls back an interrupted commit and reclaims an abandoned maintenance lease
   await f.restart();
   await f.control.tick();
   expect(f.control.memoryDocument(user, f.project.id).text).toContain('durable choice');
-});
-
-it('blocks stale control-plane acceptance until the agent reads the current context', async () => {
-  const f = await workbenchFixture();
-  const s = await f.create();
-  const p = {
-    id: 'lead',
-    role: 'lead' as const,
-    session_id: s.id,
-    project_id: f.project.id,
-    expires_at: Date.now() + 60000,
-  };
-  const r = f.call<any>('memory.propose', {
-    project_id: f.project.id,
-    key: 'approval',
-    kind: 'decision',
-    text: 'Check the latest evidence',
-  });
-  f.call('memory.commit', { memory_id: r.id }, r.revision);
-  expect(() =>
-    f.call(
-      'task.accept',
-      { project_id: f.project.id, task_id: 'not-started', evidence: 'claim' },
-      null,
-      p,
-    ),
-  ).toThrowError(expect.objectContaining({ code: 'memory_refresh_required' }));
-  f.call('memory.context', { project_id: f.project.id }, null, p);
-  try {
-    f.call(
-      'task.accept',
-      { project_id: f.project.id, task_id: 'not-started', evidence: 'claim' },
-      null,
-      p,
-    );
-  } catch (e) {
-    expect((e as any).code).not.toBe('memory_refresh_required');
-  }
 });
 
 it('rejects a decision commit over budget with the largest records and rolls back replacements', async () => {
@@ -648,7 +479,7 @@ it('leaves an adopted project improvement out of a new session memory packet and
   const packet = f.call<any>('memory.context', { project_id: f.project.id });
   expect(JSON.stringify(packet)).not.toContain('Distinct adopted procedure');
   expect(packet).not.toHaveProperty('experiences');
-  const session = await f.create(undefined, user, 'lead');
+  const session = await withTools(f);
   await eventually(
     () => send.mock.calls.length > 0,
     () => f.control.tick(),
@@ -671,7 +502,7 @@ it('exposes delivery capability, stale packages and the records delivered for a 
     text: 'Delivered evidence',
   });
   const active = f.call<any>('memory.commit', { memory_id: draft.id }, draft.revision);
-  const s = await f.create(undefined, user, 'lead');
+  const s = await withTools(f);
   expect(
     f.control.memoryRead(user, f.project.id).sessions.find((x) => x.id === s.id),
   ).toMatchObject({
@@ -787,7 +618,7 @@ it('refuses session memory counts for the principals refused by the single-turn 
   const session = await f.create();
   const principal = {
     id: 'agent',
-    role: 'lead' as const,
+    role: 'conductor' as const,
     session_id: session.id,
     project_id: f.project.id,
     expires_at: Date.now() + 60000,
@@ -897,7 +728,7 @@ it('delivers an unchanged memory packet once and again after the session compact
     text: 'Distinct delivered rule',
   });
   f.call('memory.commit', { memory_id: draft.id }, draft.revision);
-  const session = await f.create(undefined, user, 'lead');
+  const session = await withTools(f);
   const sendTurn = async (input: string, count: number) => {
     await eventually(
       () =>

@@ -54,7 +54,7 @@ Put a new test in `tests/<area>/`. Import the shared helpers from `tests/helpers
 | ------------------- | ---------------------------------------------------------- |
 | `tests/adapters/`   | Runtime adapters, including a fake ACP agent               |
 | `tests/cli/`        | MCP tools of the CLI                                       |
-| `tests/control/`    | Control logic: sessions, worktrees, gates, board, memory   |
+| `tests/control/`    | Control logic: sessions, worktrees, gates, memory          |
 | `tests/daemon/`     | HTTP and WebSocket service                                 |
 | `tests/desktop/`    | Electron shell and packaging script                        |
 | `tests/protocol/`   | Schemas and the generated API tables                       |

@@ -4,8 +4,6 @@ import { constants, lstatSync, readdirSync, readlinkSync, realpathSync, statSync
 import {
   credentialRole,
   requireThat,
-  type AgentProfile,
-  type AgentToolGroup,
   type Principal,
   type RuntimeModel,
   type Entity,
@@ -20,8 +18,6 @@ import {
 import {
   sessionTools,
   coordinationTools,
-  leadToolEffects,
-  leadToolGroups,
   type CommandType,
   type Command,
   type DeviceStatus,
@@ -32,8 +28,6 @@ import type { ControlOptions } from './index.js';
 import { runGit, type GitResult } from './git.js';
 import { introInstructions } from './project-intro-brief.js';
 import { baselineSkill } from './baseline-skill.js';
-import { residentProfile } from './agent-templates.js';
-import { BOARD_READ_ONLY_TEMPLATES } from './agent-prompts.js';
 import type { TraceIndex } from './trace-index.js';
 import { OUTSIDE_PERSONAL_SCOPE, PERSONAL_COMMANDS, PERSONAL_QUERIES } from './personal-scope.js';
 
@@ -250,7 +244,7 @@ export function sessionPrincipal(
     : undefined;
   requireThat(
     session &&
-      principal.role === credentialRole(session, sessionWorkspaceKind(ctx, session)) &&
+      principal.role === credentialRole(session) &&
       session.project_id === principal.project_id &&
       ((['open', 'running'].includes(session.state) && !session.stop_pending) ||
         (connecting && session.state === 'reconciling')) &&
@@ -320,40 +314,6 @@ export function purposeSessionTools(session: Session): string[] | undefined {
     ];
 }
 
-/** Tool groups whose commands serve resident sessions only. */
-const RESIDENT_GROUPS: readonly AgentToolGroup[] = [
-  'always_on',
-  'app',
-  'sessions',
-  'github',
-  'agents',
-  'signals',
-];
-
-/** The board tools that write the plan, which a resident of a read-only board template does not get. */
-const PLAN_WRITES = ['board.plan.update', 'board.sync', 'project.baseline.start'];
-
-/**
- * The actions of a lead session's tools: a resident's are those of its agent profile's groups,
- * another lead's every group but the resident ones; undefined for every other session.
- */
-export function leadSessionTools(ctx: ControlContext, session: Session): string[] | undefined {
-  const groups: readonly AgentToolGroup[] | undefined = session.resident
-    ? residentProfile(ctx.store, session.resident).tools
-    : credentialRole(session, sessionWorkspaceKind(ctx, session)) === 'lead'
-      ? Object.values(leadToolGroups).filter((group) => !RESIDENT_GROUPS.includes(group))
-      : undefined;
-  if (!groups) return undefined;
-  const readOnly = session.resident && BOARD_READ_ONLY_TEMPLATES.includes(session.resident.kind);
-  return [
-    ...Object.entries(sessionTools.lead)
-      .filter(([name]) => groups.includes(leadToolGroups[name as keyof typeof leadToolGroups]))
-      .map(([, action]): string => action)
-      .filter((action) => !readOnly || !PLAN_WRITES.includes(action)),
-    sessionTools.lead.guide,
-  ];
-}
-
 /** The standing instructions of a reviewer session, whose first message holds the artifact. */
 export const REVIEWER_BASE = `You are a reviewer in a read-only session. You review one artifact independently: the changes of a task session against its goal, or a board plan before its high-risk tasks start. Your first message holds the artifact. Your findings are your whole output; you do not talk to the user or the writer.
 
@@ -418,7 +378,7 @@ export function sessionAction(ctx: ControlContext, principal: Principal, action:
     'Runtime reflection can read project facts only',
   );
   const tools = sessionTools[principal.role as keyof typeof sessionTools];
-  const purposeTools = purposeSessionTools(session) ?? leadSessionTools(ctx, session);
+  const purposeTools = purposeSessionTools(session);
   const permitted = purposeTools ? { ...tools, ...coordinationTools } : tools;
   requireThat(
     permitted &&
@@ -429,27 +389,19 @@ export function sessionAction(ctx: ControlContext, principal: Principal, action:
   );
 }
 
-/** Whether a session gets the Pantheon tools and memory; a session the user opened directly runs as the bare runtime. */
+/** Whether a session gets the Pantheon tools and memory; a session the user opened or imported runs as the bare runtime. */
 export function usesPantheonTools(ctx: ControlContext, session: Session): boolean {
   return Boolean(
-    session.task ||
-    session.resident ||
-    session.lead ||
-    session.conductor ||
-    session.project_setup ||
-    // An adopted folder session keeps its planner credential.
-    credentialRole(session, sessionWorkspaceKind(ctx, session)) !== 'lead' ||
-    // A direct session that already owns a board plan keeps leading it.
-    ctx.store.get('board_plans', session.id),
+    session.conductor || session.project_setup || session.review_id || purposeSessionTools(session),
   );
 }
 
 export function sessionMcp(
   ctx: ControlContext,
   session: Session,
-  role: Role,
+  role: Role | undefined,
 ): SessionSpec['pantheon_mcp'] {
-  const credential = ctx.issueSessionCredential?.(session.id, role);
+  const credential = role && ctx.issueSessionCredential?.(session.id, role);
   if (!credential) return;
   return {
     command: process.execPath,
@@ -460,32 +412,6 @@ export function sessionMcp(
     env: {
       PANTHEON_DAEMON_URL: credential.daemon_url,
       PANTHEON_SESSION_TOKEN_FILE: credential.token_file,
-    },
-    ...(role === 'lead' && {
-      ask_tools: Object.entries(leadToolEffects)
-        .filter(([, effect]) => effect === 'costly')
-        .map(([name]) => name),
-    }),
-  };
-}
-
-/** The personal tools on the personal agent's own key, without a session credential. */
-export function personalSessionMcp(
-  ctx: ControlContext,
-  profile: AgentProfile,
-): SessionSpec['pantheon_mcp'] {
-  const credential = ctx.personalKeyFile?.(profile.personal_key_id!);
-  if (!credential) return;
-  return {
-    command: process.execPath,
-    args: [
-      ctx.mcpEntry ?? fileURLToPath(new URL('../../../apps/cli/dist/index.js', import.meta.url)),
-      'mcp',
-      '--personal',
-    ],
-    env: {
-      PANTHEON_DAEMON_URL: credential.daemon_url,
-      PANTHEON_PERSONAL_TOKEN_FILE: credential.token_file,
     },
   };
 }

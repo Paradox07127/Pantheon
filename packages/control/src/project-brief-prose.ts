@@ -1,4 +1,4 @@
-import type { Approval, BoardPlan, Milestone, Principal, Session } from '@pantheon/domain';
+import type { Approval, Principal, Session } from '@pantheon/domain';
 import { inputSchemas, type ProjectBriefProse, type ProjectBriefRef } from '@pantheon/protocol';
 import { readAppSettings } from './app-settings.js';
 import { userOnly, type ControlContext, type Handlers } from './context.js';
@@ -28,18 +28,7 @@ const refKey = (ref: ProjectBriefRef) => `${ref.kind}:${ref.id}`;
 const asked = new WeakMap<ControlContext, Set<string>>();
 
 /** The name the board shows for what the ref links to; undefined when it has none. */
-function refTitle(
-  ctx: ControlContext,
-  ref: ProjectBriefRef,
-  plans: BoardPlan[],
-): string | undefined {
-  if (ref.kind === 'task') {
-    const at = ref.id.indexOf(':');
-    return plans
-      .find((plan) => plan.id === ref.id.slice(0, at))
-      ?.tasks.find((task) => task.id === ref.id.slice(at + 1))?.title;
-  }
-  if (ref.kind === 'milestone') return ctx.store.get<Milestone>('milestones', ref.id)?.title;
+function refTitle(ctx: ControlContext, ref: ProjectBriefRef): string | undefined {
   const session =
     ref.kind === 'merge'
       ? ref.id
@@ -58,22 +47,15 @@ export function briefFacts(
   projectId: string,
   items: ReturnType<typeof proseItems>,
 ): BriefFact[] {
-  const plans = ctx.store
-    .list<BoardPlan>('board_plans')
-    .filter((plan) => plan.project_id === projectId);
   return items.map((item) => {
-    const title = refTitle(ctx, item.ref, plans);
+    const title = refTitle(ctx, item.ref);
     const named = title ? `"${title}"` : undefined;
     const text =
       item.kind === 'decisions'
-        ? `${item.count} decisions wait on the user, ${item.new} of them new; the first is ${item.top.reason}${named ? ` on ${named}` : ''} and blocks ${item.top.blocks} tasks.`
-        : item.kind === 'milestone'
-          ? `Milestone "${item.title}" moved to ${item.done} of ${item.total} done.`
-          : item.kind === 'merge'
-            ? `${named ?? 'An untitled session'} merged.`
-            : item.kind === 'failure'
-              ? `${named ?? 'A session'} failed: ${item.reason}.`
-              : `The plan assumes something new: ${item.text}`;
+        ? `${item.count} decisions wait on the user, ${item.new} of them new; the first is ${item.top.reason}${named ? ` on ${named}` : ''}.`
+        : item.kind === 'merge'
+          ? `${named ?? 'An untitled session'} merged.`
+          : `${named ?? 'A session'} failed: ${item.reason}.`;
     return { key: refKey(item.ref), ref: item.ref, text };
   });
 }

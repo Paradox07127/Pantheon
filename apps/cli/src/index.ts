@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
@@ -6,11 +7,12 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { createMcpServer } from './mcp.js';
 import { createPersonalMcpServer } from './personal-tools.js';
 import { land, landUsage } from './land.js';
-import { review, reviewUsage } from './review.js';
+import { resolveUsage, review, reviewUsage } from './review.js';
 
-const usage = `Usage: pnpm cli mcp [--personal]|health|command (--file FILE|--json JSON)|<query method> [--project ID] [--after N] [--param KEY=VALUE]... [--data-dir DIR]
-       pnpm cli ${reviewUsage} [--data-dir DIR]
-       pnpm cli ${landUsage} [--data-dir DIR]`;
+const usage = `Usage: pantheon mcp [--personal]|health|command (--file FILE|--json JSON)|<query method> [--project ID] [--after N] [--param KEY=VALUE]... [--data-dir DIR]
+       pantheon ${reviewUsage} [--data-dir DIR]
+       pantheon ${resolveUsage} [--data-dir DIR]
+       pantheon ${landUsage} [--data-dir DIR]`;
 let parsed;
 try {
   parsed = parseArgs({
@@ -27,6 +29,7 @@ try {
       base: { type: 'string' },
       runtime: { type: 'string', multiple: true },
       message: { type: 'string' },
+      note: { type: 'string' },
     },
   });
 } catch (error) {
@@ -65,7 +68,7 @@ try {
         .url;
     // The daemon names each personal key's token file by the key id.
     const server = values.personal
-      ? await createPersonalMcpServer(url, token, path.basename(tokenFile))
+      ? await createPersonalMcpServer(url, token)
       : await createMcpServer(url, token);
     await server.connect(new StdioServerTransport());
   } else if (positionals[0] === 'review') {

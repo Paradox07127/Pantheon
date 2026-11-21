@@ -2,7 +2,6 @@ import { expect, it, vi } from 'vitest';
 import type {
   Approval,
   BoardPlan,
-  LeadGuidance,
   Principal,
   Session,
   SessionTurn,
@@ -116,11 +115,10 @@ it('pairs lifecycle timestamps, distinguishes tool timing sources and gives refl
       expires_at: now + 60_000,
     };
     const input = { project_id: project, lead_session_id: lead.id, from, to: now };
+    // A session the user opened holds no credential, so its principal is refused before the action check.
     expect(() => f.call('trace.reflect', input, null, principal)).toThrow(
-      'Action outside session role',
+      'Active session credential required',
     );
-    const guidance = f.control.projectRead(principal, project) as { lead: LeadGuidance };
-    expect(guidance.lead.runtime.findings).toEqual([]);
 
     const window = { project_id: project, from, to: now };
     const { session_id } = f.call<{ session_id: string }>('trace.reflect', window);
@@ -149,7 +147,7 @@ it('pairs lifecycle timestamps, distinguishes tool timing sources and gives refl
       'Action outside session role',
     );
     expect(() => f.call('trace.evidence', { project_id: project }, null, principal)).toThrow(
-      'Action outside session role',
+      'Active session credential required',
     );
     f.store.update('session_turns', { ...reflection, state: 'running' }, reflection.revision);
     const summary = f.call('trace.evidence', { project_id: project }, null, analysisPrincipal);
@@ -199,10 +197,6 @@ it('pairs lifecycle timestamps, distinguishes tool timing sources and gives refl
     expect(f.call('trace.share', { session_id, lead_session_id: lead.id })).toEqual({
       shared: true,
     });
-    const shared = f.control.projectRead(principal, project) as { lead: LeadGuidance };
-    expect(shared.lead.runtime_reviews).toEqual([
-      { session_id, summary: report.summary, change: report.change, outcome: undefined },
-    ]);
     expect(f.store.must<Session>('sessions', lead.id)).toEqual(lead);
     expect(() => f.call('trace.remember', { session_id })).toThrow('successful experiment');
     f.call('trace.verify', {

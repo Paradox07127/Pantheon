@@ -46,12 +46,6 @@ const acceptPreflight = (value: unknown): SessionPreflight | null => {
     : null;
 };
 
-// The gate commands of a task session come from its lead's plan, whose events name only the lead.
-const leadPlanUpdated = (e: DaemonEvent, sessionId: string, board: BoardSnapshot | null) =>
-  e.kind === 'board.plan_updated' &&
-  e.aggregate_id ===
-    board?.sessions.find((session) => session.id === sessionId)?.task?.lead_session_id;
-
 // Another session's merge moves the source this session's gates and preflight are read against.
 const sourceMerged = (e: DaemonEvent, sessionId: string, board: BoardSnapshot | null) => {
   if (e.kind !== 'session.merged') return false;
@@ -67,7 +61,6 @@ function useGateTick(sessionId: string | null): number {
     (e, board) =>
       sessionId !== null &&
       (touchesSession(e, sessionId, board) ||
-        leadPlanUpdated(e, sessionId, board) ||
         sourceMerged(e, sessionId, board) ||
         e.kind === 'project.gate_set'),
   );
@@ -101,7 +94,6 @@ export function useSessionPreflight(sessionId: string | null): SessionRead<Sessi
       sessionId !== null &&
       (touchesSession(e, sessionId, board) ||
         (workspaceId !== null && e.aggregate_id === workspaceId) ||
-        leadPlanUpdated(e, sessionId, board) ||
         sourceMerged(e, sessionId, board) ||
         e.kind === 'project.gate_set'),
   );

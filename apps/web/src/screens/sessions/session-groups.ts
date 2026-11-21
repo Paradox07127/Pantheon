@@ -97,13 +97,13 @@ function groupOf(s: WorkbenchSession, unread: (s: WorkbenchSession) => boolean):
 
 export type SessionSort = 'activity' | 'created' | 'title';
 
-/** What a listed session is to the list's type filter: a board task's worker, a runtime analysis, or one the user opened. */
+/** What a listed session is to the list's type filter: one a session spawned, a runtime analysis, or one the user opened. */
 export type SessionType = 'worker' | 'direct' | 'review';
 
 export const SESSION_TYPES: readonly SessionType[] = ['worker', 'direct', 'review'];
 
 export const sessionType = (s: WorkbenchSession): SessionType =>
-  s.lead ? 'worker' : s.runtime_review ? 'review' : 'direct';
+  s.spawned_by ? 'worker' : s.runtime_review ? 'review' : 'direct';
 
 export interface SessionListView {
   /** lead: by who opened or forked each session; time: by day of the sorted time. */
@@ -215,7 +215,6 @@ export interface SessionMenuItem {
     | 'session.open_beside'
     | 'session.mark_unread'
     | 'session.mark_read'
-    | 'session.open_lead'
     | 'open.editor'
     | 'open.terminal'
     | 'open.finder'
@@ -259,9 +258,9 @@ export interface SessionMenuContext {
 
 const optional = (reason: string | null | undefined) => (reason ? { reason } : {});
 
-/** Listed sessions without a workspace are baseline, runtime analysis and resident ones. */
+/** Listed sessions without a workspace are baseline and runtime analysis ones. */
 export const baselineRow = (s: WorkbenchSession): boolean =>
-  s.workspace_id === null && !s.resident && !s.runtime_review;
+  s.workspace_id === null && !s.runtime_review;
 
 /** A worktree session that has not ended; it can run checks and merge. */
 export const liveWorktree = (s: WorkbenchSession): boolean =>
@@ -427,15 +426,6 @@ export function sessionMenu(
             } as const,
           ]
         : []),
-      ...(s.lead
-        ? [
-            {
-              label: t({ id: 'sessions.model.menu.openLead', defaultMessage: 'Open lead session' }),
-              command: 'session.open_lead',
-              input: { session_id: s.lead },
-            } as const,
-          ]
-        : []),
     ],
     [
       {
@@ -521,8 +511,7 @@ export function sessionMenu(
               input: { session_id },
             } as const,
           ]
-        : // The daemon does not archive a resident session.
-          !s.resident && (ENDED_STATES.has(s.state) || s.state === 'idle' || s.state === 'ready')
+        : ENDED_STATES.has(s.state) || s.state === 'idle' || s.state === 'ready'
           ? [
               {
                 label: t({ id: 'sessions.model.menu.archive', defaultMessage: 'Archive' }),
@@ -647,9 +636,8 @@ const TIME_GROUPS = [
   },
 ] as const;
 
-/** The session this one was opened from as a board task, else the one it was forked from. */
-export const parentOf = (s: WorkbenchSession): string | undefined =>
-  s.lead ?? s.forked_from?.session_id;
+/** The session this one was forked from. */
+export const parentOf = (s: WorkbenchSession): string | undefined => s.forked_from?.session_id;
 
 const FINISHED: ReadonlySet<WorkbenchSession['state']> = new Set(['merged', 'discarded', 'done']);
 

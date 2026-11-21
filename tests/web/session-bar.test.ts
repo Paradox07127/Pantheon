@@ -166,7 +166,7 @@ const gates = {
 };
 
 describe('session bar', () => {
-  it('lays out state, lead, title, branch, changes, checks, clock, panels, overview and more in order', async () => {
+  it('lays out state, source, title, branch, changes, checks, clock, panels, overview and more in order', async () => {
     answers['session.gates'] = gates;
     answers['project.facts.read'] = {
       workstreams: [],
@@ -175,7 +175,7 @@ describe('session bar', () => {
     const row = listed('session-ordered', {
       state: 'running',
       created_at: new Date(Date.now() - 5_000).toISOString(),
-      lead: 'session-lead',
+      forked_from: { session_id: 'session-lead' },
       changes: { files: 2, additions: 61, deletions: 19 },
     });
     const h = header({
@@ -277,13 +277,15 @@ describe('session bar', () => {
     ).toBe(false);
   });
 
-  it('links the lead session and opens it', () => {
+  it('links the session it was forked from and opens it', () => {
     const h = header({
-      listed: listed('session-a', { lead: 'session-lead' }),
+      listed: listed('session-a', { forked_from: { session_id: 'session-lead' } }),
       parent: listed('session-lead', { title: 'Lead plan' }),
     });
     const link = find(h.value, (n) => n.type === 'button' && text(n).includes('Lead plan'));
-    expect(named(link, 'LeadCrown')).toBeTruthy();
+    expect(link.props['aria-label']).toBe(
+      zhf('sessions.header.forkedFrom', { title: 'Lead plan' }),
+    );
     link.props.onClick();
     expect(mock.shell.openSession).toHaveBeenCalledWith('session-lead');
   });
@@ -298,12 +300,17 @@ describe('session bar', () => {
     expect(nodes(strip).filter((n) => n.type === 'i')).toHaveLength(4);
   });
 
-  it('leaves out the lead, plan, checks and clock without their data', async () => {
-    const h = header({ listed: listed('session-bare', { lead: 'session-gone' }) });
+  it('leaves out the source, plan, checks and clock without their data', async () => {
+    const h = header({
+      listed: listed('session-bare', { forked_from: { session_id: 'session-gone' } }),
+    });
     await h.flush();
     expect(nodes(h.value).some((n) => n.props.role === 'img')).toBe(false);
     expect(
-      nodes(h.value).some((n) => typeof n.type === 'function' && n.type.name === 'LeadCrown'),
+      nodes(h.value).some(
+        (n) =>
+          n.props['aria-label'] === zhf('sessions.header.forkedFrom', { title: 'session-gone' }),
+      ),
     ).toBe(false);
     expect(
       nodes(h.value).some((n) => typeof n.type === 'function' && n.type.name === 'RunClock'),
@@ -508,10 +515,13 @@ describe('overview toggle', () => {
     expect(floating(h)).toBeTruthy();
   });
 
-  it('passes the listed lead session to the thread', () => {
+  it('passes the listed session it was forked from to the thread', () => {
     const led = {
       ...list,
-      data: [listed('session-a', { lead: 'session-lead' }), listed('session-lead')],
+      data: [
+        listed('session-a', { forked_from: { session_id: 'session-lead' } }),
+        listed('session-lead'),
+      ],
     };
     const h = mount(() => SessionsScreen({ projectId: 'project-a', needs, list: led }));
     expect(thread(h).props.parent.id).toBe('session-lead');

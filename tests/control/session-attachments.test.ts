@@ -168,23 +168,6 @@ it('refuses an attachment id that is unknown or belongs to another project', asy
   ).rejects.toThrow(expect.objectContaining({ code: 'not_found' }));
 });
 
-it('copies the attachments of a resident session without a workspace into its own temporary directory', async () => {
-  const f = await workbenchFixture();
-  const attachment = attach(f, 'notes.txt', 'notes', 'text/plain');
-  const resident = f.call<Session>('resident.open', {
-    project_id: f.project.id,
-    kind: 'assistant',
-  });
-  expect(resident.workspace_id).toBeUndefined();
-  const temporary = await temporaryDirectory(f, resident.id);
-  sendWith(f, resident, { attachments: [attachment.id] });
-  const copy = path.join(temporary, 'attachments', `${attachment.id}-notes.txt`);
-  expect(f.turns(resident.id)[0]).toMatchObject({
-    attachments: [{ id: attachment.id, name: 'notes.txt', mime: 'text/plain', path: copy }],
-  });
-  expect(readFileSync(copy, 'utf8')).toBe('notes');
-});
-
 it('ranks file name matches, then path matches, then ordered characters, shorter paths first', async () => {
   const f = await workbenchFixture();
   const files = [
