@@ -44,7 +44,6 @@ import {
 } from './lead-inbox.js';
 import { openResident } from './resident.js';
 import { wrapUpOverBudget } from './budget-wrap-up.js';
-import { replanTriggers } from './replan.js';
 import { usageLimitWaiting, usageResetAt } from './continuation.js';
 import {
   currentAcceptance,
@@ -81,7 +80,6 @@ import {
 } from './task-dispatch.js';
 import { executed } from './needs-you.js';
 import { finishingMerge } from './project-facts.js';
-import { advanceMilestoneVerifications } from './milestone-verify.js';
 import { projectOverBudget, workflowPolicy } from './workflow-policy.js';
 import { wakeHold } from './agent-contract.js';
 import { advanceMergeReviews } from './merge-review.js';
@@ -870,7 +868,6 @@ function reportDirectTask(
 
 export function tickTaskTracking(ctx: ControlContext): void {
   wrapUpOverBudget(ctx);
-  replanTriggers(ctx);
   const plans = ctx.store.list<BoardPlan>('board_plans');
   if (!plans.length) return;
   // The latest escalation of a pending permission request, by session; the lead hears of each once.
@@ -1227,7 +1224,6 @@ export function tickTaskTracking(ctx: ControlContext): void {
   }
   tellChangedContracts(ctx);
   advanceMergeReviews(ctx);
-  advanceMilestoneVerifications(ctx);
   dispatchTasks(ctx);
 }
 

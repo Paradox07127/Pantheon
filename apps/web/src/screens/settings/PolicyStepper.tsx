@@ -1,21 +1,6 @@
 import type { ReactNode } from 'react';
 import { Minus, Plus } from 'lucide-react';
-import { RuntimeGlyph, runtimeName } from '../../components/RuntimeGlyph';
-import { offeredRuntimes, type RuntimeStatusRead } from '../../data/runtime-status';
 import { t } from '../../i18n';
-
-/** The protocol's highest per-runtime limit. */
-const RUNTIME_LIMIT_MAX = 8;
-
-/** The runtime_parallel record with one runtime's limit set, or taken out for no limit. */
-function withRuntimeLimit(
-  record: Record<string, number> | undefined,
-  runtime: string,
-  limit: number | null,
-): Record<string, number> {
-  const rest = Object.fromEntries(Object.entries(record ?? {}).filter(([r]) => r !== runtime));
-  return limit === null ? rest : { ...rest, [runtime]: limit };
-}
 
 export interface StepperProps {
   /** The value's name, read by the input and its two buttons. */
@@ -105,54 +90,6 @@ export function policyStepper(props: StepperProps): ReactNode {
       >
         <Plus aria-hidden="true" />
       </button>
-    </span>
-  );
-}
-
-/** Each runtime's own concurrency limit, two to a line; an empty limit is no limit. */
-export function runtimeLimits({
-  limits,
-  status,
-  disabled,
-  draftOf,
-  onSet,
-  onInvalid,
-}: {
-  limits: Record<string, number> | undefined;
-  /** Its installed runtimes get a stepper, as do those that have a limit. */
-  status: RuntimeStatusRead;
-  disabled: boolean;
-  /** The text typed into a runtime's input. */
-  draftOf: (runtime: string) => Pick<StepperProps, 'draft' | 'onDraft'>;
-  /** Sets the whole record; resolves whether it was set. */
-  onSet: (limits: Record<string, number>) => Promise<boolean>;
-  onInvalid: (text: string) => void;
-}): ReactNode {
-  return (
-    <span className="wf-rtp">
-      {offeredRuntimes(status, Object.keys(limits ?? {})).map((runtime) => (
-        <span key={runtime} className="wf-rt" role="group" aria-label={runtimeName(runtime)}>
-          <RuntimeGlyph runtime={runtime} />
-          <span className="wf-rt-n">{runtimeName(runtime)}</span>
-          {policyStepper({
-            label: t(
-              {
-                id: 'settings.workflow.runtimeLimit',
-                defaultMessage: '{runtime} concurrency limit',
-              },
-              { runtime: runtimeName(runtime) },
-            ),
-            value: limits?.[runtime] ?? null,
-            low: 1,
-            high: RUNTIME_LIMIT_MAX,
-            open: true,
-            disabled,
-            ...draftOf(runtime),
-            onSet: (limit) => onSet(withRuntimeLimit(limits, runtime, limit)),
-            onInvalid,
-          })}
-        </span>
-      ))}
     </span>
   );
 }

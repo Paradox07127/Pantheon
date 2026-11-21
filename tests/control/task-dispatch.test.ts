@@ -2,7 +2,6 @@ import { expect, it, vi } from 'vitest';
 import { FixtureAdapter } from '@pantheon/adapters';
 import type {
   BoardPlan,
-  Milestone,
   Principal,
   Project,
   ProjectRead,
@@ -414,30 +413,6 @@ it('keeps a task named like an object prototype property apart from the accepted
   expect(sessionsOf(f, lead.id, 'constructor')).toHaveLength(1);
 });
 
-it('accepts a milestone of report tasks on the accepted tasks as evidence', async () => {
-  const f = await workbenchFixture();
-  const lead = await leadWithPlan(
-    f,
-    [reportTask('r', { milestone: 'm1' }), reportTask('q')],
-    [{ id: 'm1', title: 'Format chosen', criteria: ['A format'], tasks: ['r'] }],
-  );
-  await acceptReport(f, lead.id, 'r');
-  const accept = (evidence_refs: string[]) =>
-    f.call<Milestone>(
-      'milestone.accept',
-      { milestone_id: 'm1', evidence_refs },
-      null,
-      sessionOf(f, lead.id, 'lead'),
-    );
-  expect(() => accept(['task:q'])).toThrow(expect.objectContaining({ code: 'invalid_input' }));
-  expect(() => accept(['task:missing'])).toThrow(
-    expect.objectContaining({ code: 'invalid_input' }),
-  );
-  expect(accept(['task:r']).acceptance).toMatchObject({ evidence_refs: ['task:r'] });
-  const read = f.control.projectRead(user, f.project.id) as ProjectRead;
-  expect(read.milestones.find((view) => view.milestone.key === 'm1')!.status).toBe('completed');
-});
-
 it('frees the place and scope of accepted report tasks for the next task', async () => {
   const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [
@@ -512,34 +487,13 @@ it('refuses a done report from before the goal of the report task changed', asyn
   expect(statusOf(f, lead.id, 'r')).toBe('done');
 });
 
-it('reopens an accepted task and its accepted milestone when the task contract changes', async () => {
+it('reopens an accepted task when the task contract changes', async () => {
   const f = await workbenchFixture();
-  const milestones = [{ id: 'm1', title: 'Format chosen', criteria: ['A format'], tasks: ['r'] }];
-  const lead = await leadWithPlan(f, [reportTask('r', { milestone: 'm1' })], milestones);
+  const lead = await leadWithPlan(f, [reportTask('r')]);
   await acceptReport(f, lead.id, 'r');
-  const acceptMilestone = () =>
-    f.call<Milestone>(
-      'milestone.accept',
-      { milestone_id: 'm1', evidence_refs: ['task:r'] },
-      null,
-      sessionOf(f, lead.id, 'lead'),
-    );
-  const milestoneStatus = () =>
-    (f.control.projectRead(user, f.project.id) as ProjectRead).milestones.find(
-      (view) => view.milestone.key === 'm1',
-    )!.status;
-  acceptMilestone();
-  expect(milestoneStatus()).toBe('completed');
 
-  writePlan(
-    f,
-    lead.id,
-    [reportTask('r', { milestone: 'm1', acceptance: ['Names the chosen format'] })],
-    milestones,
-  );
+  writePlan(f, lead.id, [reportTask('r', { acceptance: ['Names the chosen format'] })]);
   expect(statusOf(f, lead.id, 'r')).not.toBe('done');
-  expect(milestoneStatus()).toBe('active');
-  expect(acceptMilestone).toThrow(expect.objectContaining({ code: 'invalid_input' }));
 
   const [worker] = sessionsOf(f, lead.id, 'r');
   // The next tick tells the idle session of the change.
@@ -559,7 +513,6 @@ it('reopens an accepted task and its accepted milestone when the task contract c
     sessionOf(f, lead.id, 'lead'),
   );
   expect(statusOf(f, lead.id, 'r')).toBe('done');
-  expect(milestoneStatus()).toBe('ready_for_acceptance');
 });
 
 it('keeps the generation of a task whose title or lane is all that changed', async () => {
@@ -1085,29 +1038,6 @@ it('refuses to remove a project while a started task waits to open its session',
   expect(f.store.must<Project>('projects', f.project.id)).not.toHaveProperty('removed_at');
   stopTask(f, lead.id, 'b');
   expect(remove().removed_at).toEqual(expect.any(Number));
-});
-
-it('refuses a user revision of a lead milestone, whose sessions follow its tasks', async () => {
-  const f = await workbenchFixture();
-  const lead = await leadWithPlan(
-    f,
-    [task('a', { milestone: 'm1' })],
-    [{ id: 'm1', title: 'Export ready', criteria: ['Exports download'], tasks: ['a'] }],
-  );
-  const milestone = f.store.list<Milestone>('milestones').find((row) => row.key === 'm1')!;
-  expect(() =>
-    f.call(
-      'milestone.revise',
-      {
-        milestone_id: milestone.id,
-        title: 'Export ready',
-        required_sessions: [lead.id],
-        criteria: ['Exports download'],
-      },
-      milestone.revision,
-    ),
-  ).toThrow(expect.objectContaining({ code: 'invalid_state' }));
-  expect(f.store.must<Milestone>('milestones', milestone.id)).toEqual(milestone);
 });
 
 it('waits for a free place before telling an accepted report task that its lead renamed it', async () => {

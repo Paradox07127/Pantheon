@@ -8,7 +8,6 @@ import {
   type BoardPlan,
   type LeadNote,
   type LeadQuestion,
-  type Milestone,
   type Principal,
   type SessionTurn,
   type WorkflowPolicy,
@@ -247,20 +246,6 @@ function overBudget(f: Fixture) {
   f.store.event('turn.completed', turn, f.project.id, {});
 }
 
-/** The milestone, once its one task is accepted. */
-function readyMilestone(f: Fixture) {
-  const current = plan(f);
-  f.store.update<BoardPlan>(
-    'board_plans',
-    {
-      ...current,
-      accepted: { api: { at: f.store.now(), evidence: 'The report answers it', generation: 1 } },
-    },
-    current.revision,
-  );
-  return f.store.list<Milestone>('milestones').find((row) => row.key === 'release')!;
-}
-
 type Situation = (f: Fixture) => {
   input: Record<string, unknown>;
   revision?: number;
@@ -428,13 +413,6 @@ const situations: Record<string, Situation> = {
       },
     };
   },
-  'a milestone ready for acceptance': (f) => {
-    const milestone = readyMilestone(f);
-    return {
-      input: { milestone_id: milestone.id, evidence_refs: ['task:api'] },
-      revision: milestone.revision,
-    };
-  },
   'any input': () => ({ input: {} }),
 };
 
@@ -473,13 +451,6 @@ it.each<[CommandType, PersonalAnswerKind[], keyof typeof situations, string]>([
     'a plan proposal over budget',
     'permission_denied',
   ],
-  [
-    'milestone.accept',
-    ['question', 'plan_change'],
-    'a milestone ready for acceptance',
-    'permission_denied',
-  ],
-  ['milestone.accept', ['milestone_accept'], 'a milestone ready for acceptance', 'accepted'],
   ['approval.respond', ALL, 'any input', 'permission_denied'],
   ['external.approve', ALL, 'any input', 'permission_denied'],
 ])(
@@ -500,9 +471,9 @@ it.each<[CommandType, PersonalAnswerKind[], keyof typeof situations, string]>([
 );
 
 it.each<[PersonalAnswerKind[], Record<string, boolean>]>([
-  [[], { question: false, relayed: false, proposal: false, milestone: false }],
-  [['question'], { question: true, relayed: false, proposal: false, milestone: false }],
-  [ALL, { question: true, relayed: false, proposal: true, milestone: true }],
+  [[], { question: false, relayed: false, proposal: false }],
+  [['question'], { question: true, relayed: false, proposal: false }],
+  [ALL, { question: true, relayed: false, proposal: true }],
 ])(
   'shows a personal principal with %j allowed which decisions it may answer',
   async (answers, allowed) => {
@@ -510,12 +481,10 @@ it.each<[PersonalAnswerKind[], Record<string, boolean>]>([
     const question = askQuestion(f);
     relayQuestion(f);
     const proposal = propose(f);
-    const milestone = readyMilestone(f);
     const names: Record<string, string> = {
       [question]: 'question',
       relayed: 'relayed',
       [proposal]: 'proposal',
-      [milestone.id]: 'milestone',
     };
     const shown = Object.fromEntries(
       f.control

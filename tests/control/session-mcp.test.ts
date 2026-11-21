@@ -201,7 +201,7 @@ it('describes project_read facts without promising feedback', async () => {
   const client = await connect((await sessionFixture('planner')).spec);
   const tool = (await client.listTools()).tools.find((tool) => tool.name === 'project_read');
   expect(tool).toBeDefined();
-  for (const fact of ['details', 'brief', 'milestones', "every lead's board plan"])
+  for (const fact of ['details', 'brief', "every lead's board plan"])
     expect(tool!.description).toContain(fact);
   expect(tool!.description).toContain("each task's state and sessions");
   expect(tool!.description).not.toMatch(/feedback/i);
@@ -612,7 +612,6 @@ it('mounts a lead credential on a workbench session and a worker credential on a
     'edit_board',
     'propose_board',
     'withdraw_board_proposal',
-    'milestone_accept',
     'start_task',
     'message_task',
     'accept_task',
@@ -632,7 +631,6 @@ it('mounts a lead credential on a workbench session and a worker credential on a
     'browser_open',
     'browser_read',
     'browser_screenshot',
-    'reassess',
     'guide',
   ]);
   const plan = {

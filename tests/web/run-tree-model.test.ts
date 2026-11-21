@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import type { BoardModel, BoardSegment, SessionTrace } from '@pantheon/protocol';
-import { isLive, runForest, runStats, type RunNode } from '@/screens/runtime/run-tree';
+import type { SessionTrace } from '@pantheon/protocol';
+import {
+  isLive,
+  runForest,
+  runStats,
+  type RunNode,
+  type RunSession,
+} from '@/screens/runtime/run-tree';
 
 type Span = SessionTrace['spans'][number];
-type Task = BoardModel['tasks'][number];
-type Lead = NonNullable<BoardModel['leads']>[number];
 
 const span = (id: string, kind: Span['kind'], extra: Partial<Span> = {}): Span => ({
   id,
@@ -19,55 +23,16 @@ const span = (id: string, kind: Span['kind'], extra: Partial<Span> = {}): Span =
   ...extra,
 });
 
-const segment = (id: string, extra: Partial<BoardSegment> = {}): BoardSegment => ({
+const listed = (id: string, extra: Partial<RunSession> = {}): RunSession => ({
   id,
-  session_id: id,
   title: `title of ${id}`,
   runtime: 'claude',
-  model: 'claude-sonnet',
-  status: 'running',
-  started_at: null,
-  ended_at: null,
-  tokens: 999,
-  ...extra,
-});
-
-const task = (id: string, extra: Partial<Task> = {}): Task => ({
-  id,
-  title: `task ${id}`,
-  goal: '',
-  scope: [],
-  lane_id: null,
-  milestone_id: null,
-  status: 'running',
-  blockers: [],
-  segments: [],
-  additions: null,
-  deletions: null,
-  checks: 'none',
-  started_at: null,
-  ended_at: null,
-  last_progress_at: null,
-  blocked_since: null,
-  turn_running: false,
-  ...extra,
-});
-
-const lead = (session_id: string, extra: Partial<Lead> = {}): Lead => ({
-  session_id,
-  title: `lead ${session_id}`,
+  model: null,
   state: 'running',
-  inbox: 0,
-  updated_at: 0,
   ...extra,
 });
 
-const activity = (phase: NonNullable<Task['activity']>['phase']): Task['activity'] => ({
-  phase,
-  since: 0,
-  health: 'fresh',
-  attempt: 1,
-});
+const NO_PARENTS: ReadonlyMap<string, string> = new Map();
 
 const node = (id: string, extra: Partial<RunNode> = {}): RunNode => ({
   id,
@@ -82,26 +47,14 @@ const node = (id: string, extra: Partial<RunNode> = {}): RunNode => ({
   tokens: 0,
   calls: [],
   children: [],
-  taskId: null,
   ...extra,
 });
 
 describe('runForest', () => {
-  it('nests lead, task session, subagent and nested subagent with calls on their own node', () => {
+  it('nests session, started session, subagent and nested subagent with calls on their own node', () => {
     const forest = runForest(
-      {
-        leads: [lead('lead-1')],
-        tasks: [
-          task('lead-1:build', {
-            owner_session_id: 'lead-1',
-            segments: [segment('worker-1', { started_at: 100 })],
-          }),
-        ],
-      },
-      [
-        { id: 'lead-1', runtime: 'claude' },
-        { id: 'worker-1', runtime: 'claude' },
-      ],
+      [listed('lead-1'), listed('worker-1', { model: 'claude-sonnet' })],
+      new Map([['worker-1', 'lead-1']]),
       new Map([
         [
           'lead-1',
@@ -128,18 +81,18 @@ describe('runForest', () => {
       ]),
     );
     expect(forest.adhoc).toEqual([]);
+    expect(forest.trees.map((n) => n.id)).toEqual(['lead-1']);
     const root = forest.trees[0]!;
     expect(root).toMatchObject({
       id: 'lead-1',
-      kind: 'lead',
+      kind: 'session',
       runtime: 'claude',
-      title: 'lead lead-1',
-      model: 'claude-opus',
+      title: 'title of lead-1',
+      model: null,
       status: 'running',
       start: 10,
       end: null,
       tokens: 12,
-      taskId: null,
     });
     expect(root.calls.map((c) => c.id)).toEqual(['lead-llm']);
     const worker = root.children[0]!;
@@ -148,9 +101,8 @@ describe('runForest', () => {
       kind: 'session',
       runtime: 'claude',
       model: 'claude-sonnet',
-      start: 100,
+      start: 110,
       tokens: 3,
-      taskId: 'lead-1:build',
     });
     expect(worker.calls.map((c) => c.id)).toEqual(['worker-llm']);
     const spawn = worker.children[0]!;
@@ -160,7 +112,6 @@ describe('runForest', () => {
       title: 'explorer',
       runtime: null,
       model: null,
-      taskId: null,
       start: 130,
       end: 200,
     });
@@ -182,8 +133,8 @@ describe('runForest', () => {
 
   it('turns a Task tool span recorded by the daemon into a subagent', () => {
     const forest = runForest(
-      { leads: [lead('lead-1')], tasks: [] },
-      [{ id: 'lead-1', runtime: 'codex' }],
+      [listed('lead-1', { runtime: 'codex' })],
+      NO_PARENTS,
       new Map([
         [
           'lead-1',
@@ -211,65 +162,47 @@ describe('runForest', () => {
     expect(root.end).toBeNull();
   });
 
-  it('maps segment statuses and orders segments by start with the phase on the newest only', () => {
+  it('reads a session status from its state and what it is doing now', () => {
+    const run = (phase: NonNullable<RunSession['run']>['phase']) => ({ phase, since: 0 });
     const forest = runForest(
-      {
-        leads: [lead('lead-1', { state: 'closed' })],
-        tasks: [
-          task('lead-1:retry', {
-            owner_session_id: 'lead-1',
-            activity: activity('thinking'),
-            segments: [
-              segment('s-open', { status: 'running', started_at: null, runtime: 'gemini' }),
-              segment('s-discarded', { status: 'discarded', started_at: 30 }),
-              segment('s-failed', { status: 'failed', started_at: 10, ended_at: 20 }),
-              segment('s-none', { session_id: null, status: 'done', started_at: 5 }),
-            ],
-          }),
-          task('lead-1:other', {
-            owner_session_id: 'lead-1',
-            segments: [
-              segment('s-ready', { status: 'ready', started_at: 1 }),
-              segment('s-done', { status: 'done', started_at: 2 }),
-              segment('s-waiting', { status: 'waiting', started_at: 3 }),
-              segment('s-todo', { status: 'todo', started_at: 4 }),
-              segment('s-idle', { status: 'idle', started_at: 5 }),
-            ],
-          }),
-        ],
-      },
-      [],
+      [
+        listed('starting', { state: 'starting' }),
+        listed('running', { state: 'running', run: run('thinking') }),
+        listed('waiting', { state: 'waiting' }),
+        listed('idle', { state: 'idle', run: run('idle') }),
+        listed('ready', { state: 'ready' }),
+        listed('merging', { state: 'merging' }),
+        listed('gate', { state: 'ready', run: run('gate') }),
+        listed('approval', { state: 'idle', run: run('waiting_approval') }),
+        listed('failed', { state: 'failed', run: run('thinking') }),
+        listed('merged', { state: 'merged' }),
+        listed('discarded', { state: 'discarded' }),
+        listed('done', { state: 'done' }),
+      ],
+      NO_PARENTS,
       new Map(),
     );
-    const root = forest.trees[0]!;
-    expect(root.status).toBe('idle');
-    expect(root.runtime).toBeNull();
-    expect(root.model).toBeNull();
-    expect(root.children.map((c) => [c.id, c.status, c.phase, c.runtime])).toEqual([
-      ['s-failed', 'error', null, 'claude'],
-      ['s-discarded', 'idle', null, 'claude'],
-      ['s-open', 'running', 'thinking', 'gemini'],
-      ['s-ready', 'ready', null, 'claude'],
-      ['s-done', 'ok', null, 'claude'],
-      ['s-waiting', 'waiting', null, 'claude'],
-      ['s-todo', 'idle', null, 'claude'],
-      ['s-idle', 'idle', null, 'claude'],
+    expect(forest.trees.map((n) => [n.id, n.status, n.phase])).toEqual([
+      ['starting', 'running', null],
+      ['running', 'running', 'thinking'],
+      ['waiting', 'waiting', null],
+      ['idle', 'idle', 'idle'],
+      ['ready', 'ready', null],
+      ['merging', 'running', null],
+      ['gate', 'running', 'gate'],
+      ['approval', 'waiting', 'waiting_approval'],
+      ['failed', 'error', 'thinking'],
+      ['merged', 'ok', null],
+      ['discarded', 'idle', null],
+      ['done', 'ok', null],
     ]);
-    expect(root.children[0]).toMatchObject({ start: 10, end: 20, tokens: 0 });
+    expect(runStats(forest.trees, 0).running).toBe(4);
   });
 
-  it('keeps the runtime of a lead and its sessions beyond Claude and Codex', () => {
+  it('keeps the runtime of a session and the sessions it started beyond Claude and Codex', () => {
     const forest = runForest(
-      {
-        leads: [lead('lead-1')],
-        tasks: [
-          task('lead-1:a', {
-            owner_session_id: 'lead-1',
-            segments: [segment('s-grok', { runtime: 'grok' })],
-          }),
-        ],
-      },
-      [{ id: 'lead-1', runtime: 'agy' }],
+      [listed('lead-1', { runtime: 'agy' }), listed('s-grok', { runtime: 'grok' })],
+      new Map([['s-grok', 'lead-1']]),
       new Map(),
     );
     const root = forest.trees[0]!;
@@ -277,73 +210,31 @@ describe('runForest', () => {
     expect(root.children.map((c) => c.runtime)).toEqual(['grok']);
   });
 
-  it('gives a queued task without a session one node keyed by the task id', () => {
+  it('names a baseline session without a title by its start', () => {
     const forest = runForest(
-      {
-        leads: [lead('lead-1', { state: 'waiting' })],
-        tasks: [
-          task('lead-1:queued', {
-            owner_session_id: 'lead-1',
-            status: 'todo',
-            activity: activity('queued'),
-            segments: [segment('never', { session_id: null })],
-          }),
-        ],
-      },
-      [],
+      [listed('baseline', { title: '', baseline_started_at: 0 })],
+      NO_PARENTS,
       new Map(),
     );
-    expect(forest.trees[0]!.status).toBe('waiting');
-    expect(forest.trees[0]!.children).toEqual([
-      node('lead-1:queued', {
-        title: 'task lead-1:queued',
-        status: 'idle',
-        phase: 'queued',
-        taskId: 'lead-1:queued',
-      }),
+    expect(forest.trees[0]!.title).not.toBe('');
+  });
+
+  it('puts a session whose starter is not listed on top', () => {
+    const forest = runForest(
+      [listed('lead'), listed('orphan')],
+      new Map([['orphan', 'gone']]),
+      new Map(),
+    );
+    expect(forest.trees.map((n) => [n.id, n.children.length])).toEqual([
+      ['lead', 0],
+      ['orphan', 0],
     ]);
   });
 
-  it('puts tasks without a lead in adhoc', () => {
+  it('puts session subagents after the sessions it started', () => {
     const forest = runForest(
-      {
-        tasks: [
-          task('solo', { segments: [segment('solo', { status: 'failed' })] }),
-          task('fresh', { status: 'waiting' }),
-        ],
-      },
-      [{ id: 'solo', runtime: 'claude' }],
-      new Map([['solo', [span('solo-read', 'tool', { status: 'error' })]]]),
-    );
-    expect(forest.trees).toEqual([]);
-    expect(forest.adhoc.map((n) => [n.id, n.status, n.taskId, n.calls.length])).toEqual([
-      ['solo', 'error', 'solo', 1],
-      ['fresh', 'waiting', 'fresh', 0],
-    ]);
-  });
-
-  it('puts tasks whose lead is not listed in adhoc', () => {
-    const forest = runForest(
-      { tasks: [task('orphan', { owner_session_id: 'gone' })], leads: [lead('lead')] },
-      [],
-      new Map(),
-    );
-    expect(forest.trees.map((n) => n.children.length)).toEqual([0]);
-    expect(forest.adhoc.map((n) => n.id)).toEqual(['orphan']);
-  });
-
-  it('puts session subagents after the task children', () => {
-    const forest = runForest(
-      {
-        leads: [lead('lead-1')],
-        tasks: [
-          task('lead-1:a', {
-            owner_session_id: 'lead-1',
-            segments: [segment('worker', { started_at: 50 })],
-          }),
-        ],
-      },
-      [],
+      [listed('lead-1'), listed('worker')],
+      new Map([['worker', 'lead-1']]),
       new Map([
         [
           'lead-1',
@@ -357,27 +248,28 @@ describe('runForest', () => {
     expect(forest.trees[0]!.children.map((c) => c.id)).toEqual(['worker', 'early', 'late']);
   });
 
-  it('orders trees by newest activity with idle leads last', () => {
+  it('orders trees by newest activity with idle sessions last', () => {
     const forest = runForest(
-      {
-        leads: [lead('quiet'), lead('old'), lead('new'), lead('also-quiet')],
-        tasks: [
-          task('new:a', {
-            owner_session_id: 'new',
-            segments: [segment('new-worker', { started_at: 10, ended_at: 900 })],
-          }),
-        ],
-      },
-      [],
-      new Map([['old', [span('old-llm', 'llm', { start: 100, end: 500 })]]]),
+      [
+        listed('quiet'),
+        listed('old'),
+        listed('new'),
+        listed('also-quiet'),
+        listed('new-worker', { state: 'idle' }),
+      ],
+      new Map([['new-worker', 'new']]),
+      new Map([
+        ['old', [span('old-llm', 'llm', { start: 100, end: 500 })]],
+        ['new-worker', [span('new-read', 'tool', { start: 10, end: 900 })]],
+      ]),
     );
     expect(forest.trees.map((t) => t.id)).toEqual(['new', 'old', 'quiet', 'also-quiet']);
   });
 
-  it('keeps a running lead open between its calls', () => {
+  it('keeps a running session open between its calls', () => {
     const forest = runForest(
-      { leads: [lead('lead-1')], tasks: [] },
-      [],
+      [listed('lead-1')],
+      NO_PARENTS,
       new Map([['lead-1', [span('done-read', 'tool', { start: 10, end: 20 })]]]),
     );
     const root = forest.trees[0]!;
@@ -385,10 +277,10 @@ describe('runForest', () => {
     expect(runStats([root], 1000).duration_ms).toBe(990);
   });
 
-  it('counts the turn tokens its model calls do not carry and times a lead by its turns', () => {
+  it('counts the turn tokens its model calls do not carry and times a session by its turns', () => {
     const forest = runForest(
-      { leads: [lead('codex-lead', { state: 'idle' })], tasks: [] },
-      [{ id: 'codex-lead', runtime: 'codex' }],
+      [listed('codex-lead', { state: 'idle', runtime: 'codex' })],
+      NO_PARENTS,
       new Map([
         [
           'codex-lead',
@@ -433,8 +325,8 @@ describe('runForest', () => {
 
   it('counts the ended turns that reported no tokens on the node that ran them', () => {
     const forest = runForest(
-      { leads: [lead('acp-lead', { state: 'idle' })], tasks: [] },
-      [{ id: 'acp-lead', runtime: 'grok' }],
+      [listed('acp-lead', { state: 'idle', runtime: 'grok' })],
+      NO_PARENTS,
       new Map([
         [
           'acp-lead',
@@ -469,63 +361,13 @@ describe('runForest', () => {
     expect(runStats([root], 2000)).toMatchObject({ tokens: 52, unreported: 1 });
   });
 
-  it('times a tool-free lead by its turns alone', () => {
+  it('times a tool-free session by its turns alone', () => {
     const forest = runForest(
-      { leads: [lead('quiet-lead', { state: 'idle' })], tasks: [] },
-      [],
+      [listed('quiet-lead', { state: 'idle' })],
+      NO_PARENTS,
       new Map([['quiet-lead', [span('turn-1', 'turn', { parent: null, start: 100, end: 400 })]]]),
     );
     expect(forest.trees[0]).toMatchObject({ start: 100, end: 400, tokens: 0 });
-  });
-
-  it('reads a session status with what it is doing now', () => {
-    const forest = runForest(
-      {
-        tasks: [
-          task('idle-session', {
-            status: 'idle',
-            activity: activity('idle'),
-            segments: [segment('idle-session', { status: 'idle' })],
-          }),
-          task('merging-session', {
-            status: 'ready',
-            activity: activity('merging'),
-            segments: [segment('merging-session', { status: 'ready' })],
-          }),
-          task('gate-session', {
-            status: 'ready',
-            activity: activity('gate'),
-            segments: [segment('gate-session', { status: 'ready' })],
-          }),
-          task('ready-session', {
-            status: 'ready',
-            activity: activity('idle'),
-            segments: [segment('ready-session', { status: 'ready' })],
-          }),
-          task('approval-session', {
-            status: 'waiting',
-            activity: activity('waiting_approval'),
-            segments: [segment('approval-session', { status: 'waiting' })],
-          }),
-          task('failed-session', {
-            status: 'failed',
-            activity: activity('idle'),
-            segments: [segment('failed-session', { status: 'failed' })],
-          }),
-        ],
-      },
-      [],
-      new Map(),
-    );
-    expect(forest.adhoc.map((n) => [n.id, n.status])).toEqual([
-      ['idle-session', 'idle'],
-      ['merging-session', 'running'],
-      ['gate-session', 'running'],
-      ['ready-session', 'ready'],
-      ['approval-session', 'waiting'],
-      ['failed-session', 'error'],
-    ]);
-    expect(runStats(forest.adhoc, 0).running).toBe(2);
   });
 
   it('ends an open session that is not running at its last call or turn', () => {
@@ -535,25 +377,20 @@ describe('runForest', () => {
       span('pending', 'tool', { start: 320, status: 'running' }),
     ];
     const forest = runForest(
-      {
-        tasks: [
-          task('waiting-task', {
-            status: 'waiting',
-            activity: activity('waiting_approval'),
-            segments: [segment('waiting-session', { status: 'waiting', started_at: 100 })],
-          }),
-          task('running-task', {
-            segments: [segment('running-session', { status: 'running', started_at: 100 })],
-          }),
-        ],
-      },
-      [],
+      [
+        listed('waiting-session', {
+          state: 'waiting',
+          run: { phase: 'waiting_approval', since: 320 },
+        }),
+        listed('running-session'),
+      ],
+      NO_PARENTS,
       new Map([
         ['waiting-session', spans],
         ['running-session', spans],
       ]),
     );
-    const [waiting, running] = forest.adhoc;
+    const [waiting, running] = forest.trees;
     expect(waiting).toMatchObject({ status: 'waiting', start: 100, end: 320 });
     expect(runStats([waiting!], 1000).duration_ms).toBe(220);
     expect(running).toMatchObject({ status: 'running', start: 100, end: null });
@@ -561,8 +398,8 @@ describe('runForest', () => {
 
   it('does not hang on a cycle in parent links', () => {
     const forest = runForest(
-      { leads: [lead('lead-1')], tasks: [] },
-      [],
+      [listed('lead-1')],
+      NO_PARENTS,
       new Map([
         [
           'lead-1',
@@ -587,14 +424,14 @@ describe('runForest', () => {
     );
   });
 
-  it('times a lead with a very long history of calls and subagents', () => {
+  it('times a session with a very long history of calls and subagents', () => {
     const count = 300_000;
     const spans = Array.from({ length: count }, (_, i) =>
       span(`call-${i}`, i % 2 === 0 ? 'tool' : 'subagent', { start: i, end: i + 1 }),
     );
     const forest = runForest(
-      { leads: [lead('lead-1', { state: 'idle' })], tasks: [] },
-      [],
+      [listed('lead-1', { state: 'idle' })],
+      NO_PARENTS,
       new Map([['lead-1', spans]]),
     );
     expect(forest.trees[0]).toMatchObject({ start: 0, end: count - 1 });

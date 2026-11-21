@@ -23,7 +23,6 @@ export type SettingsPage =
   | 'defaults'
   | 'project'
   | 'extensions'
-  | 'workflow'
   | 'projects';
 
 /** The navigation's page for a page; a part of one project's page is on the projects page. */
@@ -120,13 +119,6 @@ export const SETTINGS_PAGES: {
       return t({ id: 'settings.pages.about', defaultMessage: 'About' });
     },
     group: 'app',
-  },
-  {
-    key: 'workflow',
-    get label() {
-      return t({ id: 'settings.pages.workflow', defaultMessage: 'Workflow' });
-    },
-    group: 'global',
   },
   {
     key: 'defaults',

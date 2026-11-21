@@ -27,8 +27,6 @@ it('defines a strict input schema for each unimplemented command and the queries
     'agent.wakes',
     'app.settings',
     'backend.list',
-    'board.history',
-    'board.plan.replay',
     'board.view',
     'change_story.diff',
     'change_story.list',
@@ -216,14 +214,6 @@ it('defines strict session pin, archive, unarchive and delete commands', () => {
   }
 });
 
-it('defines strict goal archive and restore commands', () => {
-  for (const type of ['goal.archive', 'goal.restore'] as const) {
-    expect(inputSchemas[type].safeParse({ goal_id: 'g' }).success, type).toBe(true);
-    expect(inputSchemas[type].safeParse({}).success, type).toBe(false);
-    expect(inputSchemas[type].safeParse({ goal_id: 'g', extra: 1 }).success, type).toBe(false);
-  }
-});
-
 it('defines a strict session snooze command', () => {
   const schema = inputSchemas['session.snooze'];
   expect(schema.safeParse({ session_id: 's', snoozed: true }).success).toBe(true);
@@ -357,13 +347,6 @@ it('accepts at most ten attachments and ten skills on a session turn', () => {
   expect(
     inputSchemas['session.create'].safeParse({ ...create, attachments: ids(11) }).success,
   ).toBe(false);
-});
-
-it('defines board history with only the project parameter', () => {
-  const schema = querySchemas['board.history'];
-  expect(schema.parse({ project_id: 'project' })).toEqual({ project_id: 'project' });
-  expect(schema.safeParse({}).success).toBe(false);
-  expect(schema.safeParse({ project_id: 'project', days: '7' }).success).toBe(false);
 });
 
 it('accepts whole-project memory graphs with contextual defaults and bounded node limits', () => {

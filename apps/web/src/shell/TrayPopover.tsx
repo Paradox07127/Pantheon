@@ -12,13 +12,7 @@ import { runtimeName } from '../components/RuntimeGlyph';
 import { StateGlyph } from '../components/SessionStateIcon';
 import { useBoard } from '../data/board';
 import { runCommand } from '../data/commands';
-import {
-  failureText,
-  needReasonText,
-  useNeedsYou,
-  useNow,
-  type NeedsYouItem,
-} from '../data/needs-you';
+import { failureText, reasonText, useNeedsYou, useNow, type NeedsYouItem } from '../data/needs-you';
 import { visibleProjects } from '../data/projects';
 import { useRuntimeStatus } from '../data/runtime-status';
 import type { DaemonEvent } from '../data/sync';
@@ -32,14 +26,8 @@ import { readyAfterPaint } from './window-kind';
 import { EmptyState } from '../components/EmptyState';
 import './tray-popover.css';
 
-/** The needs-you reasons that want an answer now: a permission request, a question, a step, external request or lane plan to approve. */
-export const WAITING: readonly NeedsYouItem['reason'][] = [
-  'permission_requested',
-  'lead_question',
-  'workflow_approval',
-  'external_approval',
-  'lane_plan_awaiting_approval',
-];
+/** The needs-you reasons that want an answer now: a permission request. */
+export const WAITING: readonly NeedsYouItem['reason'][] = ['permission_requested'];
 const SHOWN = 5;
 
 /** A permission request answered with allow or deny; a request that asks questions opens instead. */
@@ -243,30 +231,17 @@ export function TrayPopover() {
     const id = item.source.id;
     const waited = durationText(now - item.created_at);
     if (!isRequest(item)) {
-      const approval = item.reason !== 'lead_question';
-      const label = approval
-        ? needReasonText(item)
-        : t(
-            { id: 'trayPopover.waiting.asked', defaultMessage: '{name} asked a question' },
-            { name: nameOf(item.project_id, item.session_id) },
-          );
       return (
         <button
           type="button"
           key={id}
           className="tp-row"
-          // An external request that waits is listed by its lead session.
-          onClick={() =>
-            open(
-              item.project_id,
-              item.reason === 'external_approval' ? item.source.id : item.session_id,
-            )
-          }
+          onClick={() => open(item.project_id, item.session_id)}
         >
           <span className="tp-ic" aria-hidden="true">
-            <StateGlyph name={approval ? 'approval' : 'question'} />
+            <StateGlyph name="approval" />
           </span>
-          <span className="tp-nm">{label}</span>
+          <span className="tp-nm">{reasonText(item.reason)}</span>
           <span className="tp-ct">{waited}</span>
         </button>
       );

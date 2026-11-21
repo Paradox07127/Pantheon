@@ -148,25 +148,7 @@ describe('directory names and roots', () => {
 });
 
 describe('project summary refresh', () => {
-  it('reads the summary again after task dispatch and lead wake events', () => {
-    for (const kind of [
-      'task.dispatch_failed',
-      'task.dispatched',
-      'task.stop_requested',
-      'board.lead_wake_failed',
-    ])
-      expect(changesSummary(kind)).toBe(true);
+  it('does not read the summary again after a message delta', () => {
     expect(changesSummary('agent.message.delta')).toBe(false);
-  });
-
-  it('reads the summary again after the events that change what needs you', () => {
-    for (const kind of [
-      'lead.question_asked',
-      'lead.question_answered',
-      'workflow.step_created',
-      'workflow.step_changed',
-      'workflow.policy_changed',
-    ])
-      expect([kind, changesSummary(kind)]).toEqual([kind, true]);
   });
 });

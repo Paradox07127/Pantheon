@@ -16,21 +16,16 @@ import * as nativeRuntimeAdmission from './native-runtime-admission.mjs';
 import * as nativeSessionRecovery from './native-session-recovery.mjs';
 import * as nativeExtensionIsolation from './native-extension-isolation.mjs';
 import * as repositoryFixtureReproducibility from './repository-fixture-reproducibility.mjs';
-import * as residentAssistant from './resident-assistant.mjs';
 import * as reviewIsolationFindings from './review-isolation-findings.mjs';
 import * as runtimeHandoff from './runtime-handoff.mjs';
 import * as steerAndDelivery from './steer-and-delivery.mjs';
 import * as storageCrashRecovery from './storage-crash-recovery.mjs';
-import * as workbenchLoop from './workbench-loop.mjs';
 import * as workbenchScreens from './workbench-screens.mjs';
-import * as zeroClickLoop from './zero-click-loop.mjs';
 
 export const scenarios = new Map();
 for (const scenario of [
   repositoryFixtureReproducibility,
-  workbenchLoop,
   codexSmoke,
-  zeroClickLoop,
   codexZeroClick,
   storageCrashRecovery,
   commandDedupRevisions,
@@ -51,7 +46,6 @@ for (const scenario of [
   nativeExtensionIsolation,
   appDailyLoop,
   firstRunImport,
-  residentAssistant,
   folderSessionLanding,
 ]) {
   if (scenarios.has(scenario.title)) throw new Error(`Duplicate scenario title: ${scenario.title}`);

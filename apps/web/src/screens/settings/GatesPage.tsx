@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
-import { GripVertical, Plus, X } from 'lucide-react';
+import { GripVertical, Pin, Plus, X } from 'lucide-react';
 import { create } from 'zustand';
 import type { BoardSnapshot } from '@pantheon/protocol';
 import { EnvironmentCheck } from '../../components/EnvironmentCheck';
@@ -10,7 +10,7 @@ import { Select } from '../../components/Select';
 import { useBaselineRead } from '../../data/baseline-read';
 import { runCommand } from '../../data/commands';
 import {
-  countRange,
+  HANDBACK_LIMIT_RANGE,
   isPolicy,
   PARAM_LABEL,
   setPolicy,
@@ -38,9 +38,9 @@ import {
   type GateRun,
 } from './gate';
 import { failureText, Section, type Failure } from './ProjectSettingsScreen';
-import { pinButton } from './WorkflowPage';
 import { EmptyState } from '../../components/EmptyState';
 import './gates.css';
+import './policy-rows.css';
 
 type Project = BoardSnapshot['projects'][number];
 
@@ -470,9 +470,31 @@ export function FolderGate({
   );
 }
 
+/** A parameter's pin, which keeps improvements from changing it. */
+export const pinButton = (props: {
+  param: string;
+  pinned: boolean;
+  disabled: boolean;
+  onPin: () => void;
+}) => (
+  <button
+    type="button"
+    className="ib wf-pin"
+    aria-pressed={props.pinned}
+    aria-label={t(
+      { id: 'settings.workflow.pin', defaultMessage: 'Pin {param}' },
+      { param: props.param },
+    )}
+    disabled={props.disabled}
+    onClick={props.disabled ? undefined : props.onPin}
+  >
+    <Pin aria-hidden="true" />
+  </button>
+);
+
 type GatePolicyPatch = Pick<
   PolicyPatch,
-  'handback_limit' | 'gate_on_fail' | 'gate_runner' | 'recovery_switch' | 'milestone_verify'
+  'handback_limit' | 'gate_on_fail' | 'gate_runner' | 'recovery_switch'
 >;
 
 /** The gate fields of a policy; those it stores none of read as the daemon's defaults. */
@@ -481,7 +503,6 @@ const gatePolicyOf = (policy: WorkflowPolicy): Required<GatePolicyPatch> => ({
   gate_on_fail: policy.gate_on_fail ?? 'handback',
   gate_runner: policy.gate_runner ?? 'daemon',
   recovery_switch: policy.recovery_switch ?? 'off',
-  milestone_verify: policy.milestone_verify ?? 'off',
 });
 
 const useGatePolicySave = create<{
@@ -570,7 +591,7 @@ export function GatePolicy({ project }: { project: Project }) {
       </div>
     ) : null;
   const current = gatePolicyOf(policy);
-  const [low, high] = countRange(policy, 'handback_limit');
+  const [low, high] = HANDBACK_LIMIT_RANGE;
   // A stored count outside the range still shows as the chosen one.
   const counts = [
     ...new Set([
@@ -586,10 +607,6 @@ export function GatePolicy({ project }: { project: Project }) {
   const recovery = t({
     id: 'settings.gate.recoverySwitch',
     defaultMessage: 'Switch runtime when hand-backs run out',
-  });
-  const verify = t({
-    id: 'settings.gate.milestoneVerify',
-    defaultMessage: 'Verify milestones automatically',
   });
   return (
     <div className="ps-grp">
@@ -673,18 +690,6 @@ export function GatePolicy({ project }: { project: Project }) {
             disabled,
             onChange: (gate_runner) => save({ gate_runner }),
           })}
-          <span />
-        </div>
-        <div className="ps-row wf-pr" data-setting-id="gates.milestoneVerify">
-          <span className="wf-nm">{verify}</span>
-          <input
-            type="checkbox"
-            className="ps-sw"
-            aria-label={verify}
-            checked={current.milestone_verify === 'auto'}
-            disabled={disabled}
-            onChange={(e) => save({ milestone_verify: e.target.checked ? 'auto' : 'off' })}
-          />
           <span />
         </div>
       </div>

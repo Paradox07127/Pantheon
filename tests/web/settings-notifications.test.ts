@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactElement, ReactNode } from 'react';
 import {
-  ATTENTION_KINDS,
   DEFAULT_ATTENTION_DELIVERY,
   type AppSettings,
   type WorkbenchSession,
@@ -305,22 +304,6 @@ describe('notices by kind of decision and delivery', () => {
     await deliverWith(items && [...items], given());
     expect(notify).toHaveBeenCalledTimes(count);
   });
-
-  it('holds a milestone to accept for the brief by default', async () => {
-    mock.board.board.milestones = [{ id: 'milestone-1', title: 'Payments' }];
-    const milestone: NeedsYouItem = {
-      ...approval('', 'project-a'),
-      source: { table: 'milestones', id: 'milestone-1', revision: 1 },
-      kind: 'milestone.ready_for_acceptance',
-      decision: 'milestone_accept',
-      reason: 'milestone_ready_for_acceptance',
-    };
-    await list(milestone);
-    expect(notify).not.toHaveBeenCalled();
-    settings = settingsWith({ milestone_accept: 'now' });
-    await list(milestone);
-    expect(notify).toHaveBeenCalledTimes(1);
-  });
 });
 
 describe('quiet hours', () => {
@@ -454,23 +437,17 @@ describe('the notifications page', () => {
     groups(tree).find((g) => g.props['aria-label'] === label)!;
 
   it('lists each kind of decision and merges by name with the stored choice chosen, then the locked row', async () => {
-    settings = settingsWith({ question: 'brief', budget: 'never' });
+    settings = settingsWith({ question: 'brief', improvement: 'never' });
     const all = groups((await page()).value);
     expect(all.map((g) => [g.props['aria-label'], g.props.value])).toEqual([
-      [say('planChange'), 'now'],
       [say('question'), 'brief'],
       [say('repeatedFailure'), 'now'],
       [say('permission'), 'now'],
-      [say('milestoneAccept'), 'brief'],
-      [say('budget'), 'never'],
-      [say('improvement'), 'now'],
-      [say('external'), 'now'],
+      [say('improvement'), 'never'],
       [say('other'), 'now'],
       [say('merged'), 'brief'],
       [say('overdueQuestion'), 'now'],
     ]);
-    // Every rule key, then the locked row.
-    expect(all).toHaveLength(ATTENTION_KINDS.length + 1);
     expect(
       nodes(all[0]!.props.children).map((n) => [n.props.value, text(n.props.children)]),
     ).toEqual([
@@ -505,7 +482,7 @@ describe('the notifications page', () => {
   it('stands every choice empty and disabled until the settings are read', () => {
     const host = mount(() => NotificationsPage());
     expect(groups(host.value).map((g) => [g.props.value, g.props.disabled])).toEqual([
-      ...ATTENTION_KINDS.map(() => [null, true]),
+      ...Array.from({ length: 6 }, () => [null, true]),
       ['now', true],
     ]);
   });

@@ -268,11 +268,15 @@ it('refuses to delete for another principal, a merged session and one a mileston
   end(f, merged.id, { outcome: 'merged' });
   end(f, named.id, { outcome: 'discarded' });
   end(f, free.id, { outcome: 'discarded' });
-  f.call<Milestone>('milestone.create', {
+  f.store.insert<Milestone>('milestones', {
+    id: 'named-milestone',
+    revision: 1,
     project_id: f.project.id,
     title: 'Ship it',
     required_sessions: [named.id],
     criteria: ['It ships'],
+    created_at: f.store.now(),
+    updated_by: 'user',
   });
   expect(() => run(f, 'session.delete', free.id, {}, planner(f))).toThrow(
     expect.objectContaining({ code: 'permission_denied' }),

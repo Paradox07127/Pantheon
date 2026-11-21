@@ -66,7 +66,7 @@ describe('settings navigation groups', () => {
       ]),
     );
     expect(labels('global')).toEqual(
-      pages(['workflow', 'defaults', 'usage', 'external', 'permissions', 'projects']),
+      pages(['defaults', 'usage', 'external', 'permissions', 'projects']),
     );
     expect(labels('project')).toEqual(pages(['gates', 'worktrees', 'extensions', 'project']));
     const nav = renderToStaticMarkup(createElement(SettingsNav, { page: 'general' }));
@@ -80,16 +80,16 @@ describe('settings navigation groups', () => {
   it('shows the same settings after the current project changes', () => {
     useCurrentProject.setState({ projectId: 'alpha' });
     useShell.getState().openSettings('alpha');
-    const first = shownOn('workflow');
+    const first = shownOn('defaults');
     useCurrentProject.setState({ projectId: 'beta' });
     useShell.getState().openSettings('beta');
     expect(useSettingsView.getState()).toMatchObject({
       open: true,
-      page: 'workflow',
+      page: 'defaults',
     });
     expect(screen()).toBe(first);
     expect(first).toContain(
-      `<h1>${zh('settings.pages.workflow')}</h1><span class="ps-chip">${zh('settings.nav.projects')}</span>`,
+      `<h1>${zh('settings.pages.defaults')}</h1><span class="ps-chip">${zh('settings.nav.projects')}</span>`,
     );
   });
 

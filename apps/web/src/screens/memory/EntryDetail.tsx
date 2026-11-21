@@ -27,8 +27,6 @@ export interface EntryDetailProps {
   dependencies: MemorySummary[];
   dependents: MemorySummary[];
   tasks: MemoryDirectory['facets']['tasks'];
-  /** The milestones of the plan's entries, which name the milestone an entry rests on. */
-  milestones?: NonNullable<MemoryDirectory['facets']['milestones']>;
   /** The directory signature now; a draft proposed against it is still the latest. */
   signature?: string;
   /** The session that proposed a draft. */
@@ -37,8 +35,6 @@ export interface EntryDetailProps {
   onOpen: (memoryId: string) => void;
   /** Sets the list's tag filter to this tag. */
   onTag: (tag: string) => void;
-  /** Goes to the board's overview with the plan's milestone unfolded. */
-  onOpenMilestone?: (milestoneId: string) => void;
   onClose: () => void;
 }
 
@@ -122,13 +118,11 @@ export function EntryDetail({
   dependencies,
   dependents,
   tasks,
-  milestones = [],
   signature,
   author,
   footer,
   onOpen,
   onTag,
-  onOpenMilestone,
   onClose,
 }: EntryDetailProps) {
   const all = versions.some((v) => v.id === item.id) ? versions : [item, ...versions];
@@ -150,9 +144,6 @@ export function EntryDetail({
   const sources = item.reference_status ?? [];
   const latest = signature === undefined ? undefined : item.based_on === signature;
   const origin = item.origin;
-  const milestone = origin?.milestone_id
-    ? milestones.find((m) => m.id === origin.milestone_id)
-    : undefined;
   const relatedRow = (s: MemorySummary, end: string) => (
     <button key={s.id} type="button" className="ed-row" data-id={s.id} onClick={() => onOpen(s.id)}>
       {kindIcon(s.kind, kindText(s.kind))}
@@ -198,20 +189,6 @@ export function EntryDetail({
             <span className="chip ed-st" data-st={OUTCOME[origin.outcome].tone}>
               {OUTCOME[origin.outcome].text()}
             </span>
-          )}
-          {origin?.milestone_id && (
-            <button
-              type="button"
-              className="chip ed-tag"
-              onClick={() => onOpenMilestone?.(origin.milestone_id!)}
-            >
-              {milestone?.title
-                ? t(
-                    { id: 'memory.detail.fromMilestone', defaultMessage: 'From milestone {title}' },
-                    { title: milestone.title },
-                  )
-                : t({ id: 'memory.detail.fromPlan', defaultMessage: 'From a plan milestone' })}
-            </button>
           )}
         </div>
         {!!item.tags?.length && (

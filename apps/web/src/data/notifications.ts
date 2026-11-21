@@ -12,7 +12,6 @@ import {
   type WorkbenchSession,
 } from '@pantheon/protocol';
 import { waitingSessions } from '../components/NeedsYou';
-import { needKey } from './need-actions';
 import { pendingPermissions, sessionRow } from '../screens/sessions/model';
 import { t, type Message } from '../i18n';
 import { listText } from '../lib/list-text';
@@ -20,8 +19,8 @@ import { useShell } from '../store';
 import { useAppSettings, type AppSettingsPatch } from './app-settings';
 import { useBoard } from './board';
 import { focusRequest } from './focus-request';
-import { answeredInStrip, becameReady, needsKey, needsSession, turnEndHold } from './notice-tiers';
-import { needReasonText, reasonText, type NeedsYouItem } from './needs-you';
+import { becameReady, needsKey, needsSession, turnEndHold } from './notice-tiers';
+import { needRowKey, reasonText, type NeedsYouItem } from './needs-you';
 import { visibleProjects } from './projects';
 import type { DaemonEvent, SyncView } from './sync';
 import { sessionTitle } from './transcript';
@@ -35,8 +34,6 @@ export interface Notice {
   silent?: boolean;
   /** The approval whose request card a click on the notice asks for; kept out of the notice itself. */
   request?: string;
-  /** The needs-you card a click on the notice opens, for a wait no thread answers; kept out of the notice itself. */
-  need?: string;
 }
 
 /** The events a notice is about. */
@@ -177,11 +174,10 @@ export const sessionNoticeNow = (
 const defineMessage = (message: Message): Message => message;
 
 /** Each kind's name, in the order the settings list them. */
-export const DECISION_NAME: Record<AttentionKind, Message> = {
-  plan_change: defineMessage({
-    id: 'settings.notifications.planChange',
-    defaultMessage: 'Plan change',
-  }),
+export const DECISION_NAME: Record<
+  Exclude<AttentionKind, 'plan_change' | 'milestone_accept' | 'budget' | 'external'>,
+  Message
+> = {
   question: defineMessage({ id: 'settings.notifications.question', defaultMessage: 'Question' }),
   repeated_failure: defineMessage({
     id: 'settings.notifications.repeatedFailure',
@@ -191,18 +187,9 @@ export const DECISION_NAME: Record<AttentionKind, Message> = {
     id: 'settings.notifications.permission',
     defaultMessage: 'Permission request',
   }),
-  milestone_accept: defineMessage({
-    id: 'settings.notifications.milestoneAccept',
-    defaultMessage: 'Milestone to accept',
-  }),
-  budget: defineMessage({ id: 'settings.notifications.budget', defaultMessage: 'Budget' }),
   improvement: defineMessage({
     id: 'settings.notifications.improvement',
     defaultMessage: 'Improvement',
-  }),
-  external: defineMessage({
-    id: 'settings.notifications.external',
-    defaultMessage: 'External approval',
   }),
   other: defineMessage({ id: 'settings.notifications.other', defaultMessage: 'Other' }),
   merged: defineMessage({ id: 'settings.notifications.merged', defaultMessage: 'Merged' }),
@@ -398,9 +385,6 @@ function eventBody(event: DaemonEvent): string | null {
 const turnSession = (event: DaemonEvent, board: BoardSnapshot): string | undefined =>
   board.session_turns.find((t) => t.id === event.aggregate_id)?.session_id;
 
-// A resident's turn Pantheon woke it for ends quietly; the agent reaches the user with tell_user or ask_user.
-const WAKE_ORIGINS: readonly (string | undefined)[] = ['tracker', 'sync', 'external'];
-
 /** The notice of a message an agent left for the user; it opens the agent's conversation. */
 function messageNotice(
   event: DaemonEvent,
@@ -445,9 +429,6 @@ export function eventNotice(
   const project = board.projects.find((p) => p.id === event.project_id);
   const session = board.sessions.find((s) => s.id === sessionId);
   if (!sessionId || !project || session?.change_story) return null;
-  const turn = board.session_turns.find((t) => t.id === event.aggregate_id);
-  if (TURN_ENDS.includes(event.kind) && session?.resident && WAKE_ORIGINS.includes(turn?.origin))
-    return null;
   if (kind === 'merged' && !noticeNow({ decision: 'merged', created_at: Date.now() }, r))
     return null;
   if (kind !== 'merged' && !sessionNoticeNow(sessionId, items, r)) return null;
@@ -489,15 +470,12 @@ export function liveNotices(
   return { cursor: { resync: sync.resync, seen }, notices };
 }
 
-/** A notice about no session, such as a milestone to accept, names the empty session; it opens the project's inbox. */
+/** A notice about no one session names the empty session; it opens the project's sessions. */
 const INBOX = '';
 
-/** Whether an item waits for the user's answer: a request, a lead's question or an approval. */
+/** Whether an item waits for the user's answer: a pending request. */
 export const waitsForAnswer = (item: NeedsYouItem) =>
-  (item.source.table === 'approvals' && item.status === 'pending') ||
-  item.kind === 'lead.question' ||
-  item.kind === 'external.approval' ||
-  item.kind === 'board.lane.approval';
+  item.source.table === 'approvals' && item.status === 'pending';
 
 /**
  * The dock badge: the items of every project that wait for the user's answer; null while the
@@ -540,11 +518,10 @@ export function requestNotices(
     next.add(key);
     const sessionId = needsSession(item);
     if (!seen || seen.has(key) || !sessionId) continue;
-    const question =
-      item.kind === 'lead.question' ? item.question?.question : item.questions?.[0]?.question;
+    const question = item.questions?.[0]?.question;
     const kind = question !== undefined ? 'question_asked' : 'approval_requested';
     if (!noticeNow(item, r)) continue;
-    const session = item.lane_title ?? heading(board, item.project_id, sessionId);
+    const session = heading(board, item.project_id, sessionId);
     notices.push({
       title:
         question !== undefined
@@ -556,13 +533,10 @@ export function requestNotices(
               },
               { session },
             ),
-      body: question ?? item.binding?.input_summary ?? item.binding?.action ?? needReasonText(item),
+      body:
+        question ?? item.binding?.input_summary ?? item.binding?.action ?? reasonText(item.reason),
       target: { project_id: item.project_id, session_id: sessionId },
-      ...(item.source.table === 'approvals'
-        ? { request: item.source.id }
-        : answeredInStrip(item)
-          ? { need: key }
-          : {}),
+      ...(item.source.table === 'approvals' ? { request: item.source.id } : {}),
       ...sound(kind, p),
     });
   }
@@ -608,14 +582,12 @@ export function reviewNotice(
   };
 }
 
-const DECISIONS: readonly string[] = ['milestone.ready_for_acceptance', 'board.plan.proposal'];
 // Their notice opens the session. A usage limit is not here: its turn.failed already gives a notice.
 const SESSION_REASONS: readonly string[] = ['session_turn_stalled'];
 
 /**
- * The notices of the milestones ready for acceptance, the proposals and the sessions with a
- * stalled turn that joined the list, each once while it stays listed; the items of
- * the first read give none, and an unread list leaves seen as it was.
+ * The notices of the sessions with a stalled turn that joined the list, each once while it stays
+ * listed; the items of the first read give none, and an unread list leaves seen as it was.
  */
 export function decisionNotices(
   seen: ReadonlySet<string> | null,
@@ -625,25 +597,19 @@ export function decisionNotices(
   r: DeliveryRules | null = getDeliveryRules(),
 ): { seen: ReadonlySet<string> | null; notices: Notice[] } {
   if (!items || !board) return { seen, notices: [] };
-  const decisions = items.filter(
-    (item) => DECISIONS.includes(item.kind) || SESSION_REASONS.includes(item.reason),
-  );
+  const decisions = items.filter((item) => SESSION_REASONS.includes(item.reason));
   const next = new Set<string>();
   const notices: Notice[] = [];
   for (const item of decisions) {
-    const key = needKey(item);
+    const key = needRowKey(item);
     if (next.has(key)) continue;
     next.add(key);
     const project = board.projects.find((p) => p.id === item.project_id);
     if (!seen || seen.has(key) || !project || !noticeNow(item, r)) continue;
-    const title = board.milestones?.find((m) => m.id === item.source.id)?.title;
     notices.push({
       title: project.name,
-      body: title ? reasonDetail(reasonText(item.reason), title) : reasonText(item.reason),
-      target: {
-        project_id: project.id,
-        session_id: SESSION_REASONS.includes(item.reason) ? item.source.id : INBOX,
-      },
+      body: reasonText(item.reason),
+      target: { project_id: project.id, session_id: item.source.id },
       ...sound('approval_requested', p),
     });
   }
@@ -688,17 +654,15 @@ function send(notice: Notice) {
 function notify(notice: Notice) {
   withFocus((front) => {
     if (front) return;
-    const { request, need, ...shown } = notice;
-    const ask = request ?? need;
+    const { request: ask, ...shown } = notice;
     if (ask) {
       const token = crypto.randomUUID();
       asks.set(token, { target: shown.target, ask });
       if (asks.size > ASKS_KEPT) asks.delete(asks.keys().next().value!);
-      // Ids never hold a newline, so the token follows the project's after one. A wait the strip
-      // answers names no session, so the desktop hands its click to the main window.
+      // Ids never hold a newline, so the token follows the project's after one.
       shown.target = {
         project_id: `${shown.target.project_id}\n${token}`,
-        session_id: need ? INBOX : shown.target.session_id,
+        session_id: shown.target.session_id,
       };
     }
     void window.pantheon?.notify(shown).catch(() => {});
@@ -935,9 +899,6 @@ export function useNotices(
         const [project_id = '', token] = target.project_id.split('\n');
         const sent = token === undefined ? undefined : asks.get(token);
         const ask = sent?.ask;
-        // A wait no thread answers opens where it is answered.
-        if (ask && latest.current?.some((item) => answeredInStrip(item) && needsKey(item) === ask))
-          return useShell.getState().openProjectNeed(project_id, ask);
         // An answered request leaves the list; its session opens without the ask.
         const waiting = latest.current?.some(
           (item) =>

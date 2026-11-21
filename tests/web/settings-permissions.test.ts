@@ -129,7 +129,7 @@ afterEach(() => {
 describe('permissions settings page', () => {
   it('sits among the pages for every project after external requests, named Permissions', () => {
     const keys = SETTINGS_PAGES.filter((p) => p.group === 'global').map((p) => p.key);
-    expect(keys.slice(3, 5)).toEqual(['external', 'permissions']);
+    expect(keys.slice(2, 4)).toEqual(['external', 'permissions']);
     expect(SETTINGS_PAGES.find((p) => p.key === ('permissions' as never))!.label).toBe(
       zh('settings.pages.permissions'),
     );

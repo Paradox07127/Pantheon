@@ -5,7 +5,6 @@ import type {
   BoardPlan,
   Principal,
   Project,
-  ProjectRead,
   Retrospective,
   Session,
   SessionTurn,
@@ -307,30 +306,6 @@ it.skipIf(insideSandbox)(
       'Your direct task a merged',
     );
     expect(planOf(f, lead.id).inbox).toEqual([]);
-  },
-);
-
-it.skipIf(insideSandbox)(
-  'wakes the lead about the merge that finished its plan while its milestone waits for acceptance',
-  async () => {
-    const f = await mergeFixture();
-    await setGate(f, passing);
-    setAutoMerge(f, true);
-    const lead = await leadWithPlan(
-      f,
-      [task('a', { milestone: 'export' })],
-      [{ id: 'export', title: 'Export', criteria: ['Exports download'], tasks: ['a'] }],
-    );
-    start(f, lead.id, 'a');
-    commit(worktreeOf(f, lead).path, 'src/a.ts', 'export const a = 1;\n');
-    await report(f, lead.id);
-    await endTurn(f, lead.id);
-
-    expect(payloads(f, lead.id, 'session.merged')).toHaveLength(1);
-    await eventually(
-      () => trackerTurns(f, lead.id).length > 0,
-      () => f.control.tick(),
-    );
   },
 );
 
@@ -692,21 +667,6 @@ it.skipIf(insideSandbox)(
   },
   30000,
 );
-
-it('counts the direct task the lead works on as active in its milestone', async () => {
-  const f = await mergeFixture();
-  await setGate(f, passing);
-  const lead = await leadWithPlan(
-    f,
-    [task('a', { milestone: 'export' }), task('b')],
-    [{ id: 'export', title: 'Export', criteria: ['Exports download'], tasks: ['a'] }],
-  );
-  start(f, lead.id, 'a');
-
-  const read = f.control.projectRead(user, f.project.id) as ProjectRead;
-
-  expect(read.milestones.map((milestone) => milestone.reasons)).toEqual([['task:a:active']]);
-});
 
 it('lets go of the claim of a direct task given a new contract while it merges', async () => {
   const f = await mergeFixture();

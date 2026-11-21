@@ -161,8 +161,8 @@ describe('setting anchors', () => {
   it.each(SETTINGS_PAGES.map((p) => p.key))(
     'the %s page holds an anchor for each setting',
     (key) => {
-      // A part of a project's page shows on the projects page, with the project open.
-      useSettingsView.setState({ page: key, detail: 'alpha' });
+      // A part of a project's page shows on the projects page, with the project open; the projects page's own settings show on its list.
+      useSettingsView.setState({ page: key, detail: key === 'projects' ? null : 'alpha' });
       const found = anchors(renderToStaticMarkup(createElement(ProjectSettingsScreen)));
       const missing = SETTINGS_INDEX.filter(
         (r) =>

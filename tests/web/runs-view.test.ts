@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { BoardModel, BoardSegment, ProjectTrace, SessionTrace } from '@pantheon/protocol';
+import type { ProjectTrace, SessionTrace, WorkbenchSession } from '@pantheon/protocol';
 import { find, mount, named, nodes, text, unmountAll } from './web-hook-host.js';
 import { zh } from './i18n-setup.js';
 
 const mock = vi.hoisted(() => ({
-  view: null as unknown,
-  viewRead: {} as { stale?: boolean; refreshing?: boolean },
+  sessions: null as WorkbenchSession[] | null,
+  snapshot: [] as { id: string; spawned_by?: { session_id: string } }[],
   spans: new Map() as ReadonlyMap<string, unknown[]>,
   spanReads: [] as string[][],
   trace: null as unknown,
@@ -22,16 +22,13 @@ vi.mock('react', async (actual) =>
 );
 vi.mock('@/data/board', () => ({
   useBoard: (selector: any) =>
-    selector({ board: null, trace_revision: 0, resync: 0, status: { state: 'live' } }),
-}));
-vi.mock('@/data/board-view', () => ({
-  useBoardView: () => ({
-    data: mock.view,
-    loading: false,
-    error: null,
-    reload() {},
-    ...mock.viewRead,
-  }),
+    selector({
+      board: { sessions: mock.snapshot },
+      events: [],
+      trace_revision: 0,
+      resync: 0,
+      status: { state: 'live' },
+    }),
 }));
 vi.mock('@/data/trace', () => ({
   useRunSpans: (_projectId: string | null, ids: readonly string[]) => {
@@ -101,7 +98,6 @@ import { onlySession, splitEnded } from '@/screens/runtime/runtime-model';
 import { RunsView } from '@/screens/runtime/RuntimeScreen';
 
 type Span = SessionTrace['spans'][number];
-type Task = BoardModel['tasks'][number];
 type Lane = ProjectTrace['lanes'][number];
 
 const NOW = Date.UTC(2026, 10, 13, 12);
@@ -125,58 +121,43 @@ const turn = (id: string, extra: Partial<Span> = {}) =>
 const call = (id: string, turnId: string, extra: Partial<Span> = {}) =>
   span(id, { parent: turnId, turn: turnId, ...extra });
 
-const segment = (id: string, extra: Partial<BoardSegment> = {}): BoardSegment => ({
+const listed = (id: string, extra: Partial<WorkbenchSession> = {}): WorkbenchSession => ({
   id,
-  session_id: id,
+  created_at: new Date(NOW - 120_000).toISOString(),
   title: `title of ${id}`,
   runtime: 'claude',
   model: null,
-  status: 'running',
-  started_at: NOW - 120_000,
-  ended_at: null,
-  tokens: 0,
+  effort: null,
+  permission_mode: 'ask',
+  workspace_id: `workspace-${id}`,
+  workspace_kind: 'linked_worktree',
+  state: 'running',
+  waiting: 0,
+  reconciling: false,
+  stopping: false,
+  last_activity_at: new Date(NOW).toISOString(),
+  changes: null,
+  merge: null,
   ...extra,
 });
 
-const task = (id: string, extra: Partial<Task> = {}): Task => ({
-  id,
-  title: `task ${id}`,
-  goal: '',
-  scope: [],
-  lane_id: null,
-  milestone_id: null,
-  status: 'running',
-  blockers: [],
-  segments: [],
-  additions: null,
-  deletions: null,
-  checks: 'none',
-  started_at: NOW - 120_000,
-  ended_at: null,
-  last_progress_at: null,
-  blocked_since: null,
-  turn_running: true,
-  owner_session_id: 'lead-1',
-  ...extra,
-});
-
-const building = task('lead-1:build', { segments: [segment('worker-1')] });
-const finished = task('lead-1:done', {
-  status: 'done',
-  turn_running: false,
-  last_progress_at: NOW - 60_000,
-  segments: [segment('worker-done', { status: 'done', ended_at: NOW - 60_000 })],
-});
-
-const board = (tasks: Task[], leads = true) =>
-  ({
-    now: NOW,
-    since: NOW - 86_400_000,
-    leads: leads
-      ? [{ session_id: 'lead-1', title: 'lead', state: 'running', inbox: 0, updated_at: NOW }]
-      : [],
-    tasks,
-  }) as unknown as BoardModel;
+const SESSIONS = [
+  listed('lead-1', { title: 'lead' }),
+  listed('worker-1'),
+  listed('worker-done', {
+    state: 'merged',
+    last_activity_at: new Date(NOW - 60_000).toISOString(),
+  }),
+];
+const SNAPSHOT = [
+  { id: 'lead-1' },
+  { id: 'worker-1', spawned_by: { session_id: 'lead-1' } },
+  { id: 'worker-done', spawned_by: { session_id: 'lead-1' } },
+];
+const PARENTS = new Map([
+  ['worker-1', 'lead-1'],
+  ['worker-done', 'lead-1'],
+]);
 
 const SPANS = new Map<string, Span[]>([
   [
@@ -288,11 +269,11 @@ const TRACE: ProjectTrace = {
   ],
 };
 
-const forestOf = (tasks: Task[]) => runForest(board(tasks), [], SPANS);
+const forestOf = () => runForest(SESSIONS, PARENTS, SPANS);
 
 describe('run figures', () => {
   it('counts the calls, failures, finished durations, tokens and the calls of each recent minute', () => {
-    expect(liveFigures(forestOf([building, finished]), SPANS, NOW)).toEqual({
+    expect(liveFigures(forestOf(), SPANS, NOW)).toEqual({
       calls: 5,
       failed: 1,
       median: 1000,
@@ -305,7 +286,7 @@ describe('run figures', () => {
   });
 
   it('counts only the sessions of the forest', () => {
-    const only = onlySession(forestOf([building, finished]), 'worker-1');
+    const only = onlySession(forestOf(), 'worker-1');
     expect(liveFigures(only, SPANS, NOW)).toMatchObject({ calls: 3, failed: 1 });
   });
 
@@ -329,15 +310,15 @@ describe('run figures', () => {
 });
 
 describe('run forest parts', () => {
-  it('takes the task sessions that ended out of the trees, with their end', () => {
-    const { live, ended } = splitEnded(forestOf([building, finished]), [building, finished]);
+  it('takes the sessions that ended out of the trees, with their last activity', () => {
+    const { live, ended } = splitEnded(forestOf(), SESSIONS);
     expect(live.trees.map((n) => n.id)).toEqual(['lead-1']);
     expect(live.trees[0]!.children.map((n) => n.id)).toEqual(['worker-1']);
     expect(ended.map(({ node, at }) => [node.id, at])).toEqual([['worker-done', NOW - 60_000]]);
   });
 
-  it('keeps one session, without its task sessions, and nothing for an unknown id', () => {
-    const forest = forestOf([building, finished]);
+  it('keeps one session, without the sessions it started, and nothing for an unknown id', () => {
+    const forest = forestOf();
     const lead = onlySession(forest, 'lead-1');
     expect([...lead.trees, ...lead.adhoc].map((n) => n.id)).toEqual(['lead-1']);
     expect(lead.adhoc[0]?.children ?? lead.trees[0]!.children).toEqual([]);
@@ -382,8 +363,8 @@ describe('run forest parts', () => {
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(NOW);
-  mock.view = board([building, finished]);
-  mock.viewRead = {};
+  mock.sessions = SESSIONS;
+  mock.snapshot = SNAPSHOT;
   mock.spans = SPANS;
   mock.spanReads = [];
   mock.trace = TRACE;
@@ -414,7 +395,8 @@ const labelled = (tree: unknown, label: string) =>
   find(tree as any, (n) => n.type === 'button' && text(n.props.children).includes(label));
 
 describe('runs now', () => {
-  const now = () => mount(() => RunsView({ projectId: 'project-a', sessions: [], view: 'now' }));
+  const now = () =>
+    mount(() => RunsView({ projectId: 'project-a', sessions: mock.sessions, view: 'now' }));
 
   it('shows the running sessions in the call table with the page filter and the row keys', () => {
     const h = now();
@@ -425,6 +407,43 @@ describe('runs now', () => {
     expect(props.filter).toEqual({ only: 'all', text: '', slowMs: 5_000 });
     expect(props.keys).toEqual({ next: 'trace-next', previous: 'trace-previous' });
     expect(mock.traceReads.every((read) => read.projectId === null)).toBe(true);
+  });
+
+  const sessionTitles = (tree: unknown) =>
+    rowsOf(find(tree as any, (n) => n.props['aria-label'] === zh('runs.page.nowLabel'))).flatMap(
+      (row) => (row.type === 'session' ? [row.node.title] : []),
+    );
+
+  it('lists the sessions live or active within the hour with no plan data at all', () => {
+    mock.snapshot = [];
+    mock.sessions = [
+      listed('solo'),
+      listed('quiet', {
+        state: 'idle',
+        last_activity_at: new Date(NOW - 30 * 60_000).toISOString(),
+      }),
+      listed('stale', {
+        state: 'idle',
+        last_activity_at: new Date(NOW - 2 * 3_600_000).toISOString(),
+      }),
+    ];
+    expect(sessionTitles(now().value)).toEqual(['title of solo', 'title of quiet']);
+    expect(mock.spanReads).toContainEqual(['solo', 'quiet']);
+  });
+
+  it('puts a started session under the session that started it, one whose starter is not listed on top', () => {
+    mock.snapshot = [
+      { id: 'child', spawned_by: { session_id: 'parent' } },
+      { id: 'orphan', spawned_by: { session_id: 'gone' } },
+    ];
+    mock.sessions = [listed('child'), listed('parent'), listed('orphan')];
+    const h = now();
+    expect(table(h.value).props.forest.trees.map((n: any) => n.id)).toEqual(['parent', 'orphan']);
+    expect(sessionTitles(h.value)).toEqual([
+      'title of parent',
+      'title of child',
+      'title of orphan',
+    ]);
   });
 
   it('fills the figures strip from the spans of the sessions shown', () => {
@@ -457,14 +476,19 @@ describe('runs now', () => {
   it('follows the newest call into the detail until a row is picked', () => {
     const shown = vi.fn();
     const h = mount(() =>
-      RunsView({ projectId: 'project-a', sessions: [], view: 'now', onShowInTimeline: shown }),
+      RunsView({
+        projectId: 'project-a',
+        sessions: mock.sessions,
+        view: 'now',
+        onShowInTimeline: shown,
+      }),
     );
     const followed = detail(h.value)!;
     expect(followed.props).toMatchObject({
       session: 'worker-1',
       title: 'title of worker-1',
       turn: 1,
-      events: false,
+      events: true,
     });
     expect(followed.props.call.id).toBe('w-edit');
     expect(table(h.value).props.selected).toBe(callRow(h.value, 'w-edit').key);
@@ -511,7 +535,7 @@ describe('runs now', () => {
   });
 
   it('says nothing runs and offers the history view when no session is shown', () => {
-    mock.view = board([], false);
+    mock.sessions = [];
     const h = now();
     const element = named(h.value, 'EmptyState');
     const empty = (element.type as (props: object) => any)(element.props);
@@ -523,34 +547,6 @@ describe('runs now', () => {
     expect(button.props['aria-keyshortcuts']).toBe('V');
     button.props.onClick();
     expect(mock.setState).toHaveBeenCalledWith({ runsView: 'history' });
-  });
-
-  const shownStatus = (tree: unknown) =>
-    nodes(tree as any)
-      .filter((n) => typeof n.type === 'function' && n.type.name === 'ReadStatus')
-      .map((n) => (n.type as (props: unknown) => unknown)(n.props))
-      .filter(Boolean);
-
-  it('draws no status bar over a board shown from the cache whose read lands quickly', async () => {
-    mock.viewRead = { stale: true, refreshing: true };
-    const h = now();
-    expect(shownStatus(h.value)).toHaveLength(0);
-    vi.advanceTimersByTime(200);
-    mock.viewRead = {};
-    h.render();
-    await h.flush();
-    expect(shownStatus(h.value)).toHaveLength(0);
-  });
-
-  it('names a board read that runs long, and a lost stream at once', async () => {
-    mock.viewRead = { stale: true, refreshing: true };
-    const h = now();
-    vi.advanceTimersByTime(300);
-    await h.flush();
-    expect(shownStatus(h.value)).toHaveLength(1);
-    mock.viewRead = { stale: true };
-    h.render();
-    expect(shownStatus(h.value)).toHaveLength(1);
   });
 
   it('shows where answering an approval failed', async () => {
@@ -581,7 +577,9 @@ describe('runs now', () => {
 describe('runs history', () => {
   const RANGE = { from: NOW - 3_600_000, to: null };
   const history = () =>
-    mount(() => RunsView({ projectId: 'project-a', sessions: [], view: 'history', range: RANGE }));
+    mount(() =>
+      RunsView({ projectId: 'project-a', sessions: mock.sessions, view: 'history', range: RANGE }),
+    );
 
   it('reads the range from the project trace and lists its sessions', () => {
     const h = history();
@@ -630,7 +628,7 @@ describe('runs history', () => {
     const h = mount(() =>
       RunsView({
         projectId: 'project-a',
-        sessions: [],
+        sessions: mock.sessions,
         view: 'history',
         range: RANGE,
         sessionId: 'worker-1',
@@ -649,7 +647,7 @@ describe('runs history', () => {
     const h = mount(() =>
       RunsView({
         projectId: 'project-a',
-        sessions: [],
+        sessions: mock.sessions,
         view: 'history',
         range: RANGE,
         sessionId: 'worker-none',
@@ -682,7 +680,9 @@ describe('runs history', () => {
 
   it('picks the session a just ended row opened', () => {
     let view: 'now' | 'history' = 'now';
-    const h = mount(() => RunsView({ projectId: 'project-a', sessions: [], view, range: RANGE }));
+    const h = mount(() =>
+      RunsView({ projectId: 'project-a', sessions: mock.sessions, view, range: RANGE }),
+    );
     const group = find(h.value, (n) => n.props['aria-label'] === zh('runs.page.justEnded'));
     labelled(group, zh('runs.page.inHistory')).props.onClick();
     view = 'history';

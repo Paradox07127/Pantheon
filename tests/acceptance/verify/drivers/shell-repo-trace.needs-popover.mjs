@@ -9,23 +9,18 @@ const check = (what, ok, got) => result.checks.push({ what, ok: Boolean(ok), got
 
 // The row title each decision kind gets (data/attention.ts, zh-CN/attention.json).
 const DECISION = {
-  plan_change: '计划变更',
   question: '问题',
-  milestone_accept: '待验收的里程碑',
   repeated_failure: '失败两次',
   permission: '权限',
-  budget: '预算',
   improvement: '改进',
-  external: '外部请求',
 };
-const blocksText = (n) => (n > 0 ? `阻塞 ${n} 个任务` : null);
 
 // The title bar counts every project's waits: settle what earlier drivers left waiting anywhere,
 // so the counts below are this run's.
 const sessionsNow = (await query('board')).sessions;
 for (const item of (await query('needs_you.list')).items) {
   if (item.kind === 'session.failed') {
-    // A lead whose turn failed stays open; the daemon archives only an ended session.
+    // The daemon archives only an ended session.
     const session = sessionsNow.find((s) => s.id === (item.session_id ?? item.source.id));
     if (['failed', 'idle', 'ready', 'done', 'merged', 'discarded'].includes(session?.state))
       await call('session.archive', { session_id: session.id }, session.revision);
@@ -35,22 +30,8 @@ for (const item of (await query('needs_you.list')).items) {
       { approval_id: item.source.id, decision: 'reject' },
       item.source.revision,
     );
-  else if (item.kind === 'lead.question')
-    await call('lead.question.answer', {
-      project_id: item.project_id,
-      lead_session_id: item.session_id,
-      question_id: item.question.id,
-      answer: 'SQLite',
-    });
-  else if (item.kind === 'board.plan.proposal')
-    await call('board.plan.proposal.resolve', {
-      project_id: item.project_id,
-      lead_session_id: item.session_id,
-      proposal_id: item.request_id,
-      decision: 'reject',
-    });
 }
-// A wait no command settles, such as a lead's failed turn, leaves with its project.
+// A wait no command settles leaves with its project.
 const unsettled = (await query('needs_you.list')).items;
 result.removed = [];
 for (const id of new Set(unsettled.map((i) => i.project_id))) {
@@ -85,85 +66,6 @@ await call(
 const allNeeds = async () => (await query('needs_you.list')).items;
 const mine = async () => (await allNeeds()).filter((i) => i.project_id === project_id);
 
-// The Assistant plans two tasks, then asks a question the second task waits on, then proposes a change.
-const task = (id, title, depends_on = []) => ({
-  id,
-  title,
-  goal: `Do ${title}.`,
-  lane: 'lane-a',
-  milestone: 'milestone-a',
-  estimate: 3,
-  depends_on,
-  source: ['The user asked for it.'],
-  scope: ['src/index.ts'],
-  acceptance: ['pnpm test'],
-  kind: { domain: 'backend-logic', tier: 't1' },
-  priority: 'normal',
-});
-const plan = {
-  base_version: 0,
-  headline: `Needs ${stamp}`,
-  lanes: [{ id: 'lane-a', title: 'Lane A' }],
-  tasks: [task('task-one', 'Task one'), task('task-two', 'Task two', ['task-one'])],
-  milestones: [
-    {
-      id: 'milestone-a',
-      title: 'Milestone A',
-      criteria: ['Both tasks merge.'],
-      tasks: ['task-one', 'task-two'],
-      due_on: new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10),
-    },
-  ],
-  risks: [],
-  assumptions: [],
-};
-await call('workflow.policy.set', { project_id, plan_changes: 'confirm' });
-const assistant = (await call('resident.open', { project_id, kind: 'assistant' })).id;
-const idle = () =>
-  poll(async () => {
-    const s = (await query('session.list', { project_id })).find((x) => x.id === assistant);
-    return s?.last_turn && !['queued', 'running'].includes(s.last_turn.state) && s;
-  }, 30_000);
-const send = async (steps) => {
-  await idle();
-  await call(
-    'session.send',
-    { session_id: assistant, input: `fixture-script\n${JSON.stringify(steps)}` },
-    (await board()).sessions.find((s) => s.id === assistant).revision,
-  );
-  return idle();
-};
-await send([{ tool: { name: 'update_board', arguments: plan } }]);
-const view = () => query('board.view', { project_id, days: '7' });
-const version = (await view()).leads?.find((l) => l.session_id === assistant)?.plan_version ?? 1;
-const asked = await send([
-  {
-    tool: {
-      name: 'ask_user',
-      arguments: {
-        question: `Which store for ${stamp}?`,
-        options: ['SQLite', 'Postgres'],
-        recommended: 'SQLite',
-        assumption: 'SQLite until you answer.',
-        blocks: ['task-two'],
-      },
-    },
-  },
-]);
-check('前置：提问的回合结束', asked?.last_turn?.state === 'completed', asked?.last_turn);
-await send([
-  {
-    tool: {
-      name: 'propose_board',
-      arguments: {
-        base_version: version,
-        reason: 'Add a third task',
-        ops: [{ type: 'add_task', task: task('task-three', 'Task three', ['task-one']) }],
-      },
-    },
-  },
-]);
-
 // Two direct sessions each wait on a permission request.
 const waitingOn = async (title, command) => {
   await call('session.create', {
@@ -178,17 +80,15 @@ const waitingOn = async (title, command) => {
 };
 const sessionA = await waitingOn(`verify-needs-a-${stamp}`, 'echo a');
 const sessionB = await waitingOn(`verify-needs-b-${stamp}`, 'echo b');
+const titleOf = { [sessionA?.id]: sessionA?.title, [sessionB?.id]: sessionB?.title };
 const items = await poll(async () => {
   const list = await mine();
-  return list.length >= 4 && list;
+  return list.length >= 2 && list;
 }, 20_000);
 check(
-  '前置：needs_you.list 有问题、计划变更和两个权限请求，问题阻塞 1 个任务',
-  items &&
-    items.filter((i) => i.decision === 'permission').length === 2 &&
-    items.some((i) => i.decision === 'question' && i.blocks === 1) &&
-    items.some((i) => i.decision === 'plan_change'),
-  items?.map((i) => [i.kind, i.decision, i.blocks]),
+  '前置：needs_you.list 有本项目的两个权限请求，没有别的',
+  items && items.length === 2 && items.every((i) => i.decision === 'permission'),
+  items?.map((i) => [i.kind, i.decision, i.session_id]),
 );
 
 // The popover as shown: its label, empty text, and per project group the rows.
@@ -206,7 +106,7 @@ const shown = () =>
           const more = actions.filter((b) => (b.getAttribute('aria-label') ?? '').startsWith('更多操作'));
           return {
             title: li.querySelector('.np-t')?.textContent ?? null,
-            count: li.querySelector('.np-c')?.textContent ?? null,
+            open: li.querySelector('button')?.textContent.replace(/\\s+/g, ' ').trim() ?? null,
             primary: actions.filter((b) => !more.includes(b)).map((b) => b.textContent.trim()),
             more: more.map((b) => b.getAttribute('aria-label')),
           };
@@ -229,12 +129,18 @@ const focus = () =>
   })()`);
 const trigger = async () =>
   (await names('件事等你')).filter((c) => c.role === 'button' && /^\d+ 件事等你$/.test(c.name));
-const expectRows = (list, decisionOf = (i) => DECISION[i.decision], blocksOf = (i) => i.blocks) =>
-  list.map((i) => ({ title: decisionOf(i), count: blocksText(blocksOf(i)) }));
+const menuItems = () =>
+  poll(async () => {
+    const items = (await names('')).filter((c) => c.role === 'menuitem').map((c) => c.name);
+    return items.length > 0 && items;
+  });
+// A row's title is its decision kind; its open button reads the title, then the session's.
+const expectRows = (list, decisionOf = (i) => DECISION[i.decision]) =>
+  list.map((i) => ({ title: decisionOf(i), open: `${decisionOf(i)}${titleOf[i.session_id]}` }));
 const sameRows = (ui, want) =>
   !!ui &&
   ui.length === want.length &&
-  ui.every((r, n) => r.title === want[n].title && r.count === want[n].count);
+  ui.every((r, n) => r.title === want[n].title && r.open === want[n].open);
 
 // Open the title bar's needs-you button.
 const all = await allNeeds();
@@ -258,25 +164,22 @@ check('popover 行数等于 needs_you.list 条数', rowCount === all.length, {
 const group = pop?.groups.find((g) => g.name === projectName);
 const now = await mine();
 check(
-  '本项目的行按顺序等于 needs_you.list：标题是决定种类，blocks>0 才有 "阻塞 N 个任务"',
+  '本项目的行按顺序等于 needs_you.list：标题是决定种类，后面是会话标题',
   sameRows(group?.rows, expectRows(now)),
   {
-    ui: group?.rows.map((r) => [r.title, r.count]),
-    daemon: now.map((i) => [i.decision, i.blocks]),
+    ui: group?.rows.map((r) => [r.title, r.open]),
+    daemon: now.map((i) => [i.decision, titleOf[i.session_id]]),
   },
 );
 check(
-  '对照组：把问题的 blocks 当成 0，同一读法判 false',
-  !sameRows(
-    group?.rows,
-    expectRows(now, undefined, (i) => (i.decision === 'question' ? 0 : i.blocks)),
-  ),
+  '对照组：顺序倒过来时同一读法判 false',
+  !sameRows(group?.rows, expectRows([...now].reverse())),
 );
 check(
   '对照组：把权限当成"问题"，同一读法判 false',
   !sameRows(
     group?.rows,
-    expectRows(now, (i) => (i.decision === 'permission' ? '问题' : DECISION[i.decision])),
+    expectRows(now, () => '问题'),
   ),
 );
 const everyRow = pop?.groups.flatMap((g) => g.rows) ?? [];
@@ -290,80 +193,43 @@ check(
   everyRow.every((r) => r.more.length <= 1 && r.more.every((m) => m === `更多操作：${r.title}`)),
   everyRow.map((r) => [r.title, r.more]),
 );
-const permissionRow = group?.rows.find((r) => r.title === '权限');
 check(
   '权限行主按钮是 "允许"，有 "更多操作：权限"',
-  permissionRow?.primary[0] === '允许' && permissionRow.more[0] === '更多操作：权限',
-  permissionRow,
+  group?.rows.length === 2 &&
+    group.rows.every((r) => r.primary[0] === '允许' && r.more[0] === '更多操作：权限'),
+  group?.rows,
 );
-const questionRow = group?.rows.find((r) => r.title === '问题');
-check(
-  '问题行主按钮是 "回答"，有 "更多操作：问题"',
-  questionRow?.primary[0] === '回答' && questionRow.more[0] === '更多操作：问题',
-  questionRow,
-);
-const planRow = group?.rows.find((r) => r.title === '计划变更');
-check(
-  '计划变更行主按钮是 "接受"，有 "更多操作：计划变更"',
-  planRow?.primary[0] === '接受' && planRow.more[0] === '更多操作：计划变更',
-  planRow,
-);
-// The question row's menu holds the rest of its actions.
-const menuItems = () =>
-  poll(async () => {
-    const items = (await names('')).filter((c) => c.role === 'menuitem').map((c) => c.name);
-    return items.length > 0 && items;
-  });
-await page.click({
-  role: 'button',
-  name: '更多操作：问题',
-  exact: true,
-  within: { role: 'group', name: projectName, exact: true },
-});
-const questionMenu = await menuItems();
-check(
-  '"更多操作：问题" 菜单里是 "打开会话"',
-  questionMenu?.length === 1 && questionMenu[0] === '打开会话',
-  questionMenu,
-);
-await page.press('Escape');
-await poll(async () => !(await names('')).some((c) => c.role === 'menuitem'), 3000);
-if (!(await shown()))
-  await page.click({ role: 'button', name: `${all.length} 件事等你`, exact: true });
 const atShot = await poll(shown);
 check(
-  '截图时 popover 开着且至少 3 行',
-  atShot && atShot.groups.reduce((n, g) => n + g.rows.length, 0) >= 3,
+  '截图时 popover 开着且有本项目的 2 行',
+  atShot?.groups.find((g) => g.name === projectName)?.rows.length === 2,
 );
 result.shot = await page.screenshot('pair-needs-popover');
 copyFileSync(
   path.join(process.argv[2], result.shot.file),
   path.join(process.argv[2], 'screens', 'pair-needs-popover.png'),
 );
-await page.press('Escape');
 
-// Settle the question and the proposal from the daemon, leaving the two permission requests.
-const question = now.find((i) => i.decision === 'question');
-const proposal = now.find((i) => i.decision === 'plan_change');
-await call('lead.question.answer', {
-  project_id,
-  lead_session_id: assistant,
-  question_id: question.question.id,
-  answer: 'SQLite',
+// A row's own button opens its session and closes the popover.
+await page.click({
+  role: 'button',
+  name: `权限${sessionB.title}`,
+  exact: true,
+  within: { role: 'group', name: projectName, exact: true },
 });
-await call('board.plan.proposal.resolve', {
-  project_id,
-  lead_session_id: assistant,
-  proposal_id: proposal.request_id,
-  decision: 'reject',
+const current = (id) =>
+  page.evaluate(
+    `document.querySelector('[data-session="${id}"]')?.getAttribute('aria-current') === 'true'`,
+  );
+const openedB = await poll(async () => (await shown()) === null && (await current(sessionB.id)));
+check('点第二行打开它的会话：popover 关上，侧栏这一行 aria-current', openedB, {
+  popover: await shown(),
+  current: await current(sessionB.id),
 });
-const left = await poll(async () => {
-  const list = await allNeeds();
-  return list.length === 2 && list.every((i) => i.decision === 'permission') && list;
-}, 20_000);
+check('对照组：第一行的会话不是当前', !(await current(sessionA.id)));
 check(
-  '前置：needs_you.list 只剩两个权限请求（全部项目）',
-  left,
+  '打开会话不答请求：needs_you.list 还是两个权限请求',
+  (await allNeeds()).filter((i) => i.decision === 'permission').length === 2,
   (await allNeeds()).map((i) => [i.project_id === project_id, i.kind]),
 );
 await poll(async () => (await trigger())[0]?.name === '2 件事等你');

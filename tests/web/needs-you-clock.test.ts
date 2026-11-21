@@ -7,12 +7,10 @@ vi.mock('@/data/board', () => ({
     getState: () => mock.board,
   }),
 }));
-import { useBoardView } from '@/data/board-view';
 import { useNeedsYou } from '@/data/needs-you';
 
 const answers: Record<string, unknown> = {
   'needs_you.list': { items: [] },
-  'board.view': { tasks: [] },
 };
 let reads: string[];
 const count = (method: string) => reads.filter((read) => read === method).length;
@@ -60,17 +58,4 @@ it('reads no needs-you list on the clock while the event stream is down', async 
   await vi.advanceTimersByTimeAsync(180_000);
   await h.flush();
   expect(count('needs_you.list')).toBe(1);
-});
-
-it('reads an idle board view again after local midnight, when its day range moves', async () => {
-  vi.setSystemTime(new Date(2026, 10, 13, 23, 59, 0));
-  const h = mount(() => useBoardView('project-a', 1));
-  await h.flush();
-  expect(count('board.view')).toBe(1);
-  await vi.advanceTimersByTimeAsync(30_000);
-  await h.flush();
-  expect(count('board.view')).toBe(1);
-  await vi.advanceTimersByTimeAsync(31_000);
-  await h.flush();
-  expect(count('board.view')).toBe(2);
 });

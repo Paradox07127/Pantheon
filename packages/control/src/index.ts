@@ -110,8 +110,6 @@ import {
 } from './workbench-session.js';
 import { sessionTasks } from './session-tasks.js';
 import { boardView, prefetchRevertWalks } from './board-view.js';
-import { boardHistory } from './board-history.js';
-import { planReplay } from './plan-replay.js';
 import {
   projectHeatmap,
   projectTrace,
@@ -874,12 +872,6 @@ export class Control extends EventEmitter {
   }
   sessionToolActivity(principal: Principal, sessionId: string) {
     return sessionToolActivity(this.ctx, principal, sessionId);
-  }
-  boardHistory(principal: Principal, projectId: string) {
-    return boardHistory(this.ctx, principal, projectId);
-  }
-  planReplay(principal: Principal, leadId: string, after: number, limit: number, before?: number) {
-    return planReplay(this.ctx, principal, leadId, after, limit, before);
   }
   boardView(
     principal: Principal,

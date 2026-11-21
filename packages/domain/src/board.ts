@@ -625,19 +625,3 @@ export interface MilestoneVerification extends Entity {
   started_at: number;
   finished_at?: number;
 }
-export interface ProjectGoal extends Entity {
-  project_id: string;
-  /** The user's own words. */
-  text: string;
-  order: number;
-  created_at: number;
-  archived_at?: number;
-}
-export interface ProjectGoalView {
-  goal: ProjectGoal;
-  /** Row ids of the lead milestones linked to it that are not removed, in plan order. */
-  milestone_ids: string[];
-  milestones: { done: number; ready: number; total: number };
-  /** Summed over those milestones. */
-  tasks: { done: number; total: number };
-}

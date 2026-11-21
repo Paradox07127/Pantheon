@@ -17,7 +17,6 @@ import {
 } from 'lucide-react';
 import type { SessionTrace } from '@pantheon/protocol';
 import { Equalizer } from '../../components/Equalizer';
-import { LeadCrown } from '../../components/LeadCrown';
 import { RuntimeGlyph } from '../../components/RuntimeGlyph';
 import { elapsedText } from '../../data/transcript';
 import { t } from '../../i18n';
@@ -141,7 +140,7 @@ export function CallTable({
   keys,
 }: {
   forest: RunForest;
-  /** By session id; see boardFacts. */
+  /** By session id; see sessionFacts. */
   facts: ReadonlyMap<string, SessionFacts>;
   /** By session id, the spans forest was built from. */
   spans: ReadonlyMap<string, readonly TraceSpan[]>;
@@ -216,7 +215,6 @@ export function CallTable({
           <span className="ct-title" data-ended={row.ended || undefined} data-state={row.state}>
             {node.title}
           </span>
-          {row.lead && <LeadCrown />}
           {row.forked && (
             <GitFork
               className="ct-fork"

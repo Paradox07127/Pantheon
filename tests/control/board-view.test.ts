@@ -6,8 +6,6 @@ import type {
   Approval,
   BoardPlan,
   ChangeStory,
-  Milestone,
-  MilestoneVerification,
   Principal,
   Project,
   ProjectBoard,
@@ -20,7 +18,6 @@ import type {
   Usage,
   Workspace,
 } from '@pantheon/domain';
-import { commitmentHash } from '../../packages/control/dist/project-facts.js';
 import { awaitWorkspaceReady, eventually, gateFolder, insideSandbox, user } from '../helpers.js';
 import { boundTaskSession, git, workbenchFixture } from './workbench-fixture.js';
 
@@ -734,7 +731,7 @@ it('links each merge to the newest ready change story of its session', async () 
   ]);
 });
 
-it('fills milestones from the project facts and risks from the written project board', async () => {
+it('fills risks from the written project board', async () => {
   const f = await workbenchFixture();
   const merged = await f.create('Merge the first half'),
     open = await f.create('Write the second half');
@@ -744,12 +741,6 @@ it('fills milestones from the project facts and risks from the written project b
     { ...ended, state: 'closed', outcome: 'merged' },
     ended.revision,
   );
-  const milestone = f.call<Milestone>('milestone.create', {
-    project_id: f.project.id,
-    title: 'Ship both halves',
-    required_sessions: [merged.id, open.id],
-    criteria: ['Both halves land'],
-  });
   f.store.insert<ProjectBoard>('project_boards', {
     id: f.project.id,
     revision: 1,
@@ -776,16 +767,6 @@ it('fills milestones from the project facts and risks from the written project b
   });
 
   const board = f.control.boardView(user, f.project.id, 1);
-  expect(board.milestones).toEqual([
-    {
-      id: milestone.id,
-      title: 'Ship both halves',
-      session_ids: [merged.id, open.id],
-      merged: 1,
-      status: 'active',
-      criteria: [{ text: 'Both halves land', accepted: false }],
-    },
-  ]);
   expect(board.risks).toEqual([
     { text: 'The second half may slip', kind: 'risk' },
     { text: 'The first half is merged', kind: 'risk' },
@@ -793,77 +774,7 @@ it('fills milestones from the project facts and risks from the written project b
   ]);
 });
 
-it('marks milestone criteria accepted only while their acceptance holds', async () => {
-  const f = await workbenchFixture();
-  const merged = await f.create('Merge the export');
-  const ended = current(f, merged.id);
-  f.store.update<Session>(
-    'sessions',
-    { ...ended, state: 'closed', outcome: 'merged' },
-    ended.revision,
-  );
-  const input = {
-    title: 'Ship export',
-    required_sessions: [merged.id],
-    criteria: ['Exports download', 'Docs name the format'],
-  };
-  const milestone = f.call<Milestone>('milestone.create', { project_id: f.project.id, ...input });
-  const criteria = () => f.control.boardView(user, f.project.id, 1).milestones[0]?.criteria;
-  expect(criteria()).toEqual([
-    { text: 'Exports download', accepted: false },
-    { text: 'Docs name the format', accepted: false },
-  ]);
-  const accepted = f.call<Milestone>(
-    'milestone.accept',
-    {
-      milestone_id: milestone.id,
-      evidence_refs: [`session:${merged.id}`],
-      criteria_checked: [0, 1],
-    },
-    milestone.revision,
-  );
-  expect(criteria()).toEqual([
-    { text: 'Exports download', accepted: true },
-    { text: 'Docs name the format', accepted: true },
-  ]);
-  f.call(
-    'milestone.revise',
-    { milestone_id: milestone.id, ...input, criteria: ['Exports download', 'Docs list fields'] },
-    accepted.revision,
-  );
-  expect(criteria()).toEqual([
-    { text: 'Exports download', accepted: false },
-    { text: 'Docs list fields', accepted: false },
-  ]);
-});
-
-it('marks every criterion accepted when the acceptance covers the whole milestone', async () => {
-  const f = await workbenchFixture();
-  const merged = await f.create('Merge the export');
-  const ended = current(f, merged.id);
-  f.store.update<Session>(
-    'sessions',
-    { ...ended, state: 'closed', outcome: 'merged' },
-    ended.revision,
-  );
-  const milestone = f.call<Milestone>('milestone.create', {
-    project_id: f.project.id,
-    title: 'Ship export',
-    required_sessions: [merged.id],
-    criteria: ['Exports download', 'Docs name the format'],
-  });
-  f.call(
-    'milestone.accept',
-    { milestone_id: milestone.id, evidence_refs: [`session:${merged.id}`] },
-    milestone.revision,
-  );
-  expect(f.control.boardView(user, f.project.id, 1).milestones[0]?.criteria).toEqual([
-    { text: 'Exports download', accepted: true },
-    { text: 'Docs name the format', accepted: true },
-  ]);
-});
-
-it('computes tasks, edges and milestones from lead plans and their sessions', async () => {
+it('computes tasks and edges from lead plans and their sessions', async () => {
   const f = await workbenchFixture();
   const lead = await f.create('Plan the export feature');
   f.call(
@@ -945,32 +856,17 @@ it('computes tasks, edges and milestones from lead plans and their sessions', as
     [`${lead.id}:b`, 'running'],
     [other.id, expect.any(String)],
   ]);
-  const milestone = f.store.list<Milestone>('milestones')[0]!;
   expect(board.tasks[0]).toMatchObject({
     owner_session_id: lead.id,
     title: 'Serve exports',
     goal: 'Exports download',
     lane_id: `${lead.id}:core`,
-    milestone_id: milestone.id,
   });
   expect(board.tasks[0]!.segments.map((segment) => segment.session_id)).toEqual([a.id]);
   expect(board.tasks[2]).not.toHaveProperty('owner_session_id');
   expect(board.edges).toEqual([{ from: `${lead.id}:a`, to: `${lead.id}:b`, state: 'met' }]);
   expect(board.tasks.slice(0, 2).map((task) => task.depends_on)).toEqual([[], ['a']]);
   expect(board.tasks[2]).not.toHaveProperty('depends_on');
-  expect(board.milestones).toEqual([
-    {
-      id: milestone.id,
-      title: 'Export',
-      session_ids: [a.id, b.id],
-      merged: 1,
-      status: 'active',
-      criteria: [{ text: 'Exports download', accepted: false }],
-      owner_session_id: lead.id,
-      tasks: { done: 1, total: 2 },
-      due_on: '2027-03-20',
-    },
-  ]);
   expect(board.headline).toMatchObject({
     text: 'Export ships this week',
     by_session: lead.id,
@@ -978,148 +874,7 @@ it('computes tasks, edges and milestones from lead plans and their sessions', as
   expect(board.risks).toEqual([{ text: 'The export format may change', kind: 'risk' }]);
 });
 
-it('lists the active goals in order with their progress and links the milestone to its goal', async () => {
-  const f = await workbenchFixture();
-  expect(f.control.boardView(user, f.project.id, 1).goals).toEqual([]);
-  const lead = await f.create('Plan the export feature');
-  const [first, second] = ['Ship export', 'Keep data local'].map((text) =>
-    f.call<{ id: string; revision: number }>('goal.set', { project_id: f.project.id, text }),
-  );
-  f.call('goal.reorder', { project_id: f.project.id, goal_ids: [second!.id, first!.id] });
-  f.call(
-    'board.plan.update',
-    {
-      project_id: f.project.id,
-      base_version: 0,
-      headline: 'Export ships this week',
-      lanes: [{ id: 'core', title: 'Core' }],
-      tasks: [
-        {
-          id: 'a',
-          title: 'Serve exports',
-          goal: 'Exports download',
-          lane: 'core',
-          milestone: 'm1',
-          depends_on: [],
-          source: ['Plan the export feature'],
-          scope: ['src/export'],
-          acceptance: ['pnpm test'],
-        },
-      ],
-      milestones: [
-        {
-          id: 'm1',
-          title: 'Export',
-          criteria: ['Exports download'],
-          tasks: ['a'],
-          goal: first!.id,
-        },
-      ],
-      risks: [],
-      assumptions: [],
-    },
-    null,
-    {
-      id: `session:${lead.id}`,
-      role: 'lead',
-      project_id: f.project.id,
-      session_id: lead.id,
-      expires_at: f.store.now() + 60000,
-    },
-  );
-  const board = f.control.boardView(user, f.project.id, 1);
-  const milestone = f.store.list<Milestone>('milestones')[0]!;
-  expect(board.goals).toEqual([
-    {
-      id: second!.id,
-      text: 'Keep data local',
-      order: 0,
-      revision: expect.any(Number),
-      milestone_ids: [],
-      milestones: { done: 0, ready: 0, total: 0 },
-      tasks: { done: 0, total: 0 },
-      needs: 0,
-    },
-    {
-      id: first!.id,
-      text: 'Ship export',
-      order: 1,
-      revision: expect.any(Number),
-      milestone_ids: [milestone.id],
-      milestones: { done: 0, ready: 0, total: 1 },
-      tasks: { done: 0, total: 1 },
-      needs: 0,
-    },
-  ]);
-  expect(board.milestones[0]).toMatchObject({ id: milestone.id, goal_id: first!.id });
-});
-
-it('carries the verification of a ready lead milestone, and nothing before one ran', async () => {
-  const f = await workbenchFixture();
-  const lead = await f.create('Plan the export feature');
-  f.call(
-    'board.plan.update',
-    {
-      project_id: f.project.id,
-      base_version: 0,
-      headline: 'Export ships this week',
-      lanes: [{ id: 'core', title: 'Core' }],
-      tasks: [
-        {
-          id: 'report',
-          title: 'Research exports',
-          goal: 'Exports are understood',
-          lane: 'core',
-          milestone: 'release',
-          depends_on: [],
-          source: ['Plan the export feature'],
-          scope: [],
-          acceptance: [],
-          done_when: 'report',
-        },
-      ],
-      milestones: [
-        { id: 'release', title: 'Release', criteria: ['Report reviewed'], tasks: ['report'] },
-      ],
-      risks: [],
-      assumptions: [],
-    },
-    null,
-    {
-      id: `session:${lead.id}`,
-      role: 'lead',
-      project_id: f.project.id,
-      session_id: lead.id,
-      expires_at: f.store.now() + 60000,
-    },
-  );
-  const plan = patchPlan(f, lead.id, {
-    accepted: { report: { at: f.store.now(), evidence: 'Report reviewed', generation: 1 } },
-  });
-  const milestone = f.store.list<Milestone>('milestones')[0]!;
-  const boardMilestone = () => f.control.boardView(user, f.project.id, 1).milestones[0]!;
-  expect(boardMilestone().status).toBe('ready_for_acceptance');
-  expect(boardMilestone()).not.toHaveProperty('verification');
-  const verification = f.store.insert<MilestoneVerification>('milestone_verifications', {
-    id: 'release-verification',
-    revision: 1,
-    project_id: f.project.id,
-    milestone_id: milestone.id,
-    commitment_hash: commitmentHash(milestone, [], plan),
-    state: 'running',
-    commands: [{ name: 'build', exit_code: 0, output_tail: 'built', hidden: false }],
-    started_at: 5,
-  });
-  expect(boardMilestone().verification).toEqual({
-    id: verification.id,
-    state: 'running',
-    started_at: 5,
-    failed: [],
-    commands: [{ name: 'build', exit_code: 0 }],
-  });
-});
-
-it("backs a report task the lead accepted by its report alone, and its milestone by the user's acceptance once given", async () => {
+it('backs a report task the lead accepted by its report alone', async () => {
   const f = await workbenchFixture();
   const lead = await f.create('Plan the export feature');
   f.call(
@@ -1166,17 +921,6 @@ it("backs a report task the lead accepted by its report alone, and its milestone
     done_by: 'accepted',
     evidence_level: 'report',
   });
-  expect(board().milestones[0]).toMatchObject({
-    status: 'ready_for_acceptance',
-    evidence_level: 'report',
-  });
-  const milestone = f.store.list<Milestone>('milestones')[0]!;
-  f.call(
-    'milestone.accept',
-    { milestone_id: milestone.id, evidence_refs: ['task:report'] },
-    milestone.revision,
-  );
-  expect(board().milestones[0]).toMatchObject({ status: 'completed', evidence_level: 'accepted' });
 });
 
 it('carries the reason a lead gave for running a lane in parallel, and nothing for a lane without one', async () => {
@@ -2571,559 +2315,6 @@ it('gives each plan task row the flow path it takes in effect and other rows non
   for (const row of others) expect(row).not.toHaveProperty('path');
 });
 
-it('returns the full project history including removed tasks and days with no work', async () => {
-  const f = await workbenchFixture();
-  const first = new Date(2026, 9, 1, 10).getTime();
-  let now = first;
-  vi.spyOn(f.store, 'now').mockImplementation(() => now);
-  f.store.db.prepare('UPDATE events SET created_at=? WHERE project_id=?').run(first, f.project.id);
-  const lead = await leadWithPlan(f, [
-    { id: 'exports', title: 'Export data', depends_on: [] },
-    { id: 'obsolete', title: 'Old approach', depends_on: [] },
-  ]);
-  const original = f.store.must<BoardPlan>('board_plans', lead.id);
-  const worker = f.store.insert<Session>('sessions', {
-    id: 'export-worker',
-    revision: 1,
-    project_id: f.project.id,
-    runtime: f.adapter.name,
-    workspace_id: lead.workspace_id,
-    state: 'closed',
-    outcome: 'merged',
-    turn_count: 2,
-    task: { lead_session_id: lead.id, id: 'exports' },
-  });
-  const discarded = f.store.insert<Session>('sessions', {
-    ...worker,
-    id: 'discarded-export-worker',
-    outcome: 'discarded',
-  });
-  const turn = f.store.insert<SessionTurn>('session_turns', {
-    id: 'export-turn',
-    revision: 1,
-    project_id: f.project.id,
-    session_id: worker.id,
-    input: 'Export data',
-    kind: 'send',
-    delivery: 'delivered',
-    state: 'completed',
-  });
-  now = new Date(2026, 9, 2, 12).getTime();
-  f.store.event('session.opened', worker, f.project.id, worker);
-  f.store.event('session.opened', discarded, f.project.id, {
-    ...discarded,
-    state: 'running',
-    outcome: undefined,
-  });
-  f.store.event('session.discarded', discarded, f.project.id, {});
-  f.store.event('turn.running', turn, f.project.id, turn);
-  now += 60 * 60 * 1000;
-  f.store.event('turn.completed', turn, f.project.id, turn);
-  f.store.event('turn.queued', { id: 'retry-turn', revision: 1 }, f.project.id, {
-    ...turn,
-    id: 'retry-turn',
-    origin: 'tracker',
-  });
-  now += 60 * 60 * 1000;
-  f.store.event('session.merged', worker, f.project.id, { to_sha: 'merged-head' });
-  const revised = patchPlan(f, lead.id, {
-    tasks: original.tasks.filter((task) => task.id !== 'obsolete'),
-    retired: { obsolete: 1 },
-    handed_back: { [worker.id]: ['gate_failed'] },
-  });
-  f.store.event('board.plan_updated', revised, f.project.id, revised);
-  now = new Date(2026, 9, 5, 12).getTime();
-  const history = f.control.boardHistory(user, f.project.id);
-  expect(history.started_at).toBe(first);
-  expect(history.truncated).toBe(false);
-  expect(history.tasks).toEqual([
-    {
-      id: `${lead.id}:exports`,
-      owner_session_id: lead.id,
-      session_id: worker.id,
-      title: 'Export data',
-      depends_on: [],
-      runtime: f.adapter.name,
-      lane_id: `${lead.id}:core`,
-      milestone_id: null,
-      state: 'merged',
-      created_at: first,
-      started_at: new Date(2026, 9, 2, 12).getTime(),
-      merged_at: new Date(2026, 9, 2, 14).getTime(),
-      commit: 'merged-head',
-      additions: 0,
-      deletions: 0,
-      attempts: 2,
-      handbacks: 1,
-      handback_reasons: { gate: 0, review: 0, other: 1 },
-    },
-    {
-      id: `${lead.id}:obsolete`,
-      owner_session_id: lead.id,
-      session_id: null,
-      title: 'Old approach',
-      depends_on: [],
-      lane_id: `${lead.id}:core`,
-      milestone_id: null,
-      state: 'removed',
-      created_at: first,
-      started_at: null,
-      merged_at: null,
-      commit: null,
-      additions: null,
-      deletions: null,
-      attempts: 0,
-      handbacks: 0,
-    },
-  ]);
-  expect(history.days).toEqual([
-    { date: '2026-10-01', merged: 0, handbacks: 0, decisions: 1, failed: 0, waited: 0 },
-    { date: '2026-10-02', merged: 1, handbacks: 1, decisions: 1, failed: 0, waited: 0 },
-    { date: '2026-10-03', merged: 0, handbacks: 0, decisions: 0, failed: 0, waited: 0 },
-    { date: '2026-10-04', merged: 0, handbacks: 0, decisions: 0, failed: 0, waited: 0 },
-    { date: '2026-10-05', merged: 0, handbacks: 0, decisions: 0, failed: 0, waited: 0 },
-  ]);
-  expect(history.idle).toEqual([
-    { from: first, to: new Date(2026, 9, 2, 12).getTime() },
-    { from: new Date(2026, 9, 2, 13).getTime(), to: now },
-  ]);
-  f.store.remove('sessions', discarded.id, discarded.revision);
-  f.store.event('session.deleted', discarded, f.project.id, { title: 'Discarded attempt' });
-  expect(f.control.boardHistory(user, f.project.id).tasks).toEqual(history.tasks);
-
-  f.store.insert<Session>('sessions', { ...lead, id: 'successor', revision: 1 });
-  f.store.remove('board_plans', lead.id, revised.revision);
-  const moved = f.store.insert<BoardPlan>('board_plans', {
-    ...revised,
-    id: 'successor',
-    revision: 1,
-  });
-  f.store.event('board.plan_transferred', moved, f.project.id, { from: lead.id });
-  expect(f.control.boardHistory(user, f.project.id).tasks).toEqual(
-    history.tasks.map((task) => ({
-      ...task,
-      id: task.id.replace(lead.id, 'successor'),
-      owner_session_id: 'successor',
-      lane_id: 'successor:core',
-    })),
-  );
-});
-
-it('gives a merged history task its own session, commit and changed lines, and an unstarted one none', async () => {
-  const f = await workbenchFixture();
-  const lead = await leadWithPlan(f, [
-    { id: 'exports', title: 'Export data', depends_on: [] },
-    { id: 'imports', title: 'Import data', depends_on: [] },
-  ]);
-  const worker = f.store.insert<Session>('sessions', {
-    id: 'export-worker',
-    revision: 1,
-    project_id: f.project.id,
-    runtime: f.adapter.name,
-    workspace_id: lead.workspace_id,
-    state: 'closed',
-    outcome: 'merged',
-    turn_count: 1,
-    task: { lead_session_id: lead.id, id: 'exports' },
-  });
-  f.store.event('session.opened', worker, f.project.id, worker);
-  f.store.event('session.merged', worker, f.project.id, {
-    from_sha: 'base-head',
-    to_sha: 'merged-head',
-    additions: 12,
-    deletions: 3,
-  });
-  const rows = f.control.boardHistory(user, f.project.id).tasks;
-  expect(
-    rows.map((row) => [
-      row.id,
-      row.state,
-      row.session_id,
-      row.commit,
-      row.additions,
-      row.deletions,
-    ]),
-  ).toEqual([
-    [`${lead.id}:exports`, 'merged', worker.id, 'merged-head', 12, 3],
-    [`${lead.id}:imports`, 'todo', null, null, null, null],
-  ]);
-});
-
-it('keeps accepted report and direct task completion times and milestone history', async () => {
-  const f = await workbenchFixture();
-  const lead = await leadWithPlan(f, [
-    { id: 'report', title: 'Research exports', depends_on: [] },
-    { id: 'direct', title: 'Implement exports', depends_on: [] },
-  ]);
-  const at = f.store.now();
-  patchPlan(f, lead.id, {
-    tasks: f.store
-      .must<BoardPlan>('board_plans', lead.id)
-      .tasks.map<BoardPlan['tasks'][number]>((task) => ({
-        ...task,
-        ...(task.id === 'report' ? { done_when: 'report', milestone: 'release' } : {}),
-      })),
-    accepted: { report: { at, evidence: 'Report reviewed' } },
-    direct_merged: {
-      direct: { generation: 1, at, session_id: lead.id, from_sha: 'before', to_sha: 'after' },
-    },
-  });
-  const milestone = f.store.insert<Milestone>('milestones', {
-    id: 'release-milestone',
-    revision: 1,
-    project_id: f.project.id,
-    owner_session_id: lead.id,
-    key: 'release',
-    title: 'Research complete',
-    criteria: ['Report reviewed'],
-    task_ids: ['report'],
-    required_sessions: [],
-    created_at: at,
-    updated_by: user.id,
-    removed_at: at,
-  });
-  f.store.event('milestone.accepted', milestone, f.project.id, milestone);
-  const reachedAt = f.store.events(0, f.project.id, Number.MAX_SAFE_INTEGER).at(-1)!.created_at;
-  const history = f.control.boardHistory(user, f.project.id);
-  expect(history.tasks.map((task) => [task.state, task.merged_at])).toEqual([
-    ['merged', at],
-    ['merged', at],
-  ]);
-  expect(history.tasks[0]!.milestone_id).toBe(milestone.id);
-  expect(history.milestones).toEqual([
-    { id: milestone.id, title: milestone.title, state: 'removed', reached_at: reachedAt },
-  ]);
-});
-
-it('caps history task rows without truncating daily totals', async () => {
-  const f = await workbenchFixture();
-  const lead = await leadWithPlan(f, [{ id: 'exports', title: 'Export data', depends_on: [] }]);
-  const original = f.store.must<BoardPlan>('board_plans', lead.id);
-  f.store.transaction(() => {
-    for (let index = 0; index < 2001; index++) {
-      const plan = { ...original, tasks: [{ ...original.tasks[0]!, id: `export-${index}` }] };
-      f.store.event('board.plan_updated', plan, f.project.id, plan);
-    }
-  });
-  const history = f.control.boardHistory(user, f.project.id);
-  expect(history.tasks).toHaveLength(2000);
-  expect(history.truncated).toBe(true);
-  expect(history.decisions).toHaveLength(2000);
-  expect(history.days.reduce((sum, day) => sum + day.decisions, 0)).toBe(2002);
-});
-
-it('carries history dependencies, task type and the newest retained session runtime and model', async () => {
-  const f = await workbenchFixture();
-  const lead = await leadWithPlan(f, [
-    { id: 'exports', title: 'Export data', depends_on: [] },
-    { id: 'download', title: 'Download data', depends_on: ['exports'] },
-  ]);
-  const plan = f.store.must<BoardPlan>('board_plans', lead.id);
-  patchPlan(f, lead.id, {
-    tasks: plan.tasks.map<BoardPlan['tasks'][number]>((task) =>
-      task.id === 'download' ? { ...task, task_type: 'feature' } : task,
-    ),
-  });
-  for (const [id, extra] of [
-    ['older-worker', { requested_model: 'older-model' }],
-    ['newest-worker', { requested_model: 'requested-model', reported_model: 'reported-model' }],
-    ['discarded-worker', { outcome: 'discarded', reported_model: 'discarded-model' }],
-  ] as const) {
-    const session = f.store.insert<Session>('sessions', {
-      id,
-      revision: 1,
-      project_id: f.project.id,
-      runtime: id,
-      workspace_id: lead.workspace_id,
-      state: 'closed',
-      turn_count: 1,
-      task: { lead_session_id: lead.id, id: 'download' },
-      ...extra,
-    });
-    f.store.event('session.opened', session, f.project.id, session);
-  }
-  const [unstarted, started] = f.control.boardHistory(user, f.project.id).tasks;
-  expect(started).toMatchObject({
-    depends_on: ['exports'],
-    task_type: 'feature',
-    session_id: 'newest-worker',
-    runtime: 'newest-worker',
-    model: 'reported-model',
-  });
-  expect(unstarted).toHaveProperty('depends_on', []);
-  for (const field of [
-    'task_type',
-    'runtime',
-    'model',
-    'handback_reasons',
-    'gate_passed_on_attempt',
-  ])
-    expect(unstarted).not.toHaveProperty(field);
-  const latest = current(f, 'newest-worker');
-  f.store.update<Session>('sessions', { ...latest, reported_model: undefined }, latest.revision);
-  expect(f.control.boardHistory(user, f.project.id).tasks[1]).toHaveProperty(
-    'model',
-    'requested-model',
-  );
-});
-
-it('caps history decisions even when the task list fits and keeps complete daily counts', async () => {
-  const f = await workbenchFixture();
-  const lead = await leadWithPlan(f, [{ id: 'exports', title: 'Export data', depends_on: [] }]);
-  f.store.transaction(() => {
-    for (let index = 0; index < 2000; index++)
-      f.store.event('task.start_requested', lead, f.project.id, { task_ids: ['exports'] });
-  });
-  const history = f.control.boardHistory(user, f.project.id);
-  expect(history.tasks).toHaveLength(1);
-  expect(history.decisions).toHaveLength(2000);
-  expect(history.truncated).toBe(true);
-  expect(history.days.reduce((sum, day) => sum + day.decisions, 0)).toBe(2001);
-});
-
-it('divides history handbacks by gate, external review, user review rejection and other causes', async () => {
-  const f = await workbenchFixture();
-  const lead = await leadWithPlan(f, [{ id: 'exports', title: 'Export data', depends_on: [] }]);
-  const worker = f.store.insert<Session>('sessions', {
-    id: 'export-worker',
-    revision: 1,
-    project_id: f.project.id,
-    runtime: f.adapter.name,
-    workspace_id: lead.workspace_id,
-    state: 'open',
-    turn_count: 0,
-    task: { lead_session_id: lead.id, id: 'exports' },
-  });
-  f.store.event('session.opened', worker, f.project.id, worker);
-  const queue = (id: string, input: string) => {
-    const turn: SessionTurn = {
-      id,
-      revision: 1,
-      project_id: f.project.id,
-      session_id: worker.id,
-      input,
-      kind: 'send',
-      delivery: 'pending',
-      state: 'queued',
-      origin: 'tracker',
-    };
-    f.store.event('turn.queued', turn, f.project.id, turn);
-  };
-  f.store.event('session.gate_checked', worker, f.project.id, {
-    results: [{ name: 'Tests', exit_code: 1 }],
-  });
-  f.store.event('session.merge_blocked', worker, f.project.id, { reason: 'gate_failed' });
-  queue('gate-repair', 'Fix the failed gate');
-  f.store.event('session.gate_checked', worker, f.project.id, {
-    results: [{ name: 'Tests', exit_code: 0 }],
-  });
-  queue(
-    'review-repair',
-    '[Pantheon] The workflow review “Code review” found problems to fix before the merge:',
-  );
-  f.store.event('task.handed_back', lead, f.project.id, {
-    task_id: 'exports',
-    session_id: worker.id,
-    reason: 'The user rejected the implementation',
-  });
-  f.store.event('session.merge_blocked', worker, f.project.id, { reason: 'rebase_conflict' });
-  queue('conflict-repair', 'Resolve the rebase conflict');
-  const row = f.control.boardHistory(user, f.project.id).tasks[0]!;
-  expect(row.handback_reasons).toEqual({ gate: 1, review: 2, other: 1 });
-  expect(row.handbacks).toBe(4);
-  expect(Object.values(row.handback_reasons!).reduce((sum, count) => sum + count, 0)).toBe(
-    row.handbacks,
-  );
-});
-
-it('records the first passing gate attempt for first, retried and never passing tasks', async () => {
-  const f = await workbenchFixture();
-  const lead = await leadWithPlan(
-    f,
-    ['first', 'retry', 'never'].map((id) => ({ id, title: id, depends_on: [] })),
-  );
-  for (const task of ['first', 'retry', 'never']) {
-    const worker = f.store.insert<Session>('sessions', {
-      id: `${task}-worker`,
-      revision: 1,
-      project_id: f.project.id,
-      runtime: f.adapter.name,
-      workspace_id: lead.workspace_id,
-      state: 'open',
-      turn_count: 0,
-      task: { lead_session_id: lead.id, id: task },
-    });
-    f.store.event('session.opened', worker, f.project.id, worker);
-    for (const exit_code of task === 'first' ? [0, 1, 0] : task === 'retry' ? [1, 0, 0] : [1, 1])
-      f.store.event('session.gate_checked', worker, f.project.id, {
-        results: [{ name: 'Tests', exit_code }],
-      });
-  }
-  const [first, retry, never] = f.control.boardHistory(user, f.project.id).tasks;
-  expect(first).toHaveProperty('gate_passed_on_attempt', 1);
-  expect(retry).toHaveProperty('gate_passed_on_attempt', 2);
-  expect(never).not.toHaveProperty('gate_passed_on_attempt');
-});
-
-it('counts the gate attempts of the current task generation only', async () => {
-  const f = await workbenchFixture();
-  const lead = await leadWithPlan(f, [{ id: 'exports', title: 'Export', depends_on: [] }]);
-  const gates = (generation: number, exitCodes: number[]) => {
-    const worker = f.store.insert<Session>('sessions', {
-      id: `exports-worker-${generation}`,
-      revision: 1,
-      project_id: f.project.id,
-      runtime: f.adapter.name,
-      workspace_id: lead.workspace_id,
-      state: 'open',
-      turn_count: 0,
-      task: { lead_session_id: lead.id, id: 'exports', generation },
-    });
-    f.store.event('session.opened', worker, f.project.id, worker);
-    for (const exit_code of exitCodes)
-      f.store.event('session.gate_checked', worker, f.project.id, {
-        results: [{ name: 'Tests', exit_code }],
-      });
-  };
-  gates(1, [0]);
-  f.call(
-    'board.plan.update',
-    {
-      project_id: f.project.id,
-      base_version: f.store.must<BoardPlan>('board_plans', lead.id).plan_version,
-      headline: 'Export ships this week',
-      lanes: [{ id: 'core', title: 'Core' }],
-      tasks: [
-        {
-          id: 'exports',
-          title: 'Export',
-          goal: 'Export as CSV too',
-          lane: 'core',
-          depends_on: [],
-          source: ['Plan the export feature'],
-          scope: ['src/exports'],
-          acceptance: ['pnpm test'],
-        },
-      ],
-      milestones: [],
-      risks: [],
-      assumptions: [],
-    },
-    null,
-    {
-      id: `session:${lead.id}`,
-      role: 'lead',
-      project_id: f.project.id,
-      session_id: lead.id,
-      expires_at: f.store.now() + 60000,
-    },
-  );
-  expect(f.store.must<BoardPlan>('board_plans', lead.id).generations?.exports?.generation).toBe(2);
-  gates(2, [1, 1, 0]);
-  const [row] = f.control.boardHistory(user, f.project.id).tasks;
-  expect(row).toHaveProperty('gate_passed_on_attempt', 3);
-});
-
-it('counts failed task attempts and opened user requests over two history days and locates decisions', async () => {
-  const f = await workbenchFixture();
-  const first = new Date(2026, 9, 1, 10).getTime();
-  let now = first;
-  vi.spyOn(f.store, 'now').mockImplementation(() => now);
-  f.store.db.prepare('UPDATE events SET created_at=? WHERE project_id=?').run(first, f.project.id);
-  const lead = await leadWithPlan(f, [{ id: 'exports', title: 'Export data', depends_on: [] }]);
-  const worker = f.store.insert<Session>('sessions', {
-    id: 'export-worker',
-    revision: 1,
-    project_id: f.project.id,
-    runtime: f.adapter.name,
-    workspace_id: lead.workspace_id,
-    state: 'open',
-    turn_count: 0,
-    task: { lead_session_id: lead.id, id: 'exports' },
-  });
-  f.store.event('session.opened', worker, f.project.id, worker);
-  const review = f.store.insert<StepRun>('workflow_step_runs', {
-    id: 'export-review',
-    revision: 1,
-    project_id: f.project.id,
-    lead_session_id: lead.id,
-    task_id: 'exports',
-    generation: 1,
-    slot: 'before_merge',
-    step: { id: 'review-export', title: 'Review export', kind: { type: 'review' } },
-    state: 'running',
-    created_at: now,
-  });
-  for (const day of [0, 1]) {
-    now = first + day * DAY;
-    const turn: SessionTurn = {
-      id: `failed-export-${day}`,
-      revision: 1,
-      project_id: f.project.id,
-      session_id: worker.id,
-      input: 'Export data',
-      kind: 'send',
-      delivery: 'delivered',
-      state: 'failed',
-    };
-    f.store.event('turn.queued', turn, f.project.id, turn);
-    f.store.event('turn.failed', turn, f.project.id, { error: 'Could not finish' });
-    f.store.event('approval.requested', { id: `permission-${day}`, revision: 1 }, f.project.id, {
-      kind: 'permission',
-    });
-    f.store.event('lead.question_asked', lead, f.project.id, {
-      question: 'Choose the export format',
-    });
-    f.store.event('workflow.step_changed', review, f.project.id, {
-      state: day === 0 ? 'running' : 'failed',
-      task_id: 'exports',
-      slot: review.slot,
-      step_id: review.step.id,
-    });
-    if (day === 1) {
-      f.store.event('task.handed_back', lead, f.project.id, {
-        task_id: 'exports',
-        reason: 'The user rejected the export',
-      });
-      f.store.event('task.start_requested', lead, f.project.id, { task_ids: ['exports'] });
-      f.store.event('task.start_requested', lead, f.project.id, {
-        task_ids: ['exports', 'imports'],
-      });
-      f.store.event('task.stop_requested', lead, f.project.id, {
-        task_id: 'exports',
-        reason: 'Wait for input',
-      });
-      f.store.event('task.accepted', lead, f.project.id, {
-        task_id: 'exports',
-        evidence: 'Reviewed',
-      });
-      const plan = f.store.must<BoardPlan>('board_plans', lead.id);
-      f.store.event('board.plan_updated', plan, f.project.id, {
-        ...plan,
-        headline: 'Long plan '.repeat(30),
-      });
-    }
-  }
-  const history = f.control.boardHistory(user, f.project.id);
-  expect(history.days.map(({ failed, waited }) => ({ failed, waited }))).toEqual([
-    { failed: 1, waited: 2 },
-    { failed: 1, waited: 2 },
-  ]);
-  expect(history.tasks[0]!.handback_reasons).toEqual({ gate: 0, review: 1, other: 0 });
-  expect(history.decisions).toEqual([
-    { at: first, lane_id: null, kind: 'plan', title: 'Export ships this week' },
-    { at: now, lane_id: `${lead.id}:core`, kind: 'start', title: 'Export data' },
-    { at: now, lane_id: null, kind: 'start' },
-    { at: now, lane_id: `${lead.id}:core`, kind: 'stop', title: 'Export data' },
-    { at: now, lane_id: `${lead.id}:core`, kind: 'accept', title: 'Export data' },
-    { at: now, lane_id: null, kind: 'plan', title: 'Long plan '.repeat(30).slice(0, 140) },
-  ]);
-  for (const day of history.days)
-    expect(day.decisions).toBe(
-      history.decisions.filter((row) => dayKey(row.at) === day.date).length,
-    );
-});
-
 it('projects current context, acceptance items, successors and the latest gate run on plan tasks', async () => {
   const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [
@@ -4040,7 +3231,7 @@ it('copies the reviewers of the review of a review step into the task row', asyn
   ]);
 });
 
-it('gives a lane its depth and plan stop, and an estimate only while it waits for approval', async () => {
+it('gives a lane the depth its lead set', async () => {
   const f = await workbenchFixture();
   const lead = await f.create('Plan the export feature');
   const leadPrincipal: Principal = {
@@ -4087,46 +3278,8 @@ it('gives a lane its depth and plan stop, and an estimate only while it waits fo
       depth: 'plan_first',
       depth_by: 'lead',
       depth_reason: 'It touches the API',
-      stop: { state: 'waiting', at: expect.any(Number) },
-      estimate: expect.objectContaining({ tasks: 1 }),
     },
-    {
-      id: `${lead.id}:docs`,
-      title: 'Docs',
-      depth: 'plan_first',
-      depth_by: 'pantheon',
-      stop: { state: 'waiting', at: expect.any(Number) },
-      estimate: expect.objectContaining({ tasks: 1 }),
-    },
-    { id: `${lead.id}:misc`, title: 'Misc' },
-  ]);
-
-  f.call(
-    'board.lane.approve',
-    { project_id: f.project.id, lead_session_id: lead.id, lane_id: 'core' },
-    null,
-  );
-  f.call(
-    'board.lane.depth.set',
-    { project_id: f.project.id, lead_session_id: lead.id, lane_id: 'docs', depth: 'just_do' },
-    null,
-  );
-  expect(f.control.boardView(user, f.project.id, 1).lanes).toEqual([
-    {
-      id: `${lead.id}:core`,
-      title: 'Core',
-      depth: 'plan_first',
-      depth_by: 'lead',
-      depth_reason: 'It touches the API',
-      stop: { state: 'approved', at: expect.any(Number), by: 'user' },
-    },
-    {
-      id: `${lead.id}:docs`,
-      title: 'Docs',
-      depth: 'just_do',
-      depth_by: 'user',
-      stop: { state: 'approved', at: expect.any(Number), by: 'user' },
-    },
+    { id: `${lead.id}:docs`, title: 'Docs' },
     { id: `${lead.id}:misc`, title: 'Misc' },
   ]);
 });

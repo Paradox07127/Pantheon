@@ -12,7 +12,6 @@ import { useBoard } from '@/data/board';
 import { Section } from '@/screens/settings/ProjectSettingsScreen';
 import { searchSettings } from '@/screens/settings/settings-search';
 import { UsagePage } from '@/screens/settings/UsagePage';
-import { WorkflowPage } from '@/screens/settings/WorkflowPage';
 import { t } from '@/i18n';
 import { zh } from './i18n-setup.js';
 
@@ -245,15 +244,7 @@ describe('usage page board link', () => {
   });
 });
 
-describe('budget and quota moved off the workflow page', () => {
-  it('leaves neither row on the workflow page', async () => {
-    const h = await mount(() => WorkflowPage({ project }));
-    const labels = nodes(tree(h)).map((n) => n.props['aria-label']);
-    expect(labels).toContain(zh('data.workflowPolicy.param.maxParallel'));
-    expect(labels).not.toContain(budgetParam);
-    expect(labels).not.toContain(quotaParam);
-  });
-
+describe('budget and quota search', () => {
   it("lands a search for the project budget on a project's page", () => {
     const hits = searchSettings('预算');
     expect(hits.find((hit) => hit.id === 'project.budget')?.page).toBe('project');

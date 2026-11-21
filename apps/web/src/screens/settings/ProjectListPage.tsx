@@ -5,9 +5,13 @@ import type { BoardSnapshot, ProjectSettingValues } from '@pantheon/protocol';
 import { runtimeName } from '../../components/RuntimeGlyph';
 import { useBoard } from '../../data/board';
 import {
+  clearGlobal,
   clearOverride,
+  setGlobal,
+  settingOf,
   useProjectDefaults,
   type ProjectSettingKey,
+  type SettingOverview,
 } from '../../data/project-defaults';
 import { visibleProjects } from '../../data/projects';
 import { PARAM_LABEL } from '../../data/workflow-policy';
@@ -16,6 +20,7 @@ import { listText } from '../../lib/list-text';
 import { ExtensionsPage } from './ExtensionsPage';
 import { MODE_LABEL } from './ExternalPage';
 import { ProjectGate } from './GatesPage';
+import { Overrides } from './Overrides';
 import {
   failureText,
   Loading,
@@ -25,13 +30,18 @@ import {
   Section,
   type Failure,
 } from './ProjectSettingsScreen';
+import { QuestionDefaults } from './QuestionDefaults';
 import { allProjects } from './SettingsNav';
 import { UsagePage } from './UsagePage';
 import { useSettingsView } from './view';
-import { onOff, WorkflowPage } from './WorkflowPage';
-import { WorktreesPage } from './WorktreesPage';
+import { AutoMergeSwitch, WorktreesPage } from './WorktreesPage';
 
 type Project = BoardSnapshot['projects'][number];
+
+export const onOff = (on: boolean) =>
+  on
+    ? t({ id: 'settings.workflow.on', defaultMessage: 'On' })
+    : t({ id: 'settings.workflow.off', defaultMessage: 'Off' });
 
 const SETTING_NAME: Record<ProjectSettingKey, () => string> = {
   workflow_policy: () => t({ id: 'settings.pages.workflow', defaultMessage: 'Workflow' }),
@@ -92,24 +102,74 @@ export function ProjectListPage() {
     ) : (
       <Loading />
     );
+  const autoMerge = settingOf(read.data, 'auto_merge');
   return (
-    <div className="ps-grp">
-      <div
-        className="ps-rows"
-        role="list"
-        aria-label={t({ id: 'settings.pages.projects', defaultMessage: 'Projects' })}
-      >
-        {read.data.projects.map((p) => (
-          <div key={p.project_id} role="listitem" className="pl-it">
-            <button type="button" className="pl-row" onClick={() => setDetail(p.project_id)}>
-              <span className="pl-nm">{p.name}</span>
-              {p.overridden > 0 && <span className="pl-n">{ownCount(p.overridden)}</span>}
-              <ChevronRight aria-hidden="true" />
-            </button>
-          </div>
-        ))}
+    <>
+      {autoMerge && <GlobalAutoMerge setting={autoMerge} />}
+      <div className="ps-grp">
+        <div
+          className="ps-rows"
+          role="list"
+          aria-label={t({ id: 'settings.pages.projects', defaultMessage: 'Projects' })}
+        >
+          {read.data.projects.map((p) => (
+            <div key={p.project_id} role="listitem" className="pl-it">
+              <button type="button" className="pl-row" onClick={() => setDetail(p.project_id)}>
+                <span className="pl-nm">{p.name}</span>
+                {p.overridden > 0 && <span className="pl-n">{ownCount(p.overridden)}</span>}
+                <ChevronRight aria-hidden="true" />
+              </button>
+            </div>
+          ))}
+        </div>
       </div>
-    </div>
+    </>
+  );
+}
+
+/** Whether every project without its own choice merges once its gates pass. */
+function GlobalAutoMerge({ setting }: { setting: SettingOverview<'auto_merge'> }) {
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<Failure | null>(null);
+  const label = t({
+    id: 'settings.autoMerge.toggle',
+    defaultMessage: 'Merge automatically once gates pass',
+  });
+  const save = async (enabled: boolean) => {
+    if (busy) return;
+    setBusy(true);
+    setFailure(null);
+    const result = await setGlobal('auto_merge', enabled);
+    setBusy(false);
+    if (!result.ok) setFailure(result.error);
+  };
+  return (
+    <Section title={t({ id: 'settings.worktrees.merging', defaultMessage: 'Merging' })}>
+      <div className="ps-rows">
+        <Row label={label} settingId="projects.globalAutoMerge">
+          <input
+            type="checkbox"
+            className="ps-sw"
+            aria-label={label}
+            checked={setting.global ?? setting.builtin ?? false}
+            disabled={busy}
+            onChange={(e) => void save(e.target.checked)}
+          />
+          <Overrides
+            name={label}
+            setting="auto_merge"
+            valueText={onOff}
+            clearGlobal={setting.global !== undefined ? () => clearGlobal('auto_merge') : undefined}
+            editor={(p) => <AutoMergeSwitch project={p} />}
+          />
+        </Row>
+        {failure && (
+          <div className="ps-err" role="alert">
+            {failureText(failure)}
+          </div>
+        )}
+      </div>
+    </Section>
   );
 }
 
@@ -180,7 +240,7 @@ function ProjectDetail({ project }: { project: Project }) {
       </div>
       <WorktreesPage project={project} />
       <Section>
-        <WorkflowPage project={project} only="question_defaults" />
+        <QuestionDefaults project={project} />
       </Section>
       <Section>
         <UsagePage project={project} only="project_budget" />

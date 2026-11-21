@@ -3,23 +3,22 @@ import path from 'node:path';
 import { ATTENTION_KINDS, DEFAULT_ATTENTION_DELIVERY } from '@pantheon/protocol';
 import { open } from '../page.mjs';
 const runDir = process.argv[2];
-let { page, query, call, errors, poll } = await open(runDir);
+let { page, query, call, errors, poll, names } = await open(runDir);
 const result = { id: 'settings.notifications', checks: [] };
 const check = (what, ok, got) => result.checks.push({ what, ok: Boolean(ok), got });
 
-// Each rule key's row name and each delivery's choice name (zh-CN/notifications.json).
+// Each shown rule key's row name and each delivery's choice name (zh-CN/notifications.json).
 const NAME = {
-  plan_change: '计划变更',
   question: '问题',
   repeated_failure: '失败两次',
   permission: '权限请求',
-  milestone_accept: '待验收的里程碑',
-  budget: '预算',
   improvement: '改进',
-  external: '外部审批',
   other: '其他',
   merged: '已合并',
 };
+const SHOWN = Object.keys(NAME);
+// Rows of removed decision kinds, which the page no longer lists.
+const GONE = ['计划变更', '待验收的里程碑', '预算', '外部审批'];
 const CHOICE = { now: '立即', brief: '仅简报', never: '从不' };
 const OVERDUE = '等了超过 4 小时的问题';
 
@@ -65,11 +64,11 @@ const openPage = async () => {
   await page.click({ role: 'button', name: '通知', exact: true });
   return poll(async () => {
     const g = await groups();
-    return g.length > ATTENTION_KINDS.length && g.every((x) => x.checked.length === 1) && g;
+    return g.length > SHOWN.length && g.every((x) => x.checked.length === 1) && g;
   });
 };
 const shownAs = (list, settings) =>
-  ATTENTION_KINDS.every(
+  SHOWN.every(
     (k) =>
       list.find((g) => g.name === NAME[k])?.checked[0] === CHOICE[settings.attention_delivery[k]],
   );
@@ -77,11 +76,20 @@ const shownAs = (list, settings) =>
 const shown = await openPage();
 const kindRows = (shown || []).filter((g) => g.name !== OVERDUE);
 check(
-  '每个决定种类加 "已合并" 各一行',
-  kindRows.length === ATTENTION_KINDS.length &&
-    ATTENTION_KINDS.every((k) => kindRows.filter((g) => g.name === NAME[k]).length === 1),
+  '每个留下的决定种类加 "已合并" 各一行',
+  kindRows.length === SHOWN.length &&
+    SHOWN.every((k) => kindRows.filter((g) => g.name === NAME[k]).length === 1),
   kindRows.map((g) => g.name),
 );
+const lines = (await page.evaluate('document.body.innerText')).split('\n').map((l) => l.trim());
+const named = (await names('')).map((c) => c.name);
+const presentNames = (list) => list.filter((n) => lines.includes(n) || named.includes(n));
+check(
+  '页面上没有 计划变更、待验收的里程碑、预算、外部审批 这四行',
+  shown && presentNames(GONE).length === 0,
+  presentNames(GONE),
+);
+check('对照组：同一读法找得到 "问题" 这一行', presentNames([NAME.question]).length === 1);
 check(
   '每行的选择是 立即 / 仅简报 / 从不',
   kindRows.length > 0 && kindRows.every((g) => g.choices.join('/') === '立即/仅简报/从不'),
@@ -98,10 +106,8 @@ check(
   ),
 );
 check(
-  '界面上 待验收的里程碑、已合并 选中 仅简报',
-  ['milestone_accept', 'merged'].every(
-    (k) => kindRows.find((g) => g.name === NAME[k])?.checked[0] === '仅简报',
-  ),
+  '界面上 已合并 选中 仅简报',
+  kindRows.find((g) => g.name === NAME.merged)?.checked[0] === '仅简报',
 );
 result.shot = await page.screenshot('pair-notifications');
 copyFileSync(
@@ -125,21 +131,21 @@ await page.click({
   role: 'radio',
   name: '仅简报',
   exact: true,
-  within: { role: 'radiogroup', name: NAME.plan_change, exact: true },
+  within: { role: 'radiogroup', name: NAME.question, exact: true },
 });
-const afterPlan = await poll(async () => {
+const afterQuestion = await poll(async () => {
   const s = await query('app.settings');
-  return s.attention_delivery.plan_change === 'brief' && s;
+  return s.attention_delivery.question === 'brief' && s;
 });
-check('选 计划变更=仅简报 后 app.settings 的 plan_change 是 brief', afterPlan);
+check('选 问题=仅简报 后 app.settings 的 question 是 brief', afterQuestion);
 check(
   '其他种类不变',
-  afterPlan &&
-    ATTENTION_KINDS.filter((k) => k !== 'permission' && k !== 'plan_change').every(
-      (k) => afterPlan.attention_delivery[k] === DEFAULT_ATTENTION_DELIVERY[k],
+  afterQuestion &&
+    ATTENTION_KINDS.filter((k) => k !== 'permission' && k !== 'question').every(
+      (k) => afterQuestion.attention_delivery[k] === DEFAULT_ATTENTION_DELIVERY[k],
     ) &&
-    afterPlan.attention_delivery.permission === 'never',
-  afterPlan?.attention_delivery,
+    afterQuestion.attention_delivery.permission === 'never',
+  afterQuestion?.attention_delivery,
 );
 
 // Quiet hours: a start typed alone pairs with the placeholder end; then an end.
@@ -177,7 +183,7 @@ try {
   // The reload ends this connection.
 }
 page.close();
-({ page, query, call, errors, poll } = await open(runDir));
+({ page, query, call, errors, poll, names } = await open(runDir));
 check(
   '前置：页面确实重新加载了',
   (await page.evaluate('window.__beforeReload === undefined')) === true,
@@ -185,11 +191,11 @@ check(
 const reloaded = await openPage();
 const stored = await query('app.settings');
 check(
-  '刷新后每行选中的值等于 app.settings（权限请求=从不、计划变更=仅简报）',
+  '刷新后每行选中的值等于 app.settings（权限请求=从不、问题=仅简报）',
   reloaded &&
     shownAs(reloaded, stored) &&
     reloaded.find((g) => g.name === NAME.permission)?.checked[0] === '从不' &&
-    reloaded.find((g) => g.name === NAME.plan_change)?.checked[0] === '仅简报',
+    reloaded.find((g) => g.name === NAME.question)?.checked[0] === '仅简报',
   reloaded && reloaded.filter((g) => g.name !== OVERDUE).map((g) => [g.name, g.checked[0]]),
 );
 const fieldsAfter = { from: await field('开始'), to: await field('结束') };

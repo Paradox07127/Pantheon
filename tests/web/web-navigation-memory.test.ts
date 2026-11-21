@@ -97,11 +97,11 @@ it("keeps the current project's place while the app settings show", () => {
 it('opens the settings on the chosen page without a step in history', () => {
   shell().openProject('alpha');
   const length = shell().history.length;
-  useSettingsView.setState({ page: 'workflow' });
+  useSettingsView.setState({ page: 'defaults' });
   shell().openSettings('alpha');
-  expect(useSettingsView.getState()).toMatchObject({ open: true, page: 'workflow' });
+  expect(useSettingsView.getState()).toMatchObject({ open: true, page: 'defaults' });
   shell().openSettings(null);
-  expect(useSettingsView.getState().page).toBe('workflow');
+  expect(useSettingsView.getState().page).toBe('defaults');
   expect(shell().history).toHaveLength(length);
 });
 

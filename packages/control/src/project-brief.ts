@@ -2,12 +2,9 @@ import {
   hash,
   type BoardPlan,
   type Entity,
-  type Event,
-  type Milestone,
   type NeedsYouItem,
   type Principal,
   type Project,
-  type Session,
 } from '@pantheon/domain';
 import {
   decisionType,
@@ -22,7 +19,6 @@ import { boardTaskId } from './board-plan.js';
 import { decisionsForUser } from './decisions-for-user.js';
 import { personalCalled } from './personal-scope.js';
 import { itemTask, needsYou } from './needs-you.js';
-import { milestoneView } from './project-facts.js';
 
 /** One user's seen cursor of one project, keyed by JSON of [user id, project id]. */
 export interface SeenCursor extends Entity {
@@ -55,7 +51,7 @@ const FAILURES: NeedsYouItem['kind'][] = [
 ];
 const BRIEF_EVENTS = ['session.merged', 'task.accepted', 'board.plan_updated'];
 
-/** What a needs-you item links to: its approval, milestone, question or task, else its source's latest event. */
+/** What a needs-you item links to: its approval, question or task, else its source's latest event. */
 function itemRef(
   ctx: ControlContext,
   item: NeedsYouItem,
@@ -63,7 +59,6 @@ function itemRef(
 ): ProjectBriefRef {
   const { table, id } = item.source;
   if (table === 'approvals') return { kind: 'approval', id };
-  if (table === 'milestones') return { kind: 'milestone', id };
   const asked =
     item.question &&
     (ctx.store.db
@@ -79,18 +74,6 @@ function itemRef(
     .prepare('SELECT event_id FROM events WHERE aggregate_id=? ORDER BY sequence DESC LIMIT 1')
     .get(id) as { event_id: string };
   return { kind: 'event', id: latest.event_id };
-}
-
-/** The plan task a completion finished: an acceptance and a direct merge name it on the lead, a merge through its session. */
-function completedTask(
-  ctx: ControlContext,
-  event: Event,
-): { lead: string; task: string } | undefined {
-  const p = event.payload as { direct?: boolean; task_id?: string };
-  if (event.kind === 'task.accepted' || p.direct)
-    return { lead: event.aggregate_id, task: p.task_id! };
-  const task = ctx.store.get<Session>('sessions', event.aggregate_id)?.task;
-  return task && { lead: task.lead_session_id, task: task.id };
 }
 
 /**
@@ -127,29 +110,6 @@ export function projectBrief(
     });
   // kindEventsSince reads from its bound on, and the brief starts after the cursor.
   const events = ctx.store.kindEventsSince(projectId, BRIEF_EVENTS, after + 1);
-  const completed = events.flatMap((event) =>
-    event.kind === 'session.merged' || event.kind === 'task.accepted'
-      ? [{ event, task: completedTask(ctx, event) }]
-      : [],
-  );
-  for (const milestone of ctx.store.list<Milestone>('milestones')) {
-    if (milestone.project_id !== projectId || milestone.removed_at !== undefined) continue;
-    const moved = completed.some(({ event, task }) =>
-      milestone.owner_session_id
-        ? task?.lead === milestone.owner_session_id && !!milestone.task_ids?.includes(task.task)
-        : event.kind === 'session.merged' &&
-          milestone.required_sessions.includes(event.aggregate_id),
-    );
-    if (!moved) continue;
-    const view = milestoneView(ctx, milestone);
-    items.push({
-      kind: 'milestone',
-      ref: { kind: 'milestone', id: milestone.id },
-      title: milestone.title,
-      done: view.tasks?.done ?? view.merged_total,
-      total: view.tasks?.total ?? view.required_total,
-    });
-  }
   for (const event of events)
     if (event.kind === 'session.merged')
       items.push({

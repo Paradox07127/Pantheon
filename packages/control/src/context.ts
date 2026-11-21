@@ -335,7 +335,6 @@ const PLAN_WRITES = [
   'board.plan.update',
   'board.plan.edit',
   'board.sync',
-  'milestone.accept',
   'project.baseline.start',
 ];
 

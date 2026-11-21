@@ -7,7 +7,6 @@ import type {
   GateFailureClass,
   LeadNote,
   LeadQuestion,
-  MilestoneView,
   ProjectBrief,
   TaskKind,
 } from './board.js';
@@ -1949,11 +1948,8 @@ export interface ProjectRead {
   memory?: import('./memory.js').MemoryContext;
   project: Project;
   brief?: ProjectBrief;
-  milestones: MilestoneView[];
   cursor: number;
   plans: BoardPlanView[];
-  /** The project's active goals by order; the user writes them, leads link milestones to them. */
-  goals: import('./board.js').ProjectGoalView[];
   /** The calling session; absent for the user. */
   you?: { session_id: string; role: Role; task: Session['task'] | null };
   /** What a lead plans with; present only when a lead session reads. */

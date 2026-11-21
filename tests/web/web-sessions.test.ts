@@ -473,11 +473,11 @@ describe('merge blocks', () => {
     expect(mergeBlock({ state: 'blocked', ...block } as never)).toEqual({ text, request });
   });
   it('names in words a block reason it has no text of its own for', () => {
-    expect(mergeBlock({ state: 'blocked', reason: 'task_retired' })?.text).toBe(
-      zh('data.reason.taskRetired'),
+    expect(mergeBlock({ state: 'blocked', reason: 'workspace_owned' })?.text).toBe(
+      zh('data.reason.workspaceOwned'),
     );
-    expect(mergeBlock({ state: 'blocked', reason: 'out_of_scope' })?.text).toBe(
-      zh('data.reason.outOfScope'),
+    expect(mergeBlock({ state: 'blocked', reason: 'protected_paths' })?.text).toBe(
+      zh('data.reason.protectedPaths'),
     );
     expect(mergeBlock({ state: 'blocked', reason: 'git_failed: index locked' })?.text).toBe(
       'git 失败：index locked',

@@ -1,7 +1,7 @@
 import { createElement, type ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DecisionForUser } from '@pantheon/protocol';
-import { Crown, KeyRound, ScrollText } from '../../apps/web/node_modules/lucide-react';
+import { KeyRound, ScrollText } from '../../apps/web/node_modules/lucide-react';
 import { find, mount, nodes, text, unmountAll } from './web-hook-host.js';
 
 const mock = vi.hoisted(() => ({ board: {} as any, shell: {} as any }));
@@ -21,7 +21,6 @@ vi.mock('@/store', () => ({
 vi.mock('@/data/commands', () => ({
   runCommand: vi.fn(async () => ({ ok: true, value: null })),
 }));
-import { runCommand } from '@/data/commands';
 import { NeedsPopover } from '@/components/NeedsPopover';
 import { ApprovedForYou } from '@/screens/trace/ApprovedForYou';
 import { zh, zhf } from './i18n-setup.js';
@@ -55,10 +54,10 @@ const power: DecisionForUser = {
   reason: 'The export needs a narrower contract',
 };
 const deleted: DecisionForUser = {
-  kind: 'prompt_approved',
+  kind: 'prompt_by_rule',
   at: AT - 180_000,
   approval_id: 'approval-gone',
-  decided_by: 'session:session-lead',
+  rule: 'Bash(git status)',
 };
 const answered: DecisionForUser = {
   kind: 'question_answered',
@@ -70,17 +69,6 @@ const answered: DecisionForUser = {
   answer: 'UTC',
   citations: [{ kind: 'user_words', ref: 'close days the way the ledger does' }],
 };
-const overruled: DecisionForUser = {
-  kind: 'question_answered',
-  at: AT - 300_000,
-  lead_session_id: 'session-lead',
-  question_id: 'question-names',
-  session_id: 'session-tests',
-  question: 'Keep the old refund status names in the API?',
-  answer: 'Yes, add the new ones alongside',
-  citations: [{ kind: 'assumption', ref: 'The public API stays compatible' }],
-  overruled: { answer: 'Rename them now', at: AT - 200_000 },
-};
 const keyAnswered: DecisionForUser = {
   kind: 'personal_answer',
   at: AT - 480_000,
@@ -90,26 +78,6 @@ const keyAnswered: DecisionForUser = {
   lead_session_id: 'session-lead',
   text: 'Which file format comes first?',
   decision: 'CSV',
-};
-const keyResolved: DecisionForUser = {
-  kind: 'personal_answer',
-  at: AT - 540_000,
-  key_id: 'k1',
-  command: 'board.plan.proposal.resolve',
-  subject: 'proposal-3',
-  lead_session_id: 'session-lead',
-  text: 'Split the refund export into two tasks',
-  decision: 'rejected',
-  reason: 'Keeps the contract small',
-};
-const keyAccepted: DecisionForUser = {
-  kind: 'personal_answer',
-  at: AT - 600_000,
-  key_id: 'k1',
-  command: 'milestone.accept',
-  subject: 'milestone-3',
-  lead_session_id: 'session-lead',
-  text: 'Refunds ship',
 };
 
 let decisions: Record<string, DecisionForUser[]>;
@@ -184,7 +152,7 @@ describe('approved for you', () => {
   const cell = (tree: unknown, row: ReactElement, name: string) =>
     nodes(row).filter((n) => n.props.role === 'cell')[columns(tree).indexOf(name)]!;
   const icons = (node: ReactElement) =>
-    nodes(node).filter((n) => n.type === Crown || n.type === ScrollText || n.type === KeyRound);
+    nodes(node).filter((n) => n.type === ScrollText || n.type === KeyRound);
 
   it('reads what was decided today for the project', async () => {
     await page();
@@ -214,133 +182,30 @@ describe('approved for you', () => {
     subject: 'milestone-2',
     session_id: 'session-lead',
   };
-  const merged: DecisionForUser = {
-    kind: 'power_used',
-    at: AT - 420_000,
-    power: 'merge_out_of_scope',
-    subject: 'session-tests',
-    session_id: 'session-lead',
-    reason: 'The README names the new module',
-  };
-
-  it.each([
-    [
-      'a worker prompt the lead approved',
-      'git push origin refund-list',
-      [zh('trace.approved.by.lead')],
-      'Refund list page',
-      'session-worker',
-      zh('trace.approved.rule.approveWorkerPrompts'),
-      '',
-      Crown,
-    ],
-    [
-      'a prompt a stored rule answered',
-      'pnpm test',
-      [zh('trace.approved.by.rule')],
-      'Refund idempotency',
-      'session-tests',
-      'Bash(pnpm test:*)',
-      '',
+  it('lists only a prompt a stored rule answered, with who decided and its rule, and links its session', async () => {
+    decisions.alpha = [byLead, byRule, power, milestone, keyAnswered, answered];
+    const h = await page();
+    expect(rows(h.value)).toHaveLength(1);
+    const row = rowOf(h.value, 'pnpm test');
+    expect(text(row)).toContain(zh('trace.approved.by.rule'));
+    expect(text(cell(h.value, row, zh('trace.approved.column.rule')))).toBe('Bash(pnpm test:*)');
+    expect(text(cell(h.value, row, zh('trace.approved.column.reason')))).toBe('');
+    expect(icons(cell(h.value, row, zh('trace.approved.column.by'))).map((n) => n.type)).toEqual([
       ScrollText,
-    ],
-    [
-      'a power the lead used on its own',
-      zh('trace.approved.power.planChange'),
-      [zh('trace.approved.by.lead'), 'plan-7'],
-      'Refunds rollout',
-      'session-lead',
-      zh('trace.approved.rule.planChange'),
-      'The export needs a narrower contract',
-      Crown,
-    ],
-    [
-      'a merge the lead made outside the task scope',
-      zh('trace.approved.power.mergeOutOfScope'),
-      [zh('trace.approved.by.lead'), 'session-tests'],
-      'Refunds rollout',
-      'session-lead',
-      zh('trace.approved.rule.mergeOutOfScope'),
-      'The README names the new module',
-      Crown,
-    ],
-    [
-      'a power recorded without a reason',
-      zh('trace.approved.power.acceptMilestone'),
-      [zh('trace.approved.by.lead'), 'milestone-2'],
-      'Refunds rollout',
-      'session-lead',
-      zh('trace.approved.rule.acceptMilestone'),
-      '',
-      Crown,
-    ],
-    [
-      "the lead's question a personal agent key answered",
-      keyAnswered.text,
-      [zh('trace.approved.by.personal'), 'CSV'],
-      'Refunds rollout',
-      'session-lead',
-      zh('trace.approved.rule.personalQuestion'),
-      '',
-      KeyRound,
-    ],
-    [
-      'a plan proposal a personal agent key rejected',
-      keyResolved.text,
-      [zh('trace.approved.by.personal'), 'proposal-3', zh('trace.approved.decision.rejected')],
-      'Refunds rollout',
-      'session-lead',
-      zh('trace.approved.rule.personalPlanChange'),
-      'Keeps the contract small',
-      KeyRound,
-    ],
-    [
-      'a milestone a personal agent key accepted',
-      keyAccepted.text,
-      [zh('trace.approved.by.personal'), 'milestone-3'],
-      'Refunds rollout',
-      'session-lead',
-      zh('trace.approved.rule.personalMilestone'),
-      '',
-      KeyRound,
-    ],
-  ])(
-    'lists %s with who decided, its reason and rule, and links its session',
-    async (_name, action, words, task, id, rule, reason, icon) => {
-      decisions.alpha = [
-        byLead,
-        byRule,
-        power,
-        merged,
-        milestone,
-        keyAnswered,
-        keyResolved,
-        keyAccepted,
-      ];
-      const h = await page();
-      const row = rowOf(h.value, action);
-      // Only a lead's answer to a task session's question can be overruled.
-      expect(nodes(row).some((n) => !!n.props.onOpenChange)).toBe(false);
-      for (const word of words) expect(text(row)).toContain(word);
-      expect(text(cell(h.value, row, zh('trace.approved.column.rule')))).toBe(rule);
-      expect(text(cell(h.value, row, zh('trace.approved.column.reason')))).toBe(reason);
-      expect(icons(cell(h.value, row, zh('trace.approved.column.by'))).map((n) => n.type)).toEqual([
-        icon,
-      ]);
-      expect(text(link(row)!)).toBe(task);
-      link(row)!.props.onClick();
-      expect(mock.shell.openSession).toHaveBeenCalledWith(id);
-    },
-  );
+    ]);
+    expect(text(link(row)!)).toBe('Refund idempotency');
+    link(row)!.props.onClick();
+    expect(mock.shell.openSession).toHaveBeenCalledWith('session-tests');
+  });
 
   it('shows a row of a deleted session without a link', async () => {
     const h = await page();
-    expect(rows(h.value)).toHaveLength(4);
+    expect(rows(h.value)).toHaveLength(2);
     const row = rows(h.value).find(
       (r) =>
         text(cell(h.value, r, zh('trace.approved.column.action'))) === zh('trace.approved.prompt'),
     )!;
-    expect(text(row)).toContain(zh('trace.approved.by.lead'));
+    expect(text(row)).toContain(zh('trace.approved.by.rule'));
     expect(link(row)).toBeUndefined();
   });
 
@@ -382,10 +247,8 @@ describe('approved for you', () => {
     it('names each type with its count in the range read', async () => {
       const h = await page();
       expect(segments(h.value).map((s) => s.props['aria-label'])).toEqual([
-        zhf('trace.approved.type.count', { type: zh('trace.approved.type.all'), count: 7 }),
-        zhf('trace.approved.type.count', { type: zh('trace.approved.type.permission'), count: 3 }),
-        zhf('trace.approved.type.count', { type: zh('trace.approved.type.answer'), count: 2 }),
-        zhf('trace.approved.type.count', { type: zh('trace.approved.type.planChange'), count: 1 }),
+        zhf('trace.approved.type.count', { type: zh('trace.approved.type.all'), count: 2 }),
+        zhf('trace.approved.type.count', { type: zh('trace.approved.type.permission'), count: 2 }),
       ]);
       expect(query).toHaveBeenCalledTimes(1);
     });
@@ -398,7 +261,7 @@ describe('approved for you', () => {
       );
       expect(filter(h.value).type).toBe(range.type);
       expect(segments(h.value).map((s) => s.type)).toEqual(
-        Array(4).fill(segments(h.value)[0]!.type),
+        Array(2).fill(segments(h.value)[0]!.type),
       );
       expect(filter(h.value).props.value).toBe('all');
     });
@@ -409,7 +272,7 @@ describe('approved for you', () => {
       await h.flush();
       expect(filter(h.value).props['aria-busy']).toBe(true);
       expect(segments(h.value).map((s) => [s.props['aria-label'], text(s)])).toEqual(
-        ['all', 'permission', 'answer', 'planChange'].map((k) => [
+        ['all', 'permission'].map((k) => [
           zh(`trace.approved.type.${k}`),
           zh(`trace.approved.type.${k}`),
         ]),
@@ -417,20 +280,8 @@ describe('approved for you', () => {
     });
 
     it.each([
-      [
-        'permissions',
-        'permission',
-        3,
-        ['git push origin refund-list', 'pnpm test', zh('trace.approved.prompt')],
-      ],
-      ['answers', 'answer', 2, [answered.question, keyAnswered.text]],
-      ['plan changes', 'plan_change', 1, [zh('trace.approved.power.planChange')]],
-      [
-        'all, with a power that has no type of its own',
-        'all',
-        7,
-        [zh('trace.approved.power.acceptMilestone'), answered.question, 'pnpm test'],
-      ],
+      ['permissions', 'permission', 2, ['pnpm test', zh('trace.approved.prompt')]],
+      ['all', 'all', 2, ['pnpm test', zh('trace.approved.prompt')]],
     ])('narrows the table to %s', async (_name, type, count, words) => {
       const h = await page();
       pick(h, type);
@@ -442,20 +293,20 @@ describe('approved for you', () => {
     it('keeps a type with no rows selectable and shows the empty state', async () => {
       decisions.alpha = [byLead];
       const h = await page();
-      expect(segments(h.value)[2]!.props['aria-label']).toBe(
-        zhf('trace.approved.type.count', { type: zh('trace.approved.type.answer'), count: 0 }),
+      expect(segments(h.value)[1]!.props['aria-label']).toBe(
+        zhf('trace.approved.type.count', { type: zh('trace.approved.type.permission'), count: 0 }),
       );
       expect(filter(h.value).props.disabled).toBe(false);
-      pick(h, 'answer');
+      pick(h, 'permission');
       expect(text(h.value)).toContain(zh('trace.approved.empty'));
       expect(() => table(h.value)).toThrow();
     });
 
     it('opens on the type another page asked for, once', async () => {
-      mock.shell.approvedType = 'answer';
+      mock.shell.approvedType = 'permission';
       const h = await page();
       h.render();
-      expect(filter(h.value).props.value).toBe('answer');
+      expect(filter(h.value).props.value).toBe('permission');
       expect(mock.shell.approvedType).toBeNull();
       pick(h, 'all');
       expect(filter(h.value).props.value).toBe('all');
@@ -469,7 +320,7 @@ describe('approved for you', () => {
     ] as const)(
       'opens on %s when the asking page counted from %i days ago',
       async (range, days) => {
-        mock.shell.approvedType = 'answer';
+        mock.shell.approvedType = 'permission';
         mock.shell.approvedSince = Date.now() - days * 86_400_000;
         const h = await page();
         h.render();
@@ -485,17 +336,17 @@ describe('approved for you', () => {
 
     it('keeps the picked type when the range changes', async () => {
       const h = await page();
-      pick(h, 'answer');
+      pick(h, 'permission');
       find(
         h.value,
         (n) => n.props.role !== 'radio' && n.props['aria-label'] === zh('trace.approved.range'),
       ).props.onValueChange('week');
       h.render();
       await h.flush();
-      expect(filter(h.value).props.value).toBe('answer');
+      expect(filter(h.value).props.value).toBe('permission');
       expect(actions(h.value)).toEqual([
-        expect.stringContaining(answered.question),
-        expect.stringContaining(keyAnswered.text),
+        expect.stringContaining('pnpm test'),
+        expect.stringContaining(zh('trace.approved.prompt')),
       ]);
     });
   });
@@ -505,84 +356,6 @@ describe('approved for you', () => {
     const h = await page();
     expect(text(h.value)).toContain(zh('trace.approved.empty'));
     expect(() => table(h.value)).toThrow();
-  });
-
-  describe('a task session question the lead answered', () => {
-    const overruleRoot = (row: ReactElement) => nodes(row).find((n) => !!n.props.onOpenChange);
-    const dialog = (tree: unknown) =>
-      find(
-        tree as ReactElement,
-        (n) => n.props['aria-label'] === zh('trace.approved.overrule.label'),
-      );
-    const button = (tree: ReactElement, name: string) =>
-      find(tree, (n) => n.type === 'button' && text(n) === name);
-    /** Opens the overrule dialog of the lead's answer, types answer into it and sends it. */
-    const overrule = async (answer: string) => {
-      decisions.alpha = [answered];
-      const h = await page();
-      overruleRoot(rowOf(h.value, answered.question))!.props.onOpenChange(true);
-      h.render();
-      find(dialog(h.value), (n) => n.type === 'textarea').props.onChange({
-        target: { value: answer },
-      });
-      h.render();
-      button(dialog(h.value), zh('trace.approved.overrule.send')).props.onClick();
-      await h.flush();
-      return h;
-    };
-
-    it('lists the question with the lead answer and what it cited', async () => {
-      decisions.alpha = [answered];
-      const h = await page();
-      const row = rowOf(h.value, answered.question);
-      for (const word of [
-        'UTC',
-        'close days the way the ledger does',
-        zh('trace.approved.by.lead'),
-        zh('trace.approved.overrule'),
-      ])
-        expect(text(row)).toContain(word);
-      expect(text(cell(h.value, row, zh('trace.approved.column.reason')))).toBe(
-        'close days the way the ledger does',
-      );
-      expect(text(cell(h.value, row, zh('trace.approved.column.rule')))).toBe(
-        zh('trace.approved.rule.answerWorkerQuestions'),
-      );
-      expect(text(link(row)!)).toBe('Refund list page');
-    });
-
-    it('sends the typed answer to overrule the lead', async () => {
-      await overrule("Use the merchant's timezone");
-      expect(runCommand).toHaveBeenCalledWith(
-        'lead.question.overrule',
-        {
-          project_id: 'alpha',
-          lead_session_id: 'session-lead',
-          question_id: 'question-timezone',
-          answer: "Use the merchant's timezone",
-        },
-        null,
-      );
-    });
-
-    it('shows in the dialog why an overrule failed', async () => {
-      vi.mocked(runCommand).mockResolvedValueOnce({
-        ok: false,
-        error: { code: 'invalid_state', message: 'The answer was already overruled' },
-      });
-      const h = await overrule('Rename them now');
-      const alert = find(dialog(h.value), (n) => n.props.role === 'alert');
-      expect(text(alert)).toContain('The answer was already overruled');
-    });
-
-    it('shows the user answer of an overruled one, without an overrule action', async () => {
-      decisions.alpha = [overruled];
-      const h = await page();
-      const row = rowOf(h.value, overruled.question);
-      expect(text(row)).toContain('Rename them now');
-      expect(text(row)).toContain(zh('trace.approved.overruled'));
-      expect(overruleRoot(row)).toBeUndefined();
-    });
   });
 
   it('opens the delivery rules beside the list from the notifications button', async () => {
@@ -613,11 +386,11 @@ describe('the needs-you footer', () => {
     nodes(tree as ReactElement).find(
       (n) =>
         n.type === 'button' &&
-        text(n).includes(zhf('components.needsPopover.approved', { count: 5 })),
+        text(n).includes(zhf('components.needsPopover.approved', { count: 3 })),
     );
 
   it('counts what was approved today across the projects and opens the list', async () => {
-    decisions.beta = [byLead];
+    decisions.beta = [byLead, { ...byRule, approval_id: 'approval-beta' }];
     const h = await open();
     expect(query).toHaveBeenCalledWith('project.decisions', {
       project_id: 'beta',

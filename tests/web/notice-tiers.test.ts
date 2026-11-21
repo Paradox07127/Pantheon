@@ -93,30 +93,14 @@ const askUser = (id: string, session_id: string) =>
     ] as never,
   });
 
-const externalRequest = approval('beta-docs', 'beta-docs', {
-  source: { table: 'board_plans', id: 'beta-docs', revision: 1 },
-  kind: 'external.approval',
-  reason: 'external_approval',
-  request_id: 'github:acme/docs#3',
-  binding: undefined,
-  actions: [{ command: 'external.approve', allowed: true }],
-});
-
 // A wait of another project, in a session the board does not name.
 const alphaApproval = approval('approval-9', 'alpha-fix', { project_id: 'alpha' });
 
-const leadQuestion: NeedsYouItem = {
-  source: { table: 'board_plans', id: 'beta-lead', revision: 2 },
-  kind: 'lead.question',
-  project_id: 'beta',
-  session_id: 'beta-lead',
-  request_id: 'question-1',
-  status: 'pending',
+const laterQuestion = approval('approval-q', 'beta-lead', {
   created_at: NOW - 6 * 60_000,
-  reason: 'lead_question',
-  actions: [{ command: 'lead.question.answer', allowed: true }],
-  question: { id: 'question-1', at: 0, question: 'Split the partial refund?' } as never,
-};
+  binding: { action: 'AskUserQuestion' },
+  questions: [{ question: 'Split the partial refund?', header: 'API', options: [] }] as never,
+});
 
 const session = (
   id: string,
@@ -235,104 +219,18 @@ describe('cards for what needs the user', () => {
       summary: 'Should refunds get their own endpoint?',
       since: NOW - 2 * 60_000,
     });
-    const lead = needsCard(leadQuestion, board, away, noRespond)!;
-    expect(shape(lead.options)).toEqual({
-      id: 'beta-lead:question-1',
-      heading: 'Lead',
-      event: zh('data.noticeTiers.asks'),
-      summary: 'Split the partial refund?',
-      since: NOW - 6 * 60_000,
-    });
     // A request's question is answered in its session's thread.
     asked.options.open!();
     expect(openProjectSession).toHaveBeenCalledWith('beta', 'beta-docs');
   });
 
-  it("opens a lead's question where it is answered: the needs-you strip of the runs going now, on that question", () => {
-    const lead = needsCard(leadQuestion, board, away, noRespond)!;
-    lead.options.open!();
-    expect(openProjectSession).not.toHaveBeenCalled();
-    expect(useShell.getState()).toMatchObject({
-      screen: 'trace',
-      traceTab: 'runs',
-      runsView: 'now',
-      runsSession: null,
-      askedNeed: 'beta-lead:question-1',
-    });
-  });
-
-  it('gives an external request waiting for approval a card that opens it in the needs-you strip, even while its session is in front', () => {
-    const held = approval('beta-docs', 'beta-docs', {
-      source: { table: 'board_plans', id: 'beta-docs', revision: 1 },
-      kind: 'external.approval',
-      reason: 'external_approval',
-      request_id: 'github:acme/docs#3',
-      binding: undefined,
-      actions: [{ command: 'external.approve', allowed: true }],
-    });
-    const looking = { ...away, sessionId: 'beta-docs' };
-    const cards = [held].map((item) => needsCard(item, board, looking, noRespond));
-    expect(cards.map((card) => card && shape(card.options))).toEqual([
-      {
-        id: 'board_plans:beta-docs:github:acme/docs#3',
-        heading: 'Write docs',
-        event: zh('data.noticeTiers.waitsApproval'),
-        summary: reasonText('external_approval'),
-        since: NOW - 2 * 60_000,
-      },
-    ]);
-    cards[0]!.options.open!();
-    expect(openProjectSession).not.toHaveBeenCalled();
-    expect(useShell.getState()).toMatchObject({
-      screen: 'trace',
-      runsView: 'now',
-      askedNeed: 'board_plans:beta-docs:github:acme/docs#3',
-    });
-  });
-
-  it('gives a lane whose plan waits for approval a card that opens it in the needs-you strip, saying while its review still runs', () => {
-    const lane = approval('beta-docs', 'beta-docs', {
-      source: { table: 'board_plans', id: 'beta-docs', revision: 1 },
-      kind: 'board.lane.approval',
-      reason: 'lane_plan_awaiting_approval',
-      request_id: 'lane-docs',
-      plan_review_running: true,
-      binding: undefined,
-      actions: [{ command: 'board.lane.approve', allowed: true }],
-    });
-    const card = needsCard(lane, board, { ...away, sessionId: 'beta-docs' }, noRespond);
-    expect(card && shape(card.options)).toEqual({
-      id: 'board_plans:beta-docs:lane-docs',
-      heading: 'Write docs',
-      event: zh('data.noticeTiers.waitsApproval'),
-      summary: zh('data.reason.lanePlanAwaitingApprovalReviewing'),
-      since: NOW - 2 * 60_000,
-    });
-    card!.options.open!();
-    expect(useShell.getState()).toMatchObject({
-      screen: 'trace',
-      runsView: 'now',
-      askedNeed: 'board_plans:beta-docs:lane-docs',
-    });
-    const titled = needsCard(
-      { ...lane, lane_title: 'Docs lane' },
-      board,
-      { ...away, sessionId: 'beta-docs' },
-      noRespond,
-    );
-    expect(titled?.options.heading).toBe('Docs lane');
-  });
-
-  it("gives no card for the session the user is looking at, nor for other needs, but one for a lead's question, which its thread does not answer", () => {
+  it('gives no card for the session the user is looking at, nor for other needs', () => {
     const looking = {
       sessionId: 'beta-login',
       queue: null,
       focused: true,
     };
     expect(needsCard(approval('approval-1', 'beta-login'), board, looking, noRespond)).toBeNull();
-    expect(
-      needsCard(leadQuestion, board, { ...looking, sessionId: 'beta-lead' }, noRespond),
-    ).not.toBeNull();
     const behind = {
       sessionId: 'beta-login',
       queue: null,
@@ -348,7 +246,6 @@ describe('cards for what needs the user', () => {
   it('gives no card for an approval of the project whose approvals the screen answers, while the window has focus', () => {
     const listing = { sessionId: null, queue: 'beta', focused: true };
     expect(needsCard(approval('approval-1', 'beta-login'), board, listing, noRespond)).toBeNull();
-    expect(needsCard(leadQuestion, board, listing, noRespond)).toBeNull();
     expect(needsCard(alphaApproval, board, listing, noRespond)).not.toBeNull();
     expect(
       needsCard(
@@ -358,15 +255,6 @@ describe('cards for what needs the user', () => {
         noRespond,
       ),
     ).not.toBeNull();
-  });
-
-  it('gives no card for an external request of the project whose needs-you strip the screen shows, while the window has focus', () => {
-    const listing = { sessionId: null, queue: 'beta', focused: true };
-    for (const item of [externalRequest]) {
-      expect(needsCard(item, board, listing, noRespond)).toBeNull();
-      expect(needsCard(item, board, { ...listing, focused: false }, noRespond)).not.toBeNull();
-      expect(needsCard(item, board, { ...listing, queue: 'alpha' }, noRespond)).not.toBeNull();
-    }
   });
 });
 
@@ -645,7 +533,7 @@ describe('the notice feed', () => {
     let hookProps: Parameters<typeof BackgroundHooks>[0] = {
       projectId: 'beta',
       sessions: null,
-      allNeeds: [approval('approval-1', 'beta-login'), alphaApproval, leadQuestion],
+      allNeeds: [approval('approval-1', 'beta-login'), alphaApproval, laterQuestion],
     };
     const hooks = mount(() => BackgroundHooks(hookProps));
     expect(doc.title).toBe('Beta app · 3 个等你');
@@ -674,7 +562,7 @@ describe('the notice feed', () => {
     const allNeeds = [
       approval('approval-1', 'beta-login'),
       approval('approval-2', 'beta-login'),
-      leadQuestion,
+      laterQuestion,
       alphaApproval,
       approval('approval-3', 'beta-docs', {
         kind: 'session.failed',
@@ -724,13 +612,6 @@ describe('the notice feed', () => {
     useBoard.setState({ events: [event('turn.completed', 'turn-login')] });
     render();
     expect(mounted.shown()).toEqual([]);
-  });
-
-  it("shows a lead's question while the lead session is in front, since its thread does not answer it", () => {
-    useShell.setState({ screen: 'sessions', sessionId: 'beta-lead' });
-    render({ sessions: [session('beta-lead', 'waiting')], allNeeds: [leadQuestion] });
-    render();
-    expect(mounted.shown()).toEqual(['Lead']);
   });
 
   it('shows nothing for the session a session window shows in front, and keeps the cards shown before its word', async () => {
@@ -784,20 +665,6 @@ describe('the notice feed', () => {
     useShell.setState({ screen: 'sessions', sessionId: null, sessionGroup: 'inbox' });
     render({ sessions: [], allNeeds: [approval('approval-1', 'beta-login'), alphaApproval] });
     expect(mounted.shown()).toEqual(['Alpha app', 'Fix login']);
-  });
-
-  it("gives no card for a lead's question while the runs going now show, since their needs-you strip answers it", () => {
-    useShell.setState({ screen: 'trace', traceTab: 'runs', runsView: 'now' });
-    render({ allNeeds: [approval('approval-1', 'beta-login'), leadQuestion] });
-    expect(mounted.shown()).toEqual([]);
-  });
-
-  it('takes the card of an external request away on arriving at the needs-you strip that answers it', () => {
-    render({ allNeeds: [externalRequest] });
-    expect(mounted.shown()).toEqual(['Write docs']);
-    useShell.setState({ screen: 'trace', traceTab: 'runs', runsView: 'now' });
-    render();
-    expect(mounted.shown()).toEqual([]);
   });
 
   it("shows only another project's waits while the runs tab shows the runs going now", () => {

@@ -179,18 +179,6 @@ describe('event notices', () => {
   const assistant = { project_id: 'beta', session_id: 'beta-assistant' };
 
   it.each([
-    ['no notice for a resident turn its workers woke', 'turn.completed', 'turn-assistant-tracker'],
-    ['no notice for a resident turn a plan sync woke', 'turn.completed', 'turn-assistant-sync'],
-    [
-      'no notice for a resident turn an outside event woke',
-      'turn.failed',
-      'turn-assistant-external',
-    ],
-  ])('gives %s', (_name, kind, turnId) => {
-    expect(eventNotice(event(kind, turnId), residentBoard)).toBeNull();
-  });
-
-  it.each([
     [
       "the user's own resident turn end",
       event('turn.completed', 'turn-assistant-user'),
@@ -311,50 +299,30 @@ describe('dock badge', () => {
     expect(badgeCount(null)).toBeNull();
   });
 
-  it('leaves plan failures and undelivered answers out', () => {
+  it('leaves undelivered answers out', () => {
     const items: NeedsYouItem[] = [
       item('alpha', 'approvals', 'a1'),
       { ...item('alpha', 'approvals', 'a2'), status: 'undelivered', reason: 'answer_undelivered' },
-      {
-        ...item('alpha', 'sessions', 'lead'),
-        source: { table: 'board_plans', id: 'plan', revision: 1 },
-        session_id: 'lead',
-        task_id: 'lead:task-1',
-      },
     ];
     expect(badgeCount(items)).toBe(1);
   });
 });
 
 describe('decision notices', () => {
-  const milestone: NeedsYouItem = {
-    source: { table: 'milestones', id: 'milestone-1', revision: 2 },
-    kind: 'milestone.ready_for_acceptance',
+  const session = (id: string, reason: NeedsYouItem['reason']): NeedsYouItem => ({
+    source: { table: 'sessions', id, revision: 4 },
+    kind: 'session.failed',
     project_id: 'beta',
-    session_id: 'beta-login',
-    status: 'ready_for_acceptance',
+    status: 'failed',
     created_at: 0,
-    reason: 'milestone_ready_for_acceptance',
-    actions: [{ command: 'milestone.accept', allowed: true }],
-  };
-  const proposal: NeedsYouItem = {
-    source: { table: 'board_plans', id: 'alpha-lead', revision: 1 },
-    kind: 'board.plan.proposal',
-    project_id: 'alpha',
-    session_id: 'alpha-lead',
-    request_id: 'proposal-1',
-    status: 'pending',
-    created_at: 0,
-    reason: 'plan_proposal_awaiting_decision',
-    actions: [{ command: 'board.plan.proposal.resolve', allowed: true }],
-  };
-  const withMilestone = {
-    ...board,
-    milestones: [{ id: 'milestone-1', title: 'Search and redirects' }],
-  } as unknown as BoardSnapshot;
+    reason,
+    decision: 'other',
+    actions: [],
+  });
+  const stalled = session('beta-story', 'session_turn_stalled');
 
   it("follows the daemon's rule for each item's kind of decision", () => {
-    const { seen } = decisionNotices(null, [], withMilestone);
+    const { seen } = decisionNotices(null, [], board);
     const rules = (delivery: Partial<AppSettings['attention_delivery']>) => ({
       attention_delivery: { ...DEFAULT_ATTENTION_DELIVERY, ...delivery },
     });
@@ -362,52 +330,19 @@ describe('decision notices', () => {
       decisionNotices(
         seen,
         [
-          { ...milestone, decision: 'milestone_accept' },
-          { ...proposal, decision: 'plan_change' },
+          { ...stalled, decision: 'repeated_failure' },
+          { ...session('alpha-other', 'session_turn_stalled'), project_id: 'alpha' },
         ],
-        withMilestone,
+        board,
         DEFAULT_NOTIFICATIONS,
         rules(delivery),
       ).notices.map((n) => n.title);
-    expect(sent({})).toEqual(['Alpha app']);
-    expect(sent({ milestone_accept: 'now', plan_change: 'never' })).toEqual(['Beta app']);
-  });
-
-  it('notifies a milestone ready for acceptance and a new proposal once each while listed, opening the inbox', () => {
-    const first = decisionNotices(null, [item('beta', 'approvals', 'b1')], withMilestone);
-    expect(first.notices).toEqual([]);
-    const next = decisionNotices(first.seen, [milestone, proposal], withMilestone);
-    expect(next.notices).toEqual([
-      {
-        title: 'Beta app',
-        body: detail('data.reason.milestoneReadyForAcceptance', 'Search and redirects'),
-        target: { project_id: 'beta', session_id: '' },
-      },
-      {
-        title: 'Alpha app',
-        body: zh('data.reason.planProposalAwaitingDecision'),
-        target: { project_id: 'alpha', session_id: '' },
-      },
-    ]);
-    expect(decisionNotices(next.seen, [milestone, proposal], withMilestone).notices).toEqual([]);
-    const gone = decisionNotices(next.seen, [], withMilestone);
-    expect(gone.seen).toEqual(new Set());
-    expect(decisionNotices(gone.seen, [milestone], withMilestone).notices).toHaveLength(1);
+    expect(sent({})).toEqual(['Beta app', 'Alpha app']);
+    expect(sent({ repeated_failure: 'never' })).toEqual(['Alpha app']);
   });
 
   it('notifies a stalled session turn once while listed, opening the session; a usage limit gives none', () => {
-    const session = (id: string, reason: NeedsYouItem['reason']): NeedsYouItem => ({
-      source: { table: 'sessions', id, revision: 4 },
-      kind: 'session.failed',
-      project_id: 'beta',
-      status: 'failed',
-      created_at: 0,
-      reason,
-      decision: 'other',
-      actions: [],
-    });
     const limited = session('beta-login', 'usage_limit_reached');
-    const stalled = session('beta-story', 'session_turn_stalled');
     const first = decisionNotices(null, [], board);
     const next = decisionNotices(first.seen, [limited, stalled], board);
     expect(next.notices).toEqual([
@@ -421,13 +356,12 @@ describe('decision notices', () => {
   });
 
   it('notifies none of the items present at the first read, nor while the list is not read', () => {
-    const first = decisionNotices(null, [milestone], withMilestone);
+    const first = decisionNotices(null, [stalled], board);
     expect(first.notices).toEqual([]);
-    const unread = decisionNotices(first.seen, null, withMilestone);
+    const unread = decisionNotices(first.seen, null, board);
     expect(unread.notices).toEqual([]);
-    expect(decisionNotices(unread.seen, [milestone, proposal], withMilestone).notices).toHaveLength(
-      1,
-    );
+    const later = session('beta-login', 'session_turn_stalled');
+    expect(decisionNotices(unread.seen, [stalled, later], board).notices).toHaveLength(1);
   });
 });
 

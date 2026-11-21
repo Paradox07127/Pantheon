@@ -4,7 +4,6 @@ import type {
   Approval,
   ApprovalQuestion,
   BoardPlan,
-  Milestone,
   Principal,
   Retrospective,
 } from '@pantheon/domain';
@@ -77,7 +76,6 @@ function leadWithMilestone(f: Fixture) {
     null,
     principalOf(f, 'lead'),
   );
-  return f.store.list<Milestone>('milestones').find((row) => row.key === 'release')!;
 }
 
 it('gives a question item its questions and options', async () => {
@@ -175,39 +173,6 @@ it('lists a task session question relayed to its lead board once, as the board q
       .filter((item) => item.source.id === 'ask' || String(item.kind) === 'lead.question')
       .map((item) => [item.kind, item.request_id]),
   ).toEqual([['lead.question', 'relayed']]);
-});
-
-it('lists a lead milestone ready for acceptance until the user accepts it', async () => {
-  const f = await opened();
-  const milestone = leadWithMilestone(f);
-  const milestoneItems = () => items(f).filter((item) => item.source.table === 'milestones');
-  expect(milestoneItems()).toEqual([]);
-
-  const plan = f.store.must<BoardPlan>('board_plans', 'lead');
-  f.store.update<BoardPlan>(
-    'board_plans',
-    {
-      ...plan,
-      accepted: { api: { at: f.store.now(), evidence: 'The report answers it', generation: 1 } },
-    },
-    plan.revision,
-  );
-  expect(milestoneItems()).toEqual([
-    expect.objectContaining({
-      source: { table: 'milestones', id: milestone.id, revision: milestone.revision },
-      project_id: f.project.id,
-      session_id: 'lead',
-      status: 'ready_for_acceptance',
-      actions: [{ command: 'milestone.accept', allowed: true }],
-    }),
-  ]);
-
-  f.call(
-    'milestone.accept',
-    { milestone_id: milestone.id, evidence_refs: ['task:api'] },
-    f.store.must<Milestone>('milestones', milestone.id).revision,
-  );
-  expect(milestoneItems()).toEqual([]);
 });
 
 function withRetrospectives(f: Fixture) {

@@ -257,157 +257,62 @@ describe('tool results', () => {
 const receipt = (value: unknown) => ({
   content: [{ type: 'text', text: JSON.stringify({ receipt: value }) }],
 });
-const BRIEF = [
-  'Sync the board with the project as it is now.',
-  'Your plan: Refunds',
-  '- t1 "Refund idempotency": done; sessions: s-1 closed/merged',
-  '- t2 "Webhook signature": active; sessions: s-2 running',
-  '- t3 "Refund list": todo; sessions: none',
-  'Recent commits in /repo:',
-  '- a3f9c21 2026-11-09 Add refund keys',
-].join('\n');
 
 describe('orchestration results', () => {
   it.each([
-    ['mcp__pantheon__edit_board', {}, { plan_version: 15, tasks: [] }, '已写入 v15'],
-    ['update_board', {}, { plan_version: 14, tasks: [] }, '已写入 v14'],
-    [
-      'start_task',
-      { task_ids: ['t1', 't2', 't3'] },
-      { requested: ['t0', 't1', 't2', 't3'] },
-      '3 个已排队',
-    ],
-    ['start_task', { task_ids: ['t4'] }, { claimed: 't4', generation: 1 }, tc('claimed')],
-    ['interrupt_task', { task_id: 't2' }, { task_id: 't2', session_id: 's-2' }, tc('interrupted')],
-    [
-      'stop_task',
-      { task_id: 't2', reason: 'Wrong scope' },
-      { task_id: 't2', dequeued: false, sessions: [{ session_id: 's-2', step: 'stopping' }] },
-      tc('stopping'),
-    ],
-    [
-      'stop_task',
-      { task_id: 't2', reason: 'Wrong scope' },
-      { task_id: 't2', dequeued: true, sessions: [{ session_id: 's-2', step: 'discarded' }] },
-      tc('stopped'),
-    ],
-    ['pantheon.sync_board', {}, { brief: BRIEF }, tc('read')],
-    [
-      'rerun_baseline',
-      {},
-      { id: 'b-1', state: 'running', session_id: 's-9' },
-      tc('baseline.running'),
-    ],
-    ['rerun_baseline', {}, { id: 'b-1', state: 'empty' }, tc('baseline.empty')],
-    [
-      'request_review',
-      { session_id: 's-3', runtimes: ['codex'] },
-      { review_id: 'r-1', state: 'running' },
-      tc('review.running'),
-    ],
-  ])('sums up the receipt of %s', (name, input, value, expected) => {
-    expect(orchestrationResult(name, input, receipt(value), true)).toBe(expected);
+    ['request_review', { review_id: 'r-1', state: 'running' }, tc('review.running')],
+    ['mcp__pantheon__request_review', { review_id: 'r-1', state: 'failed' }, tc('review.failed')],
+  ])('sums up the receipt of %s', (name, value, expected) => {
+    expect(orchestrationResult(name, receipt(value), true)).toBe(expected);
   });
 
   it('reads a receipt from the text of a Codex MCP result', () => {
     const output = {
-      result: { content: [{ type: 'text', text: '{"receipt":{"plan_version":3}}' }] },
+      result: { content: [{ type: 'text', text: '{"receipt":{"state":"completed"}}' }] },
     };
-    expect(orchestrationResult('pantheon.edit_board', {}, output, true)).toBe('已写入 v3');
+    expect(orchestrationResult('pantheon.request_review', output, true)).toBe(
+      tc('review.completed'),
+    );
   });
 
   it('shows the first sentence of a refusal or an error', () => {
     const said = (text: string) => ({ content: [{ type: 'text', text }] });
     expect(
       orchestrationResult(
-        'interrupt_task',
-        { task_id: 't1' },
-        said(
-          'Refused task.interrupt: resource_busy — Task t1 has no running turn to interrupt. Wait.',
-        ),
+        'request_review',
+        said('Refused conductor.review: resource_busy — A review is already running. Wait.'),
         false,
       ),
-    ).toBe('已拒绝：Task t1 has no running turn to interrupt.');
+    ).toBe('已拒绝：A review is already running.');
     expect(
-      orchestrationResult('sync_board', {}, said('Refused board.sync: permission_denied'), false),
+      orchestrationResult(
+        'request_review',
+        said('Refused conductor.review: permission_denied'),
+        false,
+      ),
     ).toBe('已拒绝：permission_denied');
-    expect(orchestrationResult('request_review', {}, { error: 'server gone. Retry.' }, false)).toBe(
+    expect(orchestrationResult('request_review', { error: 'server gone. Retry.' }, false)).toBe(
       'server gone.',
     );
-    expect(orchestrationResult('edit_board', {}, undefined, false)).toBe(tc('failed'));
+    expect(orchestrationResult('request_review', undefined, false)).toBe(tc('failed'));
   });
 
   it('keeps the one-line outcome of a call whose output is no receipt', () => {
-    expect(orchestrationResult('stop_task', {}, 'stopped', true)).toBe('stopped');
+    expect(orchestrationResult('request_review', 'queued', true)).toBe('queued');
   });
 });
 
 describe('orchestration details', () => {
-  it('lists each edit of the plan by its task and fields', () => {
+  it('lists the reviewers', () => {
     expect(
-      orchestrationDetail(
-        'edit_board',
-        {
-          base_version: 14,
-          ops: [
-            {
-              type: 'set_task',
-              task_id: 't2',
-              patch: { model: 'claude-opus-5-5', runtime: 'claude' },
-            },
-            { type: 'add_task', task: { id: 't9', title: 'Refund report' } },
-            { type: 'remove_task', task_id: 't4' },
-            { type: 'set_dependencies', task_id: 't3', depends_on: ['t1', 't2'] },
-            { type: 'resolve_edit', edit_id: 'e-1', decision: 'reject', reason: 'Out of scope' },
-          ],
-        },
-        receipt({ plan_version: 15 }),
-      ),
-    ).toEqual([
-      { task: 't2', name: tc('edit.set'), code: 'model=claude-opus-5-5, runtime=claude' },
-      { task: 't9', name: tc('edit.add'), text: 'Refund report' },
-      { task: 't4', name: tc('edit.remove') },
-      { task: 't3', name: tc('edit.dependsOn'), code: 't1, t2' },
-      { name: tc('edit.reject'), code: 'e-1', text: 'Out of scope' },
-    ]);
-  });
-
-  it('lists each task of a board sync with its state and sessions', () => {
-    expect(orchestrationDetail('sync_board', {}, receipt({ brief: BRIEF }))).toEqual([
-      { task: 't1', name: tc('taskState.done'), code: 's-1 closed/merged' },
-      { task: 't2', name: tc('taskState.active'), code: 's-2 running' },
-      { task: 't3', name: tc('taskState.todo') },
-    ]);
-  });
-
-  it('lists the started tasks, the stopped sessions, the proposal and the reviewers', () => {
-    expect(
-      orchestrationDetail('start_task', { task_ids: ['t1', 't2'] }, receipt({ requested: ['t1'] })),
-    ).toEqual([{ task: 't1', name: tc('queued') }, { task: 't2' }]);
-    expect(
-      orchestrationDetail(
-        'stop_task',
-        { task_id: 't2', reason: 'Wrong scope' },
-        receipt({ sessions: [{ session_id: 's-2', step: 'discarded' }] }),
-      ),
-    ).toEqual([{ name: tc('discarded'), code: 's-2' }]);
-    expect(
-      orchestrationDetail(
-        'request_review',
-        { session_id: 's-3', runtimes: ['codex', 'claude'] },
-        undefined,
-      ),
+      orchestrationDetail('request_review', { session_id: 's-3', runtimes: ['codex', 'claude'] }),
     ).toEqual([{ name: tc('reviewEntry'), code: 'codex, claude' }]);
   });
 
   it('has no structure for other calls', () => {
-    expect(
-      orchestrationDetail('accept_task', { task_id: 't1', evidence: 'ok' }, undefined),
-    ).toBeNull();
-    expect(orchestrationDetail('interrupt_task', { task_id: 't1' }, undefined)).toBeNull();
-    expect(
-      orchestrationDetail('sync_board', {}, receipt({ brief: 'You have no plan yet.' })),
-    ).toBeNull();
+    expect(orchestrationDetail('accept_task', { task_id: 't1', evidence: 'ok' })).toBeNull();
+    expect(orchestrationDetail('start_task', { task_ids: ['t1'] })).toBeNull();
+    expect(orchestrationDetail('Read', { file_path: '/a' })).toBeNull();
   });
 });
 

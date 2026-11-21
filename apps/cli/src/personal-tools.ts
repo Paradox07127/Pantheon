@@ -41,31 +41,25 @@ const queryTools = {
 const answerInputs = {
   question: inputSchemas['lead.question.answer'].omit({ answers: true }),
   plan_change: inputSchemas['board.plan.proposal.resolve'].omit({ ops: true }),
-  milestone_accept: inputSchemas['milestone.accept'],
-} satisfies Record<PersonalAnswerKind, unknown>;
+} satisfies Partial<Record<PersonalAnswerKind, unknown>>;
 
 const answerCommands = {
   question: 'lead.question.answer',
   plan_change: 'board.plan.proposal.resolve',
-  milestone_accept: 'milestone.accept',
-} as const satisfies Record<PersonalAnswerKind, string>;
+} as const satisfies Partial<Record<PersonalAnswerKind, string>>;
 
 // The CLI does not depend on zod, so these build on the protocol's schemas: an empty strict object and the answer kinds.
 const answerDecision = querySchemas['projects.summary'].extend({
   kind: inputSchemas['app.settings.set'].shape.personal_answers
     .unwrap()
-    .element.describe("The needs_you item's decision: question, plan_change or milestone_accept."),
+    .element.extract(['question', 'plan_change'])
+    .describe("The needs_you item's decision: question or plan_change."),
   input: answerInputs.question
     .or(answerInputs.plan_change)
-    .or(answerInputs.milestone_accept)
     .describe(
-      'question: project_id, lead_session_id, question_id, answer. plan_change: project_id, lead_session_id, proposal_id, decision, reason. milestone_accept: milestone_id, evidence_refs, criteria_checked.',
+      'question: project_id, lead_session_id, question_id, answer. plan_change: project_id, lead_session_id, proposal_id, decision, reason.',
     ),
-  expected_revision: commandSchema.shape.expected_revision
-    .default(null)
-    .describe(
-      "For milestone_accept, the needs_you item's source revision; otherwise leave it out.",
-    ),
+  expected_revision: commandSchema.shape.expected_revision.default(null).describe('Leave it out.'),
 });
 
 const commandTools = {

@@ -32,8 +32,6 @@
   "projects.summary.ready": "可合并",
   "projects.summary.queued": "排队 {count}",
   "projects.summary.mergedToday": "今日已合并",
-  "projects.row.noGoal": "没有目标",
-  "projects.row.goalBar": "已合并 {done}，在跑 {running}，失败 {failed}，未开始 {rest}",
   "projects.row.doneTrend": "近 14 天累计完成，当前 {count}",
   "projects.row.lastActive": "上次活动 {age}",
   "projects.row.byKind": "按类型",

@@ -1,6 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { ProjectBaseline, SessionTurn } from '@pantheon/domain';
-import type { BoardModel, BoardSnapshot } from '@pantheon/protocol';
+import type { BoardSnapshot } from '@pantheon/protocol';
 import { useBaselineRead } from './baseline-read';
 import { useBoard } from './board';
 import { runCommand } from './commands';
@@ -192,25 +192,4 @@ export function useProjectSetup(projectId: string | null): ProjectSetupRead | un
       }),
     start: (choice) => void startBaseline(projectId, choice),
   };
-}
-
-/**
- * Whether a page shows the setup in place of its body: while the board is empty, or while the
- * planning lead's own task is all it holds.
- */
-export function setupShown(
-  setup: ProjectSetupRead | undefined,
-  model: BoardModel | null,
-  empty: boolean,
-): boolean {
-  if (!setup?.state || setup.state === 'ready') return false;
-  if (setup.state !== 'planning') return empty;
-  return (
-    !!model &&
-    !model.leads?.length &&
-    model.tasks.every((task) => task.id === setup.plan?.id) &&
-    !model.milestones.length &&
-    !model.risks.length &&
-    !model.findings.length
-  );
 }

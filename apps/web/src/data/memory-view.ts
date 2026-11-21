@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import type { EntriesFilters } from '../screens/memory/EntriesBar';
-import { useShell } from '../store';
 import { useCurrentProject } from './current-project';
 
 interface MemoryViewState {
@@ -26,14 +25,3 @@ export const useMemoryView = create<MemoryViewState>((set) => ({
 useCurrentProject.subscribe((now, before) => {
   if (now.projectId !== before.projectId) useMemoryView.setState({ selectedId: null, query: '' });
 });
-
-/** Opens the project's memory entries listing only the entries the plan decided. */
-export function openPlanMemory(projectId: string): void {
-  useMemoryView.setState({ selectedId: null, askedFilters: { origin: 'plan' } });
-  useShell.getState().openProjectMemory(projectId, 'entries');
-}
-
-/** Opens the sessions of the project whose plan milestone an entry came from. */
-export function openPlanMilestone(projectId: string): void {
-  useShell.getState().openProjectSessions(projectId);
-}

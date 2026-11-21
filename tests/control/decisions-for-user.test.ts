@@ -7,7 +7,6 @@ import {
   type AgentEvent,
   type Approval,
   type BoardPlan,
-  type Milestone,
   type Principal,
   type Session,
   type SessionTurn,
@@ -415,32 +414,6 @@ const resolveProposal = (decision: 'accept' | 'reject') => (f: Plain, by: Princi
   };
 };
 
-function acceptMilestone(f: Plain, by: Principal) {
-  const plan = f.store.must<BoardPlan>('board_plans', 'lead');
-  f.store.update<BoardPlan>(
-    'board_plans',
-    {
-      ...plan,
-      accepted: { api: { at: f.store.now(), evidence: 'The report answers it', generation: 1 } },
-    },
-    plan.revision,
-  );
-  const milestone = f.store.list<Milestone>('milestones').find((row) => row.key === 'release')!;
-  f.call(
-    'milestone.accept',
-    { milestone_id: milestone.id, evidence_refs: ['task:api'] },
-    milestone.revision,
-    by,
-  );
-  return {
-    key_id: 'k1',
-    command: 'milestone.accept',
-    subject: milestone.id,
-    lead_session_id: 'lead',
-    text: 'Release',
-  };
-}
-
 it.each<[string, Act, DecisionForUser['kind'] | undefined]>([
   [
     'a worker prompt approved for the lead',
@@ -478,32 +451,6 @@ it.each<[string, Act, DecisionForUser['kind'] | undefined]>([
     'prompt_by_rule',
   ],
   ['a plan proposal applied with plan changes on auto', () => proposed('auto'), 'power_used'],
-  [
-    'a milestone accepted by the lead',
-    async () => {
-      const f = await plain();
-      const lead = leadWithPlan(f);
-      const plan = f.store.must<BoardPlan>('board_plans', 'lead');
-      f.store.update<BoardPlan>(
-        'board_plans',
-        {
-          ...plan,
-          accepted: {
-            api: { at: f.store.now(), evidence: 'The report answers it', generation: 1 },
-          },
-        },
-        plan.revision,
-      );
-      f.call(
-        'milestone.accept',
-        { milestone_id: 'release', evidence_refs: ['task:api'] },
-        null,
-        lead,
-      );
-      return { f, match: { power: 'accept_milestone', session_id: 'lead' } };
-    },
-    'power_used',
-  ],
   ['a merge of files outside the task scope', mergedOutOfScope, 'power_used'],
   ['a plan proposal while plan changes need confirming', () => proposed('confirm'), undefined],
   [
@@ -560,11 +507,6 @@ it.each<[string, Act, DecisionForUser['kind'] | undefined]>([
     'personal_answer',
   ],
   [
-    'a milestone the personal key accepted',
-    answeredBy(personal, acceptMilestone),
-    'personal_answer',
-  ],
-  [
     'the personal key marking the project seen',
     answeredBy(personal, (f, by) => {
       f.call('project.seen', { project_id: f.project.id }, null, by);
@@ -574,7 +516,6 @@ it.each<[string, Act, DecisionForUser['kind'] | undefined]>([
   ],
   ["the lead's question the user answered", answeredBy(user, answerLeadQuestion), undefined],
   ['a plan proposal the user accepted', answeredBy(user, resolveProposal('accept')), undefined],
-  ['a milestone the user accepted', answeredBy(user, acceptMilestone), undefined],
 ])('lists what %s decided', async (_label, act, kind) => {
   const { f, match } = await act();
   const { items } = f.control.decisionsForUser(user, f.project.id);

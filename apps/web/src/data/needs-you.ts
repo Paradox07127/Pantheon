@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ApprovalQuestion, GateFailureClass, LeadNote, LeadQuestion } from '@pantheon/domain';
-import type { BoardTaskRung, BridgeResult, DesktopBridge } from '@pantheon/protocol';
+import type { ApprovalQuestion, GateFailureClass } from '@pantheon/domain';
+import type { BridgeResult, DesktopBridge } from '@pantheon/protocol';
 import { currentLocale, t } from '../i18n';
 import { useBoard } from './board';
 import type { DaemonEvent } from './sync';
@@ -8,13 +8,7 @@ import type { DaemonEvent } from './sync';
 /** One item of GET /v1/needs_you.list, as the daemon's domain package defines it. */
 export interface NeedsYouItem {
   source: {
-    table:
-      | 'approvals'
-      | 'sessions'
-      | 'board_plans'
-      | 'milestones'
-      | 'workflow_policies'
-      | 'memory_records';
+    table: 'approvals' | 'sessions';
     id: string;
     revision: number;
   };
@@ -23,22 +17,10 @@ export interface NeedsYouItem {
     | 'session.reconciling'
     | 'session.failed'
     | 'session.gate_failed'
-    | 'session.merge_blocked'
-    | 'milestone.ready_for_acceptance'
-    | 'board.plan.proposal'
-    | 'board.lane.approval'
-    | 'board.plan.reassessment'
-    | 'project.over_budget'
-    | 'lead.question'
-    | 'external.approval'
-    | 'memory.decision_budget';
+    | 'session.merge_blocked';
   project_id: string;
-  /** The approval's session, or the lead of a plan item; absent on session items, whose source is the session. */
+  /** The approval's session; absent on session items, whose source is the session. */
   session_id?: string;
-  /** The plan task, `<lead session id>:<task id>`, of a task item. */
-  task_id?: string;
-  /** The rung of the item's task, as its board row has it; absent on items of no task. */
-  rung?: BoardTaskRung['rung'];
   /** The turn and native request of a lost request or an undelivered answer. */
   turn_id?: string;
   request_id?: string;
@@ -55,46 +37,13 @@ export interface NeedsYouItem {
     | 'gate_failed'
     | 'merge_blocked'
     | 'merge_stuck'
-    | 'continuation_limit_reached'
     | 'workspace_reconciling'
     | 'stop_unconfirmed'
-    | 'lead_turn_failed'
-    | 'lead_closed'
-    | 'task_dispatch_failed'
-    | 'task_upstream_stuck'
-    | 'task_retired'
-    | 'task_turn_looping'
-    | 'task_turn_stalled'
-    | 'lead_turn_looping'
-    | 'lead_turn_stalled'
-    | 'lead_wake_limited'
-    | 'usage_limit_waiting'
     | 'usage_limit_reached'
     | 'session_turn_stalled'
-    | 'background_task_long'
-    | 'milestone_ready_for_acceptance'
-    | 'plan_proposal_awaiting_decision'
-    | 'lane_plan_awaiting_approval'
-    | 'plan_reassessment_ready'
-    | 'project_over_budget'
-    | 'lead_question'
-    | 'task_blocked'
-    | 'workflow_approval'
-    | 'external_approval'
-    | 'plan_decisions_over_budget';
+    | 'background_task_long';
   /** What the user decides. */
-  decision?:
-    | 'plan_change'
-    | 'question'
-    | 'milestone_accept'
-    | 'repeated_failure'
-    | 'permission'
-    | 'budget'
-    | 'improvement'
-    | 'external'
-    | 'other';
-  /** The plan tasks not done that wait on the item; the daemon lists the items blocking the most first. */
-  blocks?: number;
+  decision?: 'question' | 'repeated_failure' | 'permission' | 'improvement' | 'other';
   /** The command of the item's one primary action. */
   primary?: string;
   actions: {
@@ -103,13 +52,7 @@ export interface NeedsYouItem {
     disabled_reason?: string;
     decision?: 'approve' | 'reject' | 'keep' | 'revert';
   }[];
-  question?: LeadQuestion;
-  /** The headline of the plan a `lead.question` item belongs to; session_id is its lead. */
-  plan_title?: string;
-  /** When the recommended answer of a `lead.question` item applies unless the user answers first, in Unix milliseconds. */
-  default_at?: number;
-  blocked?: LeadNote;
-  /** When a session that waits for its used-up usage limit resumes, in Unix milliseconds. */
+  /** When a session that used up its usage limit can go on, in Unix milliseconds. */
   resets_at?: number;
   /** The background task that has run too long; session.background.stop takes its id. */
   background?: {
@@ -118,12 +61,6 @@ export interface NeedsYouItem {
     description: string;
     started_at: number;
   };
-  /** The input tokens a project over its budget spent since the budget was set, and the budget. */
-  project_budget?: { used_input_tokens: number; input_tokens: number };
-  /** The current plan decisions kept as notes because the decisions did not fit the memory budget. */
-  memory_notes?: { count: number; memory_ids: string[] };
-  /** The upstream task, `<lead session id>:<task id>`, that keeps a queued task waiting, and why it does not go on. */
-  upstream?: { task_id: string; stuck: 'merge_blocked' | 'stopped' | 'never_started' };
   /** How long a permission request has waited for an answer, in milliseconds; set once it is escalated. */
   waited_ms?: number;
   /** Set on a permission request that stayed unanswered past the escalation window. */
@@ -132,10 +69,6 @@ export interface NeedsYouItem {
   failure_class?: GateFailureClass;
   /** The questions of a pending AskUserQuestion request, as it asked them. */
   questions?: ApprovalQuestion[];
-  /** The lead's re-assessment of a paused plan; only a `board.plan.reassessment` item has it. */
-  reassessment?: { done: string; blocked: string; change: string; at: number };
-  /** On a lane waiting for plan approval: whether the automatic plan review of its tasks still runs. */
-  plan_review_running?: boolean;
   binding?: {
     action?: string;
     input_hash?: string;
@@ -146,8 +79,6 @@ export interface NeedsYouItem {
     /** The request can be allowed for every session of the project. */
     project_rule_supported?: boolean;
   };
-  /** The title of the lane a `board.lane.approval` item holds; no other item has it. */
-  lane_title?: string;
   /** Who acts next and how. */
   next_step?: string;
 }
@@ -203,34 +134,6 @@ export function touchesNeedsYou(kind: string): boolean {
       'session.unarchived',
       'session.deleted',
       'session.continuation_skipped',
-      'board.plan_updated',
-      'board.plan_transferred',
-      'board.lead_wake_failed',
-      'board.plan_proposed',
-      'board.plan_proposal_resolved',
-      'board.plan_proposal_withdrawn',
-      'milestone.accepted',
-      'milestone.created',
-      'milestone.revised',
-      'milestone.removed',
-      'task.accepted',
-      'workflow.step_created',
-      'workflow.step_changed',
-      'workflow.policy_changed',
-      'lead.question_asked',
-      'board.external_held',
-      'board.external_approved',
-      'lead.question_answered',
-      'lead.question_kept_open',
-      'lead.question_overruled',
-      'board.plan_paused',
-      'board.plan_resumed',
-      'board.plan_reassessed',
-      'task.reported',
-      'task.start_requested',
-      'task.stop_requested',
-      'task.dispatched',
-      'task.dispatch_failed',
       'turn.queued',
       'turn.running',
       'turn.completed',
@@ -294,12 +197,6 @@ function knownReason(code: string): string | null {
       });
     case 'no_changes':
       return t({ id: 'data.reason.noChanges', defaultMessage: 'No commits to merge' });
-    case 'acceptance_pending':
-      return t({
-        id: 'data.reason.acceptancePending',
-        defaultMessage:
-          'The milestone has required sessions not merged yet, or it was already accepted',
-      });
     case 'scope_violation':
       return t({
         id: 'data.reason.scopeViolation',
@@ -359,11 +256,6 @@ function knownReason(code: string): string | null {
       });
     case 'merge_stuck':
       return t({ id: 'data.reason.mergeStuck', defaultMessage: 'Merge stuck' });
-    case 'continuation_limit_reached':
-      return t({
-        id: 'data.reason.continuationLimitReached',
-        defaultMessage: 'Out of automatic continuations',
-      });
     case 'workspace_read_failed':
       return t({
         id: 'data.reason.workspaceReadFailed',
@@ -384,58 +276,6 @@ function knownReason(code: string): string | null {
         id: 'data.reason.terminationUnconfirmed',
         defaultMessage: "Can't confirm the old process has ended",
       });
-    case 'lead_turn_failed':
-      return t({ id: 'data.reason.leadTurnFailed', defaultMessage: "The lead's turn failed" });
-    case 'lead_closed':
-      return t({
-        id: 'data.reason.leadClosed',
-        defaultMessage: 'The lead is closed and takes no new messages',
-      });
-    case 'task_dispatch_failed':
-      return t({
-        id: 'data.reason.taskDispatchFailed',
-        defaultMessage: "The task's session could not be opened",
-      });
-    case 'task_upstream_stuck':
-      return t({
-        id: 'data.reason.taskUpstreamStuck',
-        defaultMessage: 'No one is moving the tasks this task waits on',
-      });
-    case 'task_retired':
-      return t({
-        id: 'data.reason.taskRetired',
-        defaultMessage: "The lead deleted the session's task; its changes won't be merged",
-      });
-    case 'task_turn_looping':
-      return t({
-        id: 'data.reason.taskTurnLooping',
-        defaultMessage: "The task session's turn keeps repeating the same tool call",
-      });
-    case 'task_turn_stalled':
-      return t({
-        id: 'data.reason.taskTurnStalled',
-        defaultMessage: "The task session's turn stalled and the lead hasn't handled it",
-      });
-    case 'lead_turn_looping':
-      return t({
-        id: 'data.reason.leadTurnLooping',
-        defaultMessage: "The lead's turn keeps repeating the same tool call",
-      });
-    case 'lead_turn_stalled':
-      return t({
-        id: 'data.reason.leadTurnStalled',
-        defaultMessage: "The lead's turn has made no progress for a long time",
-      });
-    case 'lead_wake_limited':
-      return t({
-        id: 'data.reason.leadWakeLimited',
-        defaultMessage: 'The lead was woken too many times; waking is paused',
-      });
-    case 'usage_limit_waiting':
-      return t({
-        id: 'data.reason.usageLimitWaiting',
-        defaultMessage: 'Subscription usage limit reached; continues on its own after the reset',
-      });
     // usage_limit is the error code of the turn that hit the limit.
     case 'usage_limit_reached':
     case 'usage_limit':
@@ -449,42 +289,6 @@ function knownReason(code: string): string | null {
       return t({
         id: 'data.reason.backgroundTaskLong',
         defaultMessage: 'A background task has run for 30 minutes',
-      });
-    case 'milestone_ready_for_acceptance':
-      return t({
-        id: 'data.reason.milestoneReadyForAcceptance',
-        defaultMessage: 'Milestone ready for acceptance',
-      });
-    case 'plan_proposal_awaiting_decision':
-      return t({
-        id: 'data.reason.planProposalAwaitingDecision',
-        defaultMessage: 'Plan change proposal awaiting a decision',
-      });
-    case 'lane_plan_awaiting_approval':
-      return t({
-        id: 'data.reason.lanePlanAwaitingApproval',
-        defaultMessage: 'Plan waits for your approval',
-      });
-    case 'project_over_budget':
-      return t({ id: 'data.reason.projectOverBudget', defaultMessage: 'Project over budget' });
-    case 'workflow_approval':
-      return t({
-        id: 'data.reason.workflowApproval',
-        defaultMessage: 'Waiting for code review',
-      });
-    case 'external_approval':
-      return t({
-        id: 'data.reason.externalApproval',
-        defaultMessage: 'External request awaiting your approval',
-      });
-    case 'lead_question':
-      return t({ id: 'data.reason.leadQuestion', defaultMessage: 'The lead asked a question' });
-    case 'task_blocked':
-      return t({ id: 'data.reason.taskBlocked', defaultMessage: 'A task reported it is blocked' });
-    case 'plan_reassessment_ready':
-      return t({
-        id: 'data.reason.planReassessmentReady',
-        defaultMessage: 'The lead reassessed the paused plan',
       });
     case 'artifact_commit_missing':
       return t({
@@ -539,11 +343,6 @@ function knownReason(code: string): string | null {
       return t({
         id: 'data.reason.workspaceOwned',
         defaultMessage: 'Another operation is using the worktree',
-      });
-    case 'out_of_scope':
-      return t({
-        id: 'data.reason.outOfScope',
-        defaultMessage: 'Changes go beyond the task scope',
       });
     case 'merge_commits':
       return t({
@@ -635,11 +434,9 @@ function knownReason(code: string): string | null {
   }
 }
 
-/** A key unique to the item in a list of needs; a plan's items share their source and differ by request or task. */
-export const needRowKey = (
-  item: Pick<NeedsYouItem, 'source' | 'reason' | 'request_id' | 'task_id'>,
-): string =>
-  `${item.source.table}:${item.source.id}:${item.reason}:${item.request_id ?? ''}:${item.task_id ?? ''}`;
+/** A key unique to the item in a list of needs; a session's items share their source and differ by reason or request. */
+export const needRowKey = (item: Pick<NeedsYouItem, 'source' | 'reason' | 'request_id'>): string =>
+  `${item.source.table}:${item.source.id}:${item.reason}:${item.request_id ?? ''}`;
 
 const GIT_FAILED = 'git_failed:';
 
@@ -651,16 +448,6 @@ export function reasonText(code: string): string {
       { detail: code.slice(GIT_FAILED.length).trim() },
     );
   return knownReason(code) ?? code;
-}
-
-/** Interface text of an item's reason, with what the item adds to it. */
-export function needReasonText(item: Pick<NeedsYouItem, 'reason' | 'plan_review_running'>): string {
-  if (item.reason === 'lane_plan_awaiting_approval' && item.plan_review_running)
-    return t({
-      id: 'data.reason.lanePlanAwaitingApprovalReviewing',
-      defaultMessage: 'Plan waits for your approval; its review is still running',
-    });
-  return reasonText(item.reason);
 }
 
 /** Interface reason of a failed command, followed by the daemon's message. */
@@ -694,31 +481,6 @@ export function failureClassText(code: string): string {
       });
     case 'code':
       return t({ id: 'data.failureClass.code', defaultMessage: 'The code failed the gate' });
-    default:
-      return code;
-  }
-}
-
-/** Interface text of why a task reported it is blocked; an unknown reason shows as it is. */
-export function blockedReasonText(code: string): string {
-  switch (code) {
-    case 'missing_context':
-      return t({ id: 'data.blockedReason.missingContext', defaultMessage: 'Missing context' });
-    case 'missing_permission':
-      return t({
-        id: 'data.blockedReason.missingPermission',
-        defaultMessage: 'Missing permission',
-      });
-    case 'environment_problem':
-      return t({
-        id: 'data.blockedReason.environmentProblem',
-        defaultMessage: 'Environment problem',
-      });
-    case 'conflicting_requirements':
-      return t({
-        id: 'data.blockedReason.conflictingRequirements',
-        defaultMessage: 'Conflicting requirements',
-      });
     default:
       return code;
   }

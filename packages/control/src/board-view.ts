@@ -30,10 +30,8 @@ import type {
   WorkbenchSession,
 } from '@pantheon/protocol';
 import { ownEntry, projectAccess, type ControlContext } from './context.js';
-import { milestoneExtras, statusLineOf, taskExtras } from './board-view-task-extras.js';
+import { statusLineOf, taskExtras } from './board-view-task-extras.js';
 import { taskEvidenceLevel } from './evidence-level.js';
-import { effectiveDepth, laneHeld } from './lane-stops.js';
-import { estimateLane } from './plan-estimate.js';
 import {
   awaitingChange,
   boardTaskId,
@@ -45,7 +43,6 @@ import {
   taskState,
 } from './board-plan.js';
 import { itemTask, latestExecuted, leadTurnFailed, needsYou } from './needs-you.js';
-import { projectFacts } from './project-facts.js';
 import { chainDepth, PROGRESS_KINDS, quiet, verifiedProgressReader } from './progress.js';
 import { runPhase } from './run-state.js';
 import {
@@ -1106,18 +1103,9 @@ export function boardView(
   }
 
   const board = ctx.store.get<ProjectBoard>('project_boards', projectId),
-    facts = projectFacts(ctx, projectId),
     plans = ctx.store
       .list<BoardPlan>('board_plans')
       .filter((plan) => plan.project_id === projectId);
-  const leadMilestones = new Map(
-    facts.milestones
-      .filter((view) => view.milestone.owner_session_id)
-      .map((view) => [
-        `${view.milestone.owner_session_id}:${view.milestone.key}`,
-        view.milestone.id,
-      ]),
-  );
   // Each update event carries the whole plan; a transfer moves a plan to another lead's id.
   const planEvents = planHistory(ctx, projectId),
     transfers = new Map<string, string>(),
@@ -1700,9 +1688,7 @@ export function boardView(
         lane_id: `${plan.id}:${task.lane}`,
         iteration_id: task.iteration !== undefined ? boardTaskId(plan.id, task.iteration) : null,
         estimate: task.estimate ?? 1,
-        milestone_id: task.milestone
-          ? (leadMilestones.get(`${plan.id}:${task.milestone}`) ?? null)
-          : null,
+        milestone_id: null,
         status,
         acceptance_checks: task.acceptance.map((text) => ({
           text,
@@ -1850,9 +1836,7 @@ export function boardView(
     samples.length ? samples[Math.ceil((percent * samples.length) / 100) - 1]! : null;
   for (const row of rows.values()) {
     if (!shown.has(row.id) || planned.has(row.id)) continue;
-    row.milestone_id =
-      facts.milestones.find((view) => view.milestone.required_sessions.includes(row.id))?.milestone
-        .id ?? null;
+    row.milestone_id = null;
     const recap = stored.get(row.id)!.recap;
     tasks.push({ ...row, activity: activityOf(row.id), ...(recap ? { recap } : {}) });
   }
@@ -2003,7 +1987,6 @@ export function boardView(
     };
   }
   // Read after the pass above, which sets the gate steps a level stands on.
-  const milestoneLevels = new Map<string, NonNullable<Task['evidence_level']>[]>();
   for (const task of tasks) {
     if (!task.owner_session_id) continue;
     const sessionId = currentSessions.get(task.id),
@@ -2021,11 +2004,6 @@ export function boardView(
         ),
       }),
     );
-    if (task.evidence_level && task.milestone_id)
-      milestoneLevels.set(task.milestone_id, [
-        ...(milestoneLevels.get(task.milestone_id) ?? []),
-        task.evidence_level,
-      ]);
   }
   const byId = new Map(tasks.map((task) => [task.id, task]));
   const edgeBetween = (
@@ -2309,35 +2287,6 @@ export function boardView(
   const runningReviews = new Set(
     reviews.filter((review) => review.state === 'running').map((review) => review.session_id),
   );
-  const milestoneIdOf = new Map(
-    facts.milestones.flatMap((view) =>
-      view.milestone.owner_session_id && view.milestone.key
-        ? [[`${view.milestone.owner_session_id}:${view.milestone.key}`, view.milestone.id]]
-        : [],
-    ),
-  );
-  // Edits are kept oldest first, so the newest refute of an assumption wins.
-  const refutedBy = new Map(
-    plans.map((plan) => [
-      plan.id,
-      new Map(
-        plan.pending_edits.flatMap((edit) =>
-          (edit.refutes ?? []).map(
-            (refute) =>
-              [
-                refute.assumption_id,
-                {
-                  edit_id: edit.edit_id,
-                  instead: refute.instead,
-                  state: edit.status,
-                  ...(edit.reason ? { reason: edit.reason } : {}),
-                },
-              ] as const,
-          ),
-        ),
-      ),
-    ]),
-  );
   const leads: NonNullable<BoardModel['leads']> = plans.map((plan) => {
     const lead = ctx.store.get<Session>('sessions', plan.id),
       request = requests.get(plan.id),
@@ -2419,15 +2368,11 @@ export function boardView(
       ...(request ? { waiting: waitingOf(request) } : {}),
       updated_at: plan.updated_at,
       plan_version: plan.plan_version,
-      assumptions: plan.assumptions.map((assumption) => {
-        const milestoneId = milestoneIdOf.get(`${plan.id}:${assumption.milestone}`);
-        return {
-          ...(assumption.id ? { id: assumption.id } : {}),
-          text: assumption.text,
-          affects: (assumption.affects ?? []).map((taskId) => boardTaskId(plan.id, taskId)),
-          ...(milestoneId ? { milestone: milestoneId } : {}),
-        };
-      }),
+      assumptions: plan.assumptions.map((assumption) => ({
+        ...(assumption.id ? { id: assumption.id } : {}),
+        text: assumption.text,
+        affects: (assumption.affects ?? []).map((taskId) => boardTaskId(plan.id, taskId)),
+      })),
       recent_edits: (userEdits.get(plan.id) ?? [])
         .filter(
           (edit) =>
@@ -2587,36 +2532,12 @@ export function boardView(
     ...(gateFailures.length ? { gate_failures: gateFailures } : {}),
     lanes: plans.flatMap((plan) =>
       plan.lanes.map((lane) => {
-        const stop = ownEntry(plan.lane_stops, lane.id),
-          depth = effectiveDepth(plan, lane),
-          held = laneHeld(plan, lane.id);
         return {
           id: `${plan.id}:${lane.id}`,
           title: lane.title,
           ...(lane.fanout_reason ? { fanout_reason: lane.fanout_reason } : {}),
-          ...(depth
-            ? {
-                depth,
-                depth_by: stop?.user_depth
-                  ? ('user' as const)
-                  : lane.depth
-                    ? ('lead' as const)
-                    : ('pantheon' as const),
-              }
-            : {}),
+          ...(lane.depth ? { depth: lane.depth, depth_by: 'lead' as const } : {}),
           ...(lane.depth_reason ? { depth_reason: lane.depth_reason } : {}),
-          ...(stop?.held_at === undefined
-            ? {}
-            : held
-              ? { stop: { state: 'waiting' as const, at: stop.held_at } }
-              : {
-                  stop: {
-                    state: 'approved' as const,
-                    at: stop.approved_at!,
-                    ...(stop.approved_by ? { by: stop.approved_by } : {}),
-                  },
-                }),
-          ...(held ? { estimate: estimateLane(ctx, plan, lane.id) } : {}),
         };
       }),
     ),
@@ -2635,59 +2556,8 @@ export function boardView(
     needs,
     edges,
     proposed_edges: proposedEdges,
-    milestones: facts.milestones.map((view) => {
-      // The commitment hash covers the criteria, so completed means their text is the one checked.
-      const criteria = view.milestone.criteria.map((text, index) => ({
-        text,
-        accepted:
-          view.status === 'completed' &&
-          (view.milestone.acceptance?.criteria_checked?.includes(index) ?? true),
-      }));
-      return view.milestone.owner_session_id
-        ? {
-            id: view.milestone.id,
-            title: view.milestone.title,
-            session_ids: view.required_sessions,
-            merged: view.merged_total,
-            status: view.status,
-            criteria,
-            owner_session_id: view.milestone.owner_session_id,
-            tasks: view.tasks!,
-            ...(view.milestone.due_on ? { due_on: view.milestone.due_on } : {}),
-            ...milestoneExtras(
-              ctx,
-              view,
-              milestoneLevels.get(view.milestone.id) ?? [],
-              planOf.get(view.milestone.owner_session_id),
-              refutedBy.get(view.milestone.owner_session_id),
-            ),
-          }
-        : {
-            id: view.milestone.id,
-            title: view.milestone.title,
-            session_ids: view.milestone.required_sessions,
-            merged: view.merged_total,
-            status: view.status,
-            criteria,
-            ...milestoneExtras(ctx, view, milestoneLevels.get(view.milestone.id) ?? []),
-          };
-    }),
-    goals: facts.goals.map(({ goal, milestone_ids, milestones, tasks }) => ({
-      id: goal.id,
-      text: goal.text,
-      order: goal.order,
-      revision: goal.revision,
-      milestone_ids,
-      milestones,
-      tasks,
-      needs: needs.filter((item) =>
-        milestone_ids.includes(
-          item.source.table === 'milestones'
-            ? item.source.id
-            : (byId.get(item.task_id ?? '')?.milestone_id ?? ''),
-        ),
-      ).length,
-    })),
+    milestones: [],
+    goals: [],
     burnup,
     task_progress: {
       totals,

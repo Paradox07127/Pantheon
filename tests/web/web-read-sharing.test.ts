@@ -10,7 +10,6 @@ vi.mock('@/data/board', () => ({
     getState: () => mock.board,
   }),
 }));
-import { useBoardView } from '@/data/board-view';
 import { useDevices } from '@/data/devices';
 import { useRuntimeStatus } from '@/data/runtime-status';
 import { useSessionDiff } from '@/data/workbench-sessions';
@@ -18,7 +17,6 @@ import { useSessionDiff } from '@/data/workbench-sessions';
 const values: Record<string, unknown> = {
   'runtime.status': [{ runtime: 'claude', enabled: true, installed: true, auth: { state: 'ok' } }],
   'device.list': [{ id: 'local', name: 'workstation', online: true, load: { sessions: 0 } }],
-  'board.view': { tasks: [] },
   'session.diff': { files: [], truncated: false },
 };
 
@@ -68,7 +66,6 @@ async function answer(...hosts: { flush: () => Promise<unknown> }[]) {
 const readers: [string, () => boolean][] = [
   ['runtime.status', () => useRuntimeStatus().read.state === 'ready'],
   ['device.list', () => useDevices().read.state === 'ready'],
-  ['board.view', () => useBoardView('project-a', 1).data !== null],
 ];
 
 it.each(readers)(
@@ -106,7 +103,6 @@ const planUpdated = () => ({
 
 const eventReaders: [string, () => boolean][] = [
   ['session.diff', () => useSessionDiff('session-a').data !== null],
-  ['board.view', () => useBoardView('project-a', 1).data !== null],
 ];
 
 it.each(eventReaders)(

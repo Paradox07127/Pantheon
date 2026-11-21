@@ -69,14 +69,8 @@ export const setPolicy = (policy: WorkflowPolicy, patch: PolicyPatch): Promise<M
     policyRevision(policy),
   );
 
-export type CountParam = 'max_parallel' | 'max_parallel_limit' | 'handback_limit';
-
-/** The values the daemon accepts for a count, given the rest of the policy. */
-export function countRange(policy: WorkflowPolicy, param: CountParam): [number, number] {
-  if (param === 'max_parallel') return [1, policy.max_parallel_limit];
-  if (param === 'max_parallel_limit') return [Math.max(1, policy.max_parallel), 8];
-  return [2, 5];
-}
+/** The handback limits the daemon accepts. */
+export const HANDBACK_LIMIT_RANGE: [number, number] = [2, 5];
 
 /** The pinned list with the parameter added or taken out. */
 export const togglePin = (policy: WorkflowPolicy, param: WorkflowParam): WorkflowParam[] =>
@@ -86,56 +80,18 @@ export const togglePin = (policy: WorkflowPolicy, param: WorkflowParam): Workflo
 
 // Labels are getters, so each is read in the language loaded by then.
 export const PARAM_LABEL: Record<
-  | WorkflowParam
-  | 'max_parallel_limit'
-  | 'runtime_parallel'
-  | 'dispatch_paused'
-  | 'runtime_quota_threshold'
-  | 'plan_changes'
+  | 'handback_limit'
+  | 'gate_on_fail'
   | 'question_defaults'
   | 'project_budget'
-  | 'budget'
-  | 'gate_on_fail',
+  | 'runtime_quota_threshold',
   string
 > = {
-  get max_parallel() {
-    return t({ id: 'data.workflowPolicy.param.maxParallel', defaultMessage: 'Concurrency limit' });
-  },
-  get max_parallel_limit() {
-    return t({
-      id: 'data.workflowPolicy.param.maxParallelLimit',
-      defaultMessage: 'Concurrency limit cap',
-    });
-  },
-  get runtime_parallel() {
-    return t({
-      id: 'data.workflowPolicy.param.runtimeParallel',
-      defaultMessage: 'Concurrency per runtime',
-    });
-  },
-  get dispatch_paused() {
-    return t({ id: 'data.workflowPolicy.param.dispatchPaused', defaultMessage: 'Pause dispatch' });
-  },
   get handback_limit() {
     return t({ id: 'data.workflowPolicy.param.handbackLimit', defaultMessage: 'Handback limit' });
   },
   get gate_on_fail() {
     return t({ id: 'settings.gate.onFail', defaultMessage: 'When a gate fails' });
-  },
-  get acceptance_wake() {
-    return t({ id: 'data.workflowPolicy.param.acceptanceWake', defaultMessage: 'When to accept' });
-  },
-  get path() {
-    return t({ id: 'data.workflowPolicy.param.path', defaultMessage: 'Task path' });
-  },
-  get task_size_hint() {
-    return t({
-      id: 'data.workflowPolicy.param.taskSizeHint',
-      defaultMessage: 'Task file count hint',
-    });
-  },
-  get plan_changes() {
-    return t({ id: 'settings.workflow.planChanges', defaultMessage: 'Plan changes' });
   },
   get question_defaults() {
     return t({
@@ -155,91 +111,4 @@ export const PARAM_LABEL: Record<
       defaultMessage: 'Runtime quota threshold (%)',
     });
   },
-  get budget() {
-    return t({ id: 'data.workflowPolicy.param.budget', defaultMessage: 'Task budget' });
-  },
 };
-
-/** The paths a tier or a task can be set to; a task takes the parallel path with its parts. */
-export const CHOSEN_PATHS = [
-  'direct',
-  'dispatch',
-  'review_loop',
-] as const satisfies readonly FlowPath[];
-
-export const PATH_LABEL: Record<FlowPath, string> = {
-  get direct() {
-    return t({
-      id: 'data.workflowPolicy.path.direct',
-      defaultMessage: 'The lead does it directly',
-    });
-  },
-  get dispatch() {
-    return t({
-      id: 'data.workflowPolicy.path.dispatch',
-      defaultMessage: 'Dispatch a task session',
-    });
-  },
-  get review_loop() {
-    return t({
-      id: 'data.workflowPolicy.path.reviewLoop',
-      defaultMessage: 'Write and review in turns',
-    });
-  },
-  get parallel() {
-    return t({
-      id: 'data.workflowPolicy.path.parallel',
-      defaultMessage: 'Split into parallel task sessions',
-    });
-  },
-};
-
-export const WAKE_LABEL: Record<WorkflowPolicy['acceptance_wake'], string> = {
-  get each_merge() {
-    return t({ id: 'data.workflowPolicy.wake.eachMerge', defaultMessage: 'After each merge' });
-  },
-  get milestone() {
-    return t({
-      id: 'data.workflowPolicy.wake.milestone',
-      defaultMessage: 'After the milestone ends',
-    });
-  },
-};
-
-export const PLAN_CHANGES_LABEL: Record<WorkflowPolicy['plan_changes'], string> = {
-  get auto() {
-    return t({ id: 'settings.workflow.planChanges.auto', defaultMessage: 'Lead applies them' });
-  },
-  get confirm() {
-    return t({
-      id: 'settings.workflow.planChanges.confirm',
-      defaultMessage: 'Wait for my approval',
-    });
-  },
-};
-
-export const DOMAIN_LABEL: Record<TaskKind['domain'], string> = {
-  get review() {
-    return t({ id: 'data.workflowPolicy.domain.review', defaultMessage: 'Review' });
-  },
-  get 'frontend-ui'() {
-    return t({ id: 'data.workflowPolicy.domain.frontendUi', defaultMessage: 'Frontend UI' });
-  },
-  get 'script-infra'() {
-    return t({
-      id: 'data.workflowPolicy.domain.scriptInfra',
-      defaultMessage: 'Scripts and infrastructure',
-    });
-  },
-  get 'backend-logic'() {
-    return t({ id: 'data.workflowPolicy.domain.backendLogic', defaultMessage: 'Backend logic' });
-  },
-  get 'docs-chore'() {
-    return t({ id: 'data.workflowPolicy.domain.docsChore', defaultMessage: 'Docs and chores' });
-  },
-};
-
-export const tierText = (tier: TaskKind['tier']) => tier.toUpperCase();
-
-export const kindText = (domain: TaskKind['domain'], tier: TaskKind['tier']) =>
-  `${DOMAIN_LABEL[domain]} ${tierText(tier)}`;

@@ -160,7 +160,7 @@ afterEach(() => {
 describe('external requests settings page', () => {
   it('sits among the pages for every project after usage, named External requests', () => {
     const keys = SETTINGS_PAGES.filter((p) => p.group === 'global').map((p) => p.key);
-    expect(keys.slice(0, 4)).toEqual(['workflow', 'defaults', 'usage', 'external']);
+    expect(keys.slice(0, 3)).toEqual(['defaults', 'usage', 'external']);
     expect(SETTINGS_PAGES.find((p) => p.key === ('external' as never))!.label).toBe(
       zh('settings.pages.external'),
     );

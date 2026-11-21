@@ -128,11 +128,11 @@ describe('settings groups', () => {
       page: 'shortcuts',
       detail: null,
     });
-    useSettingsView.setState({ open: false, page: 'workflow' });
+    useSettingsView.setState({ open: false, page: 'defaults' });
     useShell.getState().openSettings('alpha');
     expect(useSettingsView.getState()).toMatchObject({
       open: true,
-      page: 'workflow',
+      page: 'defaults',
       detail: null,
     });
   });

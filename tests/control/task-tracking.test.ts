@@ -1351,10 +1351,6 @@ it('hands an unfinished task back to the lead at the user request and holds auto
   expect(f.turns(worker.id)).toHaveLength(before);
   expect(planOf(f, lead.id).handed_back?.[worker.id] ?? []).toEqual([]);
   expect(
-    f.control.boardHistory(user, f.project.id).tasks.find((row) => row.id === `${lead.id}:a`)
-      ?.handbacks,
-  ).toBe(1);
-  expect(
     f.control.boardView(user, f.project.id, 1).leads?.find((row) => row.session_id === lead.id)
       ?.messages_today,
   ).toContainEqual({ session_id: worker.id, lead: 0, tracker: 0, handbacks: 1 });

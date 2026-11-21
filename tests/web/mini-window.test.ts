@@ -41,17 +41,13 @@ function approval(id: string, over: Partial<NeedsYouItem> = {}): NeedsYouItem {
   };
 }
 
-const question: NeedsYouItem = {
-  source: { table: 'board_plans', id: 'lead-1', revision: 1 },
-  kind: 'lead.question',
+const question = approval('q-1', {
   project_id: 'beta',
-  session_id: 'lead-1',
-  request_id: 'q-1',
-  status: 'pending',
+  session_id: 'session-q',
   created_at: NOW - 40 * MINUTE,
-  reason: 'lead_question',
-  actions: [],
-};
+  binding: { action: 'AskUserQuestion' },
+  questions: [{} as never],
+});
 
 function listed(id: string, over: Partial<WorkbenchSession> = {}): WorkbenchSession {
   return {
@@ -204,13 +200,6 @@ describe('mini window picks one thing to show', () => {
       project_id: 'beta',
       session_id: 'session-new',
     });
-  });
-
-  it('counts a held external request among those waiting, as the tray does', async () => {
-    needs = [question, approval('ext-1', { reason: 'external_approval', actions: [] })];
-    lists = { alpha: [listed('session-r', { state: 'running', last_activity_at: ago(1) })] };
-    const tree = (await bar()).value;
-    expect(text(find(tree, (n) => n.props.className === 'mw-wait'))).toBe('2');
   });
 
   it('shows the session with the newest activity and its state, and no count when nothing waits', async () => {

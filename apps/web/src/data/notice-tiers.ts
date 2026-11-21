@@ -5,7 +5,7 @@ import { sessionRow } from '../screens/sessions/model';
 import type { SessionGroupKey } from '../screens/sessions/session-groups';
 import { useShell } from '../store';
 import { useCurrentProject } from './current-project';
-import { failureText, needReasonText, reasonText, type NeedsYouItem } from './needs-you';
+import { failureText, reasonText, type NeedsYouItem } from './needs-you';
 import type { NoticeCursor, NoticeEvent } from './notifications';
 import type { DaemonEvent, SyncView } from './sync';
 import { sessionTitle } from './transcript';
@@ -68,11 +68,8 @@ export const waitInView = (
     project: string;
     session: string | null | undefined;
     approval: boolean;
-    strip: boolean;
   },
-) =>
-  watching(view, wait.session) ||
-  ((wait.approval || wait.strip) && view.focused && view.queue === wait.project);
+) => watching(view, wait.session) || (wait.approval && view.focused && view.queue === wait.project);
 
 const opener = (projectId: string, sessionId: string) => () =>
   useShell.getState().openProjectSession(projectId, sessionId);
@@ -85,21 +82,11 @@ function heading(board: BoardSnapshot, projectId: string, sessionId: string | un
     : (board.projects.find((p) => p.id === projectId)?.name ?? '');
 }
 
-/** The card id of a pending approval, a lead question or an external request; null for any other item. */
+/** The card id of a pending approval; null for any other item. */
 export function needsKey(item: NeedsYouItem): string | null {
   if (item.kind === 'permission' && item.reason === 'permission_requested') return item.source.id;
-  if (item.kind === 'lead.question') return `${item.source.id}:${item.request_id ?? ''}`;
-  // One plan holds every held external request and held lane of its lead.
-  if (item.kind === 'external.approval' || item.kind === 'board.lane.approval')
-    return `${item.source.table}:${item.source.id}:${item.request_id ?? ''}`;
   return null;
 }
-
-/** Whether the needs-you strip answers the item rather than a session's thread. */
-export const answeredInStrip = (item: NeedsYouItem): boolean =>
-  item.kind === 'lead.question' ||
-  item.kind === 'external.approval' ||
-  item.kind === 'board.lane.approval';
 
 /** The session the item waits in; a session item's source is the session itself. */
 export const needsSession = (item: NeedsYouItem): string | undefined =>
@@ -114,30 +101,23 @@ export function needsCard(
 ): NeedsCard | null {
   const id = needsKey(item);
   if (!id) return null;
-  const strip = answeredInStrip(item);
   // The session whose thread answers the wait.
-  const session_id = strip ? null : (item.session_id ?? null);
+  const session_id = item.session_id ?? null;
   const wait = {
     id,
     project: item.project_id,
     session: session_id,
     approval: item.kind === 'permission',
-    strip,
   };
   if (waitInView(view, wait)) return null;
-  const name = item.lane_title ?? heading(board, item.project_id, needsSession(item));
+  const name = heading(board, item.project_id, needsSession(item));
   const base = {
     id,
     heading: name,
     since: item.created_at,
-    ...(strip
-      ? { open: () => useShell.getState().openProjectNeed(item.project_id, id) }
-      : item.session_id
-        ? { open: opener(item.project_id, item.session_id) }
-        : {}),
+    ...(item.session_id ? { open: opener(item.project_id, item.session_id) } : {}),
   };
-  const question =
-    item.kind === 'lead.question' ? item.question?.question : item.questions?.[0]?.question;
+  const question = item.questions?.[0]?.question;
   if (question !== undefined)
     return {
       event: 'question_asked',
@@ -157,7 +137,6 @@ export function needsCard(
       ...base,
       event: t({ id: 'data.noticeTiers.waitsApproval', defaultMessage: 'waiting for approval' }),
       ...(command ? { command } : {}),
-      ...(strip ? { summary: needReasonText(item) } : {}),
       ...(allowed
         ? {
             actions: [

@@ -21,7 +21,7 @@ import {
 import { usageLimitWaiting } from './continuation.js';
 import { pendingApprovalItems, settledApprovalItems } from './needs-you-approvals.js';
 import { sessionItems } from './needs-you-sessions.js';
-import { milestoneItems, planItems } from './needs-you-plans.js';
+import { planItems } from './needs-you-plans.js';
 import { memoryBudgetItems, projectBudgetItems } from './needs-you-workflow.js';
 import { taskRung, taskRungFacts } from './task-rung.js';
 
@@ -56,10 +56,7 @@ export const NEXT_STEP: Record<
   | 'task_dispatch_failed'
   | 'task_upstream_stuck'
   | 'lead_permission'
-  | 'milestone_ready_for_acceptance'
-  | 'plan_proposal_awaiting_decision'
-  | 'lane_plan_awaiting_approval'
-  | 'plan_reassessment_ready',
+  | 'plan_proposal_awaiting_decision',
   string
 > = {
   merge_stuck: 'The user checks the stuck merge and cancels it if needed.',
@@ -95,14 +92,8 @@ export const NEXT_STEP: Record<
     "The lead's turn has made no progress for a long time, or a tool call never ended; the user interrupts the turn, then sends the lead a message to go on.",
   lead_permission:
     "This is the lead's own permission request; its turn waits for the answer and gets no task session reports meanwhile. The lead goes on once the user allows or denies it.",
-  milestone_ready_for_acceptance:
-    "The milestone's tasks are all done; the user checks its acceptance criteria and accepts it, or tells the lead what is still missing.",
   plan_proposal_awaiting_decision:
     'The plan proposal awaits the user; the user accepts it, changes its ops before accepting, or rejects it.',
-  lane_plan_awaiting_approval:
-    'Approve the plan to let its tasks start, or tell the lead what to change.',
-  plan_reassessment_ready:
-    'The lead re-assessed the paused plan; read what it would change, tell it what to do, and resume the plan to let its tasks start.',
   background_task_long:
     'A background command or agent of the session has run for 30 minutes; the user stops it, or waits for it to end.',
 };
@@ -363,7 +354,6 @@ export function needsYou(
     items.push(
       ...sessionItems(ctx, scope, sessions, plans, planOf),
       ...planItems(ctx, scope, plans, sessions),
-      ...milestoneItems(ctx, scope, planOf),
       ...projectBudgetItems(ctx, scope),
       ...memoryBudgetItems(ctx, scope),
     );

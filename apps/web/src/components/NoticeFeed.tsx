@@ -5,7 +5,6 @@ import { runCommand } from '../data/commands';
 import type { NeedsYouItem } from '../data/needs-you';
 import {
   answerFailed,
-  answeredInStrip,
   becameReady,
   groupCard,
   liveCards,
@@ -89,10 +88,7 @@ export function NoticeFeed({
   const seenNeeds = useRef(new Set<string>());
   // The cards that need the user on screen, by id, with what waitInView asks of them.
   const openNeeds = useRef(
-    new Map<
-      string,
-      { project: string; session: string | null; approval: boolean; strip: boolean }
-    >(),
+    new Map<string, { project: string; session: string | null; approval: boolean }>(),
   );
   const before = useRef<{ projectId: string; sessions: readonly WorkbenchSession[] } | null>(null);
   // By project and kind.
@@ -152,7 +148,6 @@ export function NoticeFeed({
         project: item.project_id,
         session: card.session_id,
         approval: item.kind === 'permission',
-        strip: answeredInStrip(item),
       };
       noticeNeeds(card.options);
       openNeeds.current.set(key, wait);

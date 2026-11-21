@@ -1,15 +1,8 @@
-import type {
-  BoardActivity,
-  BoardModel,
-  BoardSegment,
-  BoardTaskStatus,
-  SessionTrace,
-  WorkbenchSession,
-} from '@pantheon/protocol';
+import type { SessionTrace, WorkbenchSession } from '@pantheon/protocol';
+import { listedTitle } from '../../lib/daemon-text';
 
 type TraceSpan = SessionTrace['spans'][number];
-type BoardTask = BoardModel['tasks'][number];
-type BoardLead = NonNullable<BoardModel['leads']>[number];
+type Phase = NonNullable<WorkbenchSession['run']>['phase'];
 
 export type RunStatus = 'running' | 'waiting' | 'ready' | 'ok' | 'error' | 'idle';
 
@@ -25,14 +18,14 @@ export interface RunCall {
 }
 
 export interface RunNode {
-  /** The session id; the span id of a subagent; the board task id of a task without a session. */
+  /** The session id; the span id of a subagent. */
   id: string;
-  kind: 'lead' | 'session' | 'subagent';
+  kind: 'session' | 'subagent';
   runtime: string | null;
   title: string;
   model: string | null;
   status: RunStatus;
-  phase: BoardActivity['phase'] | null;
+  phase: Phase | null;
   start: number | null;
   /** null while running or when unknown. */
   end: number | null;
@@ -43,8 +36,6 @@ export interface RunNode {
   /** Own calls only, by start, those without a start last. */
   calls: RunCall[];
   children: RunNode[];
-  /** The board task of a lead's child or an adhoc node; null for leads and subagents. */
-  taskId: string | null;
 }
 
 export interface RunForest {
@@ -64,23 +55,17 @@ export interface RunStats {
   running: number;
 }
 
-const TASK_STATUS: Record<BoardTaskStatus, RunStatus> = {
+const SESSION_STATUS: Record<WorkbenchSession['state'], RunStatus> = {
+  starting: 'running',
   running: 'running',
   waiting: 'waiting',
   idle: 'idle',
   ready: 'ready',
-  done: 'ok',
+  merging: 'running',
   failed: 'error',
-  todo: 'idle',
+  merged: 'ok',
   discarded: 'idle',
-};
-
-const LEAD_STATUS: Record<BoardLead['state'], RunStatus> = {
-  running: 'running',
-  waiting: 'waiting',
-  failed: 'error',
-  idle: 'idle',
-  closed: 'idle',
+  done: 'ok',
 };
 
 const SPAN_STATUS: Record<TraceSpan['status'], RunStatus> = {
@@ -91,15 +76,14 @@ const SPAN_STATUS: Record<TraceSpan['status'], RunStatus> = {
 };
 
 const SPAWN_TOOLS = new Set(['Task', 'Agent']);
-const LIVE_PHASES = new Set<BoardActivity['phase']>(['thinking', 'tool', 'gate', 'merging']);
-const WORKING_PHASES = new Set<BoardActivity['phase']>([...LIVE_PHASES, 'starting']);
+const LIVE_PHASES = new Set<Phase>(['thinking', 'tool', 'gate', 'merging']);
+const WORKING_PHASES = new Set<Phase>([...LIVE_PHASES, 'starting']);
 
-/** The board's ready holds merging sessions; the phase tells them apart. */
-function sessionStatus(status: BoardTaskStatus, phase: BoardActivity['phase'] | null): RunStatus {
+function sessionStatus(state: WorkbenchSession['state'], phase: Phase | null): RunStatus {
   if (phase === 'waiting_approval' || phase === 'waiting_input') return 'waiting';
-  if (status === 'failed') return 'error';
+  if (state === 'failed') return 'error';
   if (phase !== null && WORKING_PHASES.has(phase)) return 'running';
-  return TASK_STATUS[status];
+  return SESSION_STATUS[state];
 }
 
 const byStart = (a: { start: number | null }, b: { start: number | null }) =>
@@ -127,13 +111,13 @@ function ownerOf(span: TraceSpan, byId: ReadonlyMap<string, TraceSpan>): TraceSp
 }
 
 /**
- * The session node with its calls and subagents filled from spans, task children first; a start
- * or end the head lacks comes from its own calls and turns, the end only once nothing runs.
+ * The session node with its calls and subagents filled from spans, the sessions it started first;
+ * a start or end the head lacks comes from its own calls and turns, the end only once nothing runs.
  */
 export function sessionNode(
   head: Omit<RunNode, 'tokens' | 'calls' | 'children'>,
   spans: readonly TraceSpan[],
-  tasks: RunNode[],
+  started: RunNode[],
 ): RunNode {
   const root: RunNode = { ...head, tokens: 0, calls: [], children: [] };
   const byId = new Map(spans.map((span) => [span.id, span]));
@@ -154,7 +138,6 @@ export function sessionNode(
         tokens: 0,
         calls: [],
         children: [],
-        taskId: null,
       };
       subagents.set(span.id, node);
     }
@@ -202,7 +185,7 @@ export function sessionNode(
     if (!turn.tokens && !called.get(turn.id) && turn.end !== null && turn.status !== 'running')
       holder.unreported = (holder.unreported ?? 0) + 1;
   }
-  root.children = [...tasks, ...root.children];
+  root.children = [...started, ...root.children];
   const timed = [...root.calls, ...own];
   const starts = timed.flatMap((item) => (item.start === null ? [] : [item.start]));
   const lasts = timed.flatMap((item) => {
@@ -216,53 +199,6 @@ export function sessionNode(
   return root;
 }
 
-/** One session node per segment with a session, oldest first; one node for a task without any. */
-function taskNodes(task: BoardTask, spans: ReadonlyMap<string, readonly TraceSpan[]>): RunNode[] {
-  const phase = task.activity?.phase ?? null;
-  const segments = task.segments
-    .filter(
-      (segment): segment is BoardSegment & { session_id: string } => segment.session_id !== null,
-    )
-    .sort((a, b) => (a.started_at ?? Infinity) - (b.started_at ?? Infinity));
-  if (segments.length === 0) {
-    return [
-      {
-        id: task.id,
-        kind: 'session',
-        runtime: null,
-        title: task.title,
-        model: null,
-        status: sessionStatus(task.status, phase),
-        phase,
-        start: null,
-        end: null,
-        tokens: 0,
-        calls: [],
-        children: [],
-        taskId: task.id,
-      },
-    ];
-  }
-  return segments.map((segment, index) =>
-    sessionNode(
-      {
-        id: segment.session_id,
-        kind: 'session',
-        runtime: segment.runtime,
-        title: segment.title,
-        model: segment.model,
-        status: sessionStatus(segment.status, index === segments.length - 1 ? phase : null),
-        phase: index === segments.length - 1 ? phase : null,
-        start: segment.started_at,
-        end: segment.ended_at,
-        taskId: task.id,
-      },
-      spans.get(segment.session_id) ?? [],
-      [],
-    ),
-  );
-}
-
 /** Newest start or end in the subtree; -Infinity without any. */
 function newest(node: RunNode): number {
   return node.children.reduce(
@@ -271,42 +207,51 @@ function newest(node: RunNode): number {
   );
 }
 
+export type RunSession = Pick<
+  WorkbenchSession,
+  'id' | 'title' | 'baseline_started_at' | 'runtime' | 'model' | 'state' | 'run'
+>;
+
+/**
+ * One tree per session that no listed session started, newest first; under each session the
+ * sessions it started, in list order. parents maps a session to the session that started it.
+ */
 export function runForest(
-  board: Pick<BoardModel, 'tasks' | 'leads'>,
-  sessions: readonly Pick<WorkbenchSession, 'id' | 'runtime'>[],
+  sessions: readonly RunSession[],
+  parents: ReadonlyMap<string, string>,
   spans: ReadonlyMap<string, readonly TraceSpan[]>,
 ): RunForest {
-  const runtimes = new Map(sessions.map((session) => [session.id, session.runtime]));
-  const leads = new Set(board.leads?.map((lead) => lead.session_id));
-  const trees = (board.leads ?? []).map((lead) => {
-    const node = sessionNode(
+  const listed = new Set(sessions.map((session) => session.id));
+  const parentOf = (id: string) => {
+    const parent = parents.get(id);
+    return parent !== undefined && listed.has(parent) ? parent : null;
+  };
+  const nodeOf = (session: RunSession): RunNode => {
+    const phase = session.run?.phase ?? null;
+    return sessionNode(
       {
-        id: lead.session_id,
-        kind: 'lead',
-        runtime: runtimes.get(lead.session_id) ?? null,
-        title: lead.title,
-        model: null,
-        status: LEAD_STATUS[lead.state],
-        phase: null,
+        id: session.id,
+        kind: 'session',
+        runtime: session.runtime,
+        title: listedTitle(session),
+        model: session.model,
+        status: sessionStatus(session.state, phase),
+        phase,
         start: null,
         end: null,
-        taskId: null,
       },
-      spans.get(lead.session_id) ?? [],
-      board.tasks
-        .filter((task) => task.owner_session_id === lead.session_id)
-        .flatMap((task) => taskNodes(task, spans)),
+      spans.get(session.id) ?? [],
+      sessions.filter((child) => parentOf(child.id) === session.id).map(nodeOf),
     );
-    node.model = node.calls.filter((call) => call.kind === 'llm').at(-1)?.name ?? null;
-    return { node, at: newest(node) };
-  });
-  trees.sort((a, b) => (a.at === b.at ? 0 : b.at - a.at));
-  return {
-    trees: trees.map(({ node }) => node),
-    adhoc: board.tasks
-      .filter((task) => !leads.has(task.owner_session_id ?? ''))
-      .flatMap((task) => taskNodes(task, spans)),
   };
+  const trees = sessions
+    .filter((session) => parentOf(session.id) === null)
+    .map((session) => {
+      const node = nodeOf(session);
+      return { node, at: newest(node) };
+    });
+  trees.sort((a, b) => (a.at === b.at ? 0 : b.at - a.at));
+  return { trees: trees.map(({ node }) => node), adhoc: [] };
 }
 
 function* walk(nodes: readonly RunNode[]): Generator<RunNode> {

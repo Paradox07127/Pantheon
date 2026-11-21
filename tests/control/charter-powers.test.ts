@@ -6,7 +6,6 @@ import {
   type BoardPlan,
   type CharterMode,
   type CharterPower,
-  type Milestone,
   type Principal,
   type Session,
   type WorkflowPolicy,
@@ -130,7 +129,7 @@ function commit(repository: string, name: string, contents: string) {
 }
 
 const scenarios: Record<
-  'plan_change' | 'accept_milestone' | 'merge_out_of_scope',
+  'plan_change' | 'merge_out_of_scope',
   (mode: CharterMode) => Promise<Outcome>
 > = {
   async plan_change(mode) {
@@ -159,35 +158,6 @@ const scenarios: Record<
       applied: plan().tasks[0]!.title === 'Export API',
       waiting: waiting(f, 'board.plan.proposal'),
       recorded: recorded(f, 'plan_change'),
-      ...refusal,
-    };
-  },
-  async accept_milestone(mode) {
-    const f = await plain();
-    setCharter(f, 'accept_milestone', mode);
-    const lead = leadWithPlan(f);
-    const plan = f.store.must<BoardPlan>('board_plans', 'lead');
-    f.store.update<BoardPlan>(
-      'board_plans',
-      {
-        ...plan,
-        accepted: { api: { at: f.store.now(), evidence: 'The report answers it', generation: 1 } },
-      },
-      plan.revision,
-    );
-    const refusal = await attempt(() =>
-      f.call(
-        'milestone.accept',
-        { milestone_id: 'release', evidence_refs: ['task:api'] },
-        null,
-        lead,
-      ),
-    );
-    return {
-      applied: !!f.store.list<Milestone>('milestones').find((row) => row.key === 'release')!
-        .acceptance,
-      waiting: waiting(f, 'milestone.ready_for_acceptance'),
-      recorded: recorded(f, 'accept_milestone'),
       ...refusal,
     };
   },
@@ -282,32 +252,12 @@ const scenarios: Record<
   },
 };
 
-const MILESTONE_CARD = 'The user accepts milestone release on the milestone card';
-
 type Row = Outcome & { power: keyof typeof scenarios; mode: CharterMode };
 
 it.each<Row>([
   { power: 'plan_change', mode: 'on', applied: true, waiting: false, recorded: true },
   { power: 'plan_change', mode: 'ask', applied: false, waiting: true, recorded: true },
-  { power: 'accept_milestone', mode: 'on', applied: true, waiting: false, recorded: true },
-  {
-    power: 'accept_milestone',
-    mode: 'ask',
-    applied: false,
-    waiting: true,
-    recorded: false,
-    refused: 'permission_denied',
-    reason: MILESTONE_CARD,
-  },
-  {
-    power: 'accept_milestone',
-    mode: 'off',
-    applied: false,
-    waiting: true,
-    recorded: false,
-    refused: 'permission_denied',
-    reason: MILESTONE_CARD,
-  },
+
   { power: 'merge_out_of_scope', mode: 'on', applied: true, waiting: false, recorded: true },
   {
     power: 'merge_out_of_scope',

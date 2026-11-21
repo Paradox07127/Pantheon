@@ -109,7 +109,7 @@ it('starts each part session with the whole brief of its part from the plan', as
   const { f, parts } = await startedParts(exportTask({ brief: BRIEF }));
   const input = firstInput(f, parts[1]!.id);
   for (const text of [
-    'Part writer\n\nTask export of the plan "Export ships this week", lane "Core", toward the milestone "Export ships".',
+    'Part writer\n\nTask export of the plan "Export ships this week", lane "Core".',
     "This is part 2 of 2 of task export. The other parts run in their own sessions at the same time: Part reader. Stay inside your part's scope.",
     'Goal:\nWrite part writer',
     BRIEF,
@@ -118,7 +118,6 @@ it('starts each part session with the whole brief of its part from the plan', as
     '- test -d src/writer',
     'Done when: this worktree merges after its gates pass. Commit your work and end your turn.',
     'Running beside you, in other worktrees:\n- docs "Export docs": docs/export.md',
-    'The milestone counts as reached when:\n- A filtered table exports only its rows',
     'Read the code and tests the goal names before you change anything.',
   ])
     expect(input).toContain(text);

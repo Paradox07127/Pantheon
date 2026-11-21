@@ -31,45 +31,49 @@ const sessions = () => query('session.list', { project_id });
 const decisions = async (range = 'today') =>
   (await query('project.decisions', { project_id, since: String(since(range)) })).items;
 
-// A lead with a one-task plan; the task's worker asks twice, under the default charter.
-const task = {
-  id: 'task-one',
-  title: 'Task one',
-  goal: 'Do the task.',
-  lane: 'lane-a',
-  depends_on: [],
-  source: ['The user asked for it.'],
-  scope: ['src/index.ts'],
-  acceptance: ['pnpm test'],
-  kind: { domain: 'backend-logic', tier: 't1' },
-  priority: 'normal',
-};
-const plan = {
-  base_version: 0,
-  headline: `Approved ${stamp}`,
-  lanes: [{ id: 'lane-a', title: 'Lane A' }],
-  tasks: [task],
-  milestones: [],
-  risks: [],
-  assumptions: [],
-};
-const lead = await call('session.create', {
+// A seed session's two prompts the user allows for the project, which stores a rule for each.
+const SEED = `verify-decided-seed-${stamp}`;
+await call('session.create', {
   project_id,
   runtime: 'fixture',
-  purpose: 'lead',
-  input: `verify-decided-lead-${stamp}\nfixture-script\n${JSON.stringify([{ tool: { name: 'update_board', arguments: plan } }])}`,
+  permission_mode: 'ask',
+  input: `${SEED}\nfixture-script\n${JSON.stringify([
+    { ask: { tool: 'Bash', input: { command: `pnpm test --filter seed-${stamp}` } } },
+    { ask: { tool: 'Bash', input: { command: `pnpm lint --filter seed-${stamp}` } } },
+    { say: 'seeded' },
+  ])}`,
 });
-await poll(
-  async () => (await sessions()).find((s) => s.id === lead.id)?.last_turn?.state === 'completed',
-  30_000,
-);
+const seed = await poll(async () => (await sessions()).find((s) => s.title === SEED), 30_000);
+for (let n = 0; n < 2; n++) {
+  const item = await poll(async () =>
+    (await query('needs_you.list')).items.find(
+      (i) => i.kind === 'permission' && i.session_id === seed?.id,
+    ),
+  );
+  if (!item) break;
+  await call(
+    'approval.respond',
+    { approval_id: item.source.id, decision: 'approve_project' },
+    item.source.revision,
+  );
+  await poll(
+    async () => !(await query('needs_you.list')).items.some((i) => i.source?.id === item.source.id),
+  );
+}
+const rules = await poll(async () => {
+  const list = await query('permission.rules', { project_id });
+  return list.length >= 2 && list;
+});
+result.rules = rules;
+check('前置：允许到项目后 permission.rules 有两条规则', rules?.length === 2, rules);
+
+// A direct session asks two commands the stored rules cover; the daemon answers both by rule.
 const COMMANDS = [`pnpm test --filter one-${stamp}`, `pnpm lint --filter two-${stamp}`];
 const WORKER = `verify-decided-worker-${stamp}`;
 const worker = await call('session.create', {
   project_id,
   runtime: 'fixture',
   permission_mode: 'ask',
-  task_id: `${lead.id}:task-one`,
   input: `${WORKER}\nfixture-script\n${JSON.stringify([
     ...COMMANDS.map((command) => ({ ask: { tool: 'Bash', input: { command } } })),
     { say: 'done' },
@@ -85,17 +89,22 @@ result.worker = workerDone && {
   waiting: workerDone.waiting,
   title: workerDone.title,
 };
-// A task session takes its task's title; the table and the sidebar show that.
 const workerTitle = workerDone?.title ?? WORKER;
+check(
+  '前置：这个会话的回合跑完，没有在等你',
+  workerDone?.last_turn?.state === 'completed' && workerDone.waiting === 0,
+  result.worker,
+);
+// The seed's prompts the user allowed are not decisions made for the user.
 const today = await poll(async () => {
   const items = await decisions();
   return items.length >= 2 && items;
 }, 20_000);
 check(
-  '前置：project.decisions 今天有 worker 的两个由 lead 批准的权限请求',
+  '前置：project.decisions 今天只有这个会话的两个按已存规则批准的权限请求',
   today &&
     today.length === 2 &&
-    today.every((i) => i.kind === 'prompt_approved' && i.session_id === worker.id),
+    today.every((i) => i.kind === 'prompt_by_rule' && i.session_id === worker.id && i.rule),
   { items: today, worker: result.worker },
 );
 if (!today || today.length < 2) {
@@ -121,13 +130,14 @@ check('前置：needs_you.list 有本项目的等待', all, all?.length);
 // The needs-you popover's footer counts today's decisions and opens the tab.
 await page.click({ role: 'button', name: `${all.length} 件事等你`, exact: true });
 const decided = await decisions();
-// The popover spans every project, and so does its footer: the sum of project.decisions today over the projects.
+// The popover spans every project, and so does its footer: the sum over the projects of what a
+// stored rule answered today, the only decision the list shows.
 const projects = (await query('board')).projects.filter((p) => p.removed_at === undefined);
 let todayAll = 0;
 for (const p of projects)
   todayAll += (
     await query('project.decisions', { project_id: p.id, since: String(since('today')) })
-  ).items.length;
+  ).items.filter((i) => i.kind === 'prompt_by_rule').length;
 const footerText = () =>
   page.evaluate(
     `(() => { const f = document.querySelector('.np .np-f'); return f && f.getClientRects().length ? f.textContent.replace(/\\s+/g, ' ').trim() : null; })()`,
@@ -137,7 +147,7 @@ let footer = null;
 await poll(async () => (footer = await footerText()) === `替你批准了 ${todayAll} 项今天`);
 result.footer_daemon = { this_project: decided.length, all_projects: todayAll };
 check(
-  'popover 底部是 "替你批准了 N 项今天"，N 等于各项目 project.decisions 今天的条数之和',
+  'popover 底部是 "替你批准了 N 项今天"，N 等于各项目 project.decisions 今天按规则批准的条数之和',
   footer === `替你批准了 ${todayAll} 项今天`,
   { footer, daemon: result.footer_daemon },
 );
@@ -189,6 +199,7 @@ const table = () =>
       return {
         action: cells[0]?.textContent.trim() ?? null,
         by: cells[1]?.textContent.trim() ?? null,
+        rule: cells[3]?.textContent.trim() ?? null,
         task: cells[4]?.querySelector('button')?.textContent.trim() ?? null,
         when: cells[5]?.textContent.trim() ?? null,
       };
@@ -197,20 +208,28 @@ const table = () =>
 const rowsMatch = (rows, items) =>
   !!rows &&
   rows.length === items.length &&
-  rows.every((r, n) => r.action === items[n].input_summary && r.by === 'lead');
+  rows.every(
+    (r, n) =>
+      r.action === items[n].input_summary && r.by === '已存规则' && r.rule === items[n].rule,
+  );
 const rows = await poll(async () => {
   const r = await table();
   return r?.length === decided.length && r;
 });
-check('表名为 "替你批准的"', rows, rows);
-check('行按顺序等于 project.decisions：操作是工具输入，批准者是 lead', rowsMatch(rows, decided), {
-  ui: rows,
-  daemon: decided.map((i) => [i.kind, i.input_summary, i.decided_by]),
-});
+check('表名为 "替你批准的"', rows, rows || (await table()));
+check(
+  '行按顺序等于 project.decisions：操作是工具输入，批准者是 已存规则，规则列是那条规则',
+  rowsMatch(rows, decided),
+  { ui: rows, daemon: decided.map((i) => [i.kind, i.input_summary, i.rule]) },
+);
 check('对照组：顺序倒过来时判 false', !rowsMatch(rows, [...decided].reverse()));
 check(
-  '行的任务列是 worker 会话的标题（session.list 的 title）',
-  rows && rows.every((r) => r.task === workerTitle),
+  '对照组：批准者当成 lead 时判 false',
+  !(Array.isArray(rows) && rows.length > 0 && rows.every((r) => r.by === 'lead')),
+);
+check(
+  '行的任务列是这个会话的标题（session.list 的 title）',
+  Array.isArray(rows) && rows.every((r) => r.task === workerTitle),
   rows?.map((r) => r.task),
 );
 result.shot = await page.screenshot('pair-approved');
@@ -279,12 +298,11 @@ const opened = await poll(() =>
   })()`),
 );
 const elsewhere = await page.evaluate(
-  `document.querySelector('[data-session="${lead.id}"]')?.getAttribute('aria-current') === 'true'`,
+  `document.querySelector('[data-session="${seed?.id}"]')?.getAttribute('aria-current') === 'true'`,
 );
-check('点行的任务链接后打开 worker 会话：侧栏行 aria-current，主区显示其标题', opened, opened);
-check('对照组：lead 会话的行不是当前', !elsewhere, elsewhere);
+check('点行的任务链接后打开这个会话：侧栏行 aria-current，主区显示其标题', opened, opened);
+check('对照组：存下规则的那个会话的行不是当前', !elsewhere, elsewhere);
 
-result.overrule = 'skipped: no fixture step makes a question a lead answered';
 result.errors = await errors();
 console.log(JSON.stringify(result, null, 2));
 page.close();

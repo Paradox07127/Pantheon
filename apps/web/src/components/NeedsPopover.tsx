@@ -11,7 +11,7 @@ import { Menu } from '@base-ui/react/menu';
 import { Popover } from '@base-ui/react/popover';
 import { CircleCheck, Ellipsis } from 'lucide-react';
 import type { WorkbenchSession } from '@pantheon/protocol';
-import { blocksText, decisionText, nextKey, primaryAction } from '../data/attention';
+import { decisionText, nextKey, primaryAction } from '../data/attention';
 import { useBoard } from '../data/board';
 import { runCommand } from '../data/commands';
 import { useCurrentProject } from '../data/current-project';
@@ -19,26 +19,17 @@ import { useDecisionsToday } from '../data/decisions-for-user';
 import {
   ageText,
   failureText,
-  needReasonText,
   needRowKey,
+  reasonText,
   useNow,
   type NeedsYouItem,
 } from '../data/needs-you';
-import { openPlanMemory } from '../data/memory-view';
-import { needsKey } from '../data/notice-tiers';
 import { visibleProjects } from '../data/projects';
 import { sessionTitle } from '../data/transcript';
 import { t } from '../i18n';
 import { holdRootFlag } from '../lib/root-flag';
-import {
-  needActions,
-  needCommand,
-  needWhat,
-  type NeedAction,
-  type NeedItem,
-} from '../data/need-actions';
+import { needActions, needCommand, type NeedAction } from '../data/need-actions';
 import { durationText } from '../lib/time-text';
-import { openSettingsPage } from '../screens/settings/settings-jump';
 import { runningSince, useProjectSessions } from '../shell/TrayPopover';
 import { useShell } from '../store';
 import { DiffCounts } from './DiffCounts';
@@ -57,12 +48,8 @@ interface ListRow {
   open?: () => void;
   /** Unix milliseconds the wait or run began; the oldest comes first. */
   since: number;
-  /** The tasks the row blocks; the most come first, before the oldest. */
-  blocks?: number;
   icon: ReactNode;
   title: string;
-  /** The tasks the row blocks, as text beside its title. */
-  count?: string | null;
   detail?: ReactNode;
   actions?: ReactNode;
   end?: ReactNode;
@@ -91,12 +78,10 @@ function openRow(row: ListRow) {
   else useShell.getState().openProject(row.projectId);
 }
 
-/** The rows by project; projects and their rows in the order of their first row: most blocks, then oldest. */
+/** The rows by project; projects and their rows in the order of their first row: oldest first. */
 function byProject(rows: readonly ListRow[]): Map<string, ListRow[]> {
   const groups = new Map<string, ListRow[]>();
-  for (const row of [...rows].sort(
-    (a, b) => (b.blocks ?? 0) - (a.blocks ?? 0) || a.since - b.since,
-  ))
+  for (const row of [...rows].sort((a, b) => a.since - b.since))
     groups.set(row.projectId, [...(groups.get(row.projectId) ?? []), row]);
   return groups;
 }
@@ -150,7 +135,6 @@ function listPopover(props: {
                         >
                           <span className="np-h">
                             <span className="np-t">{row.title}</span>
-                            {row.count && <span className="np-c">{row.count}</span>}
                           </span>
                           {row.detail && <span className="np-d">{row.detail}</span>}
                         </button>
@@ -174,8 +158,6 @@ export function needsGlyph(item: NeedsYouItem): ReactNode {
   switch (item.kind) {
     case 'permission':
       return <StateGlyph name={item.questions?.length ? 'question' : 'approval'} />;
-    case 'lead.question':
-      return <StateGlyph name="question" />;
     case 'session.reconciling':
       return <StateGlyph name="reconciling" />;
     case 'session.failed':
@@ -183,11 +165,6 @@ export function needsGlyph(item: NeedsYouItem): ReactNode {
       return <StateGlyph name="failed" />;
     case 'session.merge_blocked':
       return <MergeBlockedGlyph />;
-    case 'milestone.ready_for_acceptance':
-      return <StateGlyph name="ready" />;
-    case 'external.approval':
-    case 'board.lane.approval':
-      return <StateGlyph name="approval" />;
     default:
       return <StateGlyph name="baseline_review" />;
   }
@@ -210,7 +187,7 @@ const NO_KEYS: ReadonlySet<string> = new Set();
 
 /** Allow and deny for a request answered here; else the item's own buttons. */
 function itemActions(item: NeedsYouItem): NeedAction[] {
-  if (!answerable(item)) return needActions(item as NeedItem, undefined, undefined, item.rung);
+  if (!answerable(item)) return needActions(item);
   return [
     {
       key: 'approve',
@@ -225,7 +202,7 @@ function itemActions(item: NeedsYouItem): NeedAction[] {
   ];
 }
 
-/** What needs you across the projects, by project, the most tasks blocked first, then the longest wait. */
+/** What needs you across the projects, by project, the longest wait first. */
 export function NeedsPopover({
   items,
   trigger,
@@ -261,13 +238,10 @@ export function NeedsPopover({
   async function act(row: ListRow, item: NeedsYouItem, action: NeedAction, order: string[]) {
     if (action.reason !== null || answers[row.key] === ANSWERING) return;
     // A reply needs the answers its card asks for.
-    const command = action.key === 'reply' ? null : needCommand(item as NeedItem, action.key);
+    const command = action.key === 'reply' ? null : needCommand(item, action.key);
     if (!command) {
       setOpen(false);
-      if (action.key === 'budget') openSettingsPage(item.project_id, 'projects');
-      else if (action.key === 'board' || action.key === 'accept')
-        useShell.getState().openProjectSessions(item.project_id);
-      else openRow(row);
+      openRow(row);
       return;
     }
     setAnswers((all) => ({ ...all, [row.key]: ANSWERING }));
@@ -287,33 +261,22 @@ export function NeedsPopover({
   const listed = items.map((item) => {
     const sessionId = itemSession(item);
     const session = sessionId ? board?.sessions.find((s) => s.id === sessionId) : undefined;
-    const reason = item.memory_notes ? needWhat(item as NeedItem) : needReasonText(item);
+    const reason = reasonText(item.reason);
     const key = needRowKey(item);
     const failed = answers[key];
-    // A lead's question is answered on its card, which the lead's thread does not show.
-    const card = item.kind === 'lead.question' ? needsKey(item) : null;
     const kind = decisionText(item.decision);
-    const named = item.lane_title ?? (session && board ? sessionTitle(session, board) : undefined);
+    const named = session && board ? sessionTitle(session, board) : undefined;
     const row: ListRow = {
       key,
       projectId: item.project_id,
       sessionId,
-      ...(card && { open: () => useShell.getState().openProjectNeed(item.project_id, card) }),
-      ...(item.kind === 'board.lane.approval' && {
-        open: () => useShell.getState().openProjectSessions(item.project_id),
-      }),
-      ...(item.kind === 'memory.decision_budget' && {
-        open: () => openPlanMemory(item.project_id),
-      }),
       since: item.created_at,
-      blocks: item.blocks,
       icon: needsGlyph(item),
       title: kind ?? named ?? reason,
-      count: blocksText(item.blocks),
       detail: failed ? (
         <span role="alert">{failed}</span>
       ) : kind ? (
-        (item.question?.question ?? named ?? reason)
+        (named ?? reason)
       ) : named ? (
         reason
       ) : undefined,

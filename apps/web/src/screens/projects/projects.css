@@ -168,39 +168,6 @@
   min-width: 0;
   font-size: var(--fs-xs);
 }
-.pr-mt {
-  position: relative;
-  z-index: 1;
-  color: var(--tx2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.pr-mn {
-  color: var(--mu);
-  font-variant-numeric: tabular-nums;
-}
-.pr-bar {
-  grid-column: 1 / 3;
-  display: flex;
-  gap: 2px;
-  height: 6px;
-  min-width: 0;
-}
-.pr-bar i {
-  display: block;
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--tx) 10%, transparent);
-}
-.pr-bar .pr-done {
-  background: var(--ok);
-}
-.pr-bar .pr-run {
-  background: var(--run);
-}
-.pr-bar .pr-bad {
-  background: var(--bad);
-}
 .pr-none {
   grid-column: 1 / 3;
   color: var(--mu);

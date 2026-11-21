@@ -1,0 +1,49 @@
+/* A policy parameter: name, control, pin; anything after them spans the row. */
+.ps-rows > .ps-row.wf-pr {
+  grid-template-columns: minmax(0, 1fr) auto minmax(22px, auto);
+  column-gap: 16px;
+}
+.wf-nm {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.wf-nm > :first-child {
+  font-weight: 500;
+}
+.ps-rows .wf-pin,
+.wf-stp .ib {
+  width: 22px;
+  height: 22px;
+  border-radius: max(calc(var(--r-sm) - 2px), 4px);
+}
+.wf-pin[aria-pressed='false'] {
+  color: var(--mu);
+}
+.wf-stp .ib:disabled,
+.ps-rows .wf-pin:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.wf-err {
+  grid-column: 1 / -1;
+}
+
+/* The switch, then the hours while it is on. */
+.wf-qd {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.wf-stp {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.wf-n {
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  width: 48px;
+  text-align: center;
+}

@@ -1,11 +1,12 @@
-import type { BoardModel } from '@pantheon/protocol';
 import { t } from '../i18n';
 import './context-ring.css';
 
-type Task = BoardModel['tasks'][number];
-
 /** The share of the context window used; warns past 80%. */
-export function ContextRing({ context }: { context: NonNullable<Task['context']> }) {
+export function ContextRing({
+  context,
+}: {
+  context: { used_tokens: number; window_tokens: number };
+}) {
   const percent = Math.min(100, Math.round((context.used_tokens / context.window_tokens) * 100));
   return (
     <svg

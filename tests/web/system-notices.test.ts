@@ -78,25 +78,6 @@ const need = (id: string, extra: Partial<NeedsYouItem> = {}): NeedsYouItem => ({
   binding: { action: 'Bash', input_summary: 'pnpm db:migrate --env staging' },
   ...extra,
 });
-const external = need('beta-docs', {
-  source: { table: 'board_plans', id: 'beta-docs', revision: 1 },
-  kind: 'external.approval',
-  reason: 'external_approval',
-  session_id: 'beta-docs',
-  request_id: 'github:acme/docs#3',
-  binding: undefined,
-  actions: [{ command: 'external.approve', allowed: true }],
-});
-const leadQuestion = need('beta-lead', {
-  source: { table: 'board_plans', id: 'beta-lead', revision: 2 },
-  kind: 'lead.question',
-  session_id: 'beta-lead',
-  request_id: 'question-1',
-  reason: 'lead_question',
-  binding: undefined,
-  actions: [{ command: 'lead.question.answer', allowed: true }],
-  question: { id: 'question-1', at: 0, question: 'Split the partial refund?' } as never,
-});
 
 const session = (
   id: string,
@@ -378,64 +359,6 @@ describe('system notifications and in-app cards', () => {
     expect(sent().map((n) => n.body)).toEqual([zh('data.notifications.baselinePending')]);
   });
 
-  it('notifies an external request waiting for approval, and shows its card', async () => {
-    render({ items: [external] });
-    await settle();
-    // Its target names no session, so the desktop hands the click to the main window's strip.
-    expect(sent()).toEqual([
-      {
-        title: 'Write docs 等你审批',
-        body: zh('data.reason.externalApproval'),
-        target: { project_id: expect.stringMatching(/^beta\n/), session_id: '' },
-      },
-    ]);
-    expect(cards.shown()).toEqual(['Write docs']);
-  });
-
-  it('notifies a lane whose plan waits for approval, counts it on the badge and opens it where it is answered', async () => {
-    const openProjectNeed = vi.fn<(projectId: string, needKey: string) => void>();
-    useShell.setState({ openProjectNeed });
-    const lane = need('beta-docs', {
-      source: { table: 'board_plans', id: 'beta-docs', revision: 1 },
-      kind: 'board.lane.approval',
-      reason: 'lane_plan_awaiting_approval',
-      session_id: 'beta-docs',
-      request_id: 'lane-docs',
-      binding: undefined,
-      actions: [{ command: 'board.lane.approve', allowed: true }],
-    });
-    expect(badgeCount([lane])).toBe(1);
-    render({ items: [lane] });
-    await settle();
-    expect(sent()).toEqual([
-      {
-        title: 'Write docs 等你审批',
-        body: zh('data.reason.lanePlanAwaitingApproval'),
-        target: { project_id: expect.stringMatching(/^beta\n/), session_id: '' },
-      },
-    ]);
-    click!(sent()[0]!.target);
-    expect(openProjectNeed.mock.calls).toEqual([['beta', 'board_plans:beta-docs:lane-docs']]);
-    expect(openProjectSession).not.toHaveBeenCalled();
-  });
-
-  it('names a lane whose plan waits for approval by its lane title in the notice and on its card', async () => {
-    const lane = need('beta-docs', {
-      source: { table: 'board_plans', id: 'beta-docs', revision: 1 },
-      kind: 'board.lane.approval',
-      reason: 'lane_plan_awaiting_approval',
-      session_id: 'beta-docs',
-      request_id: 'lane-docs',
-      lane_title: 'Docs lane',
-      binding: undefined,
-      actions: [{ command: 'board.lane.approve', allowed: true }],
-    });
-    render({ items: [lane] });
-    await settle();
-    expect(sent().map((n) => n.title)).toEqual(['Docs lane 等你审批']);
-    expect(cards.shown()).toEqual(['Docs lane']);
-  });
-
   it("reads every project's session list again when the stream comes back live", async () => {
     const query = vi.fn(async (_method: string) => ({
       ok: false,
@@ -495,34 +418,22 @@ describe('system notifications and in-app cards', () => {
 });
 
 describe('the dock badge', () => {
-  it('counts only what waits for an answer: requests, lead questions and external approvals', () => {
+  it('counts only what waits for an answer: pending requests', () => {
     const items: NeedsYouItem[] = [
       need('approval-1'),
       need('approval-2', { project_id: 'alpha', questions: [] }),
-      need('lead', {
-        source: { table: 'board_plans', id: 'lead', revision: 1 },
-        kind: 'lead.question',
-        reason: 'lead_question',
-      }),
-      need('external', {
-        source: { table: 'board_plans', id: 'external', revision: 1 },
-        kind: 'external.approval',
-        reason: 'external_approval',
-      }),
       need('undelivered', { status: 'undelivered', reason: 'answer_undelivered' }),
       ...(
         [
           ['session.failed', 'session_failed'],
           ['session.gate_failed', 'gate_failed'],
           ['session.merge_blocked', 'merge_blocked'],
-          ['milestone.ready_for_acceptance', 'milestone_ready_for_acceptance'],
-          ['project.over_budget', 'project_over_budget'],
         ] as const
       ).map(([kind, reason]) =>
         need(kind, { source: { table: 'sessions', id: kind, revision: 1 }, kind, reason }),
       ),
     ];
-    expect(badgeCount(items)).toBe(4);
+    expect(badgeCount(items)).toBe(2);
   });
 });
 
@@ -588,32 +499,6 @@ describe('a click on a system notification', () => {
       ['beta', 'beta-login'],
       ['beta', 'beta-login'],
     ]);
-  });
-
-  it("opens a lead's question where it is answered, and the lead's session once it is answered", async () => {
-    const openProjectNeed = vi.fn<(projectId: string, needKey: string) => void>();
-    useShell.setState({ openProjectNeed });
-    render({ items: [leadQuestion] });
-    await settle();
-    click!(sent()[0]!.target);
-    expect(openProjectNeed.mock.calls).toEqual([['beta', 'beta-lead:question-1']]);
-    expect(openProjectSession).not.toHaveBeenCalled();
-    render({ items: [] });
-    click!(sent()[0]!.target);
-    expect(openProjectSession).toHaveBeenCalledWith('beta', 'beta-lead');
-    expect(openProjectNeed).toHaveBeenCalledTimes(1);
-  });
-
-  it('opens an external request waiting for approval where it is answered', async () => {
-    const openProjectNeed = vi.fn<(projectId: string, needKey: string) => void>();
-    useShell.setState({ openProjectNeed });
-    render({ items: [external] });
-    await settle();
-    for (const target of sent().map((n) => n.target)) click!(target);
-    expect(openProjectNeed.mock.calls).toEqual([
-      ['beta', 'board_plans:beta-docs:github:acme/docs#3'],
-    ]);
-    expect(openProjectSession).not.toHaveBeenCalled();
   });
 });
 

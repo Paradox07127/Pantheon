@@ -22,10 +22,8 @@ vi.mock('@/data/commands', () => ({
   runCommand: vi.fn(async () => ({ ok: true, value: null })),
 }));
 import { NeedsPopover } from '@/components/NeedsPopover';
-import { RequestCard } from '@/components/RequestCard';
 import { nextKey } from '@/data/attention';
 import { runCommand } from '@/data/commands';
-import type { BoardNeed } from '@/data/need-actions';
 import { zh, zhf } from './i18n-setup.js';
 
 const NOW = Date.now();
@@ -40,28 +38,28 @@ const need = (over: Partial<NeedsYouItem>): NeedsYouItem => ({
   created_at: NOW - 5 * MINUTE,
   reason: 'permission_requested',
   decision: 'permission',
-  blocks: 0,
   primary: 'approval.respond',
   actions: [{ command: 'approval.respond', allowed: true }],
   ...over,
 });
 
-const plan = need({
-  source: { table: 'board_plans', id: 'plan-1', revision: 4 },
-  kind: 'board.plan.proposal',
-  session_id: 'lead-1',
-  request_id: 'proposal-1',
-  created_at: NOW - 12 * MINUTE,
-  reason: 'plan_proposal_awaiting_decision',
-  decision: 'plan_change',
-  blocks: 3,
-  primary: 'board.plan.proposal.resolve',
-  actions: [{ command: 'board.plan.proposal.resolve', allowed: true }],
+const gate = need({
+  source: { table: 'sessions', id: 'session-login', revision: 4 },
+  kind: 'session.gate_failed',
+  session_id: undefined,
+  status: 'failed',
+  created_at: NOW - 25 * MINUTE,
+  reason: 'gate_failed',
+  decision: 'repeated_failure',
+  primary: 'session.merge',
+  actions: [
+    { command: 'session.merge', allowed: true },
+    { command: 'session.gates.run', allowed: true },
+  ],
 });
 const asked = need({
   source: { table: 'approvals', id: 'approval-2', revision: 1 },
   created_at: NOW - 20 * MINUTE,
-  blocks: 1,
 });
 const allowed = need({});
 
@@ -69,7 +67,6 @@ const trigger = createElement('button', { type: 'button' }, 'count');
 const root = (tree: unknown) => find(tree as never, (n) => !!n.props.onOpenChange);
 const rows = (tree: unknown) => nodes(tree as never).filter((n) => n.type === 'li');
 const buttons = (row: ReactElement) => nodes(row).filter((n) => n.type === 'button');
-const blocks = (count: number) => zhf('data.attention.blocks', { count });
 
 const open = (items: readonly NeedsYouItem[]) => {
   const h = mount(() => NeedsPopover({ items, trigger }));
@@ -114,25 +111,23 @@ describe('what needs you, by the decision it asks', () => {
     expect(nextKey(['a'], 'a')).toBeNull();
   });
 
-  it('lists the items in the daemon order with what to decide and the tasks each blocks', () => {
-    const h = open([plan, asked, allowed]);
+  it('lists the items, the longest wait first, with what to decide', () => {
+    const h = open([gate, asked, allowed]);
     const [first, second, third] = rows(h.value);
-    expect(text(first)).toContain(zh('data.attention.decision.planChange'));
-    expect(text(first)).toContain(blocks(3));
+    expect(text(first)).toContain(zh('data.attention.decision.repeatedFailure'));
     expect(text(second)).toContain(zh('data.attention.decision.permission'));
-    expect(text(second)).toContain(blocks(1));
     expect(text(buttons(third!)[0])).toBe(`${zh('data.attention.decision.permission')}Fix login`);
   });
 
   it('gives each row one button, named by the action that settles it, and the rest in its menu', () => {
-    const h = open([plan, asked]);
+    const h = open([gate, asked]);
     expect(
       rows(h.value).map((row) =>
         buttons(row)
           .slice(1)
           .map((b) => text(b)),
       ),
-    ).toEqual([[zh('board.plan.proposal.accept')], [zh('projects.needs.allow')]]);
+    ).toEqual([[zh('board.needs.actions.merge')], [zh('projects.needs.allow')]]);
     const more = find(
       rows(h.value)[1],
       (n) =>
@@ -168,107 +163,10 @@ describe('what needs you, by the decision it asks', () => {
     expect(rows(h.value)).toHaveLength(0);
   });
 
-  it("approves the plan of a lane that waits for it, and opens the project's sessions from the row", async () => {
-    const lane = need({
-      source: { table: 'board_plans', id: 'lead-1', revision: 4 },
-      kind: 'board.lane.approval',
-      session_id: 'lead-1',
-      request_id: 'lane-docs',
-      reason: 'lane_plan_awaiting_approval',
-      decision: 'plan_change',
-      primary: 'board.lane.approve',
-      actions: [{ command: 'board.lane.approve', allowed: true }],
-    });
-    const h = open([lane]);
-    const [row] = rows(h.value);
-    expect(buttons(row!).map((b) => text(b))).toEqual([
-      zh('data.attention.decision.planChange') + zh('data.reason.lanePlanAwaitingApproval'),
-      zh('board.needs.actions.approvePlan'),
-    ]);
-    buttons(row!)[0]!.props.onClick();
-    expect(mock.shell.openProjectSessions).toHaveBeenCalledWith('alpha');
-    expect(mock.shell.openProjectSession).not.toHaveBeenCalled();
-    buttons(row!)[1]!.props.onClick();
-    await h.flush();
-    expect(runCommand).toHaveBeenCalledWith(
-      'board.lane.approve',
-      { project_id: 'alpha', lead_session_id: 'lead-1', lane_id: 'lane-docs' },
-      null,
-    );
-    expect(rows(h.value)).toHaveLength(0);
-  });
-
-  it.each([
-    ['Docs lane', 'Docs lane', 'Lead plan'],
-    [undefined, 'Lead plan', 'Docs lane'],
-  ])(
-    'names a lane waiting for plan approval with lane title %s as %s',
-    (laneTitle, shown, hidden) => {
-      mock.board.board.sessions.push({ id: 'lead-1', project_id: 'alpha', title: 'Lead plan' });
-      const lane = need({
-        source: { table: 'board_plans', id: 'lead-1', revision: 4 },
-        kind: 'board.lane.approval',
-        session_id: 'lead-1',
-        request_id: 'lane-docs',
-        reason: 'lane_plan_awaiting_approval',
-        decision: 'plan_change',
-        primary: 'board.lane.approve',
-        actions: [{ command: 'board.lane.approve', allowed: true }],
-        ...(laneTitle && { lane_title: laneTitle }),
-      });
-      const said = text(buttons(rows(open([lane]).value)[0]!)[0]!);
-      expect(said).toBe(zh('data.attention.decision.planChange') + shown);
-      expect(said).not.toContain(hidden);
-    },
-  );
-
-  it('holds the approve button of a lane whose approval the backend refuses', () => {
-    const lane = need({
-      source: { table: 'board_plans', id: 'lead-1', revision: 4 },
-      kind: 'board.lane.approval',
-      session_id: 'lead-1',
-      request_id: 'lane-docs',
-      reason: 'lane_plan_awaiting_approval',
-      decision: 'plan_change',
-      primary: 'board.lane.approve',
-      actions: [
-        { command: 'board.lane.approve', allowed: false, disabled_reason: 'permission_denied' },
-      ],
-    });
-    const h = open([lane]);
-    const approve = buttons(rows(h.value)[0]!)[1]!;
-    expect(approve.props['aria-disabled']).toBe(true);
-    approve.props.onClick();
-    expect(runCommand).not.toHaveBeenCalled();
-  });
-
   it('says in one sentence that nothing needs you', () => {
     const h = open([]);
     expect(text(find(h.value, (n) => !!n.props.onKeyDown))).toBe(
       zh('components.needsPopover.empty'),
     );
-  });
-});
-
-describe('the board strip', () => {
-  const card = (item: BoardNeed, extra: Record<string, unknown> = {}) =>
-    mount(() =>
-      RequestCard({
-        item,
-        size: 'compact',
-        who: 'Fix login',
-        now: NOW,
-        run: async () => null,
-        onOpenSession: () => {},
-        ...extra,
-      }),
-    );
-  const strip = (item: NeedsYouItem): BoardNeed =>
-    ({ ...item, binding: { input_summary: 'pnpm test' }, unblocks: item.blocks }) as BoardNeed;
-
-  it('names what to decide and the tasks blocked, and no count for a row that blocks none', () => {
-    expect(text(card(strip(asked)).value)).toContain(zh('data.attention.decision.permission'));
-    expect(text(card(strip(asked)).value)).toContain(blocks(1));
-    expect(text(card(strip(allowed)).value)).not.toContain(blocks(0));
   });
 });

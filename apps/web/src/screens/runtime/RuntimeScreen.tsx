@@ -8,7 +8,7 @@ import { ReadStatus } from '../../components/ReadStatus';
 import { RuntimeGlyph } from '../../components/RuntimeGlyph';
 import { StateGlyph, type GlyphName } from '../../components/SessionStateIcon';
 import { Skeleton } from '../../components/Skeleton';
-import { useBoardView } from '../../data/board-view';
+import { useBoard } from '../../data/board';
 import { runCommand } from '../../data/commands';
 import { failureText, useNow } from '../../data/needs-you';
 import { useRunHistory } from '../../data/run-history';
@@ -16,13 +16,11 @@ import { useRunSpans } from '../../data/trace';
 import { elapsedText } from '../../data/transcript';
 import { currentLocale, t } from '../../i18n';
 import { shortcutKeys } from '../../lib/shortcuts';
-import { useDelayed } from '../../lib/use-delayed';
 import { useShell } from '../../store';
 import { tokenText } from '../../lib/number-text';
 import { CallDetail } from './CallDetail';
 import { CallTable } from './CallTable';
 import {
-  boardFacts,
   callRows,
   type CallFilter,
   type CallLine,
@@ -32,7 +30,7 @@ import {
 } from './call-rows';
 import { isLive, runForest, type RunForest, type RunStatus } from './run-tree';
 import { laneFigures, liveFigures, rangeFigures, type RunFigures } from './run-stats';
-import { onlySession, runSessionIds, runtimeBoard, splitEnded } from './runtime-model';
+import { onlySession, runtimeSessions, sessionFacts, splitEnded } from './runtime-model';
 import './runs-page.css';
 
 /** From this long on a call counts as slow, ms, while the diagnostics are unread; the daemon's slow-tool finding starts there too. */
@@ -46,6 +44,7 @@ const NO_IDS: readonly string[] = [];
 const NO_KEYS: ReadonlySet<string> = new Set();
 const NO_FACTS: ReadonlyMap<string, SessionFacts> = new Map();
 const NO_RUN: RunForest = { trees: [], adhoc: [] };
+const NO_PARENTS: ReadonlyMap<string, string> = new Map();
 const ALL_TIME = { from: 0, to: null };
 
 const ENDED_GLYPH: Record<RunStatus, GlyphName> = {
@@ -182,18 +181,30 @@ export function RunsView({
   }) => void;
 }) {
   const history = view === 'history';
-  const boardView = useBoardView(projectId, 1);
-  const model = boardView.data;
-  // A board already shown that a read is replacing gets its status bar only once that read runs long.
-  const boardSlow = useDelayed(!!(boardView.loading || boardView.refreshing));
   // Completed work ages out even when the daemon has no new events to publish.
-  const windowNow = Math.max(model?.now ?? 0, useNow(15_000));
-  const board = useMemo(() => (model ? runtimeBoard(model, windowNow) : null), [model, windowNow]);
+  const windowNow = useNow(15_000);
+  const snapshot = useBoard((s) => s.board?.sessions);
+  const events = useBoard((s) => s.events);
+  const parents = useMemo(
+    () =>
+      snapshot
+        ? new Map(
+            snapshot.flatMap((s) =>
+              s.spawned_by ? [[s.id, s.spawned_by.session_id] as const] : [],
+            ),
+          )
+        : NO_PARENTS,
+    [snapshot],
+  );
+  const shown = useMemo(
+    () => (sessions && !history ? runtimeSessions(sessions, parents, windowNow) : NO_SESSIONS),
+    [sessions, history, parents, windowNow],
+  );
   const ids = useMemo(() => {
-    if (!board || history) return NO_IDS;
-    const all = runSessionIds(board);
+    if (shown.length === 0) return NO_IDS;
+    const all = shown.map((s) => s.id);
     return sessionId === null ? all : all.filter((id) => id === sessionId);
-  }, [board, history, sessionId]);
+  }, [shown, sessionId]);
   const liveSpans = useRunSpans(projectId, ids);
   // The history lanes whose spans are read, kept per project.
   const [opened, setOpened] = useState<{ projectId: string | null; ids: readonly string[] }>({
@@ -212,15 +223,16 @@ export function RunsView({
 
   const whole = useMemo(
     () =>
-      board && !history
-        ? onlySession(runForest(board, sessions ?? NO_SESSIONS, liveSpans), sessionId)
-        : NO_RUN,
-    [board, history, sessions, liveSpans, sessionId],
+      sessions && !history ? onlySession(runForest(shown, parents, liveSpans), sessionId) : NO_RUN,
+    [sessions, history, shown, parents, liveSpans, sessionId],
   );
-  const { live, ended } = useMemo(() => splitEnded(whole, board?.tasks ?? []), [whole, board]);
+  const { live, ended } = useMemo(() => splitEnded(whole, shown), [whole, shown]);
   const forest = history ? past.forest : live;
-  const now = Math.max(model?.now ?? 0, useNow(!history && isLive(forest) ? 1000 : 15_000));
-  const facts = useMemo(() => (model ? boardFacts(model) : NO_FACTS), [model]);
+  const now = useNow(!history && isLive(forest) ? 1000 : 15_000);
+  const facts = useMemo(
+    () => (shown.length ? sessionFacts(shown, events) : NO_FACTS),
+    [shown, events],
+  );
   const recorded = useMemo(() => new Set(sessions?.map((s) => s.id)), [sessions]);
 
   const [only, setOnly] = useState<Only>('all');
@@ -348,7 +360,7 @@ export function RunsView({
     spans.get(id)?.filter((span) => span.kind === 'turn' && span.parent === null).length ?? 0;
   const viewKeys = shortcutKeys('trace-view');
   const empty =
-    !history && !!model && forest.trees.length + forest.adhoc.length + ended.length === 0;
+    !history && !!sessions && forest.trees.length + forest.adhoc.length + ended.length === 0;
 
   return (
     <main className="rpg" data-detail={detailRow ? '' : undefined}>
@@ -360,16 +372,7 @@ export function RunsView({
             : t({ id: 'runs.page.nowLabel', defaultMessage: 'Sessions running now' })
         }
       >
-        {history ? (
-          <ReadStatus label="Trace" {...past.trace} />
-        ) : (
-          (boardView.error || !(boardView.loading || boardView.refreshing) || boardSlow) && (
-            <ReadStatus
-              label={t({ id: 'runtime.readStatus', defaultMessage: 'Run status' })}
-              {...boardView}
-            />
-          )
-        )}
+        {history && <ReadStatus label="Trace" {...past.trace} />}
         <ReadStatus
           label="Trace"
           stale={spans.stale}
@@ -394,7 +397,7 @@ export function RunsView({
               : null
           }
           readAt={readTimes.length ? Math.min(...readTimes) : null}
-          reload={spans.reload ?? boardView.reload}
+          reload={spans.reload}
         />
         {empty ? (
           <EmptyState
@@ -406,8 +409,8 @@ export function RunsView({
               onClick: showHistory,
             }}
           />
-        ) : !(history ? shownTrace : model) ? (
-          (history ? past.trace.loading : boardView.loading) && <Skeleton className="rpg-skel" />
+        ) : !(history ? shownTrace : sessions) ? (
+          (!history || past.trace.loading) && <Skeleton className="rpg-skel" />
         ) : (
           <>
             <div

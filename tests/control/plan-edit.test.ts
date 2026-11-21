@@ -1,14 +1,7 @@
 import { afterEach, expect, it } from 'vitest';
 import { FixtureAdapter } from '@pantheon/adapters';
 import { id } from '@pantheon/domain';
-import type {
-  BoardPlan,
-  LeadNote,
-  Milestone,
-  Principal,
-  Session,
-  SessionTurn,
-} from '@pantheon/domain';
+import type { BoardPlan, LeadNote, Principal, Session, SessionTurn } from '@pantheon/domain';
 import { fixture, insertSession, user } from '../helpers.js';
 import { git } from './workbench-fixture.js';
 
@@ -349,9 +342,6 @@ it("drops a milestone that leaves with its last task from lane stops and an assu
     assumptions: [{ text: 'Exports are CSV only.', id: 'csv' }],
   });
   expect(planOf(f, lead).assumptions[0]).not.toHaveProperty('milestone');
-  expect(
-    f.store.list<Milestone>('milestones').find((row) => row.key === 'release')?.removed_at,
-  ).toBeDefined();
 });
 
 it('stores no stops and no affects once an edit removes every milestone and task they name', async () => {
@@ -669,8 +659,6 @@ it('updates milestone membership at once for unfinished work and removes it with
       edit(f, user, lead, [{ type: 'set_task', task_id: 'api', patch: { milestone } }]).applied,
     ).toBe(true);
     expect(taskOf(f, lead, 'api')?.milestone).toBe(milestone ?? undefined);
-    const release = f.store.list<Milestone>('milestones').find((row) => row.key === 'release')!;
-    expect(release.task_ids).toEqual(milestone ? ['ui', 'api'] : ['ui']);
   }
   expect(planOf(f, lead).generations).toEqual(generations);
 });
@@ -811,72 +799,6 @@ it('applies iteration and estimate record edits immediately without waking the l
   expect(
     failure(() =>
       edit(f, user, lead, [{ type: 'set_task', task_id: 'api', patch: { iteration: 'missing' } }]),
-    ).code,
-  ).toBe('invalid_input');
-});
-
-it('sets a milestone title and due day at once without waking the lead or a new generation', async () => {
-  const f = await setup(),
-    lead = leadOf(f);
-  writePlan(f, lead);
-  const plan = planOf(f, lead);
-  f.call(
-    'board.plan.update',
-    {
-      project_id: f.project.id,
-      base_version: plan.plan_version,
-      headline: plan.headline,
-      lanes: plan.lanes,
-      tasks: plan.tasks.map((task) => ({
-        ...task,
-        milestone: task.id === 'ui' ? 'release' : undefined,
-      })),
-      milestones: [
-        {
-          id: 'release',
-          title: 'Release',
-          criteria: ['Exports download'],
-          tasks: ['ui'],
-          due_on: '2027-03-20',
-        },
-      ],
-      risks: [],
-      assumptions: [],
-    },
-    null,
-    lead,
-  );
-  const release = () => f.store.list<Milestone>('milestones').find((row) => row.key === 'release')!;
-  expect(release().due_on).toBe('2027-03-20');
-  running(f, lead, 'ui');
-  const generations = planOf(f, lead).generations;
-  const result = edit(f, user, lead, [
-    {
-      type: 'set_milestone',
-      milestone_id: 'release',
-      patch: { title: 'Launch', due_on: '2027-04-01' },
-    },
-  ]);
-  expect(result.applied).toBe(true);
-  expect(release()).toMatchObject({ title: 'Launch', due_on: '2027-04-01', task_ids: ['ui'] });
-  expect(planOf(f, lead)).toMatchObject({ pending_edits: [], contract_changed: [], generations });
-  expect(userEdits(f, lead).at(-1)!.edit?.wake).toBe(false);
-  await f.control.tick();
-  expect(
-    f.store
-      .list<SessionTurn>('session_turns')
-      .filter((turn) => turn.session_id === lead.session_id && turn.origin === 'tracker'),
-  ).toEqual([]);
-  edit(f, user, lead, [
-    { type: 'set_milestone', milestone_id: 'release', patch: { due_on: null } },
-  ]);
-  expect(release()).not.toHaveProperty('due_on');
-  expect(release().title).toBe('Launch');
-  expect(
-    failure(() =>
-      edit(f, user, lead, [
-        { type: 'set_milestone', milestone_id: 'missing', patch: { title: 'X' } },
-      ]),
     ).code,
   ).toBe('invalid_input');
 });

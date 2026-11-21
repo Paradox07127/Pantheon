@@ -8,12 +8,10 @@ import {
   type BoardPlan,
   type ExternalEvent,
   type LeadNote,
-  type Milestone,
   type PendingPlanEdit,
   type PlanProposal,
   type Principal,
   type Project,
-  type ProjectGoal,
   type Session,
   type SessionTurn,
   type TaskKind,
@@ -35,7 +33,6 @@ import { runtime } from './admission.js';
 import { planUnfinished, planViews, retiredBinding } from './board-plan.js';
 import { residentPlan } from './agent-always-on.js';
 import { deviceHasLabel, listDevices } from './devices.js';
-import { history } from './project-facts.js';
 import { INBOX_HEADER, appendNote, noteOtherPlan, opText, refuteText } from './lead-inbox.js';
 import { recordPlanDecisions } from './plan-decisions.js';
 import { reviewPlan } from './review.js';
@@ -48,8 +45,6 @@ import {
 import { wakeLead } from './task-tracking.js';
 import { kindOfPaths, risky, scopeTierReason } from './task-kind.js';
 import { chartered } from './charter.js';
-import { approveLane, firstPlanHolds, setLaneDepth } from './lane-stops.js';
-import { requireTriggerEvent } from './replan.js';
 import { workflowPolicy } from './workflow-policy.js';
 
 /** The longest iteration in days, so a mistyped year cannot make the board count each day of centuries. */
@@ -96,35 +91,21 @@ const repeated = (ids: string[]) => ids.find((value, index) => ids.indexOf(value
 
 function planProblem(input: PlanInput): string | null {
   const lanes = input.lanes.map((lane) => lane.id),
-    tasks = new Map(input.tasks.map((task) => [task.id, task])),
-    milestones = new Map(input.milestones.map((milestone) => [milestone.id, milestone]));
+    tasks = new Map(input.tasks.map((task) => [task.id, task]));
   const lane = repeated(lanes);
   if (lane) return `lanes: lane id ${lane} is repeated`;
   const task = repeated(input.tasks.map((task) => task.id));
   if (task) return `tasks: task id ${task} is repeated`;
-  const milestone = repeated(input.milestones.map((milestone) => milestone.id));
-  if (milestone) return `milestones: milestone id ${milestone} is repeated`;
   for (const task of input.tasks) {
     if (!lanes.includes(task.lane)) return `tasks: task ${task.id} names unknown lane ${task.lane}`;
     if (task.runtime === 'fixture')
       return `tasks: task ${task.id} names runtime fixture, which only tests and acceptance runs use`;
     const climbing = task.scope.find((entry) => entry.split('/').includes('..'));
     if (climbing) return `tasks: task ${task.id} scope ${climbing} contains a .. segment`;
-    if (task.milestone && !milestones.get(task.milestone)?.tasks.includes(task.id))
-      return `tasks: task ${task.id} names milestone ${task.milestone}, which does not list it`;
     for (const upstream of task.depends_on) {
       if (upstream === task.id) return `tasks: task ${task.id} depends on itself`;
       if (!tasks.has(upstream)) return `tasks: task ${task.id} depends on unknown task ${upstream}`;
     }
-  }
-  for (const milestone of input.milestones) {
-    const listed = repeated(milestone.tasks);
-    if (listed) return `milestones: milestone ${milestone.id} lists task ${listed} twice`;
-    for (const taskId of milestone.tasks)
-      if (tasks.get(taskId)?.milestone !== milestone.id)
-        return tasks.has(taskId)
-          ? `milestones: milestone ${milestone.id} lists task ${taskId}, which names another milestone`
-          : `milestones: milestone ${milestone.id} lists unknown task ${taskId}`;
   }
   const assumptionIds = input.assumptions.flatMap((assumption) =>
     assumption.id ? [assumption.id] : [],
@@ -135,25 +116,9 @@ function planProblem(input: PlanInput): string | null {
     const named = assumption.id ?? `${index + 1} (${assumption.text.slice(0, 60)})`;
     const unknown = assumption.affects?.find((taskId) => !tasks.has(taskId));
     if (unknown) return `assumptions: assumption ${named} affects unknown task ${unknown}`;
-    if (assumption.milestone && !milestones.has(assumption.milestone))
-      return `assumptions: assumption ${named} names unknown milestone ${assumption.milestone}`;
   }
   const risk = repeated(input.risks.flatMap((risk) => (risk.id ? [risk.id] : [])));
   if (risk) return `risks: risk id ${risk} is repeated`;
-  const astray = input.risks.find((risk) => risk.milestone && !milestones.has(risk.milestone));
-  if (astray)
-    return `risks: risk ${astray.id ?? astray.text.slice(0, 60)} names unknown milestone ${astray.milestone}`;
-  for (const lane of input.lanes) {
-    const stop = lane.stops
-      ?.filter((stop) => stop.startsWith('milestone:'))
-      .map((stop) => stop.slice('milestone:'.length))
-      .find((milestoneId) => !milestones.has(milestoneId));
-    if (stop) return `lanes: lane ${lane.id} stops at unknown milestone ${stop}`;
-  }
-  for (const milestone of input.milestones)
-    for (const trigger of milestone.replan_if ?? [])
-      if (trigger.type === 'assumption_false' && !assumptionIds.includes(trigger.assumption_id))
-        return `milestones: milestone ${milestone.id} names unknown assumption ${trigger.assumption_id}`;
   const cycle = dependencyCycle(input.tasks);
   if (cycle) return `tasks: tasks ${cycle.join(' -> ')} form a dependency cycle`;
   return null;
@@ -230,117 +195,6 @@ function dependencyCycle(tasks: PlanInput['tasks']): string[] | null {
     if (cycle) return cycle;
   }
   return null;
-}
-
-/** The plan with a left-out milestone goal taken from the lead's stored row, and a null goal left out. */
-function withStoredGoals(ctx: ControlContext, leadId: string, input: PlanInput): PlanInput {
-  const rows = ctx.store
-    .list<Milestone>('milestones')
-    .filter((row) => row.owner_session_id === leadId);
-  return {
-    ...input,
-    milestones: input.milestones.map(({ goal, ...milestone }) => {
-      const kept =
-        goal === undefined ? rows.find((row) => row.key === milestone.id)?.goal_id : goal;
-      return kept ? { ...milestone, goal: kept } : milestone;
-    }),
-  };
-}
-
-/** A milestone goal that names no goal of the project, or newly names an archived one, or null. */
-function goalLinkProblem(
-  ctx: ControlContext,
-  projectId: string,
-  leadId: string,
-  milestones: PlanInput['milestones'],
-): string | null {
-  for (const milestone of milestones) {
-    if (!milestone.goal) continue;
-    const goal = ctx.store.get<ProjectGoal>('project_goals', milestone.goal);
-    if (goal?.project_id !== projectId)
-      return `milestones: milestone ${milestone.id} names unknown goal ${milestone.goal}; use an id from project_read.goals`;
-    const held = ctx.store
-      .list<Milestone>('milestones')
-      .some(
-        (row) =>
-          row.owner_session_id === leadId && row.key === milestone.id && row.goal_id === goal.id,
-      );
-    if (goal.archived_at && !held)
-      return `milestones: milestone ${milestone.id} names archived goal ${goal.id}; use an id from project_read.goals`;
-  }
-  return null;
-}
-
-/** Upserts the lead's milestones by key; acceptance stays and its hash decides whether it holds. */
-function writeLeadMilestones(
-  ctx: ControlContext,
-  p: Principal,
-  leadId: string,
-  projectId: string,
-  milestones: PlanInput['milestones'],
-  commandId: string,
-): void {
-  const rows = ctx.store
-    .list<Milestone>('milestones')
-    .filter((row) => row.owner_session_id === leadId);
-  for (const input of milestones) {
-    const fields = {
-      title: input.title,
-      criteria: input.criteria,
-      task_ids: input.tasks,
-      due_on: input.due_on,
-      replan_if: input.replan_if,
-      goal_id: input.goal ?? undefined,
-    };
-    const old = rows.find((row) => row.key === input.id);
-    if (!old) {
-      const milestone: Milestone = {
-        ...fields,
-        id: id(),
-        revision: 1,
-        project_id: projectId,
-        required_sessions: [],
-        owner_session_id: leadId,
-        key: input.id,
-        created_at: ctx.store.now(),
-        updated_by: p.id,
-      };
-      ctx.store.insert('milestones', milestone);
-      history(ctx, 'milestone', milestone, p.id);
-      ctx.store.event('milestone.created', milestone, projectId, milestone, commandId);
-      continue;
-    }
-    if (
-      !old.removed_at &&
-      canonical(fields) ===
-        canonical({
-          title: old.title,
-          criteria: old.criteria,
-          task_ids: old.task_ids,
-          due_on: old.due_on,
-          replan_if: old.replan_if,
-          goal_id: old.goal_id,
-        })
-    )
-      continue;
-    const next = ctx.store.update(
-      'milestones',
-      { ...old, ...fields, removed_at: undefined, updated_by: p.id },
-      old.revision,
-    );
-    history(ctx, 'milestone', next, p.id);
-    ctx.store.event('milestone.revised', next, projectId, next, commandId);
-  }
-  for (const old of rows) {
-    if (old.removed_at || milestones.some((input) => input.id === old.key)) continue;
-    const next = ctx.store.update(
-      'milestones',
-      { ...old, removed_at: ctx.store.now(), updated_by: p.id },
-      old.revision,
-    );
-    history(ctx, 'milestone', next, p.id);
-    ctx.store.event('milestone.removed', next, projectId, next, commandId);
-  }
 }
 
 function refuseInvalid(ctx: ControlContext, input: PlanInput, quoted: string[] = []): void {
@@ -508,7 +362,7 @@ function refuseUnexplained(
   requireThat(!problems.length, 'invalid_input', problems.join('\n'));
 }
 
-/** The lead's plan as a whole plan input, its milestones read from the lead's milestone rows. */
+/** The lead's plan as a whole plan input; a plan's milestones are not kept. */
 function planContent(ctx: ControlContext, plan: BoardPlan, lanes: Lane[] = []): PlanInput {
   return {
     project_id: plan.project_id,
@@ -519,18 +373,7 @@ function planContent(ctx: ControlContext, plan: BoardPlan, lanes: Lane[] = []): 
     iterations: plan.iterations ?? [],
     order_lock: plan.order_lock,
     tasks: plan.tasks,
-    milestones: ctx.store
-      .list<Milestone>('milestones')
-      .filter((row) => row.owner_session_id === plan.id && !row.removed_at)
-      .map((row) => ({
-        id: row.key!,
-        title: row.title,
-        criteria: row.criteria,
-        tasks: row.task_ids ?? [],
-        ...(row.due_on ? { due_on: row.due_on } : {}),
-        ...(row.replan_if ? { replan_if: row.replan_if } : {}),
-        ...(row.goal_id ? { goal: row.goal_id } : {}),
-      })),
+    milestones: [],
     risks: plan.risks,
     assumptions: plan.assumptions,
   };
@@ -543,7 +386,6 @@ const contentKey = (input: PlanInput) =>
     iterations: input.iterations,
     order_lock: input.order_lock,
     tasks: input.tasks,
-    milestones: [...input.milestones].sort((a, b) => a.id.localeCompare(b.id)),
     risks: input.risks,
     assumptions: input.assumptions,
   });
@@ -577,11 +419,8 @@ function storePlan(
     triggerEvent?: string;
   } = {},
 ): BoardPlan {
-  input = withStoredGoals(ctx, leadId, input);
   // A retired workflow_id on a task is accepted and not stored.
   input = { ...input, tasks: input.tasks.map(({ workflow_id: _, ...task }) => task) };
-  const problem = goalLinkProblem(ctx, input.project_id, leadId, input.milestones);
-  requireThat(!problem, 'invalid_input', problem ?? '');
   refuseInvalid(ctx, input, options.quoted);
   const current = ctx.store.get<BoardPlan>('board_plans', leadId);
   const orderLock = Object.hasOwn(input, 'order_lock') ? input.order_lock : current?.order_lock;
@@ -691,13 +530,6 @@ function storePlan(
   const planVersion =
     (current?.plan_version ?? 0) +
     (current && contentKey(planContent(ctx, current)) === contentKey(input) ? 0 : 1);
-  const holds = firstPlanHolds(ctx, current, input, p);
-  const laneStops = Object.fromEntries([
-    ...Object.entries(current?.lane_stops ?? {}).filter(([laneId]) =>
-      input.lanes.some((lane) => lane.id === laneId),
-    ),
-    ...holds.map((laneId) => [laneId, { held_at: ctx.store.now(), plan_version: planVersion }]),
-  ]);
   const value: BoardPlan = {
     id: leadId,
     revision: 1,
@@ -726,7 +558,6 @@ function storePlan(
     notified: current?.notified ?? {},
     ...(current?.wake_failed ? { wake_failed: current.wake_failed } : {}),
     ...(current?.external_holds ? { external_holds: current.external_holds } : {}),
-    ...(Object.keys(laneStops).length ? { lane_stops: laneStops } : {}),
     ...(current?.paused ? { paused: current.paused } : {}),
     ...(current?.reassessment ? { reassessment: current.reassessment } : {}),
     ...(current?.last_told ? { last_told: current.last_told } : {}),
@@ -765,25 +596,9 @@ function storePlan(
     retired,
     updated_at: ctx.store.now(),
   };
-  let next = current
+  const next = current
     ? ctx.store.update('board_plans', value, current.revision)
     : ctx.store.insert('board_plans', value);
-  for (const laneId of holds) {
-    ctx.store.event('board.lane_held', next, input.project_id, { lane_id: laneId }, commandId);
-    next = appendNote(
-      ctx,
-      next,
-      {
-        at: ctx.store.now(),
-        session_id: '',
-        task_id: '',
-        kind: 'plan_held',
-        text: `Lane ${laneId} waits for the user to approve its plan; start_task queues its tasks until then.`,
-      },
-      commandId,
-    );
-  }
-  writeLeadMilestones(ctx, p, leadId, input.project_id, input.milestones, commandId);
   ctx.store.event(
     'board.plan_updated',
     next,
@@ -1362,7 +1177,6 @@ export const projectBoardHandlers: Handlers = {
     requireThat(p.role === 'lead', 'permission_denied', 'Lead session required');
     ctx.store.must<Project>('projects', input.project_id);
     requireVersion(ctx.store.get<BoardPlan>('board_plans', p.session_id!), base_version);
-    requireTriggerEvent(ctx, p.session_id!, trigger_event);
     storePlan(
       ctx,
       p,
@@ -1397,7 +1211,6 @@ export const projectBoardHandlers: Handlers = {
     );
     requireVersion(plan, input.base_version);
     if (p.role === 'lead') {
-      requireTriggerEvent(ctx, leadId, input.trigger_event);
       leadEdit(ctx, p, plan, input.ops, c.command_id, [], input.trigger_event);
       reviewPlan(ctx, ctx.store.must<BoardPlan>('board_plans', leadId), c.command_id);
       return planView(ctx, input.project_id, leadId);
@@ -1422,7 +1235,6 @@ export const projectBoardHandlers: Handlers = {
       `Not found: board plan ${p.session_id}; write a plan with update_board first`,
     );
     requireVersion(plan, input.base_version);
-    requireTriggerEvent(ctx, plan.id, input.trigger_event);
     const mode = chartered(ctx, p, 'plan_change', plan, input.reason);
     requireThat(
       mode !== 'off',
@@ -1589,33 +1401,5 @@ export const projectBoardHandlers: Handlers = {
     );
     withdrawEdit(ctx, plan, input.edit_id, c.command_id);
     return planView(ctx, input.project_id, input.lead_session_id);
-  },
-  'board.lane.approve': (ctx, p, c) => {
-    const input = inputSchemas['board.lane.approve'].parse(c.input);
-    actsAsUser(p);
-    projectAccess(ctx, p, input.project_id, c.type);
-    personalAnswer(ctx, p, 'board.lane.approve', input.project_id);
-    personalCalled(ctx, p, c, input.project_id);
-    const plan = ctx.store.get<BoardPlan>('board_plans', input.lead_session_id);
-    requireThat(
-      plan?.project_id === input.project_id,
-      'not_found',
-      `Not found: board plan ${input.lead_session_id}`,
-    );
-    approveLane(ctx, p, plan, input.lane_id, c.command_id);
-    return planView(ctx, input.project_id, plan.id);
-  },
-  'board.lane.depth.set': (ctx, p, c) => {
-    const input = inputSchemas['board.lane.depth.set'].parse(c.input);
-    userOnly(p);
-    projectAccess(ctx, p, input.project_id, c.type);
-    const plan = ctx.store.get<BoardPlan>('board_plans', input.lead_session_id);
-    requireThat(
-      plan?.project_id === input.project_id,
-      'not_found',
-      `Not found: board plan ${input.lead_session_id}`,
-    );
-    setLaneDepth(ctx, plan, input.lane_id, input.depth, c.command_id);
-    return planView(ctx, input.project_id, plan.id);
   },
 };

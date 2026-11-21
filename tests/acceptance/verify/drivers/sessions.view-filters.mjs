@@ -15,8 +15,7 @@ await call(
   (await projectRow()).revision,
 );
 
-// One resident and one worker of it that keeps running.
-const assistant = (await call('resident.open', { project_id, kind: 'assistant' })).id;
+// A lead session with a one-task plan, and that task's session, which keeps running.
 const plan = {
   base_version: 0,
   headline: 'One running worker',
@@ -25,7 +24,7 @@ const plan = {
     {
       id: 'hold',
       title: `Hold ${stamp}`,
-      goal: `Hold the slot\nfixture-script\n${JSON.stringify([{ hang: true }])}`,
+      goal: 'Hold the slot',
       lane: 'work',
       depends_on: [],
       source: ['Hold the slot'],
@@ -38,19 +37,28 @@ const plan = {
   risks: [],
   assumptions: [],
 };
-const steps = [
-  { tool: { name: 'update_board', arguments: plan } },
-  { tool: { name: 'start_task', arguments: { task_ids: ['hold'] } } },
-];
-await call(
-  'session.send',
-  { session_id: assistant, input: `fixture-script\n${JSON.stringify(steps)}` },
-  (await board()).sessions.find((s) => s.id === assistant).revision,
+const lead = await call('session.create', {
+  project_id,
+  runtime: 'fixture',
+  purpose: 'lead',
+  input: `verify-filter-lead-${stamp}\nfixture-script\n${JSON.stringify([{ tool: { name: 'update_board', arguments: plan } }])}`,
+});
+await poll(
+  async () =>
+    (await query('session.list', { project_id })).find((s) => s.id === lead.id)?.last_turn
+      ?.state === 'completed',
+  30_000,
 );
+await call('session.create', {
+  project_id,
+  runtime: 'fixture',
+  task_id: `${lead.id}:hold`,
+  input: `Hold the slot\nfixture-script\n${JSON.stringify([{ hang: true }])}`,
+});
 const worker = await poll(
   async () =>
     (await query('session.list', { project_id })).find(
-      (s) => s.lead === assistant && s.state === 'running',
+      (s) => s.lead === lead.id && s.state === 'running',
     ),
   30_000,
 );

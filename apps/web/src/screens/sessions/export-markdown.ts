@@ -53,8 +53,7 @@ function callLine(calls: ToolItem[], folders: readonly string[]): string {
   const [call] = calls;
   const label =
     call && calls.length === 1
-      ? (orchestrationLabel(call.name, call.input, call.output) ??
-        toolLabel(call.name, call.input, folders))
+      ? (orchestrationLabel(call.name, call.input) ?? toolLabel(call.name, call.input, folders))
       : null;
   const line = label
     ? [label.title, label.detail].filter(Boolean).join(' ')

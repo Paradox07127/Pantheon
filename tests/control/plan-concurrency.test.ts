@@ -135,8 +135,7 @@ it('raises the plan version only when the plan content changes', async () => {
   expect(edit(f, lead, lead, 2).plan_version).toBe(2);
   const tasks = [{ ...plan().tasks[0]!, model: 'claude-opus-4-5' }];
   expect(update(f, lead, 2, { ...plan(), tasks }).plan_version).toBe(2);
-  const milestones = [{ ...plan().milestones[0]!, criteria: ['Exports download as CSV'] }];
-  expect(update(f, lead, 2, { ...plan(), tasks, milestones }).plan_version).toBe(3);
+  expect(update(f, lead, 2, { ...plan('Export ships next week'), tasks }).plan_version).toBe(3);
   const read = f.call<{ plans: { lead_session_id: string; plan_version: number }[] }>(
     'project.read',
     { project_id: f.project.id },

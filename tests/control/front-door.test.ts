@@ -108,21 +108,6 @@ it.each<[string, (f: Fixture, sessionId: string) => () => unknown]>([
         personal,
       ),
   ],
-  [
-    'a reroute of its request',
-    (f) => {
-      const assistant = f.call<Session>('resident.open', {
-        project_id: f.project.id,
-        kind: 'assistant',
-      });
-      const routed = request(f, {
-        input: 'Plan the release',
-        target: { kind: 'session', session_id: assistant.id },
-      });
-      return () =>
-        f.call('request.reroute', { turn_id: routed.turn_id, to: 'new_plan' }, null, personal);
-    },
-  ],
 ])('refuses a personal agent %s', async (_case, attempt) => {
   const f = await workbenchFixture();
   const direct = await f.create('Explain the answer file');

@@ -128,13 +128,13 @@ describe('who sent a turn', () => {
     },
   );
 
-  it('shows a turn from the lead under the lead with its runtime, not a bubble of the user', () => {
+  it('shows a turn an old record says the lead sent as a note from Pantheon', () => {
     const html = header({ origin: 'lead', input: '[Lead] Rebase first.' });
-    expect(html).toMatch(/<div class="ss-lead" role="note">/);
-    expect(html).toContain('<b>lead</b>');
-    expect(html).toContain('<title>Codex</title>');
+    expect(html).toMatch(/<div class="ss-sys" role="note">/);
+    expect(html).toContain('<b>Pantheon</b>');
     expect(html).toContain('Rebase first.');
     expect(html).not.toContain('[Lead]');
+    expect(html).not.toContain('<b>lead</b>');
     expect(html).not.toContain('ss-user');
   });
 
@@ -142,7 +142,6 @@ describe('who sent a turn', () => {
     const html = header({});
     expect(html).toContain('<div class="ss-user" data-find="input">input of turn-1</div>');
     expect(html).not.toContain('ss-sys');
-    expect(html).not.toContain('ss-lead');
   });
 });
 

@@ -8,7 +8,6 @@ vi.mock('@/data/board', () => ({
     getState: () => mock.board,
   }),
 }));
-import { useBoardView } from '@/data/board-view';
 import { useMemoryQuery } from '@/data/memory';
 import { useNeedsYou } from '@/data/needs-you';
 import { useProjectQuery } from '@/data/project-read';
@@ -120,22 +119,6 @@ it('keeps the memory answer during a reread and says it is rereading instead', a
   reads[1]!.resolve(ok({ records: ['new'] }));
   await h.flush();
   expect(h.value).toMatchObject({ data: { records: ['new'] }, refreshing: false });
-});
-
-it("shows the last range's board while another range of the same project is read", async () => {
-  let days: 1 | 7 = 1;
-  const { h, frames } = mount(() => useBoardView('range-project', days));
-  reads[0]!.resolve(ok({ tasks: ['today'] }));
-  await h.flush();
-  frames.length = 0;
-
-  days = 7;
-  h.render();
-  expect(reads.at(-1)!.params).toMatchObject({ days: '7' });
-  expect(frames.every((f) => (f.data as any)?.tasks[0] === 'today' && !f.loading)).toBe(true);
-  reads.at(-1)!.resolve(ok({ tasks: ['this week'] }));
-  await h.flush();
-  expect(h.value.data).toEqual({ tasks: ['this week'] });
 });
 
 it("draws a project read seen before on the first frame and marks it stale until it's read again", async () => {

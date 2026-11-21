@@ -129,8 +129,6 @@ interface ShellState {
   // The one session the trace's runs tab shows; null shows them all.
   runsSession: string | null;
   runsView: 'now' | 'history';
-  /** The wait, by notice card id, that the needs-you strip brings into view and focuses once it lists it. */
-  askedNeed: string | null;
   /** The type the approved-for-you list opens filtered by, once; null keeps its own. */
   approvedType: DecisionType | null;
   /** The time the asking page counted from, Unix milliseconds; the list opens on a range that reaches it. */
@@ -157,8 +155,6 @@ interface ShellState {
   openProjectSessions: (projectId: string) => void;
   // Makes the project current and opens one tab of its memory, in one switch.
   openProjectMemory: (projectId: string, tab: MemoryTab) => void;
-  // Makes the project current and opens its runs going now, whose needs-you strip answers the wait.
-  openProjectNeed: (projectId: string, needKey: string) => void;
   // Makes the project current and opens the trace's list of what was approved for the user, of one type when given.
   openProjectApproved: (projectId: string, type?: DecisionType, since?: number) => void;
   back: () => void;
@@ -289,7 +285,6 @@ export const useShell = create<ShellState>((set) => ({
   memoryTab: 'overview',
   runsSession: null,
   runsView: 'now',
-  askedNeed: null,
   approvedType: null,
   approvedSince: null,
   showRuns: (runsSession) =>
@@ -386,20 +381,6 @@ export const useShell = create<ShellState>((set) => ({
       {
         screen: 'memory',
         memoryTab,
-        sessionTab: null,
-        sessionRun: null,
-        sessionGroup: null,
-      },
-      projectId,
-    ),
-  openProjectNeed: (projectId, askedNeed) =>
-    navigate(
-      {
-        screen: 'trace',
-        traceTab: 'runs',
-        runsView: 'now',
-        runsSession: null,
-        askedNeed,
         sessionTab: null,
         sessionRun: null,
         sessionGroup: null,

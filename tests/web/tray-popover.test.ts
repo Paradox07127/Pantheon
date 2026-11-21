@@ -41,29 +41,13 @@ function approval(id: string, over: Partial<NeedsYouItem> = {}): NeedsYouItem {
   };
 }
 
-const question: NeedsYouItem = {
-  source: { table: 'board_plans', id: 'lead-1', revision: 1 },
-  kind: 'lead.question',
+const question = approval('q-1', {
   project_id: 'beta',
   session_id: 'lead-1',
-  request_id: 'q-1',
-  status: 'pending',
   created_at: NOW - 6 * MINUTE,
-  reason: 'lead_question',
-  actions: [],
-};
-
-const heldRequest: NeedsYouItem = {
-  source: { table: 'board_plans', id: 'lead-2', revision: 1 },
-  kind: 'external.approval',
-  project_id: 'beta',
-  session_id: 'lead-2',
-  request_id: 'github:acme/docs#3',
-  status: 'pending',
-  created_at: NOW - 3 * MINUTE,
-  reason: 'external_approval',
-  actions: [],
-};
+  binding: { action: 'AskUserQuestion' },
+  questions: [{ question: 'Split the partial refund?', header: 'API', options: [] }] as never,
+});
 
 const failedSession: NeedsYouItem = {
   source: { table: 'sessions', id: 'session-b', revision: 1 },
@@ -229,18 +213,17 @@ const button = (tree: ReactElement, label: string) =>
   find(tree, (n) => n.type === 'button' && text(n.props.children).includes(label));
 
 describe('tray popover waiting group', () => {
-  it('counts only approvals, questions and external approvals across every project', async () => {
-    needs = [approval('ap-1'), question, heldRequest, failedSession];
+  it('counts only approvals and questions across every project', async () => {
+    needs = [approval('ap-1'), question, failedSession];
     const tree = (await popover()).value;
     expect(bridge.query).toHaveBeenCalledWith('needs_you.list', undefined);
     const waiting = group(tree, WAITING);
-    expect(waiting.count).toBe('3');
+    expect(waiting.count).toBe('2');
     const body = text(waiting.section);
     expect(body).toContain('Callback signatures');
     expect(body).toContain('18 分');
     expect(body).toContain('pnpm db:migrate --env staging');
-    expect(body).toContain('lead 问了一个问题');
-    expect(body).toContain(zh('data.reason.externalApproval'));
+    expect(body).toContain(zh('data.reason.permissionRequested'));
     expect(body).not.toContain(zh('data.reason.sessionFailed'));
   });
 
@@ -311,50 +294,11 @@ describe('tray popover waiting group', () => {
       project_id: 'alpha',
       session_id: 'session-a',
     });
-    button(waiting, 'lead 问了一个问题').props.onClick();
+    button(waiting, zh('data.reason.permissionRequested')).props.onClick();
     expect(bridge.showInMainWindow).toHaveBeenLastCalledWith({
       project_id: 'beta',
       session_id: 'lead-1',
     });
-  });
-
-  it('lists an external request that waits for approval and opens its triage session', async () => {
-    needs = [heldRequest, failedSession];
-    const tree = (await popover()).value;
-    const waiting = group(tree, WAITING);
-    expect(waiting.count).toBe('1');
-    button(waiting.section, zh('data.reason.externalApproval')).props.onClick();
-    expect(bridge.showInMainWindow).toHaveBeenCalledWith({
-      project_id: 'beta',
-      session_id: 'lead-2',
-    });
-  });
-
-  it('lists a lane whose plan waits for approval, says while its review still runs, and opens its lead', async () => {
-    const lane = (request_id: string, plan_review_running?: boolean): NeedsYouItem => ({
-      source: { table: 'board_plans', id: 'lead-2', revision: 1 },
-      kind: 'board.lane.approval',
-      project_id: 'beta',
-      session_id: 'lead-2',
-      request_id,
-      status: 'pending',
-      created_at: NOW - 3 * MINUTE,
-      reason: 'lane_plan_awaiting_approval',
-      actions: [{ command: 'board.lane.approve', allowed: true }],
-      ...(plan_review_running === undefined ? {} : { plan_review_running }),
-    });
-    needs = [lane('lane-docs'), failedSession];
-    const tree = (await popover()).value;
-    const waiting = group(tree, WAITING);
-    expect(waiting.count).toBe('1');
-    button(waiting.section, zh('data.reason.lanePlanAwaitingApproval')).props.onClick();
-    expect(bridge.showInMainWindow).toHaveBeenCalledWith({
-      project_id: 'beta',
-      session_id: 'lead-2',
-    });
-    needs = [lane('lane-api', true)];
-    const reviewing = group((await popover()).value, WAITING);
-    expect(text(reviewing.section)).toContain(zh('data.reason.lanePlanAwaitingApprovalReviewing'));
   });
 });
 

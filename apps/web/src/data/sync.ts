@@ -64,7 +64,6 @@ const MERGE: Record<keyof BoardSnapshot | 'reviews', 'cursor' | 'id' | 'project_
   cursor: 'cursor',
   projects: 'id',
   project_briefs: 'project_id',
-  milestones: 'project_id',
   sessions: 'project_id',
   session_turns: 'project_id',
   workspaces: 'project_id',

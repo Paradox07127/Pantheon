@@ -4,7 +4,6 @@ import type {
   BoardPlan,
   LeadNote,
   LeadQuestion,
-  Milestone,
   Principal,
   Project,
   Review,
@@ -480,40 +479,4 @@ it('starts the thread of a task added again under a removed id at its new additi
     ['dispatched', added.id, ''],
     ['report', added.id, 'The YAML import is blocked'],
   ]);
-});
-
-it("leaves the open Assistant one note of a milestone's new status without waking it", async () => {
-  const f = await workbenchFixture();
-  const assistant = f.call<Session>('resident.open', {
-    project_id: f.project.id,
-    kind: 'assistant',
-  });
-  const merged = f.store.insert<Session>('sessions', {
-    id: 'merged-session',
-    revision: 1,
-    project_id: f.project.id,
-    runtime: f.adapter.name,
-    workspace_id: 'merged-workspace',
-    state: 'closed',
-    outcome: 'merged',
-    turn_count: 0,
-  });
-  const milestone = f.call<Milestone>('milestone.create', {
-    project_id: f.project.id,
-    title: 'Ship export',
-    required_sessions: [merged.id],
-    criteria: ['Export works'],
-  });
-  f.call(
-    'milestone.accept',
-    { milestone_id: milestone.id, evidence_refs: [`session:${merged.id}`] },
-    f.store.must<Milestone>('milestones', milestone.id).revision,
-  );
-
-  const notes = (f.store.get<BoardPlan>('board_plans', assistant.id)?.inbox ?? []).filter(
-    (note: LeadNote) => note.kind === 'milestone',
-  );
-  expect(notes).toHaveLength(1);
-  expect(notes[0]!.text).toBe('Milestone "Ship export" is now completed.');
-  expect(f.turns(assistant.id)).toEqual([]);
 });

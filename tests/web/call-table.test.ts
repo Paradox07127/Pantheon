@@ -1,22 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { BoardModel, BoardSegment, SessionTrace } from '@pantheon/protocol';
+import type { SessionTrace, WorkbenchSession } from '@pantheon/protocol';
+import type { DaemonEvent } from '@/data/sync';
 import { find, mount as host, nodes, text, unmountAll } from './web-hook-host.js';
 
 vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMock(actual));
-import {
-  boardFacts,
-  callRows,
-  stepRow,
-  type CallFilter,
-  type CallRow,
-} from '@/screens/runtime/call-rows';
+import { callRows, stepRow, type CallFilter, type CallRow } from '@/screens/runtime/call-rows';
 import { CallTable } from '@/screens/runtime/CallTable';
 import { runForest } from '@/screens/runtime/run-tree';
+import { sessionFacts } from '@/screens/runtime/runtime-model';
 import { zh } from './i18n-setup.js';
 
 type Span = SessionTrace['spans'][number];
-type Task = BoardModel['tasks'][number];
-type Lead = NonNullable<BoardModel['leads']>[number];
 
 const T0 = Date.UTC(2026, 10, 13, 9);
 const NOW = T0 + 40_000;
@@ -37,49 +31,25 @@ const span = (id: string, extra: Partial<Span> = {}): Span => ({
 const turn = (id: string, start: number, end: number | null): Span =>
   span(id, { parent: null, turn: id, kind: 'turn', name: 'turn', start, end, status: 'ok' });
 
-const segment = (session: string, extra: Partial<BoardSegment> = {}): BoardSegment => ({
-  id: session,
-  session_id: session,
-  title: `title of ${session}`,
+const listed = (id: string, extra: Partial<WorkbenchSession> = {}): WorkbenchSession => ({
+  id,
+  created_at: new Date(T0 - 60_000).toISOString(),
+  title: `title of ${id}`,
   runtime: 'claude',
   model: null,
-  status: 'running',
-  started_at: T0 - 60_000,
-  ended_at: null,
-  tokens: 0,
+  effort: null,
+  permission_mode: 'ask',
+  workspace_id: `workspace-${id}`,
+  workspace_kind: 'linked_worktree',
+  state: 'running',
+  waiting: 0,
+  reconciling: false,
+  stopping: false,
+  last_activity_at: new Date(NOW).toISOString(),
+  changes: null,
+  merge: null,
   ...extra,
 });
-
-const task = (id: string, session: string, extra: Partial<Task> = {}): Task =>
-  ({
-    id,
-    title: `task ${id}`,
-    goal: '',
-    scope: [],
-    lane_id: null,
-    milestone_id: null,
-    status: 'running',
-    blockers: [],
-    segments: [segment(session)],
-    additions: null,
-    deletions: null,
-    checks: 'none',
-    started_at: T0 - 60_000,
-    ended_at: null,
-    last_progress_at: null,
-    blocked_since: null,
-    turn_running: true,
-    owner_session_id: 'lead-1',
-    ...extra,
-  }) as Task;
-
-const lead: Lead = {
-  session_id: 'lead-1',
-  title: 'lead',
-  state: 'running',
-  inbox: 0,
-  updated_at: 0,
-};
 
 // worker-1 ran one turn before, then a second turn of 20s with five calls, a subagent with one call
 // and an approval it still waits on.
@@ -129,23 +99,36 @@ const waiting = {
   since: T0 + 30_000,
 };
 
-const board = (): Pick<BoardModel, 'tasks' | 'leads'> => ({
-  leads: [lead],
-  tasks: [
-    task('lead-1:build', 'worker-1', {
-      status: 'waiting',
-      context: { used_tokens: 46_000, window_tokens: 100_000 },
-      forked_from: { session_id: 'worker-0' },
-      activity: {
-        phase: 'waiting_approval',
-        since: waiting.since,
-        waiting,
-        health: 'fresh',
-        attempt: 1,
-      },
-    }),
-  ],
-});
+const SESSIONS = [
+  listed('lead-1', { title: 'lead' }),
+  listed('worker-1', {
+    state: 'waiting',
+    waiting: 1,
+    waiting_kind: 'approval',
+    waiting_request: { tool: 'Bash', detail: waiting.summary },
+    run: {
+      phase: 'waiting_approval',
+      since: waiting.since,
+      wait: { reason: 'approval', since: waiting.since },
+    },
+    context: { used_tokens: 46_000, window_tokens: 100_000 },
+    forked_from: { session_id: 'worker-0' },
+  }),
+];
+const PARENTS = new Map([['worker-1', 'lead-1']]);
+const EVENTS: DaemonEvent[] = [
+  {
+    sequence: 1,
+    event_id: 'event-1',
+    kind: 'approval.requested',
+    aggregate_id: waiting.approval_id,
+    aggregate_revision: 1,
+    project_id: 'project-a',
+    causation_id: '',
+    created_at: waiting.since,
+    payload: { session_id: 'worker-1', kind: 'permission', state: 'pending', tool: 'Bash' },
+  },
+];
 
 const SPANS = new Map([
   ['worker-1', WORKER],
@@ -160,11 +143,10 @@ const rowsOf = (
     spans?: ReadonlyMap<string, readonly Span[]>;
   } = {},
 ) => {
-  const b = board();
   const spans = extra.spans ?? SPANS;
   return callRows({
-    forest: runForest(b, [], spans),
-    facts: boardFacts(b),
+    forest: runForest(SESSIONS, PARENTS, spans),
+    facts: sessionFacts(SESSIONS, EVENTS),
     spans,
     view,
     now: NOW,
@@ -236,14 +218,10 @@ describe('call rows', () => {
       { left: 75, width: 25, tone: 'wait', stripe: true },
     ]);
     const head = named(rows, 's:lead-1');
-    expect(head.type === 'session' && [head.lead, head.context, head.turn]).toEqual([
-      true,
-      null,
-      1,
-    ]);
+    expect(head.type === 'session' && [head.context, head.turn]).toEqual([null, 1]);
     expect(head.bars).toEqual([{ left: 0, width: 75, tone: 'run', live: true }]);
-    // The session ran 100s, its turn 40s.
-    expect(worker.duration).toBe(100_000);
+    // The session ran 70s from its first turn, its newest turn 40s.
+    expect(worker.duration).toBe(70_000);
   });
 
   it('shows history rows with the turn time, no context and no live tails', () => {
@@ -335,10 +313,9 @@ describe('call table', () => {
   afterEach(unmountAll);
 
   const mount = (props: Partial<Parameters<typeof CallTable>[0]> = {}) => {
-    const b = board();
     const all = {
-      forest: runForest(b, [], SPANS),
-      facts: boardFacts(b),
+      forest: runForest(SESSIONS, PARENTS, SPANS),
+      facts: sessionFacts(SESSIONS, EVENTS),
       spans: SPANS,
       view: 'now' as const,
       now: NOW,

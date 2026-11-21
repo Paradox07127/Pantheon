@@ -134,14 +134,6 @@ describe('project table row', () => {
   const full = summary('project-b', {
     counts: { running: 2, waiting: 1, ready: 0, failed: 3, queued: 0 },
     needs_you: 4,
-    milestone: {
-      id: 'first-release',
-      title: 'First release',
-      done: 3,
-      total: 4,
-      running: 0,
-      failed: 0,
-    },
     last_activity_at: '2026-11-03T11:00:00.000Z',
   });
 
@@ -162,7 +154,7 @@ describe('project table row', () => {
     const open = find(name, (n) => n.type === 'button');
     expect(text(open)).toBe('name of project-b');
     expect(nodes(name).some((n) => n.props.path === '/work/project-b')).toBe(true);
-    expect(text(goal)).toContain('First release');
+    expect(text(goal)).toContain('—');
     expect(buttons(sessions).length).toBeGreaterThan(0);
     expect(text(needs)).toContain('4');
     expect(byLabel(actions, zhf('projects.row.more', { name: 'name of project-b' }))).toBeTruthy();
@@ -186,7 +178,7 @@ describe('project table row', () => {
     expect(nodes(open.props.children).some((n) => n.type === 'button')).toBe(false);
   });
 
-  it('lifts the path and the goal title above the row click target so their titles and text reach the pointer', () => {
+  it('lifts the path above the row click target so its title and text reach the pointer', () => {
     const css = readFileSync(
       new URL('../../apps/web/src/screens/projects/projects.css', import.meta.url),
       'utf8',
@@ -194,34 +186,8 @@ describe('project table row', () => {
     const rule = (selector: string) =>
       css.match(new RegExp(`(?:^|\\n)${selector.replace('.', '\\.')} \\{([^}]*)\\}`))?.[1] ?? '';
     expect(rule('.pr-open::after')).toContain('inset: 0');
-    for (const selector of ['.pr-path', '.pr-mt']) {
-      expect(rule(selector), selector).toContain('position: relative');
-      expect(rule(selector), selector).toContain('z-index: 1');
-    }
-  });
-
-  it('shows the goal title, done over total and a done and a remaining segment', () => {
-    const goal = cells(row(full))[2]!;
-    expect(text(goal)).toContain('3 / 4');
-    const segments = nodes(find(goal, (n) => n.props.role === 'img').props.children);
-    expect(segments.map((s) => s.props.style.flexGrow)).toEqual([3, 1]);
-  });
-
-  it('splits the goal bar into merged, running, failed and not started and names the four counts', () => {
-    const mixed = summary('project-b', {
-      milestone: { id: 'm', title: 'Refunds', done: 7, total: 12, running: 3, failed: 1 },
-    });
-    const bar = find(cells(row(mixed))[2], (n) => n.props.role === 'img');
-    const segments = nodes(bar.props.children);
-    expect(segments.map((s) => [s.props.className, s.props.style.flexGrow])).toEqual([
-      ['pr-done', 7],
-      ['pr-run', 3],
-      ['pr-bad', 1],
-      [undefined, 1],
-    ]);
-    expect(bar.props['aria-label']).toBe(
-      zhf('projects.row.goalBar', { done: 7, running: 3, failed: 1, rest: 1 }),
-    );
+    expect(rule('.pr-path')).toContain('position: relative');
+    expect(rule('.pr-path')).toContain('z-index: 1');
   });
 
   it('keeps the trend of the last 14 days of done tasks', () => {
@@ -313,69 +279,65 @@ describe('project table row', () => {
 
   const need = (
     decision: NeedsYouItem['decision'],
-    blocks: number,
+    id: string,
     extra: Partial<NeedsYouItem> = {},
   ): NeedsYouItem => ({
-    source: { table: 'approvals', id: `${decision}-${blocks}`, revision: 1 },
+    source: { table: 'approvals', id, revision: 1 },
     kind: 'permission',
     project_id: 'project-b',
     status: 'pending',
     created_at: NOW - 5 * MINUTE,
     reason: 'permission_requested',
     decision,
-    blocks,
     actions: [],
     ...extra,
   });
   const kindName = (key: string) => zh(`data.attention.decision.${key}`);
   const byKind = (tree: any) => byLabel(cells(tree)[4], zh('projects.row.byKind'));
 
-  it('shows the item blocking the most and what waits by kind, the largest kind first', () => {
-    const tree = row(waits(0, { question: 1, plan_change: 2 }), [
-      need('question', 2),
-      need('plan_change', 3, {
-        kind: 'board.lane.approval',
-        reason: 'lane_plan_awaiting_approval',
-        lane_title: 'Refund audit log',
+  it("shows the daemon's first item and what waits by kind, the largest kind first", () => {
+    const tree = row(waits(0, { question: 1, repeated_failure: 2 }), [
+      need('repeated_failure', 'gate-1', {
+        source: { table: 'sessions', id: 'gate-1', revision: 1 },
+        kind: 'session.gate_failed',
+        reason: 'gate_failed',
       }),
+      need('question', 'question-1'),
     ]);
     const group = byKind(tree);
     expect(group.props.role).toBe('group');
     expect(buttons(group).map((b) => b.props['aria-label'])).toEqual([
-      zhf('projects.row.kindWaiting', { kind: kindName('planChange'), count: 2 }),
+      zhf('projects.row.kindWaiting', { kind: kindName('repeatedFailure'), count: 2 }),
       zhf('projects.row.kindWaiting', { kind: kindName('question'), count: 1 }),
     ]);
     const needs = text(cells(tree)[4]);
-    expect(needs).toContain('Refund audit log');
-    expect(needs).toContain(zhf('data.attention.blocks', { count: 3 }));
+    expect(needs).toContain(zh('data.reason.gateFailed'));
+    expect(needs).not.toContain(zh('data.reason.permissionRequested'));
     buttons(group)[1]!.props.onClick();
     expect(mock.current.choose).toHaveBeenCalledWith('project-b');
     expect(mock.shell.openSessionGroup).toHaveBeenCalledWith('inbox');
   });
 
-  it('shows four kinds and names the rest in one count', () => {
+  it('shows the four kinds it names, folds other into one count and leaves out kinds it does not offer', () => {
     const tree = row(
       waits(0, {
         plan_change: 6,
         question: 5,
         repeated_failure: 4,
         permission: 3,
-        budget: 1,
-        external: 1,
+        improvement: 2,
+        other: 1,
       }),
     );
     const labels = buttons(byKind(tree)).map((b) => b.props['aria-label']);
-    expect(labels).toHaveLength(5);
-    expect(labels[3]).toBe(
+    expect(labels).toEqual([
+      zhf('projects.row.kindWaiting', { kind: kindName('question'), count: 5 }),
+      zhf('projects.row.kindWaiting', { kind: kindName('repeatedFailure'), count: 4 }),
       zhf('projects.row.kindWaiting', { kind: kindName('permission'), count: 3 }),
-    );
-    expect(labels[4]).toBe(
-      zhf('projects.row.otherKinds', {
-        count: 2,
-        kinds: [kindName('budget'), kindName('external')].join('，'),
-      }),
-    );
-    expect(text(buttons(byKind(tree))[4])).toBe(zhf('projects.row.other', { count: 2 }));
+      zhf('projects.row.kindWaiting', { kind: kindName('improvement'), count: 2 }),
+      undefined,
+    ]);
+    expect(text(buttons(byKind(tree))[4])).toBe(zhf('projects.row.other', { count: 1 }));
   });
 
   it('leaves the wait out until the oldest item has waited a minute', () => {
@@ -390,10 +352,10 @@ describe('project table row', () => {
     expect(text(goal)).toBe('上次活动 6 天');
     expect(text(sessions)).toBe('—');
     expect(text(needs)).toBe('—');
-    expect(text(cells(row(summary('project-b')))[2])).toBe(zh('projects.row.noGoal'));
+    expect(text(cells(row(summary('project-b')))[2])).toBe('—');
   });
 
-  it('keeps a project with sessions undimmed, without a goal and with a dash for needs-you', () => {
+  it('keeps a project with sessions undimmed, with a dash for the goal and for needs-you', () => {
     const busy = row(
       summary('project-b', {
         counts: { running: 0, waiting: 0, ready: 1, failed: 0, queued: 0 },
@@ -402,7 +364,7 @@ describe('project table row', () => {
     );
     expect(busy.props.className).toBe('pr-row');
     const [, , goal, , needs] = cells(busy);
-    expect(text(goal)).toBe(zh('projects.row.noGoal'));
+    expect(text(goal)).toBe('—');
     expect(text(needs)).toBe('—');
   });
 });
@@ -412,9 +374,9 @@ describe('project region', () => {
     needs_you: 5,
     brief: 'The refund audit log merged.',
     waiting: {
-      by_decision: { question: 1, plan_change: 3, permission: 1 },
+      by_decision: { question: 1, repeated_failure: 3, permission: 1 },
       longest_wait_ms: 25 * MINUTE,
-      blocked_tasks: 6,
+      blocked_tasks: 0,
     },
   });
   const decisionsWaiting = (n: number) => zhf('projects.row.decisionsWaiting', { count: n });
@@ -445,22 +407,20 @@ describe('project region', () => {
     expect(mock.shell.openSessionGroup).toHaveBeenCalledWith('inbox');
   });
 
-  it('splits the decisions by kind, the most first, with the longest wait and the tasks they block', () => {
+  it('splits the decisions by kind, the most first, with the longest wait', () => {
     const tree = row(asking);
     expect(buttons(byKind(tree)).map((b) => b.props['aria-label'])).toEqual([
-      kindWaiting('planChange', 3),
+      kindWaiting('repeatedFailure', 3),
       kindWaiting('question', 1),
       kindWaiting('permission', 1),
     ]);
     expect(text(tree)).toContain('25 分钟');
-    expect(text(tree)).toContain(zhf('data.attention.blocks', { count: 6 }));
   });
 
-  it('leaves the kinds, the wait and the blocked tasks out without a waiting summary', () => {
+  it('leaves the kinds and the wait out without a waiting summary', () => {
     const tree = row({ ...asking, waiting: undefined });
     expect(() => byKind(tree)).toThrow();
     expect(text(tree)).not.toContain('25 分钟');
-    expect(text(tree)).not.toContain(zhf('data.attention.blocks', { count: 6 }));
   });
 
   it('opens the project sessions from the brief line', () => {
@@ -768,34 +728,6 @@ describe('summary refresh', () => {
     await h.flush();
     expect(reads).toEqual(['projects.summary', 'projects.summary']);
   });
-
-  it.each(['board.plan_updated', 'board.plan_transferred'])(
-    'reads the summary again after %s, which changes the progress',
-    async (kind) => {
-      const h = mount(() => useProjectsSummary());
-      await h.flush();
-      mock.board = { ...mock.board, events: [event(1, 'project-b', kind)] };
-      h.render();
-      await vi.advanceTimersByTimeAsync(2_500);
-      await h.flush();
-      expect(reads).toEqual(['projects.summary', 'projects.summary']);
-    },
-  );
-
-  it('reads the summary again at the next local midnight, for the new day', async () => {
-    vi.setSystemTime(new Date(2026, 10, 3, 23, 59, 0));
-    const h = mount(() => useProjectsSummary());
-    await h.flush();
-    await vi.advanceTimersByTimeAsync(59_000);
-    await h.flush();
-    expect(reads).toEqual(['projects.summary']);
-    await vi.advanceTimersByTimeAsync(1_000);
-    await h.flush();
-    expect(reads).toEqual(['projects.summary', 'projects.summary']);
-    await vi.advanceTimersByTimeAsync(24 * 60 * 60_000);
-    await h.flush();
-    expect(reads).toHaveLength(3);
-  });
 });
 
 describe('projects screen while it is open', () => {
@@ -876,7 +808,6 @@ describe('projects screen while it is open', () => {
         created_at: NOW - 5 * MINUTE,
         reason: 'permission_requested',
         decision: 'permission',
-        blocks: 0,
         actions: [],
       }) as NeedsYouItem;
     mock.board.board.projects.push(project('gamma'));

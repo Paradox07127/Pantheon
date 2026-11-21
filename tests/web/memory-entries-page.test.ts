@@ -20,7 +20,7 @@ import {
 } from './web-hook-host.js';
 import { toastManager } from '@/components/Toast';
 import { useBoard } from '@/data/board';
-import { openPlanMemory, useMemoryView } from '@/data/memory-view';
+import { useMemoryView } from '@/data/memory-view';
 import { failureText } from '@/data/needs-you';
 import { EntriesBar, EntriesTopControls, type EntriesFilters } from '@/screens/memory/EntriesBar';
 import { EntriesPage } from '@/screens/memory/EntriesPage';
@@ -273,35 +273,6 @@ describe('memory entries page', () => {
     named(h.value, 'EntriesBar').props.onChange({ state: 'active', tag: [] });
     await rerender(h);
     expect(reads().at(-1)).toEqual({ project_id: projectId, state: 'active', limit: '20' });
-  });
-
-  it("lists the plan's entries when another screen opens memory for them", async () => {
-    openPlanMemory(projectId);
-    const h = await mount();
-    await rerender(h);
-    expect(useShell.getState()).toMatchObject({ screen: 'memory', memoryTab: 'entries' });
-    expect(named(h.value, 'EntriesBar').props.filters).toEqual({
-      state: 'active',
-      tag: [],
-      origin: 'plan',
-    });
-    expect(reads().at(-1)).toMatchObject({ origin: 'plan' });
-    expect(useMemoryView.getState().askedFilters).toBeNull();
-  });
-
-  it("names an entry's milestone from the directory and goes to the project's sessions from it", async () => {
-    const milestones = [{ id: 'ms-release', title: 'Release', count: 1 }];
-    pages = () => ({
-      ok: true,
-      value: directory({ facets: { ...directory().facets, milestones } }),
-    });
-    const h = await mount();
-    list(h).props.onSelect('r1');
-    await rerender(h);
-    const detail = named(h.value, 'EntryDetail');
-    expect(detail.props.milestones).toEqual(milestones);
-    detail.props.onOpenMilestone();
-    expect(useShell.getState().screen).toBe('sessions');
   });
 
   it('names the session that proposed a pending entry from the board', async () => {

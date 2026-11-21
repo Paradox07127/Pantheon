@@ -1,69 +1,93 @@
-import type { BoardModel } from '@pantheon/protocol';
+import type { WorkbenchSession } from '@pantheon/protocol';
+import type { DaemonEvent } from '../../data/sync';
+import { pendingPermissions } from '../sessions/thread-model';
+import type { SessionFacts } from './call-rows';
 import type { RunForest, RunNode } from './run-tree';
 
-/** How long a task or lead without live work stays on the runtime page after its last progress, ms. */
+/** How long a session without live work stays on the runtime page after its last activity, ms. */
 export const RECENT_MS = 60 * 60_000;
 
+const LIVE: ReadonlySet<WorkbenchSession['state']> = new Set([
+  'starting',
+  'running',
+  'waiting',
+  'merging',
+]);
+const ENDED: ReadonlySet<WorkbenchSession['state']> = new Set(['merged', 'discarded', 'done']);
+
+type Listed = Pick<WorkbenchSession, 'id' | 'state' | 'last_activity_at'>;
+
 /**
- * The tasks live now or with progress within RECENT_MS of now, and the leads running,
- * waiting, with a plan changed within it or owning one of those tasks; each in board order.
+ * The sessions live now or active within RECENT_MS of now, and the sessions that started one of
+ * those, in list order; parents maps a session to the session that started it.
  */
-export function runtimeBoard(
-  model: Pick<BoardModel, 'now' | 'since' | 'tasks' | 'leads'>,
-  now = model.now,
-): Pick<BoardModel, 'since' | 'tasks' | 'leads'> {
-  const recent = (at: number | null) => at !== null && at >= now - RECENT_MS;
-  const tasks = model.tasks.filter(
-    (task) =>
-      task.status === 'running' ||
-      task.status === 'waiting' ||
-      task.turn_running ||
-      task.activity?.phase === 'queued' ||
-      recent(task.last_progress_at),
+export function runtimeSessions<S extends Listed>(
+  sessions: readonly S[],
+  parents: ReadonlyMap<string, string>,
+  now: number,
+): S[] {
+  const shown = new Set(
+    sessions
+      .filter((s) => LIVE.has(s.state) || Date.parse(s.last_activity_at) >= now - RECENT_MS)
+      .map((s) => s.id),
   );
-  const owners = new Set(tasks.map((task) => task.owner_session_id));
-  const leads = model.leads?.filter(
-    (lead) =>
-      lead.state === 'running' ||
-      lead.state === 'waiting' ||
-      recent(lead.updated_at) ||
-      owners.has(lead.session_id),
-  );
-  return { since: model.since, tasks, leads };
+  for (const id of [...shown])
+    for (let up = parents.get(id); up !== undefined && !shown.has(up); up = parents.get(up))
+      shown.add(up);
+  return sessions.filter((s) => shown.has(s.id));
 }
 
-/** The leads' sessions and the sessions of segments still open or ended within the range, each once. */
-export function runSessionIds(model: Pick<BoardModel, 'since' | 'tasks' | 'leads'>): string[] {
-  const ids = new Set(model.leads?.map((lead) => lead.session_id));
-  for (const task of model.tasks)
-    for (const segment of task.segments)
-      if (
-        segment.session_id !== null &&
-        (segment.ended_at === null || segment.ended_at >= model.since)
-      )
-        ids.add(segment.session_id);
-  return [...ids];
+/** Each session's context, fork and the oldest permission request it waits on, by session id. */
+export function sessionFacts(
+  sessions: readonly Pick<
+    WorkbenchSession,
+    | 'id'
+    | 'context'
+    | 'forked_from'
+    | 'waiting_kind'
+    | 'waiting_request'
+    | 'run'
+    | 'last_activity_at'
+  >[],
+  events: readonly DaemonEvent[],
+): ReadonlyMap<string, SessionFacts> {
+  const facts = new Map<string, SessionFacts>();
+  for (const s of sessions) {
+    const asked =
+      s.waiting_kind === 'approval' || s.waiting_kind === 'question'
+        ? pendingPermissions(events, s.id)[0]
+        : undefined;
+    facts.set(s.id, {
+      context: s.context,
+      forked: !!s.forked_from,
+      waiting: asked && {
+        kind: s.waiting_kind === 'question' ? 'input' : 'approval',
+        summary: (s.waiting_request?.detail ?? s.waiting_request?.tool ?? '').slice(0, 140),
+        approval_id: asked.id,
+        since: s.run?.wait?.since ?? Date.parse(s.last_activity_at),
+      },
+    });
+  }
+  return facts;
 }
 
 export interface EndedSession {
   node: RunNode;
-  /** When its segment ended, epoch ms. */
+  /** Its last activity, epoch ms. */
   at: number;
 }
 
 /**
- * The forest without the task sessions whose segment ended and that no longer run or wait, and
- * those sessions, the newest end first.
+ * The forest without the sessions merged, discarded or done that no longer run or wait, the
+ * sessions they started kept in their place, and those sessions, the newest end first.
  */
 export function splitEnded(
   forest: RunForest,
-  tasks: BoardModel['tasks'],
+  sessions: readonly Listed[],
 ): { live: RunForest; ended: EndedSession[] } {
-  const endedAt = new Map<string, number>();
-  for (const task of tasks)
-    for (const segment of task.segments)
-      if (segment.session_id !== null && segment.ended_at !== null)
-        endedAt.set(segment.session_id, segment.ended_at);
+  const endedAt = new Map(
+    sessions.flatMap((s) => (ENDED.has(s.state) ? [[s.id, Date.parse(s.last_activity_at)]] : [])),
+  );
   const ended: EndedSession[] = [];
   const keep = (nodes: readonly RunNode[]): RunNode[] =>
     nodes.flatMap((node) => {
@@ -75,7 +99,7 @@ export function splitEnded(
         node.status !== 'waiting'
       ) {
         ended.push({ node, at });
-        return [];
+        return keep(node.children.filter((child) => child.kind === 'session'));
       }
       return [{ ...node, children: keep(node.children) }];
     });
@@ -83,7 +107,7 @@ export function splitEnded(
   return { live, ended: ended.sort((a, b) => b.at - a.at) };
 }
 
-/** The one session id names, without the task sessions under it; the whole forest for null. */
+/** The one session id names, without the sessions it started; the whole forest for null. */
 export function onlySession(forest: RunForest, id: string | null): RunForest {
   if (id === null) return forest;
   const find = (nodes: readonly RunNode[]): RunNode | null => {

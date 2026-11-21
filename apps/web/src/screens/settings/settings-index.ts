@@ -1,5 +1,4 @@
 import { KNOWN_RUNTIMES, runtimeName } from '../../components/RuntimeGlyph';
-import { PATH_LABEL, PLAN_CHANGES_LABEL, WAKE_LABEL } from '../../data/workflow-policy';
 import { DECISION_NAME, DELIVERY_NAME } from '../../data/notifications';
 import { LOCALE_NAMES, t, type Message } from '../../i18n';
 import { revealText } from '../../lib/platform-text';
@@ -52,7 +51,6 @@ export const PAGE_NAME: Record<SettingsPage, Message> = {
   defaults: defineMessage({ id: 'settings.pages.defaults', defaultMessage: 'Default model' }),
   project: defineMessage({ id: 'settings.pages.project', defaultMessage: 'Project' }),
   extensions: defineMessage({ id: 'settings.pages.extensions', defaultMessage: 'Extensions' }),
-  workflow: defineMessage({ id: 'settings.pages.workflow', defaultMessage: 'Workflow' }),
   projects: defineMessage({ id: 'settings.pages.projects', defaultMessage: 'Projects' }),
 };
 
@@ -105,12 +103,6 @@ const gate = defineMessage({ id: 'settings.gate.title', defaultMessage: 'Merge g
 const worktreeSetup = defineMessage({
   id: 'settings.worktreeSetup.title',
   defaultMessage: 'Worktrees',
-});
-const dispatch = defineMessage({ id: 'settings.workflow.dispatch', defaultMessage: 'Dispatch' });
-const tasks = defineMessage({ id: 'settings.workflow.tasks', defaultMessage: 'Tasks' });
-const acceptance = defineMessage({
-  id: 'settings.workflow.acceptance',
-  defaultMessage: 'Acceptance',
 });
 const personal = defineMessage({
   id: 'settings.data.personal',
@@ -1101,6 +1093,19 @@ export const SETTINGS_INDEX: SettingRecord[] = [
   },
 
   page('projects'),
+  {
+    id: 'projects.globalAutoMerge',
+    page: 'projects',
+    section: defineMessage({ id: 'settings.worktrees.merging', defaultMessage: 'Merging' }),
+    label: defineMessage({
+      id: 'settings.autoMerge.toggle',
+      defaultMessage: 'Merge automatically once gates pass',
+    }),
+    keywords: defineMessage({
+      id: 'settings.search.keywords.autoMerge',
+      defaultMessage: 'land, worktree',
+    }),
+  },
   page('gates'),
   {
     id: 'gates.gate',
@@ -1143,15 +1148,6 @@ export const SETTINGS_INDEX: SettingRecord[] = [
       t({ id: 'settings.gate.runner.daemon', defaultMessage: 'daemon' }),
       t({ id: 'settings.gate.runner.session', defaultMessage: 'Session worktree' }),
     ],
-  },
-  {
-    id: 'gates.milestoneVerify',
-    page: 'gates',
-    section: gate,
-    label: defineMessage({
-      id: 'settings.gate.milestoneVerify',
-      defaultMessage: 'Verify milestones automatically',
-    }),
   },
   {
     id: 'gates.name',
@@ -1452,130 +1448,5 @@ export const SETTINGS_INDEX: SettingRecord[] = [
       id: 'settings.search.keywords.refresh',
       defaultMessage: 'reload, rescan',
     }),
-  },
-
-  page('workflow'),
-  {
-    id: 'workflow.maxParallel',
-    page: 'workflow',
-    section: dispatch,
-    label: defineMessage({
-      id: 'data.workflowPolicy.param.maxParallel',
-      defaultMessage: 'Concurrency limit',
-    }),
-    keywords: defineMessage({
-      id: 'settings.search.keywords.maxParallel',
-      defaultMessage: 'parallel, sessions at once',
-    }),
-  },
-  {
-    id: 'workflow.maxParallelLimit',
-    page: 'workflow',
-    section: dispatch,
-    label: defineMessage({
-      id: 'data.workflowPolicy.param.maxParallelLimit',
-      defaultMessage: 'Concurrency limit cap',
-    }),
-  },
-  {
-    id: 'workflow.runtimeParallel',
-    page: 'workflow',
-    section: dispatch,
-    label: defineMessage({
-      id: 'data.workflowPolicy.param.runtimeParallel',
-      defaultMessage: 'Concurrency per runtime',
-    }),
-    keywords: defineMessage({
-      id: 'settings.search.keywords.runtimeParallel',
-      defaultMessage: 'parallel, sessions at once, runtime limit',
-    }),
-  },
-  {
-    id: 'workflow.dispatchPaused',
-    page: 'workflow',
-    section: dispatch,
-    label: defineMessage({
-      id: 'data.workflowPolicy.param.dispatchPaused',
-      defaultMessage: 'Pause dispatch',
-    }),
-    keywords: defineMessage({
-      id: 'settings.search.keywords.dispatchPaused',
-      defaultMessage: 'stop, hold, resume, queue',
-    }),
-  },
-  {
-    id: 'workflow.path',
-    page: 'workflow',
-    section: tasks,
-    label: defineMessage({ id: 'data.workflowPolicy.param.path', defaultMessage: 'Task path' }),
-    options: () => Object.values(PATH_LABEL),
-  },
-  {
-    id: 'workflow.taskSizeHint',
-    page: 'workflow',
-    section: tasks,
-    label: defineMessage({
-      id: 'data.workflowPolicy.param.taskSizeHint',
-      defaultMessage: 'Task file count hint',
-    }),
-  },
-  {
-    id: 'workflow.budget',
-    page: 'workflow',
-    section: tasks,
-    label: defineMessage({ id: 'data.workflowPolicy.param.budget', defaultMessage: 'Task budget' }),
-    keywords: defineMessage({
-      id: 'settings.search.keywords.taskBudget',
-      defaultMessage: 'tokens, minutes, cost, limit',
-    }),
-  },
-  {
-    id: 'workflow.acceptanceWake',
-    page: 'workflow',
-    section: acceptance,
-    label: defineMessage({
-      id: 'data.workflowPolicy.param.acceptanceWake',
-      defaultMessage: 'When to accept',
-    }),
-    options: () => Object.values(WAKE_LABEL),
-  },
-  {
-    id: 'workflow.gateOnFail',
-    page: 'workflow',
-    section: PAGE_NAME.gates,
-    label: defineMessage({ id: 'settings.gate.onFail', defaultMessage: 'When a gate fails' }),
-    options: () => [
-      t({ id: 'settings.gate.onFail.handback', defaultMessage: 'Hand back to fix' }),
-      t({ id: 'settings.gate.onFail.retry', defaultMessage: 'Rerun once first' }),
-      t({ id: 'settings.gate.onFail.stop', defaultMessage: 'Stop for me' }),
-    ],
-  },
-  {
-    id: 'workflow.handbackLimit',
-    page: 'workflow',
-    section: PAGE_NAME.gates,
-    label: defineMessage({
-      id: 'data.workflowPolicy.param.handbackLimit',
-      defaultMessage: 'Handback limit',
-    }),
-  },
-  {
-    id: 'workflow.autoMerge',
-    page: 'workflow',
-    section: defineMessage({ id: 'settings.worktrees.merging', defaultMessage: 'Merging' }),
-    label: defineMessage({
-      id: 'settings.autoMerge.toggle',
-      defaultMessage: 'Merge automatically once gates pass',
-    }),
-    keywords: defineMessage({
-      id: 'settings.search.keywords.autoMerge',
-      defaultMessage: 'land, worktree',
-    }),
-  },
-  {
-    id: 'workflow.planChanges',
-    page: 'workflow',
-    label: defineMessage({ id: 'settings.workflow.planChanges', defaultMessage: 'Plan changes' }),
-    options: () => Object.values(PLAN_CHANGES_LABEL),
   },
 ];

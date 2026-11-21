@@ -12,7 +12,7 @@ import { useBoard } from '../../data/board';
 import { runCommand } from '../../data/commands';
 import { useMemoryQuery } from '../../data/memory';
 import { budgetRefusal, maintainMemory, type BudgetRefusal } from '../../data/memory-context';
-import { openPlanMilestone, useMemoryView } from '../../data/memory-view';
+import { useMemoryView } from '../../data/memory-view';
 import { failureText } from '../../data/needs-you';
 import { STREAM_KINDS } from '../../data/sync';
 import { sessionTitle } from '../../data/transcript';
@@ -370,7 +370,6 @@ export function EntriesPage({ projectId }: { projectId: string }) {
         dependencies={dependencies.data?.items ?? []}
         dependents={dependents.data?.items ?? []}
         tasks={directory?.facets.tasks ?? []}
-        milestones={base?.facets.milestones ?? []}
         signature={directory?.signature}
         author={author}
         footer={
@@ -386,7 +385,6 @@ export function EntriesPage({ projectId }: { projectId: string }) {
         onOpen={select}
         // The entry carries the tag, so it stays in the list and stays open.
         onTag={(tag) => setFilters({ ...filters, tag: [tag] })}
-        onOpenMilestone={() => openPlanMilestone(projectId)}
         onClose={() => select(null)}
       />
     );

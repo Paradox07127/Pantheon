@@ -19,7 +19,7 @@ import { zh } from './i18n-setup.js';
 
 const THIS_COMPUTER = zh('settings.nav.app');
 const GATES = zh('settings.pages.gates');
-const WORKFLOW = zh('settings.pages.workflow');
+const DEFAULTS = zh('settings.pages.defaults');
 const ALL_PROJECTS = zh('settings.nav.projects');
 const APPEARANCE = zh('settings.pages.appearance');
 const html = (type: never, props: object) => renderToStaticMarkup(createElement(type, props));
@@ -52,7 +52,6 @@ describe('settings navigation', () => {
         ['app', 'shortcuts', 'settings.pages.shortcuts'],
         ['app', 'data', 'settings.pages.data'],
         ['app', 'about', 'settings.pages.about'],
-        ['global', 'workflow', 'settings.pages.workflow'],
         ['global', 'defaults', 'settings.pages.defaults'],
         ['global', 'usage', 'settings.pages.usage'],
         ['global', 'external', 'settings.pages.external'],
@@ -92,8 +91,8 @@ describe('settings page header', () => {
   });
 
   it('says a page for every project applies to every project', () => {
-    const header = html(CategoryHeader as never, { page: 'workflow' });
-    expect(header).toContain(`<h1>${WORKFLOW}</h1><span class="ps-chip">${ALL_PROJECTS}</span>`);
+    const header = html(CategoryHeader as never, { page: 'defaults' });
+    expect(header).toContain(`<h1>${DEFAULTS}</h1><span class="ps-chip">${ALL_PROJECTS}</span>`);
   });
 
   it('names the search across all settings while a search is typed', () => {

@@ -1,29 +1,12 @@
-import {
-  requireThat,
-  type BoardPlan,
-  type ExternalEvent,
-  type Milestone,
-  type Session,
-} from '@pantheon/domain';
+import { requireThat, type BoardPlan, type ExternalEvent, type Session } from '@pantheon/domain';
 import { projectAccess, type ControlContext } from './context.js';
 import { acceptInput } from './session.js';
-import { currentAcceptance, currentDirectMerge } from './board-plan.js';
-import { milestoneView } from './project-facts.js';
 import { personalAnswer } from './personal-scope.js';
 import { blockedReport } from './lead-inbox.js';
 import { stuckUpstream } from './task-dispatch.js';
-import { laneHeld } from './lane-stops.js';
-import { runningPlanReview } from './review.js';
-import { PLAN_REVIEW_TIERS } from './merge-review.js';
-import {
-  NEXT_STEP,
-  action,
-  latestEvent,
-  type NeedsYouDraft,
-  type NeedsYouScope,
-} from './needs-you.js';
+import { NEXT_STEP, action, type NeedsYouDraft, type NeedsYouScope } from './needs-you.js';
 
-/** The plans' proposals, lanes waiting for plan approval, external holds, lead questions, blocked and undispatched tasks and lead wake failures. */
+/** The plans' proposals, external holds, lead questions, blocked and undispatched tasks and lead wake failures. */
 export function planItems(
   ctx: ControlContext,
   scope: NeedsYouScope,
@@ -55,55 +38,6 @@ export function planItems(
         next_step: NEXT_STEP.plan_proposal_awaiting_decision,
       });
     }
-    for (const [laneId, stop] of Object.entries(plan.lane_stops ?? {})) {
-      if (!laneHeld(plan, laneId)) continue;
-      items.push({
-        source: { table: 'board_plans', id: plan.id, revision: plan.revision },
-        kind: 'board.lane.approval',
-        project_id: plan.project_id,
-        session_id: plan.id,
-        request_id: laneId,
-        lane_title: plan.lanes.find((lane) => lane.id === laneId)?.title,
-        status: 'pending',
-        created_at: stop.held_at!,
-        reason: 'lane_plan_awaiting_approval',
-        decision: 'plan_change',
-        primary: 'board.lane.approve',
-        actions: [
-          action('board.lane.approve', () => {
-            projectAccess(ctx, principal, plan.project_id, 'board.lane.approve');
-            personalAnswer(ctx, principal, 'board.lane.approve', plan.project_id);
-          }),
-        ],
-        plan_review_running: plan.tasks.some(
-          (task) =>
-            task.lane === laneId &&
-            !!task.kind &&
-            PLAN_REVIEW_TIERS.includes(task.kind.tier) &&
-            !!runningPlanReview(ctx, plan, task.id),
-        ),
-        next_step: NEXT_STEP.lane_plan_awaiting_approval,
-      });
-    }
-    if (plan.paused && plan.reassessment)
-      items.push({
-        source: { table: 'board_plans', id: plan.id, revision: plan.revision },
-        kind: 'board.plan.reassessment',
-        project_id: plan.project_id,
-        session_id: plan.id,
-        status: 'paused',
-        created_at: plan.reassessment.at,
-        reason: 'plan_reassessment_ready',
-        decision: 'plan_change',
-        primary: 'board.plan.resume',
-        actions: [
-          action('board.plan.resume', () =>
-            requireThat(principal.role === 'user', 'permission_denied', 'Only user'),
-          ),
-        ],
-        reassessment: plan.reassessment,
-        next_step: NEXT_STEP.plan_reassessment_ready,
-      });
     for (const [subject, hold] of Object.entries(plan.external_holds ?? {})) {
       const title = ctx.store
         .list<ExternalEvent>('external_events')
@@ -250,60 +184,6 @@ export function planItems(
         ],
         next_step: NEXT_STEP.lead_wake_limited,
       });
-  }
-  return items;
-}
-
-/** Milestones ready for acceptance. */
-export function milestoneItems(
-  ctx: ControlContext,
-  scope: NeedsYouScope,
-  planOf: Map<string, BoardPlan>,
-): NeedsYouDraft[] {
-  const { principal, listedProject } = scope;
-  const items: NeedsYouDraft[] = [];
-  for (const milestone of ctx.store.list<Milestone>('milestones')) {
-    // A milestone the user created has no lead.
-    const leadId = milestone.owner_session_id;
-    if (
-      milestone.removed_at ||
-      (leadId ? !planOf.has(leadId) : !listedProject(milestone.project_id))
-    )
-      continue;
-    const view = milestoneView(ctx, milestone);
-    if (view.status !== 'ready_for_acceptance') continue;
-    const plan = leadId ? planOf.get(leadId) : undefined;
-    items.push({
-      source: { table: 'milestones', id: milestone.id, revision: milestone.revision },
-      kind: 'milestone.ready_for_acceptance',
-      project_id: milestone.project_id,
-      ...(leadId ? { session_id: leadId } : {}),
-      status: view.status,
-      // Ready since its last task was done, or since it last changed.
-      created_at: Math.max(
-        milestone.created_at,
-        latestEvent(ctx, milestone.id, 'milestone.revised')?.created_at ?? 0,
-        ...view.required_sessions.map(
-          (sessionId) => latestEvent(ctx, sessionId, 'session.merged')?.created_at ?? 0,
-        ),
-        ...(milestone.task_ids ?? []).map((taskId) =>
-          Math.max(
-            currentAcceptance(plan, taskId)?.at ?? 0,
-            currentDirectMerge(plan, taskId)?.at ?? 0,
-          ),
-        ),
-      ),
-      reason: 'milestone_ready_for_acceptance',
-      decision: 'milestone_accept',
-      primary: 'milestone.accept',
-      actions: [
-        action('milestone.accept', () => {
-          projectAccess(ctx, principal, milestone.project_id, 'milestone.accept');
-          personalAnswer(ctx, principal, 'milestone.accept', milestone.project_id);
-        }),
-      ],
-      next_step: NEXT_STEP.milestone_ready_for_acceptance,
-    });
   }
   return items;
 }

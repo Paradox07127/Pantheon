@@ -11,11 +11,9 @@ import { useBoard } from '@/data/board';
 import { effectiveUsageTargets } from '@/data/project-defaults';
 import { forgetQuery } from '@/data/query-cache';
 import { t } from '@/i18n';
-import { Overrides } from '@/screens/settings/Overrides';
 import { GlobalPermissions } from '@/screens/settings/PermissionsPage';
 import { ProjectListPage } from '@/screens/settings/ProjectListPage';
 import { useSettingsView } from '@/screens/settings/view';
-import { WorkflowPage } from '@/screens/settings/WorkflowPage';
 import { WorktreesPage } from '@/screens/settings/WorktreesPage';
 import { zh, zhf } from './i18n-setup.js';
 
@@ -100,11 +98,6 @@ const labelled = (tree: ReactNode, label: string) =>
   find(tree, (n) => n.props['aria-label'] === label);
 const button = (tree: ReactNode, name: string) =>
   find(tree, (n) => n.type === 'button' && (n.props['aria-label'] ?? text(n)) === name);
-const param = (id: string) => zh(`data.workflowPolicy.param.${id}`);
-const overridesOf = (tree: ReactNode) => find(tree, (n) => n.type === Overrides);
-const opener = (tree: ReactNode) => find(tree, (n) => n.props['aria-haspopup'] === 'dialog');
-const openLabel = (count: number, setting: string) =>
-  zhf('settings.overrides.open', { count, setting });
 
 beforeEach(() => {
   forgetQuery('project.defaults', 'all');
@@ -132,127 +125,6 @@ afterEach(() => {
   useBoard.setState({ board: null });
 });
 
-describe('a setting every project follows', () => {
-  it('edits the global value over the built-in one and counts the projects that set their own', async () => {
-    const h = mount(() => WorkflowPage({ project: null }));
-    await h.flush();
-    const row = () => labelled(h.value, param('maxParallel'));
-    const field = () =>
-      find(row(), (n) => n.type === 'input' && n.props['aria-label'] === param('maxParallel'));
-    expect(field().props.value).toBe('4');
-
-    const counted = mount(() => Overrides(overridesOf(row()).props));
-    expect(opener(counted.value).props['aria-label']).toBe(openLabel(1, param('maxParallel')));
-    expect(text(opener(counted.value))).toBe('1');
-    const none = mount(() =>
-      Overrides(overridesOf(labelled(h.value, param('maxParallelLimit'))).props),
-    );
-    expect(opener(none.value).props['aria-label']).toBe(openLabel(0, param('maxParallelLimit')));
-    expect(text(opener(none.value))).toBe('');
-
-    field().props.onChange({ target: { value: '2' } });
-    await h.flush();
-    field().props.onBlur();
-    await h.flush();
-    expect(sent()).toEqual([
-      {
-        type: 'project.defaults.set',
-        input: { key: 'workflow_policy', value: { max_parallel: 2 } },
-        expected_revision: null,
-      },
-    ]);
-  });
-
-  it('clears a project’s own value and the global one from the row’s dialog', async () => {
-    const h = mount(() => WorkflowPage({ project: null }));
-    await h.flush();
-    const dialog = mount(() =>
-      Overrides(overridesOf(labelled(h.value, param('maxParallel'))).props),
-    );
-    await dialog.flush();
-    const list = labelled(dialog.value, zh('settings.overrides.list'));
-    expect(
-      nodes(list)
-        .filter((n) => n.props.role === 'listitem')
-        .map(text),
-    ).toEqual([`Beta api5${zh('settings.overrides.clear')}`]);
-    button(list, zhf('settings.overrides.clearNamed', { project: 'Beta api' })).props.onClick();
-    await dialog.flush();
-    button(dialog.value, zh('settings.overrides.restoreDefault')).props.onClick();
-    await dialog.flush();
-    expect(sent()).toEqual([
-      {
-        type: 'project.override.clear',
-        input: { project_id: 'beta', key: 'workflow_policy', param: 'max_parallel' },
-        expected_revision: 9,
-      },
-      {
-        type: 'project.defaults.set',
-        input: { key: 'workflow_policy', value: {} },
-        expected_revision: null,
-      },
-    ]);
-  });
-
-  it('edits the gate settings every project follows, each row with the projects that set their own', async () => {
-    const h = mount(() => WorkflowPage({ project: null }));
-    await h.flush();
-    const gates = find(h.value, (n) => n.props.title === zh('settings.pages.gates'));
-    const onFail = zh('settings.gate.onFail');
-    const limit = param('handbackLimit');
-    for (const name of [onFail, limit])
-      expect(overridesOf(labelled(gates, name)).props.name).toBe(name);
-    find(labelled(gates, onFail), (n) => n.props.onValueChange !== undefined).props.onValueChange(
-      'stop',
-    );
-    await h.flush();
-    expect(sent()).toEqual([
-      {
-        type: 'project.defaults.set',
-        input: { key: 'workflow_policy', value: { max_parallel: 4, gate_on_fail: 'stop' } },
-        expected_revision: null,
-      },
-    ]);
-  });
-
-  it('sets a chosen project’s own value inside the dialog', async () => {
-    const h = mount(() => WorkflowPage({ project: null }));
-    await h.flush();
-    const props = overridesOf(labelled(h.value, param('maxParallel'))).props;
-    const dialog = mount(() => Overrides(props));
-    await dialog.flush();
-    const editor = () =>
-      find(dialog.value, (n) => n.type === WorkflowPage) as ReactElement<{
-        project: { id: string };
-        only: string;
-      }>;
-    // A project that follows the global value comes first.
-    expect(editor().props).toMatchObject({ project: { id: 'alpha' }, only: 'max_parallel' });
-    find(
-      dialog.value,
-      (n) => n.props['aria-label'] === zh('settings.overrides.project'),
-    ).props.onChange('beta');
-    await dialog.flush();
-    expect(editor().props.project.id).toBe('beta');
-
-    const own = mount(() => WorkflowPage(editor().props as never));
-    await own.flush();
-    const field = () =>
-      find(own.value, (n) => n.type === 'input' && n.props['aria-label'] === param('maxParallel'));
-    field().props.onChange({ target: { value: '1' } });
-    await own.flush();
-    field().props.onBlur();
-    await own.flush();
-    expect(sent()).toEqual([
-      {
-        type: 'workflow.policy.set',
-        input: { project_id: 'beta', max_parallel: 1 },
-        expected_revision: 9,
-      },
-    ]);
-  });
-});
-
 describe('the projects page', () => {
   it('lists every project with how many settings it sets itself, and opens one', async () => {
     const h = mount(() => ProjectListPage());
@@ -265,6 +137,28 @@ describe('the projects page', () => {
     ).toEqual(['Alpha app', `Beta api${zhf('settings.projectList.ownCount', { count: 2 })}`]);
     find(list, (n) => n.type === 'button' && text(n).startsWith('Beta api')).props.onClick();
     expect(useSettingsView.getState().detail).toBe('beta');
+  });
+
+  it('turns auto merge off for every project without its own choice', async () => {
+    const list = mount(() => ProjectListPage());
+    await list.flush();
+    const merge = find(
+      list.value,
+      (n) => typeof n.type === 'function' && n.type.name === 'GlobalAutoMerge',
+    );
+    const h = mount(() => (merge.type as (props: unknown) => ReactNode)(merge.props));
+    await h.flush();
+    const toggle = () => labelled(h.value, zh('settings.autoMerge.toggle'));
+    expect(toggle().props.checked).toBe(true);
+    toggle().props.onChange({ target: { checked: false } });
+    await h.flush();
+    expect(sent()).toEqual([
+      {
+        type: 'project.defaults.set',
+        input: { key: 'auto_merge', value: false },
+        expected_revision: null,
+      },
+    ]);
   });
 
   it('shows the settings the project sets itself, each cleared on its own', async () => {

@@ -80,7 +80,6 @@ const ON_FAIL = gate('onFail');
 const RUNNER = gate('runner');
 const HANDBACK_LIMIT = zh('data.workflowPolicy.param.handbackLimit');
 const RECOVERY_SWITCH = zh('settings.gate.recoverySwitch');
-const MILESTONE_VERIFY = zh('settings.gate.milestoneVerify');
 async function folder(named = false, git = false) {
   const h = mount(() => FolderGate({ project, root: ROOT, named, git, runs }));
   await h.flush();
@@ -394,30 +393,6 @@ describe('the handback count after a failed gate', () => {
       { recovery_switch: 'auto' },
       true,
       { recovery_switch: 'off' },
-    ],
-    [
-      'turns on milestone verification in its own row when the policy has none',
-      'gates.milestoneVerify',
-      MILESTONE_VERIFY,
-      {},
-      false,
-      { milestone_verify: 'auto' },
-    ],
-    [
-      'turns off milestone verification in its own row when the policy has it on',
-      'gates.milestoneVerify',
-      MILESTONE_VERIFY,
-      { milestone_verify: 'auto' },
-      true,
-      { milestone_verify: 'off' },
-    ],
-    [
-      'turns on milestone verification while a failed gate stops the work',
-      'gates.milestoneVerify',
-      MILESTONE_VERIFY,
-      { gate_on_fail: 'stop' },
-      false,
-      { milestone_verify: 'auto' },
     ],
   ] as const)('%s', async (_, anchor, label, stored, checked, input) => {
     bridge.answers['workflow.policy'] = policy(stored);

@@ -9,8 +9,6 @@ import { cachedQuery, noteResync, readCached, storeQuery } from './query-cache';
 import { SLOW_CODES, SLOW_RETRY_MS, type DaemonEvent } from './sync';
 
 export type { ProjectRead };
-export type MilestoneView = ProjectRead['milestones'][number];
-export type Milestone = MilestoneView['milestone'];
 export type ProjectBrief = NonNullable<ProjectRead['brief']>;
 
 /** Error codes meaning the daemon does not have the query or command at all. */

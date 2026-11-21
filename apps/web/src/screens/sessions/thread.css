@@ -657,50 +657,6 @@
   color: var(--tx2);
   font-weight: 600;
 }
-.ss-lead {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 8px 12px 12px;
-  border: var(--hair) solid var(--bd);
-  border-radius: var(--r-lg);
-  background: var(--sf);
-}
-.ss-lead .ss-from b {
-  color: var(--tx);
-}
-.ss-lead .ss-from span {
-  margin-left: auto;
-}
-.ss-lead p {
-  margin: 0;
-  color: var(--tx);
-  font-size: var(--fs-md);
-  line-height: var(--lh-md);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  text-wrap: pretty;
-}
-.tchip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex: none;
-  height: 22px;
-  padding: 0 6px;
-  border: var(--hair) solid var(--bd);
-  border-radius: var(--r-sm);
-  background: var(--sf2);
-  color: var(--tx);
-  font-size: var(--fs-xs);
-  white-space: nowrap;
-}
-button.tchip {
-  font-family: inherit;
-}
-button.tchip:hover {
-  border-color: var(--bd2);
-}
 /* A run of calls in one box, a row each. */
 .ss-tgroup {
   min-width: 0;

@@ -96,14 +96,6 @@ describe('search finds the new settings', () => {
     expect(ids(drawer)).toContain('appearance.drawerWidth');
     expect(ids(diff)).toContain('diff.page');
   });
-
-  it('finds the per-runtime concurrency and the dispatch pause', () => {
-    expect(ids('运行时并发')[0]).toBe('workflow.runtimeParallel');
-    expect(ids('暂停派发')[0]).toBe('workflow.dispatchPaused');
-    setLocaleSync('en', {});
-    expect(ids('per runtime')).toContain('workflow.runtimeParallel');
-    expect(ids('pause dispatch')).toContain('workflow.dispatchPaused');
-  });
 });
 
 describe('removing the project from settings', () => {

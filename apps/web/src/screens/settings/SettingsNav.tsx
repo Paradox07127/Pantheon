@@ -21,7 +21,6 @@ import {
   Settings2,
   ShieldCheck,
   Sun,
-  Workflow,
   type LucideIcon,
 } from 'lucide-react';
 import { t } from '../../i18n';
@@ -50,7 +49,6 @@ const PAGE_ICONS: Record<SettingsPage, LucideIcon> = {
   defaults: Route,
   project: Folder,
   extensions: Puzzle,
-  workflow: Workflow,
   projects: Folders,
 };
 

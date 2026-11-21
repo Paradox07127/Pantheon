@@ -2,7 +2,6 @@ import { expect, expectTypeOf, it } from 'vitest';
 import {
   querySchemas,
   type BoardActivity,
-  type BoardHistory,
   type BoardModel,
   type BoardSegment,
   type BoardWaiting,
@@ -151,44 +150,6 @@ it('types task drawer facts and optional attempt facts', () => {
   expectTypeOf<BoardWaiting['options']>().toEqualTypeOf<string[] | undefined>();
   expectTypeOf<BoardSegment['additions']>().toEqualTypeOf<number | undefined>();
   expectTypeOf<BoardSegment['deletions']>().toEqualTypeOf<number | undefined>();
-});
-
-it('types whole course task facts, daily counts and decisions', () => {
-  type HistoryTask = BoardHistory['tasks'][number];
-  type HistoryDay = BoardHistory['days'][number];
-  expectTypeOf<HistoryTask['depends_on']>().toEqualTypeOf<string[]>();
-  expectTypeOf<HistoryTask['task_type']>().toEqualTypeOf<Task['task_type']>();
-  expectTypeOf<HistoryTask['runtime']>().toEqualTypeOf<string | undefined>();
-  expectTypeOf<HistoryTask['model']>().toEqualTypeOf<string | undefined>();
-  expectTypeOf<HistoryTask['handback_reasons']>().toEqualTypeOf<
-    { gate: number; review: number; other: number } | undefined
-  >();
-  expectTypeOf<HistoryTask['gate_passed_on_attempt']>().toEqualTypeOf<number | undefined>();
-  expectTypeOf<HistoryDay['failed']>().toEqualTypeOf<number>();
-  expectTypeOf<HistoryDay['waited']>().toEqualTypeOf<number>();
-  expectTypeOf<BoardHistory['decisions']>().toEqualTypeOf<
-    {
-      at: number;
-      lane_id: string | null;
-      kind: 'plan' | 'start' | 'stop' | 'accept' | 'replan';
-      title?: string;
-      replan?: {
-        triggers: {
-          event_id: string;
-          milestone_id: string;
-          text: string;
-          type: 'handbacks' | 'budget_ratio' | 'stall' | 'assumption_false';
-          value?: number;
-          task_id: string;
-          task_title: string;
-        }[];
-        added: string[];
-        removed: string[];
-        changed: string[];
-      };
-      lead_session_id?: string;
-    }[]
-  >();
 });
 
 it.each(['30', 'all'])('accepts the longer board range %s', (days) => {

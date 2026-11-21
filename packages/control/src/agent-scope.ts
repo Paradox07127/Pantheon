@@ -69,16 +69,11 @@ export const AGENT_SCOPE: readonly AgentScopeRow[] = [
     never_personal: [],
   },
   {
-    capability: '回答提问、计划变更、里程碑验收',
-    project_level: '按章程回答自己 worker 的提问，验收自己的里程碑',
+    capability: '回答提问、计划变更',
+    project_level: '按章程回答自己 worker 的提问',
     personal_level:
       '默认都不能，用户在设置里逐类打开；转述的 worker 提问和超预算时的计划变更始终留给用户',
-    personal_actions: [
-      'lead.question.answer',
-      'board.plan.proposal.resolve',
-      'board.lane.approve',
-      'milestone.accept',
-    ],
+    personal_actions: ['lead.question.answer', 'board.plan.proposal.resolve'],
     never_personal: [],
   },
   {

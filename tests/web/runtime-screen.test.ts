@@ -1,145 +1,126 @@
 import { describe, expect, it } from 'vitest';
-import type { BoardModel, BoardSegment } from '@pantheon/protocol';
-import { RECENT_MS, runSessionIds, runtimeBoard } from '@/screens/runtime/runtime-model';
+import type { WorkbenchSession } from '@pantheon/protocol';
+import type { DaemonEvent } from '@/data/sync';
+import { RECENT_MS, runtimeSessions, sessionFacts } from '@/screens/runtime/runtime-model';
 
-type Task = BoardModel['tasks'][number];
-type Lead = NonNullable<BoardModel['leads']>[number];
+const NOW = 10 * 60 * 60_000;
+const iso = (at: number) => new Date(at).toISOString();
 
-const segment = (id: string, extra: Partial<BoardSegment> = {}): BoardSegment => ({
+const listed = (id: string, extra: Partial<WorkbenchSession> = {}): WorkbenchSession => ({
   id,
-  session_id: id,
+  created_at: iso(0),
   title: `title of ${id}`,
   runtime: 'claude',
   model: null,
-  status: 'running',
-  started_at: null,
-  ended_at: null,
-  tokens: 0,
+  effort: null,
+  permission_mode: 'ask',
+  workspace_id: `workspace-${id}`,
+  workspace_kind: 'linked_worktree',
+  state: 'idle',
+  waiting: 0,
+  reconciling: false,
+  stopping: false,
+  last_activity_at: iso(0),
+  changes: null,
+  merge: null,
   ...extra,
 });
 
-const task = (id: string, extra: Partial<Task> = {}): Task => ({
-  id,
-  title: `task ${id}`,
-  goal: '',
-  scope: [],
-  lane_id: null,
-  milestone_id: null,
-  status: 'running',
-  blockers: [],
-  segments: [],
-  additions: null,
-  deletions: null,
-  checks: 'none',
-  started_at: null,
-  ended_at: null,
-  last_progress_at: null,
-  blocked_since: null,
-  turn_running: false,
-  ...extra,
+const approval = (sequence: number, id: string, session: string, state: string): DaemonEvent => ({
+  sequence,
+  event_id: `event-${sequence}`,
+  kind: state === 'pending' ? 'approval.requested' : 'approval.resolved',
+  aggregate_id: id,
+  aggregate_revision: sequence,
+  project_id: 'project-a',
+  causation_id: '',
+  created_at: sequence,
+  payload: { session_id: session, kind: 'permission', state, tool: 'Bash' },
 });
 
-const lead = (session_id: string): Lead => ({
-  session_id,
-  title: `lead ${session_id}`,
-  state: 'running',
-  inbox: 0,
-  updated_at: 0,
-});
+describe('runtimeSessions', () => {
+  const old = iso(NOW - RECENT_MS - 1);
+  const recent = iso(NOW - RECENT_MS);
+  const ids = (sessions: WorkbenchSession[], parents = new Map<string, string>()) =>
+    runtimeSessions(sessions, parents, NOW).map((s) => s.id);
 
-const queued: Task['activity'] = { phase: 'queued', since: 0, health: 'fresh', attempt: 1 };
-
-describe('runtimeBoard', () => {
-  const NOW = 10 * 60 * 60_000;
-  const old = NOW - RECENT_MS - 1;
-  const recent = NOW - RECENT_MS;
-
-  it('keeps tasks live now and tasks with progress within the hour, in board order', () => {
-    const { tasks } = runtimeBoard({
-      now: NOW,
-      since: 0,
-      tasks: [
-        task('lead:done-old', { status: 'done', last_progress_at: old }),
-        task('lead:done-recent', { status: 'done', last_progress_at: recent }),
-        task('lead:wait', { status: 'waiting', last_progress_at: old }),
-        task('lead:todo', { status: 'todo' }),
-        task('lead:queued', { status: 'todo', activity: queued }),
-        task('lead:run'),
-        task('lead:turn', { status: 'idle', turn_running: true, last_progress_at: old }),
-        task('adhoc-done', { status: 'done', last_progress_at: old }),
-        task('adhoc-run'),
-      ],
-    });
-    expect(tasks.map((t) => t.id)).toEqual([
-      'lead:done-recent',
-      'lead:wait',
-      'lead:queued',
-      'lead:run',
-      'lead:turn',
-      'adhoc-run',
-    ]);
+  it('keeps the sessions live now and those active within the hour, in list order', () => {
+    expect(
+      ids([
+        listed('merged-old', { state: 'merged', last_activity_at: old }),
+        listed('merged-recent', { state: 'merged', last_activity_at: recent }),
+        listed('waiting', { state: 'waiting', last_activity_at: old }),
+        listed('starting', { state: 'starting', last_activity_at: old }),
+        listed('running', { state: 'running', last_activity_at: old }),
+        listed('merging', { state: 'merging', last_activity_at: old }),
+        listed('idle-old', { last_activity_at: old }),
+        listed('idle-fresh', { last_activity_at: iso(NOW - 1000) }),
+      ]),
+    ).toEqual(['merged-recent', 'waiting', 'starting', 'running', 'merging', 'idle-fresh']);
   });
 
-  it('drops a session idle for longer than the hour and keeps one that just ended its turn', () => {
-    const { tasks } = runtimeBoard({
-      now: NOW,
-      since: 0,
-      tasks: [
-        task('lead:stale', { status: 'idle', last_progress_at: old }),
-        task('adhoc-stale', { status: 'idle', last_progress_at: old }),
-        task('lead:fresh', { status: 'idle', last_progress_at: NOW - 1000 }),
-      ],
-    });
-    expect(tasks.map((t) => t.id)).toEqual(['lead:fresh']);
+  it('keeps the sessions that started a kept session, however long they were idle', () => {
+    expect(
+      ids(
+        [
+          listed('root', { last_activity_at: old }),
+          listed('middle', { last_activity_at: old }),
+          listed('leaf', { state: 'running' }),
+          listed('other', { last_activity_at: old }),
+        ],
+        new Map([
+          ['leaf', 'middle'],
+          ['middle', 'root'],
+          ['other', 'root'],
+        ]),
+      ),
+    ).toEqual(['root', 'middle', 'leaf']);
   });
 
-  it('keeps a lead that runs, waits, changed its plan within the hour or owns a kept task', () => {
-    const at = (session_id: string, extra: Partial<Lead>): Lead => ({
-      ...lead(session_id),
-      updated_at: old,
-      ...extra,
-    });
-    const { leads } = runtimeBoard({
-      now: NOW,
-      since: 0,
-      leads: [
-        at('running', {}),
-        at('waiting', { state: 'waiting' }),
-        at('planned', { state: 'idle', updated_at: recent }),
-        at('owner', { state: 'idle' }),
-        at('stale', { state: 'idle' }),
-        at('closed', { state: 'closed' }),
-      ],
-      tasks: [
-        task('owner:run', { owner_session_id: 'owner' }),
-        task('stale:old', { owner_session_id: 'stale', status: 'done', last_progress_at: old }),
-      ],
-    });
-    expect(leads?.map((l) => l.session_id)).toEqual(['running', 'waiting', 'planned', 'owner']);
+  it('keeps nothing without sessions', () => {
+    expect(ids([])).toEqual([]);
   });
 });
 
-describe('runSessionIds', () => {
-  it('reads the leads and the sessions open or ended within the range, each once', () => {
-    const ids = runSessionIds({
-      since: 1_000,
-      leads: [lead('lead-1')],
-      tasks: [
-        task('lead-1:a', {
-          segments: [
-            segment('old', { ended_at: 999 }),
-            segment('recent', { ended_at: 1_000 }),
-            segment('open'),
-            segment('none', { session_id: null }),
-          ],
+describe('sessionFacts', () => {
+  it('takes the context and fork from the list and the oldest open permission from the events', () => {
+    const facts = sessionFacts(
+      [
+        listed('asking', {
+          waiting_kind: 'approval',
+          waiting_request: { tool: 'Bash', detail: 'pnpm test' },
+          run: { phase: 'waiting_approval', since: 5, wait: { reason: 'approval', since: 7 } },
+          context: { used_tokens: 10, window_tokens: 100 },
+          forked_from: { session_id: 'origin' },
         }),
-        task('lead-1:b', { segments: [segment('open'), segment('lead-1')] }),
+        listed('quiet'),
       ],
+      [
+        approval(1, 'approval-done', 'asking', 'pending'),
+        approval(2, 'approval-old', 'asking', 'pending'),
+        approval(3, 'approval-new', 'asking', 'pending'),
+        approval(4, 'approval-done', 'asking', 'approved'),
+      ],
+    );
+    expect(facts.get('asking')).toEqual({
+      context: { used_tokens: 10, window_tokens: 100 },
+      forked: true,
+      waiting: { kind: 'approval', summary: 'pnpm test', approval_id: 'approval-old', since: 7 },
     });
-    expect(ids).toEqual(['lead-1', 'recent', 'open']);
+    expect(facts.get('quiet')).toEqual({ context: undefined, forked: false, waiting: undefined });
   });
 
-  it('reads nothing without leads or segments', () => {
-    expect(runSessionIds({ since: 0, tasks: [] })).toEqual([]);
+  it('asks for input when every open request is a question, and waits on nothing without its event', () => {
+    const question = listed('question', {
+      waiting_kind: 'question',
+      waiting_request: { tool: 'AskUserQuestion' },
+      last_activity_at: iso(NOW),
+    });
+    expect(
+      sessionFacts([question], [approval(1, 'ask', 'question', 'pending')]).get('question'),
+    ).toMatchObject({
+      waiting: { kind: 'input', summary: 'AskUserQuestion', approval_id: 'ask', since: NOW },
+    });
+    expect(sessionFacts([question], []).get('question')?.waiting).toBeUndefined();
   });
 });

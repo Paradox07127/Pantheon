@@ -134,7 +134,6 @@ import {
 } from './landing.js';
 import { appendNote, blockedReport, contractLines } from './lead-inbox.js';
 import { inheritedEnvAllowlist, managedSessionSpec, sessionExtensions } from './native-session.js';
-import { projectFacts } from './project-facts.js';
 import { runTimes, sessionRun } from './run-state.js';
 import { sessionTasks } from './session-tasks.js';
 import { projectSetupSkill } from './project-setup-skill.js';
@@ -2205,19 +2204,14 @@ function discardBaselineSession(ctx: ControlContext, session: Session, cause: st
 /** Whether a milestone of the project requires the session or cites it as evidence. */
 function milestoneNames(ctx: ControlContext, session: Session): boolean {
   const ref = `session:${session.id}`;
-  return (
-    ctx.store
-      .list<Milestone>('milestones')
-      .some(
-        (milestone) =>
-          milestone.project_id === session.project_id &&
-          ((milestone.required_sessions ?? []).includes(session.id) ||
-            !!milestone.acceptance?.evidence_refs.includes(ref)),
-      ) ||
-    projectFacts(ctx, session.project_id).milestones.some((view) =>
-      view.required_sessions.includes(session.id),
-    )
-  );
+  return ctx.store
+    .list<Milestone>('milestones')
+    .some(
+      (milestone) =>
+        milestone.project_id === session.project_id &&
+        ((milestone.required_sessions ?? []).includes(session.id) ||
+          !!milestone.acceptance?.evidence_refs.includes(ref)),
+    );
 }
 
 /** The reviewer and change story sessions that worked on the session's changes. */

@@ -24,9 +24,8 @@ vi.mock('@/data/commands', () => ({
 import { NeedsPopover, SessionsPopover } from '@/components/NeedsPopover';
 import { GateMark, StateGlyph } from '@/components/SessionStateIcon';
 import { runCommand } from '@/data/commands';
-import { useMemoryView } from '@/data/memory-view';
 import { reasonText } from '@/data/needs-you';
-import { zh, zhf } from './i18n-setup.js';
+import { zh } from './i18n-setup.js';
 
 const NOW = Date.now();
 const MINUTE = 60_000;
@@ -51,11 +50,11 @@ const failed = item({
   reason: 'session_failed',
   actions: [],
 });
-const milestone = item({
-  source: { table: 'milestones', id: 'first-release', revision: 1 },
-  kind: 'milestone.ready_for_acceptance',
+const undelivered = item({
+  source: { table: 'approvals', id: 'approval-2', revision: 1 },
+  status: 'undelivered',
   created_at: NOW - 40 * MINUTE,
-  reason: 'milestone_ready_for_acceptance',
+  reason: 'answer_undelivered',
   actions: [],
 });
 
@@ -94,7 +93,7 @@ afterEach(() => {
 
 describe('needs-you list', () => {
   const open = () => {
-    const h = mount(() => NeedsPopover({ items: [request, failed, milestone], trigger }));
+    const h = mount(() => NeedsPopover({ items: [request, failed, undelivered], trigger }));
     root(h.value).props.onOpenChange(true);
     h.render();
     return h;
@@ -142,45 +141,10 @@ describe('needs-you list', () => {
     expect(groups(h.value).map((g) => g.props['aria-label'])).toEqual(['Alpha', 'Beta']);
     const alpha = text(groups(h.value)[0]);
     expect(alpha.startsWith('Alpha2')).toBe(true);
-    expect(alpha.indexOf(reasonText('milestone_ready_for_acceptance'))).toBeLessThan(
+    expect(alpha.indexOf(reasonText('answer_undelivered'))).toBeLessThan(
       alpha.indexOf('Fix login'),
     );
     expect(text(groups(h.value)[1])).toContain(reasonText('session_failed'));
-  });
-
-  it('lists two tasks of one plan that wait on a stuck upstream as two rows of their own', () => {
-    const waiting = (taskId: string) =>
-      item({
-        source: { table: 'board_plans', id: 'lead-1', revision: 2 },
-        kind: 'session.failed',
-        session_id: 'lead-1',
-        task_id: `lead-1:${taskId}`,
-        status: 'queued',
-        reason: 'task_upstream_stuck',
-        upstream: { task_id: 'lead-1:schema', stuck: 'stopped' },
-        actions: [],
-      });
-    const h = mount(() => NeedsPopover({ items: [waiting('api'), waiting('client')], trigger }));
-    root(h.value).props.onOpenChange(true);
-    h.render();
-    const rows = nodes(groups(h.value)[0]).filter((n) => n.type === 'li');
-    expect(new Set(rows.map((n) => n.key)).size).toBe(2);
-  });
-
-  it('puts the item that blocks the most tasks first, before the longer waits', () => {
-    const h = mount(() =>
-      NeedsPopover({
-        items: [{ ...request, blocks: 1 }, { ...failed, blocks: 3 }, milestone],
-        trigger,
-      }),
-    );
-    root(h.value).props.onOpenChange(true);
-    h.render();
-    expect(groups(h.value).map((g) => g.props['aria-label'])).toEqual(['Beta', 'Alpha']);
-    const alpha = text(groups(h.value)[1]);
-    expect(alpha.indexOf('Fix login')).toBeLessThan(
-      alpha.indexOf(reasonText('milestone_ready_for_acceptance')),
-    );
   });
 
   it.each([
@@ -192,7 +156,7 @@ describe('needs-you list', () => {
     ],
     [
       'the project of an item without a session',
-      reasonText('milestone_ready_for_acceptance'),
+      reasonText('answer_undelivered'),
       ['openProject', 'alpha'],
     ],
   ])('opens %s from its row and closes', (_name, title, [method, ...args]) => {
@@ -244,15 +208,11 @@ describe('needs-you list', () => {
     expect(opens[to]!.focus).toHaveBeenCalled();
   });
 
-  it.each([
-    ['lead', []],
-    ['user', [zh('board.needs.actions.merge'), zh('board.needs.actions.gates')]],
-  ] as const)('a failed gate on the %s rung offers %j', (rung, expected) => {
+  it('offers a retried merge and a rerun of the gates on a failed gate', () => {
     const gate = item({
       source: { table: 'sessions', id: 'session-gate', revision: 1 },
       kind: 'session.gate_failed',
       reason: 'gate_failed',
-      rung,
       actions: [
         { command: 'session.merge', allowed: true },
         { command: 'session.gates.run', allowed: true },
@@ -266,27 +226,7 @@ describe('needs-you list', () => {
       nodes(h.value)
         .filter((n) => !!n.props.onClick && retries.includes(text(n)))
         .map(text),
-    ).toEqual(expected);
-  });
-
-  it('lists plan decisions kept as notes and opens the plan entries of memory', () => {
-    mock.shell.openProjectMemory = vi.fn();
-    const notes = item({
-      source: { table: 'memory_records', id: 'note-2', revision: 1 },
-      kind: 'memory.decision_budget',
-      status: 'over_budget',
-      reason: 'plan_decisions_over_budget',
-      decision: 'budget',
-      actions: [],
-      memory_notes: { count: 2, memory_ids: ['note-1', 'note-2'] },
-    });
-    const h = mount(() => NeedsPopover({ items: [notes], trigger }));
-    root(h.value).props.onOpenChange(true);
-    h.render();
-    expect(text(groups(h.value)[0])).toContain(zhf('board.needs.memoryBudget', { count: 2 }));
-    button(h.value, zh('board.needs.actions.memory')).props.onClick();
-    expect(mock.shell.openProjectMemory).toHaveBeenCalledWith('alpha', 'entries');
-    expect(useMemoryView.getState().askedFilters).toEqual({ origin: 'plan' });
+    ).toEqual(retries);
   });
 });
 

@@ -275,16 +275,11 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
-| `board.lane.approve` | `project_id`: string<br>`lead_session_id`: string<br>`lane_id`: string |  |
-| `board.lane.depth.set` | `project_id`: string<br>`lead_session_id`: string<br>`lane_id`: string<br>`depth`: "just_do" \| "plan_first" \| "spec_first" |  |
 | `board.plan.edit` | `project_id`: string<br>`lead_session_id?`: string<br>`base_version`: integer<br>`trigger_event?`: string<br>`ops`: (object \| object \| object \| object \| object \| object \| object \| object \| object \| object \| object)[] | edit_board (lead) |
 | `board.plan.edit.withdraw` | `project_id`: string<br>`lead_session_id`: string<br>`edit_id`: string |  |
-| `board.plan.pause` | `project_id`: string<br>`lead_session_id`: string |  |
 | `board.plan.proposal.resolve` | `project_id`: string<br>`lead_session_id`: string<br>`proposal_id`: string<br>`decision`: "accept" \| "reject"<br>`reason?`: string<br>`ops?`: (object \| object \| object \| object \| object \| object \| object \| object)[] |  |
 | `board.plan.proposal.withdraw` | `project_id`: string<br>`proposal_id`: string | withdraw_board_proposal (lead) |
 | `board.plan.propose` | `project_id`: string<br>`base_version`: integer<br>`trigger_event?`: string<br>`reason`: string<br>`ops`: (object \| object \| object \| object \| object \| object \| object \| object)[] | propose_board (lead) |
-| `board.plan.reassess` | `project_id`: string<br>`done`: string<br>`blocked`: string<br>`change`: string | reassess (lead) |
-| `board.plan.resume` | `project_id`: string<br>`lead_session_id`: string |  |
 | `board.plan.update` | `project_id`: string<br>`base_version`: integer<br>`trigger_event?`: string<br>`headline`: string<br>`lanes`: object[]<br>`iterations?`: object[]<br>`tasks`: object[]<br>`milestones`: object[]<br>`risks`: object[]<br>`assumptions`: object[] | update_board (lead) |
 | `board.sync` | `project_id`: string | sync_board (lead) |
 
@@ -333,15 +328,6 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 |---|---|---|
 | `github.pr.create` | `session_id`: string<br>`title?`: string<br>`draft?`: boolean |  |
 
-### goal
-
-| type | input | MCP 工具 |
-|---|---|---|
-| `goal.archive` | `goal_id`: string |  |
-| `goal.reorder` | `project_id`: string<br>`goal_ids`: string[] |  |
-| `goal.restore` | `goal_id`: string |  |
-| `goal.set` | `project_id`: string<br>`goal_id?`: string<br>`text`: string |  |
-
 ### lead
 
 | type | input | MCP 工具 |
@@ -376,16 +362,6 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `memory.restore` | `memory_id`: string |  |
 | `memory.search` | `project_id`: string<br>`state?`: "active" \| "draft" \| "archived" \| "all"<br>`kind?`: "decision" \| "report" \| "note"<br>`tag?`: string \| string[]<br>`task_id?`: string<br>`lead_session_id?`: string<br>`project_only?`: boolean<br>`origin?`: "plan"<br>`milestone_id?`: string<br>`q?`: string<br>`limit?`: integer | memory_search (reviewer), memory_search (planner), memory_search (lead), memory_search (worker) |
 | `memory.undo_retraction` | `memory_id`: string |  |
-
-### milestone
-
-| type | input | MCP 工具 |
-|---|---|---|
-| `milestone.accept` | `milestone_id`: string<br>`evidence_refs`: string[]<br>`criteria_checked?`: integer[]<br>`override_reason?`: string | milestone_accept (lead) |
-| `milestone.checks.get` | `project_id`: string |  |
-| `milestone.checks.set` | `project_id`: string<br>`checks`: object[] |  |
-| `milestone.create` | `project_id`: string<br>`title`: string<br>`required_sessions`: string[]<br>`criteria`: string[] |  |
-| `milestone.revise` | `milestone_id`: string<br>`title`: string<br>`required_sessions`: string[]<br>`criteria`: string[] |  |
 
 ### permission
 
@@ -536,7 +512,6 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
-| `request.reroute` | `turn_id`: string<br>`to`: "answer_here" \| "new_plan" \| object \| object |  |
 | `request.send` | `project_id`: string<br>`input`: string<br>`attachments?`: string[]<br>`target?`: object \| object |  |
 
 ### resident
@@ -668,8 +643,6 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `agent.wakes` | `agent_id`: string<br>`limit?`: integer<br>`routine_id?`: string |
 | `app.settings` | — |
 | `backend.list` | — |
-| `board.history` | `project_id`: string |
-| `board.plan.replay` | `lead_session_id`: string<br>`after?`: integer<br>`before?`: integer<br>`limit?`: integer |
 | `board.view` | `project_id`: string<br>`days`: "1" \| "3" \| "7" \| "14" \| "30" \| "all"<br>`until?`: string |
 | `change_story.diff` | `story_id`: string |
 | `change_story.list` | `project_id`: string |

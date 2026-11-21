@@ -1,14 +1,7 @@
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, it, vi } from 'vitest';
-import type {
-  BoardPlan,
-  Principal,
-  Project,
-  ProjectRead,
-  Session,
-  SessionTurn,
-} from '@pantheon/domain';
+import type { BoardPlan, Principal, Project, Session, SessionTurn } from '@pantheon/domain';
 import { awaitWorkspaceReady, eventually, insideSandbox, settle, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
@@ -423,7 +416,7 @@ const acceptTask = (f: Fixture, leadId: string, taskId: string) =>
     sessionOf(f, leadId, 'lead'),
   );
 
-it('makes a report task done when its lead accepts the done report, so its milestone can be accepted', async () => {
+it('makes a report task done when its lead accepts the done report', async () => {
   const f = await workbenchFixture();
   const lead = await f.create('Plan the export feature');
   await settle(f, lead);
@@ -431,10 +424,8 @@ it('makes a report task done when its lead accepts the done report, so its miles
     done_when: 'report',
     scope: [],
     acceptance: [],
-    milestone: 'm1',
   });
-  const milestones = [{ id: 'm1', title: 'Format chosen', criteria: ['A format'], tasks: ['r'] }];
-  writePlan(f, lead.id, [research], milestones);
+  writePlan(f, lead.id, [research]);
   const worker = await openTask(f, lead.id, 'r');
   await settle(f, worker);
   expect(() => acceptTask(f, lead.id, 'r')).toThrow(
@@ -455,14 +446,8 @@ it('makes a report task done when its lead accepts the done report, so its miles
   expect(planOf(f, lead.id).accepted).toEqual({
     r: { at: expect.any(Number), evidence: 'The report names the export format', generation: 1 },
   });
-  writePlan(f, lead.id, [research], milestones);
+  writePlan(f, lead.id, [research]);
   expect(Object.keys(planOf(f, lead.id).accepted!)).toEqual(['r']);
-  const read = f.control.projectRead(user, f.project.id) as ProjectRead;
-  expect(read.milestones.find((view) => view.milestone.key === 'm1')).toMatchObject({
-    status: 'ready_for_acceptance',
-    tasks: { done: 1, total: 1 },
-    reasons: [],
-  });
   expect(current(f, worker.id).outcome).toBeUndefined();
 });
 

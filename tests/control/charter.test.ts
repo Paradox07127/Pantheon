@@ -57,7 +57,6 @@ it('lets the coordinator act on its own by default except for creating agents an
     answer_worker_questions: 'on',
     plan_change: 'on',
     create_agent: 'ask',
-    accept_milestone: 'on',
     merge_out_of_scope: 'on',
     start_external: 'off',
   });
@@ -65,17 +64,17 @@ it('lets the coordinator act on its own by default except for creating agents an
 
 it('reads a project override of one power and keeps the others', async () => {
   const f = await opened();
-  setPolicy(f, { charter: { accept_milestone: 'ask', merge_out_of_scope: 'off' } });
+  setPolicy(f, { charter: { answer_worker_questions: 'ask', merge_out_of_scope: 'off' } });
   expect(modes(f)).toMatchObject({
     approve_worker_prompts: 'on',
-    accept_milestone: 'ask',
+    answer_worker_questions: 'ask',
     merge_out_of_scope: 'off',
     create_agent: 'ask',
   });
   setPolicy(f, { charter: { approve_worker_prompts: 'ask' } });
   expect(modes(f)).toMatchObject({
     approve_worker_prompts: 'ask',
-    accept_milestone: 'ask',
+    answer_worker_questions: 'ask',
     merge_out_of_scope: 'off',
   });
 });

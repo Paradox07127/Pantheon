@@ -97,27 +97,6 @@ describe('approval card', () => {
     expect(rule).not.toContain('flex: none');
   });
 
-  it('cuts the task name of a compact row before its title, and narrows the columns next to the task drawer', () => {
-    const css = readFileSync(
-      path.resolve(import.meta.dirname, '../../apps/web/src/components/request-card.css'),
-      'utf8',
-    );
-    const rule = (selector: string) =>
-      new RegExp(`\\n${selector.replace(/[.[\]>]/g, '\\$&')} \\{([^}]*)\\}`).exec(css)?.[1] ?? '';
-    expect(rule('.rq > .rq-hd .rq-who')).toContain('flex: 1 1 0;');
-    expect(rule('.rq > .rq-hd')).toContain(
-      'grid-template-columns: 16px minmax(0, 1fr) 120px 176px;',
-    );
-    expect(rule('.rq-l1 > .rq-kind')).toContain('width: 144px;');
-    expect(rule('.bd-needs[data-drawer] .rq > .rq-hd')).toContain(
-      'grid-template-columns: 16px minmax(0, 1fr) 96px 144px;',
-    );
-    expect(rule('.bd-needs[data-drawer] .rq-l1 > .rq-kind')).toContain('width: 112px;');
-    expect(rule('.bd-needs[data-drawer] .rq-sub')).toContain(
-      'padding-left: calc(16px + 112px + 2 * var(--sp-2));',
-    );
-  });
-
   it('answers each button with its approval decision', async () => {
     mock.runCommand.mockResolvedValue({ ok: false, error: { code: 'conflict', message: 'x' } });
     const press = async (label: string) => {

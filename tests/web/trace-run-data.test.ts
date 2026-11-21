@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactElement } from 'react';
 import type { RuntimeDiagnostics, RuntimeFinding } from '@pantheon/domain';
-import type { BoardModel, ProjectTrace, SessionTrace } from '@pantheon/protocol';
+import type { ProjectTrace, SessionTrace, WorkbenchSession } from '@pantheon/protocol';
 import { find, named, nodes, text, mount, unmountAll } from './web-hook-host.js';
 
 const mock = vi.hoisted(() => ({
-  view: null as unknown,
+  sessions: [] as WorkbenchSession[],
   spans: new Map() as ReadonlyMap<string, unknown[]>,
   trace: null as unknown,
 }));
@@ -15,12 +15,15 @@ vi.mock('react', async (actual) =>
 vi.mock('@/data/board', () => ({
   useBoard: Object.assign(
     (selector: any) =>
-      selector({ board: null, trace_revision: 0, resync: 0, status: { state: 'live' } }),
+      selector({
+        board: null,
+        events: [],
+        trace_revision: 0,
+        resync: 0,
+        status: { state: 'live' },
+      }),
     { getState: () => ({ refresh() {} }) },
   ),
-}));
-vi.mock('@/data/board-view', () => ({
-  useBoardView: () => ({ data: mock.view, loading: false, error: null, reload() {} }),
 }));
 vi.mock('@/data/trace', () => ({
   useRunSpans: (_projectId: string | null, ids: readonly string[]) =>
@@ -66,16 +69,16 @@ vi.mock('@/store', () => {
   };
 });
 import { CallDetail } from '@/screens/runtime/CallDetail';
-import { boardFacts, callRows, type CallRow } from '@/screens/runtime/call-rows';
+import { callRows, type CallRow } from '@/screens/runtime/call-rows';
 import { runForest, type RunCall } from '@/screens/runtime/run-tree';
 import { liveFigures, rangeFigures } from '@/screens/runtime/run-stats';
+import { sessionFacts } from '@/screens/runtime/runtime-model';
 import { RunsView, SLOW_MS } from '@/screens/runtime/RuntimeScreen';
 import { FindingDetail } from '@/screens/trace/FindingDetail';
 import { RuntimePanel } from '@/screens/trace/RuntimeDiagnostics';
 import { zh } from './i18n-setup.js';
 
 type Span = SessionTrace['spans'][number];
-type Lead = NonNullable<BoardModel['leads']>[number];
 
 const NOW = Date.UTC(2026, 10, 13, 12);
 
@@ -95,22 +98,27 @@ const span = (id: string, extra: Partial<Span> = {}): Span => ({
 const turn = (id: string, extra: Partial<Span> = {}) =>
   span(id, { parent: null, turn: id, kind: 'turn', name: id, start: NOW - 60_000, ...extra });
 
-const lead = (extra: Partial<Lead> = {}): Lead => ({
-  session_id: 'lead-1',
+const listed = (extra: Partial<WorkbenchSession> = {}): WorkbenchSession => ({
+  id: 'lead-1',
+  created_at: new Date(NOW - 60_000).toISOString(),
   title: 'lead',
+  runtime: 'claude',
+  model: null,
+  effort: null,
+  permission_mode: 'ask',
+  workspace_id: 'workspace-lead-1',
+  workspace_kind: 'linked_worktree',
   state: 'running',
-  inbox: 0,
-  updated_at: NOW,
+  waiting: 0,
+  reconciling: false,
+  stopping: false,
+  last_activity_at: new Date(NOW).toISOString(),
+  changes: null,
+  merge: null,
   ...extra,
 });
 
-const board = (leadExtra: Partial<Lead> = {}) =>
-  ({
-    now: NOW,
-    since: NOW - 86_400_000,
-    leads: [lead(leadExtra)],
-    tasks: [],
-  }) as unknown as BoardModel;
+const NO_PARENTS = new Map<string, string>();
 
 // The first turn reports its own usage, which its model call repeats; the second only its model call's.
 const CACHED: Span[] = [
@@ -162,7 +170,7 @@ const trace = (extra: Partial<ProjectTrace['stats']> = {}): ProjectTrace => ({
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(NOW);
-  mock.view = board();
+  mock.sessions = [listed()];
   mock.spans = new Map([['lead-1', CACHED]]);
   mock.trace = trace();
 });
@@ -178,12 +186,15 @@ const detail = (tree: unknown) =>
   nodes(tree as any).find((n) => typeof n.type === 'function' && n.type.name === 'CallDetail');
 
 describe('cache hit figure', () => {
-  const forestOf = (spans: Span[]) => runForest(board(), [], new Map([['lead-1', spans]]));
+  const forestOf = (spans: Span[]) =>
+    runForest([listed()], NO_PARENTS, new Map([['lead-1', spans]]));
 
   it('shares the cache reads of the shown sessions by their turns, counting a turn once', () => {
     const forest = forestOf(CACHED);
     expect(liveFigures(forest, new Map([['lead-1', CACHED]]), NOW).cacheHit).toBe(0.7);
-    const strip = text(figures(mount(() => RunsView({ projectId: 'p', sessions: [] })).value));
+    const strip = text(
+      figures(mount(() => RunsView({ projectId: 'p', sessions: mock.sessions })).value),
+    );
     expect(strip).toContain('缓存命中70%');
   });
 
@@ -193,7 +204,9 @@ describe('cache hit figure', () => {
     const empty = [turn('turn-a', { tokens: { input: 0, output: 0, cache_read: 0 } })];
     expect(liveFigures(forestOf(empty), new Map([['lead-1', empty]]), NOW).cacheHit).toBeNull();
     mock.spans = new Map([['lead-1', UNCACHED]]);
-    const strip = text(figures(mount(() => RunsView({ projectId: 'p', sessions: [] })).value));
+    const strip = text(
+      figures(mount(() => RunsView({ projectId: 'p', sessions: mock.sessions })).value),
+    );
     expect(strip).toContain('缓存命中—');
   });
 
@@ -239,7 +252,7 @@ describe('slow threshold', () => {
     ['counts a call as slow from the threshold of the diagnostics', 8_000, 8_000],
     ['keeps the page threshold without diagnostics', undefined, SLOW_MS],
   ])('%s', (_, slowMs, threshold) => {
-    const h = mount(() => RunsView({ projectId: 'p', sessions: [], slowMs }));
+    const h = mount(() => RunsView({ projectId: 'p', sessions: mock.sessions, slowMs }));
     expect(table(h.value).props.filter.slowMs).toBe(threshold);
   });
 });
@@ -247,10 +260,10 @@ describe('slow threshold', () => {
 describe('call row target and tokens', () => {
   const rowOf = (extra: Partial<Span>) => {
     const spans = new Map([['lead-1', [turn('turn-a', { status: 'running' }), span('c', extra)]]]);
-    const b = board();
+    const sessions = [listed()];
     const { rows } = callRows({
-      forest: runForest(b, [], spans),
-      facts: boardFacts(b),
+      forest: runForest(sessions, NO_PARENTS, spans),
+      facts: sessionFacts(sessions, []),
       spans,
       view: 'now',
       now: NOW,
@@ -348,19 +361,21 @@ describe('call detail facts', () => {
         ],
       ],
     ]);
-    const shownDetail = detail(mount(() => RunsView({ projectId: 'p', sessions: [] })).value)!;
+    const shownDetail = detail(
+      mount(() => RunsView({ projectId: 'p', sessions: mock.sessions })).value,
+    )!;
     expect(shownDetail.props.span).toMatchObject({ id: 'c', retry_count: 1 });
     expect(shownDetail.props.turnCost).toBe(0.42);
   });
 });
 
-describe('lead context', () => {
-  const leadRow = (extra: Partial<Lead>) => {
-    const b = board(extra);
+describe('session context', () => {
+  const sessionRow = (extra: Partial<WorkbenchSession>) => {
+    const sessions = [listed(extra)];
     const spans = new Map([['lead-1', CACHED]]);
     const { rows } = callRows({
-      forest: runForest(b, [], spans),
-      facts: boardFacts(b),
+      forest: runForest(sessions, NO_PARENTS, spans),
+      facts: sessionFacts(sessions, []),
       spans,
       view: 'now',
       now: NOW,
@@ -369,15 +384,14 @@ describe('lead context', () => {
     return rows.find((row) => row.type === 'session')!;
   };
 
-  it('draws the context ring of a lead that reports it', () => {
-    expect(leadRow({ context: { used_tokens: 34_000, window_tokens: 100_000 } })).toMatchObject({
-      lead: true,
+  it('draws the context ring of a session that reports it', () => {
+    expect(sessionRow({ context: { used_tokens: 34_000, window_tokens: 100_000 } })).toMatchObject({
       context: 34,
     });
   });
 
   it('leaves the ring out without it', () => {
-    expect(leadRow({}).context).toBeNull();
+    expect(sessionRow({}).context).toBeNull();
   });
 });
 

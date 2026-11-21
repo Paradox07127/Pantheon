@@ -2,7 +2,6 @@ import type {
   Event,
   Project,
   ProjectBrief,
-  Milestone,
   Session,
   SessionTurn,
   Workspace,
@@ -51,7 +50,6 @@ export interface BoardSnapshot {
   cursor: number;
   projects: Project[];
   project_briefs?: ProjectBrief[];
-  milestones?: Milestone[];
   sessions: Session[];
   session_turns: SessionTurn[];
   workspaces: Workspace[];

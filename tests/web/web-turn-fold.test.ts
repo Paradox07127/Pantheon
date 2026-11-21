@@ -34,7 +34,7 @@ const call = (id: string, extra: Partial<ToolItem> = {}): ToolItem => ({
   ...extra,
 });
 const plan = (id: string): ToolItem =>
-  call(id, { name: 'mcp__pantheon__accept_task', input: { task_id: 'task-a' } });
+  call(id, { name: 'mcp__pantheon__request_review', input: { runtimes: ['codex'] } });
 const say = (value: string): TranscriptItem => ({ kind: 'text', text: value });
 const ask = (id: string, extra: Partial<RequestItem> = {}): RequestItem => ({
   kind: 'request',

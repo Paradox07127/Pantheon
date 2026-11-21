@@ -18,8 +18,6 @@ export const PERSONAL_COMMANDS = [
   'request.send',
   'lead.question.answer',
   'board.plan.proposal.resolve',
-  'board.lane.approve',
-  'milestone.accept',
 ] as const satisfies readonly CommandType[];
 
 export const OUTSIDE_PERSONAL_SCOPE = "Outside the personal agent's scope";
@@ -27,8 +25,6 @@ export const OUTSIDE_PERSONAL_SCOPE = "Outside the personal agent's scope";
 const ANSWER_KINDS = {
   'lead.question.answer': 'question',
   'board.plan.proposal.resolve': 'plan_change',
-  'board.lane.approve': 'plan_change',
-  'milestone.accept': 'milestone_accept',
 } as const satisfies Partial<Record<CommandType, PersonalAnswerKind>>;
 
 type AnswerCommand = keyof typeof ANSWER_KINDS;

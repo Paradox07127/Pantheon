@@ -2,8 +2,6 @@ import type {
   BoardPlan,
   LeadNote,
   LeadQuestion,
-  Milestone,
-  MilestoneView,
   Principal,
   Project,
   Review,
@@ -13,10 +11,7 @@ import type {
   TaskThreadEntry,
 } from '@pantheon/domain';
 import { ownEntry, projectAccess, type ControlContext } from './context.js';
-import { ensureAgents } from './agents.js';
-import { residentPlan } from './agent-always-on.js';
-import { appendNote, planLineage } from './lead-inbox.js';
-import { openOf } from './resident.js';
+import { planLineage } from './lead-inbox.js';
 
 const KINDS = [
   'turn.queued',
@@ -204,30 +199,4 @@ export function taskThread(
     }
   }
   return entries;
-}
-
-/** Leaves the project's open Assistant a line of the milestone's new status; it does not wake the Assistant. */
-export function noteMilestone(
-  ctx: ControlContext,
-  milestone: Milestone,
-  status: MilestoneView['status'],
-  cause: string,
-): void {
-  const assistant = openOf(
-    ctx,
-    ensureAgents(ctx, milestone.project_id).find((agent) => agent.template === 'assistant')!,
-  );
-  if (!assistant) return;
-  appendNote(
-    ctx,
-    residentPlan(ctx, assistant),
-    {
-      at: ctx.store.now(),
-      session_id: milestone.owner_session_id ?? '',
-      task_id: '',
-      kind: 'milestone',
-      text: `Milestone "${milestone.title}" is now ${status.replaceAll('_', ' ')}.`,
-    },
-    cause,
-  );
 }

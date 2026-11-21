@@ -1,13 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { FixtureAdapter } from '@pantheon/adapters';
 import { id } from '@pantheon/domain';
-import type {
-  BoardPlan,
-  MemoryRecord,
-  MemorySummary,
-  Milestone,
-  Principal,
-} from '@pantheon/domain';
+import type { BoardPlan, MemoryRecord, MemorySummary, Principal } from '@pantheon/domain';
 import type { ControlContext } from '../../packages/control/dist/context.js';
 import { sourceSignature } from '../../packages/control/dist/memory-access.js';
 import { fixture, insertSession, user } from '../helpers.js';
@@ -136,10 +130,6 @@ const entries = (f: Fixture, filters: Record<string, unknown> = {}): MemorySumma
   f.control.memoryRead(user, f.project.id, { origin: 'plan', state: 'all', ...filters }).records;
 const stored = (f: Fixture, memoryId: string) =>
   f.store.must<MemoryRecord>('memory_records', memoryId);
-const release = (f: Fixture, lead: Principal) =>
-  f.store
-    .list<Milestone>('milestones')
-    .find((row) => row.owner_session_id === lead.session_id && row.key === 'release')!;
 const budgetItems = (f: Fixture) =>
   f.control
     .needsYou(user, f.project.id)
@@ -163,7 +153,6 @@ it('writes a refuted decision when the lead applies a refute and a confirmed one
     origin: {
       kind: 'plan',
       lead_session_id: lead.session_id,
-      milestone_id: release(f, lead).id,
       subject: 'assumption',
       subject_id: 'csv',
       outcome: 'refuted',
@@ -253,7 +242,6 @@ it('writes a closed decision for each risk that leaves the plan, and none when f
         subject: 'risk',
         subject_id: 'perf',
         outcome: 'closed',
-        milestone_id: release(f, lead).id,
       },
     },
   ]);

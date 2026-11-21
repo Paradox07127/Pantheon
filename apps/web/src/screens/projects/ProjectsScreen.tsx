@@ -4,16 +4,12 @@ import { Menu } from '@base-ui/react/menu';
 import {
   CircleDot,
   Ellipsis,
-  Flag,
   Folder,
-  Globe,
   Import,
   Lightbulb,
   MessageSquare,
   ShieldCheck,
   TriangleAlert,
-  Wallet,
-  Workflow,
   type LucideIcon,
 } from 'lucide-react';
 import type { BoardSnapshot, ProjectSummary, WorkbenchSession } from '@pantheon/protocol';
@@ -25,29 +21,18 @@ import { StateGlyph, type GlyphName } from '../../components/SessionStateIcon';
 import { Skeleton } from '../../components/Skeleton';
 import { Tip } from '../../components/Tip';
 import { TopBar } from '../../components/TopBar';
-import { blocksText, decisionText } from '../../data/attention';
+import { decisionText } from '../../data/attention';
 import { useBoard } from '../../data/board';
 import { useCurrentProject } from '../../data/current-project';
 import { useImportCandidates } from '../../data/import';
-import {
-  ageText,
-  needReasonText,
-  useNeedsYou,
-  useNow,
-  type NeedsYouItem,
-} from '../../data/needs-you';
+import { ageText, reasonText, useNeedsYou, useNow, type NeedsYouItem } from '../../data/needs-you';
 import {
   findProjectByRoots,
   removeProject,
   removeRejectText,
   visibleProjects,
 } from '../../data/projects';
-import {
-  projectIdle,
-  sortProjects,
-  topNeed,
-  useProjectsSummary,
-} from '../../data/projects-summary';
+import { projectIdle, sortProjects, useProjectsSummary } from '../../data/projects-summary';
 import { storedUnread } from '../../data/unread';
 import { readQuery } from '../../data/workbench-sessions';
 import { t } from '../../i18n';
@@ -101,14 +86,10 @@ const COUNTS: readonly {
 
 // The icon of each decision the user makes on what waits.
 const KIND_ICONS: Record<NonNullable<NeedsYouItem['decision']>, LucideIcon> = {
-  plan_change: Workflow,
   question: MessageSquare,
-  milestone_accept: Flag,
   repeated_failure: TriangleAlert,
   permission: ShieldCheck,
-  budget: Wallet,
   improvement: Lightbulb,
-  external: Globe,
   other: CircleDot,
 };
 
@@ -437,30 +418,6 @@ function sparkPoints(days: readonly { done: number }[]): string {
     .join(' ');
 }
 
-/** The goal's tasks as merged, running, failed and not started segments, sized by count. */
-function milestoneBar(milestone: NonNullable<ProjectSummary['milestone']>) {
-  const { done, running, failed } = milestone;
-  const rest = Math.max(0, milestone.total - done - running - failed);
-  return (
-    <span
-      className="pr-bar"
-      role="img"
-      aria-label={t(
-        {
-          id: 'projects.row.goalBar',
-          defaultMessage: '{done} merged, {running} running, {failed} failed, {rest} not started',
-        },
-        { done, running, failed, rest },
-      )}
-    >
-      {done > 0 && <i className="pr-done" style={{ flexGrow: done }} />}
-      {running > 0 && <i className="pr-run" style={{ flexGrow: running }} />}
-      {failed > 0 && <i className="pr-bad" style={{ flexGrow: failed }} />}
-      {rest > 0 && <i style={{ flexGrow: rest }} />}
-    </span>
-  );
-}
-
 export function ProjectRow(props: {
   project: Project;
   summary: ProjectSummary | undefined;
@@ -471,12 +428,11 @@ export function ProjectRow(props: {
   onRemove: (project: Project) => void;
 }) {
   const { project, summary } = props;
-  const milestone = summary?.milestone;
   const days = summary?.done_daily ?? [];
   const last = summary?.last_activity_at ? Date.parse(summary.last_activity_at) : null;
   const active = summary ? COUNTS.filter(({ key }) => summary.counts[key] > 0) : [];
   const idle = projectIdle(summary);
-  const top = topNeed(props.needs);
+  const top = props.needs[0];
   const waiting = summary?.waiting;
   // Most first; "other" has no name of its own, so it always folds into the rest.
   const counted = (
@@ -509,16 +465,6 @@ export function ProjectRow(props: {
       <span className="pr-goal">
         {!summary ? (
           <Skeleton className="pr-sk-c" />
-        ) : milestone ? (
-          <>
-            <span className="pr-mt" title={milestone.title}>
-              {milestone.title}
-            </span>
-            <span className="pr-mn">
-              {milestone.done} / {milestone.total}
-            </span>
-            {milestoneBar(milestone)}
-          </>
         ) : (
           <span className="pr-none">
             {idle && last !== null
@@ -526,7 +472,7 @@ export function ProjectRow(props: {
                   { id: 'projects.row.lastActive', defaultMessage: 'Last active {age}' },
                   { age: ageText(last, props.now) },
                 )
-              : t({ id: 'projects.row.noGoal', defaultMessage: 'No goal' })}
+              : '—'}
           </span>
         )}
         {days.length > 0 && (
@@ -590,21 +536,12 @@ export function ProjectRow(props: {
               {top && (
                 <>
                   {kindIcon(top.decision)}
-                  <Clip
-                    className="pr-tt"
-                    text={top.question?.question ?? top.lane_title ?? needReasonText(top)}
-                  />
-                  {blocksText(top.blocks) && (
-                    <span className="pr-age">{blocksText(top.blocks)}</span>
-                  )}
+                  <Clip className="pr-tt" text={reasonText(top.reason)} />
                 </>
               )}
               {/* Under a minute the notice card shows no wait either. */}
               {waiting && waiting.longest_wait_ms >= 60_000 && (
                 <span className="pr-age">{durationText(waiting.longest_wait_ms)}</span>
-              )}
-              {waiting && blocksText(waiting.blocked_tasks) && (
-                <span className="pr-age">{blocksText(waiting.blocked_tasks)}</span>
               )}
             </span>
             {counted.length > 0 && (

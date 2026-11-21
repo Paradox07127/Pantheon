@@ -10,7 +10,6 @@ vi.mock('@/data/board', () => ({
     getState: () => mock.board,
   }),
 }));
-import { useBoardView } from '@/data/board-view';
 import { useNeedsYou } from '@/data/needs-you';
 import { TURN_END_HOLD_MS } from '@/data/notice-tiers';
 import { useNotices } from '@/data/notifications';
@@ -90,7 +89,6 @@ beforeEach(() => {
   reads = [];
   answers = {
     'session.list': [listed('session-a'), listed('session-b')],
-    'board.view': { tasks: [] },
   };
   mock.board = {
     board: { sessions: [], session_turns: [] },
@@ -202,15 +200,6 @@ it('reads the merge preflight again after the session turn ends', async () => {
   expect(reads).toEqual(['session.preflight', 'session.preflight']);
 });
 
-it('reads the board view again when the window regains focus', async () => {
-  const h = mount(() => useBoardView('project-a', 7));
-  await h.flush();
-  for (const listener of listeners.focus ?? []) listener();
-  h.render();
-  await h.flush();
-  expect(reads).toEqual(['board.view', 'board.view']);
-});
-
 it('reads the merge preflight again when the window regains focus', async () => {
   answers['session.preflight'] = { can_merge: true, gate: { configured_total: 0, last: 'none' } };
   const h = mount(() => useSessionPreflight('session-a'));
@@ -262,73 +251,6 @@ it('marks a skipped event sequence for one whole read and reads the board at onc
   await vi.advanceTimersByTimeAsync(100);
   expect(queries).toEqual(['board', 'board']);
   sync.stop();
-});
-
-it('reads the board view again only after events that change what it shows', async () => {
-  const h = mount(() => useBoardView('project-a', 7));
-  await h.flush();
-  expect(reads).toEqual(['board.view']);
-  await deliver(h, event(2, 'agent.message.delta', 'session-a', { text: 'x' }));
-  expect(reads).toEqual(['board.view']);
-  await deliver(h, event(3, 'session.merged', 'session-a'));
-  expect(reads).toEqual(['board.view', 'board.view']);
-  await deliver(h, event(4, 'review.finding_recorded', 'review-1'));
-  expect(reads).toEqual(['board.view', 'board.view', 'board.view']);
-});
-
-it('reads the board view again after a tool starts, a task is accepted or asked to start, and a lead note', async () => {
-  const h = mount(() => useBoardView('project-a', 7));
-  await h.flush();
-  const kinds = ['agent.tool.started', 'task.accepted', 'task.start_requested', 'lead.note_added'];
-  for (const [i, kind] of kinds.entries()) await deliver(h, event(i + 1, kind, 'aggregate-x'));
-  expect(reads).toEqual(Array(kinds.length + 1).fill('board.view'));
-});
-
-it('refreshes the health of a silent running task and stops once its turn ends', async () => {
-  answers['board.view'] = {
-    tasks: [{ id: 'task-a', turn_running: true, activity: { health: 'fresh' } }],
-  };
-  const h = mount(() => useBoardView('project-a', 7));
-  await h.flush();
-  answers['board.view'] = {
-    tasks: [{ id: 'task-a', turn_running: true, activity: { health: 'quiet' } }],
-  };
-  await vi.advanceTimersByTimeAsync(30_000);
-  await h.flush();
-  expect(reads).toEqual(['board.view', 'board.view']);
-  expect(h.value.data?.tasks[0]?.activity?.health).toBe('quiet');
-  answers['board.view'] = { tasks: [{ id: 'task-a', turn_running: false }] };
-  await deliver(h, event(1, 'turn.completed', 'turn-a'));
-  const afterEnd = reads.length;
-  await vi.advanceTimersByTimeAsync(60_000);
-  await h.flush();
-  expect(reads).toHaveLength(afterEnd);
-});
-
-it('pauses running-board refreshes while disconnected', async () => {
-  answers['board.view'] = { tasks: [], leads: [{ state: 'running' }] };
-  const h = mount(() => useBoardView('project-a', 7));
-  await h.flush();
-  mock.board = { ...mock.board, status: { state: 'offline', reason: 'gone' } };
-  h.render();
-  await vi.advanceTimersByTimeAsync(60_000);
-  await h.flush();
-  expect(reads).toEqual(['board.view']);
-});
-
-it('recovers a silent running board after one periodic read fails', async () => {
-  answers['board.view'] = { tasks: [{ turn_running: true }] };
-  const h = mount(() => useBoardView('project-a', 7));
-  await h.flush();
-  answers['board.view'] = undefined;
-  await vi.advanceTimersByTimeAsync(30_000);
-  await h.flush();
-  expect(h.value.error).not.toBeNull();
-  answers['board.view'] = { tasks: [{ turn_running: false }] };
-  await vi.advanceTimersByTimeAsync(30_000);
-  await h.flush();
-  expect(reads).toEqual(Array(3).fill('board.view'));
-  expect(h.value.error).toBeNull();
 });
 
 it('reads the session and turn diffs again after one of its turns ends', async () => {
@@ -670,8 +592,9 @@ it('marks kept run spans stale after a failed read, not while a fresher read is 
   expect(h.value).toMatchObject({ loading: true, stale: true });
 });
 
-it('does not mark a live board stale while a fresher read is in flight', async () => {
-  const h = mount(() => useBoardView('project-a', 7));
+it('does not mark a live trace stale while a fresher read is in flight', async () => {
+  answers['session.trace'] = { spans: [] };
+  const h = mount(() => useSessionTrace('project-a', 'session-a'));
   await h.flush();
   h.value.reload();
   h.render();
@@ -681,19 +604,20 @@ it('does not mark a live board stale while a fresher read is in flight', async (
   expect(h.value).toMatchObject({ loading: false, stale: false });
 });
 
-it('retains a failed board read as stale, marks disconnection immediately, and never shows it in another project', async () => {
+it('retains a failed trace read as stale, marks disconnection immediately, and never shows it in another project', async () => {
+  answers['session.trace'] = { spans: [] };
   let project = 'project-a';
-  const h = mount(() => useBoardView(project, 7));
+  const h = mount(() => useSessionTrace(project, 'session-a'));
   await h.flush();
   const model = h.value.data;
   const at = h.value.readAt;
-  answers['board.view'] = undefined;
+  answers['session.trace'] = undefined;
   h.value.reload();
   h.render();
   await h.flush();
   expect(h.value).toMatchObject({ data: model, readAt: at, stale: true, loading: false });
   expect(h.value.error).toBeTruthy();
-  answers['board.view'] = { tasks: [] };
+  answers['session.trace'] = { spans: [] };
   h.value.reload();
   h.render();
   await h.flush();

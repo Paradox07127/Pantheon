@@ -1,39 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import type { BoardBlocker, BoardModel } from '@pantheon/protocol';
 import { setLocaleSync } from '@/i18n';
 import { eventSummary } from '@/data/logs';
-import { blockerTexts, listedTitle, nextStepText } from '../../apps/web/src/lib/daemon-text.js';
+import { listedTitle, nextStepText } from '../../apps/web/src/lib/daemon-text.js';
 import { zh, zhCatalog } from './i18n-setup.js';
 
-type Task = BoardModel['tasks'][number];
-
 afterEach(() => setLocaleSync('zh-CN', zhCatalog()));
-
-const task = (
-  blockers: string[],
-  blocker_codes: BoardBlocker[] | undefined,
-  patch: Partial<Task> = {},
-): Task => ({
-  id: 'lead:a',
-  title: 'Export',
-  goal: '',
-  scope: [],
-  lane_id: null,
-  milestone_id: null,
-  status: 'running',
-  blockers,
-  ...(blocker_codes ? { blocker_codes } : {}),
-  segments: [],
-  additions: null,
-  deletions: null,
-  checks: 'none',
-  started_at: null,
-  ended_at: null,
-  last_progress_at: null,
-  blocked_since: null,
-  turn_running: false,
-  ...patch,
-});
 
 const STUCK = 'The user checks the stuck merge and cancels it if needed.';
 
@@ -42,20 +13,6 @@ describe('next steps the daemon writes', () => {
     expect(nextStepText({ reason: 'merge_stuck', next_step: STUCK })).toBe(
       zh('daemon.nextStep.mergeStuck'),
     );
-    expect(
-      nextStepText({
-        reason: 'project_over_budget',
-        next_step: 'over budget',
-        project_budget: { used_input_tokens: 150, input_tokens: 100 },
-      }),
-    ).toContain('项目从设预算起已用 150 输入 token，预算 100；');
-    expect(
-      nextStepText({
-        reason: 'plan_decisions_over_budget',
-        next_step: '3 decisions from the plan did not fit',
-        memory_notes: { count: 3, memory_ids: ['m1', 'm2', 'm3'] },
-      }),
-    ).toContain('计划里有 3 条决定超出记忆的决定预算');
     setLocaleSync('en', {});
     expect(nextStepText({ reason: 'merge_stuck', next_step: STUCK })).toBe(STUCK);
   });
@@ -76,60 +33,6 @@ describe('next steps the daemon writes', () => {
   it("shows the daemon's text for a reason the interface does not know, and none without one", () => {
     expect(nextStepText({ reason: 'gate_failed', next_step: 'Fix the gate' })).toBe('Fix the gate');
     expect(nextStepText({ reason: 'merge_stuck' })).toBeUndefined();
-  });
-});
-
-describe('board blockers the daemon writes', () => {
-  const coded = task(
-    [
-      'Queued: waiting for dependencies (the session could not open: no runtime)',
-      'Dependency “Parse” is not finished',
-      'Merge blocked: conflict, 1 conflicting files',
-    ],
-    [
-      { code: 'queued', error: 'no runtime' },
-      { code: 'upstream', title: 'Parse' },
-      { code: 'merge_blocked', reason: 'conflict', conflicts: 1 },
-    ],
-    { dispatch_wait: 'upstream' },
-  );
-
-  it('words each blocker by its code in the interface language', () => {
-    expect(blockerTexts(coded)).toEqual([
-      '排队中：等待依赖（会话开不起来：no runtime）',
-      '依赖任务「Parse」未完成',
-      '合并受阻：改动冲突，1 个冲突文件',
-    ]);
-    setLocaleSync('en', {});
-    expect(blockerTexts(coded)).toEqual([
-      'Queued: waiting for dependencies (the session could not open: no runtime)',
-      'Dependency “Parse” is not finished',
-      'Merge blocked: Changes conflict, 1 conflicting file',
-    ]);
-  });
-
-  it("shows the daemon's text for a code the interface does not know or without codes", () => {
-    const unknown = { code: 'paused' } as unknown as BoardBlocker;
-    expect(
-      blockerTexts(task(['Paused by the user', 'Turn failed'], [unknown, { code: 'turn_failed' }])),
-    ).toEqual(['Paused by the user', zh('daemon.blocker.turnFailed')]);
-    expect(blockerTexts(task(['Turn failed'], undefined))).toEqual(['Turn failed']);
-    expect(
-      blockerTexts(
-        task(
-          ['Merge blocked: odd_code, 0 conflicting files'],
-          [{ code: 'merge_blocked', reason: 'odd_code', conflicts: 0 }],
-        ),
-      ),
-    ).toEqual(['合并受阻：odd_code']);
-    setLocaleSync('en', {});
-    expect(
-      blockerTexts(
-        task(['Queued: waiting for a workflow step'], [{ code: 'queued' }], {
-          dispatch_wait: 'step' as Task['dispatch_wait'],
-        }),
-      ),
-    ).toEqual(['Queued']);
   });
 });
 

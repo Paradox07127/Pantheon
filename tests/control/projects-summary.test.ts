@@ -303,7 +303,7 @@ it('counts merged sessions since local midnight using the board clock', async ()
   expect(summary.done_daily.at(-1)?.date).toBe('2027-03-16');
 });
 
-it('summarizes queued plan tasks and the running and failed tasks of the open milestone', async () => {
+it('summarizes queued plan tasks', async () => {
   const f = await workbenchFixture();
   const lead = await idleSession(f, 'Ship exports');
   const principal: Principal = {
@@ -364,27 +364,4 @@ it('summarizes queued plan tasks and the running and failed tasks of the open mi
   expect(board.slots?.queued).toBe(1);
   const summary = f.control.projectsSummary(user).projects[0]!;
   expect(summary.counts.queued).toBe(board.slots?.queued);
-  expect(summary.milestone).toMatchObject({ done: 1, total: 4, running: 1, failed: 1 });
-});
-
-it('counts milestone sessions when the milestone has no plan tasks', async () => {
-  const f = await workbenchFixture();
-  const merged = await idleSession(f),
-    running = await idleSession(f),
-    failed = await idleSession(f);
-  patch(f, merged.id, { state: 'closed', outcome: 'merged' });
-  patch(f, running.id, { merge: { state: 'running' } });
-  patch(f, failed.id, { state: 'closed' });
-  f.call('milestone.create', {
-    project_id: f.project.id,
-    title: 'Export release',
-    required_sessions: [merged.id, running.id, failed.id],
-    criteria: ['Exports download'],
-  });
-  expect(f.control.projectsSummary(user).projects[0]!.milestone).toMatchObject({
-    done: 1,
-    total: 3,
-    running: 1,
-    failed: 1,
-  });
 });

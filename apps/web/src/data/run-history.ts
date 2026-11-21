@@ -44,7 +44,6 @@ export function historyForest(
           phase: null,
           start: newest?.start ?? null,
           end: newest?.end ?? null,
-          taskId: null,
         },
         (spans.get(lane.key) ?? []).filter((span) => ranged.has(span.turn)),
         [],

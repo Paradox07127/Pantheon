@@ -75,7 +75,7 @@ const descriptions: Record<ToolCommand, string> = {
   'review.request':
     "Ask for an independent read-only review of a committed task session in your plan: session_id from project_read, runtimes naming the reviewers (a runtime other than the writer's when one is available). Use it when a change is risky and its path has no review step. Findings come back as a board update; send concrete ones to the session with message_task. A review is evidence for your decision: it never accepts or merges a task, and a failed reviewer is not a clean review. On a task whose review step failed without a fail verdict, it runs that step's review again with the step's own reviewer, not the runtimes you name, and returns the reopened run. On a task whose review step a reviewer failed by verdict, it sends the verdict and findings to the task session, runs the review again after that turn, and returns handed_back. Refused when the round limit is reached or the same reviewer is already reviewing that session.",
   'project.read':
-    "Read the project: details, brief, milestones, and every lead's board plan with each task's state and sessions. A lead also gets a lead section: workflow policy (paths), devices, and recent retrospectives and runtime reviews. Call it before you plan or decide, and after a board update when you need the current state; a task session calls it to see the tasks around its own. It returns plan_version, which update_board, edit_board and propose_board need as base_version. To rewrite the plan from the repository, use sync_board instead.",
+    "Read the project: details, brief, and every lead's board plan with each task's state and sessions. A lead also gets a lead section: workflow policy (paths), devices, and recent retrospectives and runtime reviews. Call it before you plan or decide, and after a board update when you need the current state; a task session calls it to see the tasks around its own. It returns plan_version, which update_board, edit_board and propose_board need as base_version. To rewrite the plan from the repository, use sync_board instead.",
   'board.plan.update':
     'Write your whole board plan: headline, lanes, tasks with dependencies, milestones, risks and assumptions. Send the full plan every time; a task left out is removed. Use it for a new plan or a change to many tasks; for a few tasks use edit_board, and for a change the user must decide use propose_board. A task done when merged needs scope and acceptance; one with done_when report may have neither. Returns the plan with its new plan_version. Refused "The plan is at version N": read the plan and resend with base_version N. Refused for a source quote no user message contains: copy the user\'s words exactly.',
   'board.plan.edit':
@@ -84,16 +84,12 @@ const descriptions: Record<ToolCommand, string> = {
     "Put a change to your own plan on a card for the user: base_version (your plan's plan_version), a reason under 280 characters and 1-32 ops. Under the project setting it may apply at once instead of waiting; the result's applied says which, so get the user's answer first when the decision is theirs. A waiting proposal can be taken back with withdraw_board_proposal. Refused for a stale base_version: read the plan and resend; a lead session that is not a resident is refused until it has written a plan.",
   'board.plan.proposal.withdraw':
     'Take back one of your plan proposals that still waits for the user, by proposal_id, for example when the work changed and the proposal no longer fits. A proposal the user already decided, or one that applied at once, cannot be withdrawn; refused then.',
-  'milestone.accept':
-    'Accept one of your milestones by milestone_id, the id you gave it in the plan. Call it only after project_read shows the milestone ready_for_acceptance and you have checked each of its criteria against what landed. When the verification of the milestone has not passed, give override_reason, though proposing fix tasks is preferred. Refused "Project memory changed": call memory_context, recheck the criteria against it, and call again.',
   'task.start':
     "Ask Pantheon to start 1-16 tasks of your plan by id; pass every task you want started at once. Pantheon opens a session for each when its upstream tasks are done, its scope does not overlap a running task and a slot is free. Returns the ids requested; results come later as board updates, so end your turn. A resident's direct tasks are dispatched like any other. A non-resident lead claims a direct task by passing it alone and does it itself; when the receipt says the turn stays read-only, end the turn and the next one can write. Refused: no plan yet; a task that already has a session (stop it first); dispatch paused (tell the user); an external request not yet approved.",
   'task.message':
     'Send a message to the open session of one task of your plan, by task id and, for a parallel task, the part: answer its requirement report, tell it how to go on after an interrupt, or ask it to fix something. The session reads it with the prefix [Lead]; it sees nothing of your conversation, so make the message self-contained. An idle session starts a turn at once; a running one reads it after its turn. Under 2000 characters. Refused when the task has no open session: use start_task.',
   'task.accept':
     'Accept a done_when report task after its session sent a done report: evidence says what you checked that shows the task is done. Pantheon records your evidence and does not check it, so check the report\'s decisive claim first. The task becomes done and its milestone can be accepted. Refused for a task done when merged (it completes by merging), and for a task with no done report since its contract changed. Refused "Project memory changed": call memory_context, recheck, and call again.',
-  'board.plan.reassess':
-    "Answer the user's pause of your plan with a re-assessment card: done (what the plan finished so far), blocked (what is stuck and why) and change (what you would change before it goes on), each in plain sentences. The user reads it before resuming the plan; a later call replaces it. No new task session starts while the plan is paused, so end your turn after it. Refused when your plan is not paused.",
   'lead.note.read':
     'Read one note of your board updates in full, by the note id the update names. Use it when an update was cut short or listed by id only, before you act on that note. Refused for an id that is not one of your notes.',
   'lead.ask':
@@ -239,7 +235,6 @@ const boundRevision = (type: CommandType) =>
   type === 'board.plan.edit' ||
   type === 'board.plan.propose' ||
   type === 'board.plan.proposal.withdraw' ||
-  type === 'milestone.accept' ||
   type === 'task.start' ||
   type === 'task.message' ||
   type === 'task.accept' ||
@@ -256,7 +251,6 @@ const boundRevision = (type: CommandType) =>
   type === 'trace.report' ||
   type === 'lead.note.read' ||
   type === 'lead.ask' ||
-  type === 'board.plan.reassess' ||
   type === 'lead.worker_question.answer' ||
   type === 'agent.follow_up' ||
   type === 'agent.tell_user' ||

@@ -232,21 +232,6 @@ it('shows a task whose turn completed and whose session is ready but not merged 
   commit(f, session, 'src/a/x.ts');
   await f.control.prefetchWorktreeReads(user, f.project.id);
   expect(rowOf(f, lead.id, 'a')).toMatchObject({ state: 'awaiting_merge', status: 'ready' });
-  expect(
-    f.control.boardHistory(user, f.project.id).tasks.find((row) => row.id === `${lead.id}:a`)!
-      .state,
-  ).toBe('awaiting_merge');
-});
-
-it('shows the history of a task without running git when no list read its worktree', async () => {
-  const f = await workbenchFixture();
-  const lead = await leadWithPlan(f, [task('a')]);
-  const session = await settledTask(f, lead.id, 'a');
-  commit(f, session, 'src/a/x.ts');
-  let history: ReturnType<Fixture['control']['boardHistory']> | undefined;
-  const runs = gitRuns(() => (history = f.control.boardHistory(user, f.project.id)));
-  expect(runs).toEqual([]);
-  expect(history!.tasks.find((row) => row.id === `${lead.id}:a`)!.state).toBe('running');
 });
 
 it('shows a task whose turn ended with no commit, or failed, as needing attention', async () => {

@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, it, vi } from 'vitest';
+import { id } from '@pantheon/domain';
 import type {
   BoardPlan,
   HarnessAdapter,
@@ -87,6 +88,19 @@ async function runningSession(f: Fixture) {
   return current(f, session.id);
 }
 
+/** A stored milestone row that requires the session. */
+function requireSession(f: Fixture, sessionId: string) {
+  f.store.insert<Milestone>('milestones', {
+    id: id(),
+    revision: 1,
+    project_id: f.project.id,
+    title: 'Ship it',
+    required_sessions: [sessionId],
+    criteria: ['It ships'],
+    created_at: f.store.now(),
+    updated_by: 'user',
+  });
+}
 it('refuses to delete a session whose native process is still starting', async () => {
   const f = await workbenchFixture();
   const release = holdStart(f);
@@ -125,12 +139,7 @@ it('keeps a session a milestone came to require while its native process was clo
   const session = await runningSession(f);
 
   remove(f, session.id);
-  f.call<Milestone>('milestone.create', {
-    project_id: f.project.id,
-    title: 'Ship it',
-    required_sessions: [session.id],
-    criteria: ['It ships'],
-  });
+  requireSession(f, session.id);
   await eventually(
     () =>
       !f.store.get<Session>('sessions', session.id) ||
@@ -147,12 +156,7 @@ it('leaves a session whose delete was refused after its native process closed as
   const workspace = f.store.must<Workspace>('workspaces', session.workspace_id!);
 
   remove(f, session.id);
-  f.call<Milestone>('milestone.create', {
-    project_id: f.project.id,
-    title: 'Ship it',
-    required_sessions: [session.id],
-    criteria: ['It ships'],
-  });
+  requireSession(f, session.id);
   await eventually(
     () => kinds(f, session.id).includes('session.delete_failed'),
     () => f.control.tick(),
@@ -383,12 +387,7 @@ it('keeps a session a milestone came to require before a retried close confirmed
     () => kinds(f, session.id).includes('session.delete_failed'),
     () => f.control.tick(),
   );
-  f.call<Milestone>('milestone.create', {
-    project_id: f.project.id,
-    title: 'Ship it',
-    required_sessions: [session.id],
-    criteria: ['It ships'],
-  });
+  requireSession(f, session.id);
   await f.control.tick();
   release();
   await eventually(

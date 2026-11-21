@@ -120,17 +120,6 @@ describe('category header', () => {
     // Each runtime is a group of the same settings, so its settings jump to the first one.
     ['harness', ['settings.pages.runtimes', 'settings.harness.backends']],
     [
-      'workflow',
-      [
-        'settings.workflow.dispatch',
-        'settings.workflow.tasks',
-        'settings.workflow.acceptance',
-        'settings.pages.gates',
-        'settings.worktrees.merging',
-        'settings.workflow.planChanges',
-      ],
-    ],
-    [
       'extensions',
       [
         'settings.extensions.mcp',

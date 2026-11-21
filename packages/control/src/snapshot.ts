@@ -19,7 +19,6 @@ export function snapshot(ctx: ControlContext, principal: Principal, projectId?: 
   for (const table of [
     'projects',
     'project_briefs',
-    'milestones',
     'sessions',
     'session_turns',
     'workspaces',

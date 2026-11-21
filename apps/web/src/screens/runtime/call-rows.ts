@@ -1,4 +1,4 @@
-import type { BoardModel, BoardWaiting, SessionTrace } from '@pantheon/protocol';
+import type { SessionTrace } from '@pantheon/protocol';
 import type { RunCall, RunForest, RunNode, RunStatus } from './run-tree';
 
 type TraceSpan = SessionTrace['spans'][number];
@@ -22,11 +22,22 @@ export interface WaterfallBar {
   live?: boolean;
 }
 
-/** What the board knows of a session beyond its trace. */
+/** The permission request a session waits on. */
+export interface SessionWaiting {
+  /** input: every unanswered request is a question. */
+  kind: 'approval' | 'input';
+  /** The request input, at most 140 characters. */
+  summary: string;
+  approval_id: string;
+  /** Epoch milliseconds. */
+  since: number;
+}
+
+/** What is known of a session beyond its trace. */
 export interface SessionFacts {
   context?: { used_tokens: number; window_tokens: number };
   forked?: boolean;
-  waiting?: BoardWaiting;
+  waiting?: SessionWaiting;
 }
 
 interface RowBase {
@@ -51,7 +62,6 @@ export interface SessionRow extends RowBase {
   /** Percent of the context window used; null when unknown or in history. */
   context: number | null;
   forked: boolean;
-  lead: boolean;
   ended: boolean;
   open: boolean;
 }
@@ -158,34 +168,6 @@ export function callVerb(kind: RunCall['kind'], name: string): CallVerb {
   if (kind === 'compact') return 'compact';
   const bare = name.replace(/^mcp__.+?__/, '').toLowerCase();
   return VERBS[bare] ?? 'tool';
-}
-
-/** Each session's context, fork and pending request from the board, by session id. */
-export function boardFacts(
-  board: Pick<BoardModel, 'tasks' | 'leads'>,
-): ReadonlyMap<string, SessionFacts> {
-  const facts = new Map<string, SessionFacts>();
-  for (const lead of board.leads ?? [])
-    if (lead.waiting || lead.context)
-      facts.set(lead.session_id, { waiting: lead.waiting, context: lead.context });
-  for (const task of board.tasks) {
-    const newest = task.segments
-      .filter((segment) => segment.session_id !== null)
-      .reduce<(typeof task.segments)[number] | null>(
-        (at, segment) =>
-          at === null || (segment.started_at ?? Infinity) >= (at.started_at ?? Infinity)
-            ? segment
-            : at,
-        null,
-      );
-    if (!newest) continue;
-    facts.set(newest.session_id!, {
-      context: task.context,
-      forked: !!task.forked_from,
-      waiting: task.activity?.waiting,
-    });
-  }
-  return facts;
 }
 
 const lasted = (start: number | null, end: number | null, running: boolean, now: number) => {
@@ -443,7 +425,6 @@ function sessionRows(
     turn: turns.length > 0 ? turns.length : null,
     context,
     forked: !!facts?.forked,
-    lead: node.kind === 'lead',
     ended: !live && node.end !== null,
     open,
     bars: [],

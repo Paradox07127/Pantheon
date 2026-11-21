@@ -46,8 +46,6 @@ vi.mock('@/store', async (actual) => {
 import { LastTurnMark } from '@/components/SessionStateIcon';
 import { t } from '@/i18n';
 import { RecentActivity } from '@/components/RecentActivity';
-import { RequestCard } from '@/components/RequestCard';
-import type { NeedItem } from '@/data/need-actions';
 import { AttachmentStrip } from '@/screens/sessions/parts';
 import { ChecksTab, MergeBar } from '@/screens/sessions/panel';
 import { SessionInspector } from '@/screens/sessions/SessionsScreen';
@@ -86,95 +84,6 @@ const listed = (extra: Partial<WorkbenchSession> = {}): WorkbenchSession => ({
   changes: { files: 1, additions: 2, deletions: 1 },
   merge: null,
   ...extra,
-});
-
-describe('request card head', () => {
-  const base = {
-    project_id: 'project-a',
-    created_at: NOW - 60_000,
-    status: 'open',
-    actions: [],
-  };
-  const items: Record<string, NeedItem> = {
-    approval: {
-      ...base,
-      source: { table: 'approvals', id: 'approval-1', revision: 1 },
-      kind: 'permission',
-      session_id: 'session-a',
-      status: 'pending',
-      reason: 'permission_requested',
-      binding: { action: 'Bash', input_summary: 'pnpm test' },
-    },
-    question: {
-      ...base,
-      source: { table: 'approvals', id: 'approval-2', revision: 1 },
-      kind: 'permission',
-      session_id: 'session-a',
-      status: 'pending',
-      reason: 'permission_requested',
-      binding: { action: 'AskUserQuestion', input_summary: 'Which side wins?' },
-      questions: [
-        {
-          question: 'Which side wins?',
-          header: 'Sync',
-          options: [{ label: 'Server' }, { label: 'Client' }],
-          multiSelect: false,
-        },
-      ],
-    },
-    merge_blocked: {
-      ...base,
-      source: { table: 'sessions', id: 'session-a', revision: 2 },
-      kind: 'session.merge_blocked',
-      reason: 'merge_blocked',
-    },
-    reconciling: {
-      ...base,
-      source: { table: 'sessions', id: 'session-a', revision: 2 },
-      kind: 'session.reconciling',
-      status: 'reconciling',
-      reason: 'stop_unconfirmed',
-    },
-    gate_failed: {
-      ...base,
-      source: { table: 'sessions', id: 'session-a', revision: 2 },
-      kind: 'session.gate_failed',
-      reason: 'gate_failed',
-    },
-    failed: {
-      ...base,
-      source: { table: 'sessions', id: 'session-a', revision: 2 },
-      kind: 'session.failed',
-      reason: 'session_failed',
-    },
-  } as unknown as Record<string, NeedItem>;
-  const head = (item: NeedItem) => {
-    const card = html(
-      createElement(RequestCard, {
-        item,
-        size: 'compact',
-        who: 'Serve exports',
-        now: NOW,
-        run: async () => null,
-        onOpenSession: () => {},
-      }),
-    );
-    return /<div class="rq-hd">([\s\S]*?)<(?:b|button|h3) class="rq-who/.exec(card)![1]!;
-  };
-
-  it('keeps the waiting dot for approvals and questions only', () => {
-    for (const key of ['approval', 'question'])
-      expect(head(items[key]!)).toContain('class="ss-dot waiting"');
-    for (const key of Object.keys(items).filter((k) => k !== 'approval' && k !== 'question'))
-      expect(head(items[key]!)).not.toContain('ss-dot');
-  });
-
-  it('draws each other kind with the mark the rest of the app gives it', () => {
-    expect(shapeOf(head(items.merge_blocked!))).toBe('merge-blocked');
-    expect(shapeOf(head(items.reconciling!))).toBe('split-diamond');
-    expect(shapeOf(head(items.gate_failed!))).toBe('shield-cross');
-    expect(shapeOf(head(items.failed!))).toBe('octagon-cross');
-  });
 });
 
 describe('recent activity', () => {

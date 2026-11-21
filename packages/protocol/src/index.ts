@@ -7,8 +7,6 @@ export type {
 } from './memory.js';
 import { z } from 'zod';
 import { changeStoryInputSchemas, type LandingDiff } from './change-story.js';
-import { planReplayQuerySchema } from './plan-replay.js';
-import type { PendingReplan, ReplanHistoryTrigger } from './replan-history.js';
 import type { ProjectWaiting } from './project-waiting.js';
 import { alwaysOnInputSchemas, alwaysOnToolEffects, alwaysOnTools } from './always-on-tools.js';
 import { agentWakeInputSchemas, agentWakeQuerySchemas } from './agent-wakes.js';
@@ -18,14 +16,6 @@ export type { AgentLedgerWeek } from './agent-ledger.js';
 import { appInputSchemas, appToolEffects, appToolGroups, appTools } from './app-tools.js';
 import { agentInputSchemas, agentToolEffects, agentToolGroups, agentTools } from './agent-tools.js';
 import { reviewerTools, workflowInputSchemas } from './workflow-tools.js';
-import {
-  planPauseInputSchemas,
-  planPauseToolEffects,
-  planPauseToolGroups,
-  planPauseTools,
-} from './plan-pause.js';
-import { milestoneCheckInputSchemas } from './milestone-checks.js';
-export type { HiddenChecksRead } from './milestone-checks.js';
 import { questionBatchInputSchemas } from './question-batches.js';
 import type {
   AgentToolGroup,
@@ -189,8 +179,6 @@ export interface GithubPullDetail {
 }
 export { prettifyError, ZodError, type ZodIssue } from 'zod';
 export * from './change-story.js';
-export * from './plan-replay.js';
-export * from './replan-history.js';
 export * from './project-waiting.js';
 export * from './agent-chapters.js';
 
@@ -274,7 +262,6 @@ export const sessionTools = {
     edit_board: 'board.plan.edit',
     propose_board: 'board.plan.propose',
     withdraw_board_proposal: 'board.plan.proposal.withdraw',
-    milestone_accept: 'milestone.accept',
     start_task: 'task.start',
     message_task: 'task.message',
     accept_task: 'task.accept',
@@ -295,7 +282,6 @@ export const sessionTools = {
     ...alwaysOnTools,
     ...appTools,
     ...agentTools,
-    ...planPauseTools,
     guide: 'agent.guide',
   },
   worker: {
@@ -326,7 +312,6 @@ export const leadToolEffects = {
   edit_board: 'write',
   propose_board: 'write',
   withdraw_board_proposal: 'write',
-  milestone_accept: 'write',
   start_task: 'write',
   message_task: 'write',
   accept_task: 'write',
@@ -349,7 +334,6 @@ export const leadToolEffects = {
   ...alwaysOnToolEffects,
   ...appToolEffects,
   ...agentToolEffects,
-  ...planPauseToolEffects,
   guide: 'read',
 } as const satisfies Record<keyof typeof sessionTools.lead, 'read' | 'write' | 'costly'>;
 
@@ -371,13 +355,11 @@ export const leadToolGroups: Record<
   ...inGroup(alwaysOnTools, 'always_on'),
   ...appToolGroups,
   ...agentToolGroups,
-  ...planPauseToolGroups,
   project_read: 'board',
   update_board: 'board',
   edit_board: 'board',
   propose_board: 'board',
   withdraw_board_proposal: 'board',
-  milestone_accept: 'board',
   read_note: 'board',
   ask_user: 'board',
   answer_worker_question: 'board',
@@ -483,11 +465,6 @@ const browserPage = z.strictObject({
 });
 /** What a browser tool returns about the session's browser panel page. */
 export type BrowserPage = z.infer<typeof browserPage>;
-const milestoneInput = {
-  title: str,
-  required_sessions: strings.min(1),
-  criteria: strings.min(1),
-};
 const boardText = z.string().min(1).max(400);
 /** One part of a parallel task: its part number from 1, or the id of its session. */
 const partSelector = z.union([z.number().int().min(1).max(4), z.string().min(1)]).optional();
@@ -2106,8 +2083,6 @@ export const inputSchemas = {
   ...appInputSchemas,
   ...agentInputSchemas,
   ...workflowInputSchemas,
-  ...milestoneCheckInputSchemas,
-  ...planPauseInputSchemas,
   ...questionBatchInputSchemas,
   'terminal.open': z.strictObject({
     project_id: z.string(),
@@ -2229,19 +2204,6 @@ export const inputSchemas = {
     decision: z.enum(['accept', 'reject']),
     reason: z.string().optional(),
     ops: z.array(planPatchOp).min(1).max(32).optional(),
-  }),
-  /** Lets the tasks of a lane that waits for the user's plan approval start; the user only. */
-  'board.lane.approve': z.strictObject({
-    project_id: str,
-    lead_session_id: str,
-    lane_id: str,
-  }),
-  /** Sets the user's depth of a lane, which the lead's plan writes keep; the user only. */
-  'board.lane.depth.set': z.strictObject({
-    project_id: str,
-    lead_session_id: str,
-    lane_id: str,
-    depth: z.enum(laneDepths),
   }),
   'board.sync': z.strictObject({ project_id: str }),
   /** Ids of tasks in the calling lead's plan. */
@@ -2532,43 +2494,6 @@ export const inputSchemas = {
     goals: strings,
     non_goals: strings,
   }),
-  /** The user only; adds a goal of the project in the user's words, or rewrites one by goal_id. */
-  'goal.set': z.strictObject({
-    project_id: str,
-    goal_id: str.optional(),
-    text: z.string().trim().min(1).max(280),
-  }),
-  /** The user only; archives a goal; milestones keep their link. */
-  'goal.archive': z.strictObject({ goal_id: str }),
-  /** The user only; brings an archived goal back at its order while fewer than 7 are active. */
-  'goal.restore': z.strictObject({ goal_id: str }),
-  /** The user only; the project's active goals in their new order. */
-  'goal.reorder': z.strictObject({ project_id: str, goal_ids: z.array(str).min(1).max(7) }),
-  'milestone.create': z.strictObject({ project_id: str, ...milestoneInput }),
-  'milestone.revise': z.strictObject({ milestone_id: str, ...milestoneInput }),
-  'milestone.accept': z.strictObject({
-    milestone_id: str.describe('The id of the milestone in your plan.'),
-    evidence_refs: strings
-      .min(1)
-      .describe('What shows the criteria hold: merged task ids, commits or report ids.'),
-    /** Indices into the milestone's criteria; when given, every criterion must be in it. Absent accepts the whole milestone. */
-    criteria_checked: z
-      .array(z.number().int())
-      .max(256)
-      .optional()
-      .describe(
-        'Indices of the criteria you checked; every criterion must be in it. Absent accepts the whole milestone.',
-      ),
-    override_reason: z
-      .string()
-      .trim()
-      .min(1)
-      .max(500)
-      .optional()
-      .describe(
-        "Why you accept although the milestone's verification has not passed; required then, and the user sees it.",
-      ),
-  }),
   'project.open': z.strictObject({
     name: str,
     roots: strings.min(1),
@@ -2679,15 +2604,6 @@ export const inputSchemas = {
         z.strictObject({ kind: z.literal('session'), session_id: str }),
       ])
       .optional(),
-  }),
-  /** The user only; routes a request to a resident again: steers the resident to answer it here, plan a new lane or add it to the lane, or sends it to the agent; returns {session_id, turn_id}. */
-  'request.reroute': z.strictObject({
-    turn_id: str,
-    to: z.union([
-      z.enum(['answer_here', 'new_plan']),
-      z.strictObject({ lane_id: str }),
-      z.strictObject({ agent_id: str }),
-    ]),
   }),
   'github.pr.create': z.strictObject({
     session_id: str,
@@ -3117,8 +3033,6 @@ export const querySchemas = {
   }),
   'session.preflight': z.strictObject({ session_id: str }),
   'session.activity': z.strictObject({ session_id: str }),
-  'board.history': z.strictObject({ project_id: str }),
-  'board.plan.replay': planReplayQuerySchema,
   'board.view': z.strictObject({
     project_id: str,
     days: z.enum(['1', '3', '7', '14', '30', 'all']),
@@ -3788,75 +3702,6 @@ export type BoardBlocker =
   | { code: 'upstream'; title: string }
   | { code: 'merge_blocked'; reason?: string; conflicts: number }
   | { code: 'turn_failed'; error?: string };
-/** The project's full task history; timestamps are epoch milliseconds and dates use local calendar days. */
-export interface BoardHistory {
-  started_at: number;
-  truncated: boolean;
-  tasks: {
-    id: string;
-    owner_session_id: string;
-    /** The task's own newest session, else its newest discarded one; null without one. */
-    session_id: string | null;
-    title: string;
-    depends_on: string[];
-    task_type?: BoardPlan['tasks'][number]['task_type'];
-    runtime?: string;
-    model?: string;
-    lane_id: string;
-    milestone_id: string | null;
-    state: BoardTaskState | 'removed';
-    created_at: number;
-    started_at: number | null;
-    merged_at: number | null;
-    /** The commit the newest merge of the completed generation landed; null when nothing merged. */
-    commit: string | null;
-    /** Lines added and deleted by the merges of the completed generation; null when nothing merged. */
-    additions: number | null;
-    deletions: number | null;
-    attempts: number;
-    handbacks: number;
-    handback_reasons?: { gate: number; review: number; other: number };
-    /** Which gate run passed, counting from 1; absent when none passed. */
-    gate_passed_on_attempt?: number;
-  }[];
-  days: {
-    date: string;
-    merged: number;
-    handbacks: number;
-    decisions: number;
-    failed: number;
-    waited: number;
-  }[];
-  /** One row per decision that `days[].decisions` counts, oldest first, at most 2000. */
-  decisions: {
-    at: number;
-    /** The work line of the one task the decision is about; null for a plan or several tasks. */
-    lane_id: string | null;
-    /** replan: a plan change that answers re-plan conditions the lead's milestones met. */
-    kind: 'plan' | 'start' | 'stop' | 'accept' | 'replan';
-    /** The plan's headline or the task's title, cut to 140 characters. */
-    title?: string;
-    /** On a replan: the conditions it answers, and the titles of the tasks it added, removed and changed. */
-    replan?: {
-      triggers: ReplanHistoryTrigger[];
-      added: string[];
-      removed: string[];
-      changed: string[];
-    };
-    /** On a replan: the lead whose plan changed. */
-    lead_session_id?: string;
-  }[];
-  /** Fired re-plan conditions no plan change answered yet, oldest first; absent when none. */
-  pending_replans?: PendingReplan[];
-  milestones: {
-    id: string;
-    title: string;
-    state: MilestoneView['status'] | 'removed';
-    reached_at: number | null;
-  }[];
-  idle: { from: number; to: number }[];
-}
-
 /** GET /v1/board.view; the project board, computed from sessions, merges, usage and the written board. */
 /**
  * The tasks whose newest retrospective was recorded within a range, and how many of them passed

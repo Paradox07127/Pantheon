@@ -639,9 +639,6 @@ export async function startDaemon(options: DaemonOptions) {
       'project.heatmap': (p, i) => control.projectHeatmap(p, i.project_id, i.days),
       'session.preflight': (p, i) => control.sessionPreflight(p, i.session_id),
       'session.activity': (p, i) => control.sessionToolActivity(p, i.session_id),
-      'board.history': (p, i) => control.boardHistory(p, i.project_id),
-      'board.plan.replay': (p, i) =>
-        control.planReplay(p, i.lead_session_id, i.after ?? 0, i.limit, i.before),
       'board.view': async (p, i) => {
         await prefetch(p, i.project_id);
         return timed('board.view', () =>

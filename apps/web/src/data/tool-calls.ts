@@ -117,18 +117,6 @@ export function pantheonTool(name: string): string | null {
   return PANTHEON_TOOLS.has(tool) ? tool : null;
 }
 
-/** A lead's or task session's call that steers the plan: its action, detail and task ids. */
-export interface OrchestrationLabel extends ToolLabel {
-  tasks: string[];
-}
-
-const firstLine = (value: unknown): string =>
-  flat(
-    text(value)
-      ?.split('\n')
-      .find((line) => line.trim() !== '') ?? '',
-  );
-
 // Codex wraps an MCP call's arguments as {server, tool, arguments}.
 function callArgs(input: unknown): Record<string, unknown> {
   const outer = record(input) ?? {};
@@ -148,134 +136,15 @@ export function receiptOf(output: unknown): Record<string, unknown> | null {
 }
 
 /** The orchestration row of a Pantheon call; null for reads and any other tool. */
-export function orchestrationLabel(
-  name: string,
-  input: unknown,
-  output?: unknown,
-): OrchestrationLabel | null {
-  const i = callArgs(input);
-  const task = [text(i.task_id)].filter((t): t is string => t !== null);
-  switch (pantheonTool(name)) {
-    case 'start_task':
-      return {
-        title: t({ id: 'data.toolCalls.action.dispatch', defaultMessage: 'Dispatch' }),
-        detail: '',
-        tasks: Array.isArray(i.task_ids)
-          ? i.task_ids.filter((t): t is string => text(t) !== null)
-          : [],
-      };
-    case 'message_task':
-      return {
-        title: t({ id: 'data.toolCalls.action.message', defaultMessage: 'Message' }),
-        detail: firstLine(i.text),
-        tasks: task,
-      };
-    case 'accept_task':
-      return {
-        title: t({ id: 'data.toolCalls.action.accept', defaultMessage: 'Accept' }),
-        detail: '',
-        tasks: task,
-      };
-    case 'stop_task':
-      return {
-        title: t({ id: 'data.toolCalls.action.stop', defaultMessage: 'Stop' }),
-        detail: flat(text(i.reason) ?? ''),
-        tasks: task,
-      };
-    case 'update_board':
-      return {
-        title: t({ id: 'data.toolCalls.action.updatePlan', defaultMessage: 'Update plan' }),
-        detail: Array.isArray(i.tasks)
-          ? t(
-              {
-                id: 'data.toolCalls.action.taskCount',
-                defaultMessage: '{count, plural, one {# task} other {# tasks}}',
-              },
-              { count: i.tasks.length },
-            )
-          : '',
-        tasks: [],
-      };
-    case 'milestone_accept':
-      return {
-        title: t({
-          id: 'data.toolCalls.action.acceptMilestone',
-          defaultMessage: 'Accept milestone',
-        }),
-        detail: text(i.milestone_id) ?? '',
-        tasks: [],
-      };
-    case 'report':
-      return {
-        title: t({ id: 'data.toolCalls.action.report', defaultMessage: 'Report' }),
-        detail: firstLine(i.text),
-        tasks: [],
-      };
-    case 'edit_board': {
-      const ops = Array.isArray(i.ops) ? i.ops.map((op) => record(op) ?? {}) : [];
-      const ids = ops.map((op) => text(op.task_id) ?? text(record(op.task)?.id));
-      return {
-        title: t({ id: 'data.toolCalls.action.editPlan', defaultMessage: 'Edit plan' }),
-        detail: ops.length
-          ? t(
-              {
-                id: 'data.toolCalls.action.opCount',
-                defaultMessage: '{count, plural, one {# change} other {# changes}}',
-              },
-              { count: ops.length },
-            )
-          : '',
-        tasks: [...new Set(ids.filter((t): t is string => t !== null))],
-      };
-    }
-    case 'interrupt_task':
-      return {
-        title: t({ id: 'data.toolCalls.action.interrupt', defaultMessage: 'Interrupt' }),
-        detail: '',
-        tasks: task,
-      };
-    case 'sync_board':
-      return {
-        title: t({ id: 'data.toolCalls.action.syncBoard', defaultMessage: 'Sync board' }),
-        detail: '',
-        tasks: [],
-      };
-    case 'rerun_baseline':
-      return {
-        title: t({ id: 'data.toolCalls.action.rerunBaseline', defaultMessage: 'Rerun baseline' }),
-        detail: '',
-        tasks: [],
-      };
-    case 'request_review': {
-      const reviewed = text(record(receiptOf(output)?.requester)?.task_id);
-      return {
-        title: t({ id: 'data.toolCalls.action.requestReview', defaultMessage: 'Request review' }),
-        detail: strings(i.runtimes).join(', '),
-        tasks: reviewed ? [reviewed] : [],
-      };
-    }
-  }
-  return null;
+export function orchestrationLabel(name: string, input: unknown): ToolLabel | null {
+  if (pantheonTool(name) !== 'request_review') return null;
+  return {
+    title: t({ id: 'data.toolCalls.action.requestReview', defaultMessage: 'Request review' }),
+    detail: strings(callArgs(input).runtimes).join(', '),
+  };
 }
 
 // Labels are getters, so each is read in the language loaded by then.
-const BASELINE_STATE: Record<string, string> = {
-  get running() {
-    return t({ id: 'data.toolCalls.baseline.running', defaultMessage: 'Baseline running' });
-  },
-  get empty() {
-    return t({ id: 'data.toolCalls.baseline.empty', defaultMessage: 'Empty project' });
-  },
-  get submitted() {
-    return t({ id: 'data.toolCalls.baseline.submitted', defaultMessage: 'Awaiting confirmation' });
-  },
-  get confirmed() {
-    return t({ id: 'data.toolCalls.baseline.confirmed', defaultMessage: 'Confirmed' });
-  },
-  get failed() {
-    return t({ id: 'data.toolCalls.baseline.failed', defaultMessage: 'Failed' });
-  },
-};
 const REVIEW_STATE: Record<string, string> = {
   get running() {
     return t({ id: 'data.toolCalls.review.running', defaultMessage: 'Reviewing' });
@@ -287,18 +156,6 @@ const REVIEW_STATE: Record<string, string> = {
     return t({ id: 'data.toolCalls.review.failed', defaultMessage: 'Review failed' });
   },
 };
-const TASK_STATE: Record<string, string> = {
-  get todo() {
-    return t({ id: 'data.toolCalls.taskState.todo', defaultMessage: 'To do' });
-  },
-  get active() {
-    return t({ id: 'data.toolCalls.taskState.active', defaultMessage: 'In progress' });
-  },
-  get done() {
-    return t({ id: 'data.toolCalls.taskState.done', defaultMessage: 'Done' });
-  },
-};
-
 // The MCP server's refusal: `Refused <command>: <code>` with ` — <message>` when there is one.
 const REFUSED = /^Refused [^:]+: (\S+)(?: — ([\s\S]+))?$/;
 
@@ -312,12 +169,7 @@ const firstSentence = (value: string): string =>
   );
 
 /** A few words on how an orchestration call ended, from its receipt or its error. */
-export function orchestrationResult(
-  name: string,
-  input: unknown,
-  output: unknown,
-  ok: boolean,
-): string {
+export function orchestrationResult(name: string, output: unknown, ok: boolean): string {
   if (!ok) {
     const said = outputText(output).trim();
     const refused = REFUSED.exec(said);
@@ -332,168 +184,25 @@ export function orchestrationResult(
   }
   const r = receiptOf(output);
   if (!r) return toolOutcome(output, ok);
-  switch (pantheonTool(name)) {
-    case 'update_board':
-    case 'edit_board':
-      return typeof r.plan_version === 'number'
-        ? t(
-            { id: 'data.toolCalls.savedVersion', defaultMessage: 'Saved v{version}' },
-            { version: r.plan_version },
-          )
-        : t({ id: 'data.toolCalls.saved', defaultMessage: 'Saved' });
-    case 'start_task': {
-      if (text(r.claimed))
-        return t({ id: 'data.toolCalls.claimed', defaultMessage: 'Doing it itself' });
-      const requested = strings(r.requested);
-      const queued = strings(callArgs(input).task_ids).filter((t) => requested.includes(t));
-      return t(
-        { id: 'data.toolCalls.queuedCount', defaultMessage: '{count} queued' },
-        { count: queued.length },
-      );
-    }
-    case 'stop_task':
-      return Array.isArray(r.sessions) &&
-        r.sessions.some((session) => record(session)?.step === 'stopping')
-        ? t({ id: 'data.toolCalls.stopping', defaultMessage: 'Stopping' })
-        : t({ id: 'data.toolCalls.stopped', defaultMessage: 'Stopped' });
-    case 'interrupt_task':
-      return t({ id: 'data.toolCalls.interrupted', defaultMessage: 'Interrupted' });
-    case 'sync_board':
-      return t({ id: 'data.toolCalls.read', defaultMessage: 'Read' });
-    case 'rerun_baseline':
-      return BASELINE_STATE[String(r.state)] ?? '';
-    case 'request_review':
-      return REVIEW_STATE[String(r.state)] ?? '';
-  }
+  if (pantheonTool(name) === 'request_review') return REVIEW_STATE[String(r.state)] ?? '';
   return '';
 }
 
-/** One line of an orchestration call's folded-out detail: its task, a word, and text or code. */
+/** One line of an orchestration call's folded-out detail: a word and code. */
 export interface OrchestrationEntry {
-  task?: string;
-  name?: string;
-  text?: string;
-  code?: string;
+  name: string;
+  code: string;
 }
 
-const entry = (fields: OrchestrationEntry): OrchestrationEntry =>
-  Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined && v !== ''));
-
-// The lines board.sync writes for each task: `- <id> "<title>": <state>; sessions: <list>`.
-const SYNC_TASK = /^- (\S+) ".*": (\w+); sessions: (.*)$/;
-
-function editEntry(op: Record<string, unknown>): OrchestrationEntry {
-  const task = text(op.task_id) ?? undefined;
-  switch (op.type) {
-    case 'add_task': {
-      const added = record(op.task) ?? {};
-      return entry({
-        task: text(added.id) ?? undefined,
-        name: t({ id: 'data.toolCalls.edit.add', defaultMessage: 'Add' }),
-        text: flat(String(added.title ?? '')),
-      });
-    }
-    case 'remove_task':
-      return entry({
-        task,
-        name: t({ id: 'data.toolCalls.edit.remove', defaultMessage: 'Remove' }),
-      });
-    case 'set_task':
-      return entry({
-        task,
-        name: t({ id: 'data.toolCalls.edit.set', defaultMessage: 'Set' }),
-        code: listText(
-          ...Object.entries(record(op.patch) ?? {}).map(
-            ([key, value]) => `${key}=${flat(String(value))}`,
-          ),
-        ),
-      });
-    case 'set_dependencies': {
-      const on = strings(op.depends_on);
-      return entry({
-        task,
-        name: on.length
-          ? t({ id: 'data.toolCalls.edit.dependsOn', defaultMessage: 'Depends on' })
-          : t({
-              id: 'data.toolCalls.edit.clearDependencies',
-              defaultMessage: 'Clear dependencies',
-            }),
-        code: on.join(', '),
-      });
-    }
-    case 'resolve_edit':
-      return entry({
-        name:
-          op.decision === 'apply'
-            ? t({ id: 'data.toolCalls.edit.apply', defaultMessage: 'Apply edit' })
-            : t({ id: 'data.toolCalls.edit.reject', defaultMessage: 'Reject edit' }),
-        code: text(op.edit_id) ?? undefined,
-        text: flat(text(op.reason) ?? ''),
-      });
-  }
-  return entry({ task, code: text(op.type) ?? undefined });
-}
-
-/** The folded-out lines of an orchestration call; null when its input and output have no shape to list. */
-export function orchestrationDetail(
-  name: string,
-  input: unknown,
-  output: unknown,
-): OrchestrationEntry[] | null {
-  const i = callArgs(input);
-  const r = receiptOf(output);
-  let entries: OrchestrationEntry[] = [];
-  switch (pantheonTool(name)) {
-    case 'edit_board':
-      entries = Array.isArray(i.ops) ? i.ops.map((op) => editEntry(record(op) ?? {})) : [];
-      break;
-    case 'start_task': {
-      const requested = strings(r?.requested);
-      entries = strings(i.task_ids).map((task) =>
-        entry({
-          task,
-          name: requested.includes(task)
-            ? t({ id: 'data.toolCalls.queued', defaultMessage: 'Queued' })
-            : undefined,
-        }),
-      );
-      break;
-    }
-    case 'sync_board':
-      for (const line of (text(r?.brief) ?? '').split('\n')) {
-        const m = SYNC_TASK.exec(line);
-        if (m)
-          entries.push(
-            entry({
-              task: m[1],
-              name: TASK_STATE[m[2]!] ?? m[2],
-              code: m[3] === 'none' ? '' : m[3],
-            }),
-          );
-      }
-      break;
-    case 'stop_task':
-      entries = (Array.isArray(r?.sessions) ? r.sessions : []).map((s) => {
-        const session = record(s) ?? {};
-        return entry({
-          name:
-            session.step === 'discarded'
-              ? t({ id: 'data.toolCalls.discarded', defaultMessage: 'Discarded' })
-              : t({ id: 'data.toolCalls.stopping', defaultMessage: 'Stopping' }),
-          code: text(session.session_id) ?? undefined,
-        });
-      });
-      break;
-    case 'request_review':
-      entries = [
-        entry({
-          name: t({ id: 'data.toolCalls.reviewEntry', defaultMessage: 'Review' }),
-          code: strings(i.runtimes).join(', '),
-        }),
-      ];
-      break;
-  }
-  return entries.length ? entries : null;
+/** The folded-out lines of an orchestration call; null for any other tool. */
+export function orchestrationDetail(name: string, input: unknown): OrchestrationEntry[] | null {
+  if (pantheonTool(name) !== 'request_review') return null;
+  return [
+    {
+      name: t({ id: 'data.toolCalls.reviewEntry', defaultMessage: 'Review' }),
+      code: strings(callArgs(input).runtimes).join(', '),
+    },
+  ];
 }
 
 export const COMMANDS = [

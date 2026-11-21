@@ -10,7 +10,6 @@
   "runtime.callStatus.error": "失败",
   "runtime.callStatus.unknown": "未知",
   "runtime.stats.unreported": "{count, plural, other {# 个回合没上报用量}}",
-  "runtime.readStatus": "运行状态",
   "runtime.trace.failed": "{failed} / {total, plural, other {# 个会话}}读取失败{partial, select, yes {，合计不完整} other {}}",
   "runtime.trace.errorSeparator": "；",
   "runtime.trace.failedWith": "{summary}：{errors}",

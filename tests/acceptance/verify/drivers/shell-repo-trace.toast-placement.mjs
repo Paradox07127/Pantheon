@@ -96,8 +96,13 @@ result.rects.closed = back || (await rects());
 check('关掉弹层后通知卡栈回到右下角', back, result.rects.closed.stack);
 
 // Settle the request, so the toast does not stay for the drivers that run after this one.
-const rowName = (await names(`允许一次`)).find((c) => c.role === 'button');
-if (rowName) await page.click({ role: 'button', name: rowName.name, exact: true });
+// Requests other drivers left waiting have cards of their own; answer this one's card.
+await page.click({
+  role: 'button',
+  name: '允许一次',
+  exact: true,
+  within: { role: 'alertdialog', name: WAITING, exact: false },
+});
 const answered = await poll(async () => {
   const s = (await query('session.list', { project_id: run.project_id })).find(
     (x) => x.title === WAITING,

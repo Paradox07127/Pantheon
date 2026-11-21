@@ -50,7 +50,6 @@ import { interruptSession, stopBackground } from './session.js';
 import { continueInterruptedLead } from './task-tracking.js';
 import { backgroundTasks, nextDepth } from './progress.js';
 import { runningPlanReview } from './review.js';
-import { laneHeld } from './lane-stops.js';
 import { projectOverBudget, workflowPolicy } from './workflow-policy.js';
 import { PLAN_REVIEW_TIERS } from './merge-review.js';
 import { listDevices } from './devices.js';
@@ -410,7 +409,6 @@ export function dispatchQueue(
     const wait: DispatchWait | undefined =
       (policy.dispatch_paused || plan.paused ? 'paused' : undefined) ??
       (externalHeld(plan, task) ? 'approval' : undefined) ??
-      (laneHeld(plan, task.lane) ? 'plan_approval' : undefined) ??
       taskWaits(ctx, plan, task, held)?.wait ??
       (task.kind &&
       PLAN_REVIEW_TIERS.includes(task.kind.tier) &&
@@ -1153,11 +1151,6 @@ function claimDirectTask(
     !review,
     'invalid_state',
     `Task ${task.id} waits for the plan review ${review?.id}; start it once the review ends`,
-  );
-  requireThat(
-    !laneHeld(plan, task.lane),
-    'invalid_state',
-    `Task ${task.id} is in lane ${task.lane}, which waits for the user to approve its plan; start it once the user approves`,
   );
   const upstream = task.depends_on.find(
     (id) => taskState(plan, id, taskSessions(ctx, plan.id, id)) !== 'done',

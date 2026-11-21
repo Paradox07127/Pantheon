@@ -11,10 +11,27 @@ import { t } from '../i18n';
 import { listedTitle } from '../lib/daemon-text';
 import { useBoard } from './board';
 import { failureText } from './needs-you';
-import { changesBoard } from './board-view';
 import { readQuery, useQuery, useRefetchTick } from './workbench-sessions';
 
 type TraceSpan = SessionTrace['spans'][number];
+
+// Session states, turns, approvals, tool calls, usage, compactions and workflow steps.
+const TRACE_PREFIXES = ['session.', 'turn.', 'approval.'];
+const TRACE_KINDS: ReadonlySet<string> = new Set([
+  'agent.session.started',
+  'agent.tool.started',
+  'agent.tool.completed',
+  'agent.usage.updated',
+  'agent.quota.updated',
+  'agent.context.compacted',
+  'agent.background.changed',
+  'workflow.step_changed',
+  'task.dispatch_wait_changed',
+]);
+
+/** Whether an event of this kind can change a trace read. */
+const changesTrace = (kind: string): boolean =>
+  TRACE_KINDS.has(kind) || TRACE_PREFIXES.some((prefix) => kind.startsWith(prefix));
 
 /** Spans per session, with the sessions whose last read failed. */
 export type RunSpans = ReadonlyMap<string, TraceSpan[]> & {
@@ -120,23 +137,13 @@ export function waitingMs(
 export const laneWallMs = (time: TraceTimeAllocation | null): ReadonlyMap<string, number> =>
   new Map(Object.entries(time?.by_lane ?? {}).map(([key, lane]) => [key, lane.wall_ms]));
 
-/** A tick that moves when the native transcript index moves and after the project's board events. */
+/** A tick that moves when the native transcript index moves and after the project's trace events. */
 export function useTraceTick(projectId: string | null): number {
   const revision = useBoard((s) => s.trace_revision);
   const sequence = useBoard((s) => {
     if (!projectId) return 0;
     for (let i = s.events.length - 1; i >= 0; i--)
-      if (
-        s.events[i]!.project_id === projectId &&
-        (changesBoard(s.events[i]!.kind) ||
-          [
-            'agent.context.compacted',
-            'agent.background.changed',
-            'workflow.step_changed',
-            'task.dispatch_wait_changed',
-            'turn.prepare_started',
-          ].includes(s.events[i]!.kind))
-      )
+      if (s.events[i]!.project_id === projectId && changesTrace(s.events[i]!.kind))
         return s.events[i]!.sequence;
     return 0;
   });

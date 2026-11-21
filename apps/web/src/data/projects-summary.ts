@@ -1,23 +1,13 @@
 import { useEffect, useState } from 'react';
 import type { ProjectSummary } from '@pantheon/protocol';
 import { useBoard } from './board';
-import { touchesNeedsYou, type NeedsYouItem } from './needs-you';
+import { touchesNeedsYou } from './needs-you';
 import type { DaemonEvent } from './sync';
 import { useQuery, useRefetchTick } from './workbench-sessions';
 
-// Session states and merges, approvals, milestones, board plans and their tasks' dispatch,
-// lead wakes and the projects themselves; the needs-you count follows the needs-you list.
-const SUMMARY_PREFIXES = [
-  'session.',
-  'turn.',
-  'workspace.',
-  'approval.',
-  'milestone.',
-  'project.',
-  'board.plan_',
-  'board.lead_wake_failed',
-  'task.',
-];
+// Session states and merges, approvals and the projects themselves; the needs-you count follows
+// the needs-you list.
+const SUMMARY_PREFIXES = ['session.', 'turn.', 'workspace.', 'approval.', 'project.'];
 
 /** Whether an event of this kind can change a project's summary. */
 export const changesSummary = (kind: string): boolean =>
@@ -90,31 +80,3 @@ export function sortProjects<T extends { id: string; name: string }>(
     return a.name.localeCompare(b.name);
   });
 }
-
-/** One kind of what waits in a project: the first item of it, how many there are and the tasks they block. */
-export interface NeedsKind {
-  item: NeedsYouItem;
-  count: number;
-  blocks: number;
-}
-
-/** What waits, by what the user decides and by reason among the other decisions, the kind blocking the most first. */
-export function needsByKind(items: readonly NeedsYouItem[]): NeedsKind[] {
-  const kinds = new Map<string, NeedsKind>();
-  for (const item of items) {
-    const key = item.decision && item.decision !== 'other' ? item.decision : item.reason;
-    const kind = kinds.get(key);
-    if (kind) {
-      kind.count++;
-      kind.blocks += item.blocks ?? 0;
-    } else kinds.set(key, { item, count: 1, blocks: item.blocks ?? 0 });
-  }
-  return [...kinds.values()].sort((a, b) => b.blocks - a.blocks);
-}
-
-/** The item blocking the most tasks, the daemon's first of them on a tie. */
-export const topNeed = (items: readonly NeedsYouItem[]): NeedsYouItem | undefined =>
-  items.reduce<NeedsYouItem | undefined>(
-    (top, item) => (!top || (item.blocks ?? 0) > (top.blocks ?? 0) ? item : top),
-    undefined,
-  );

@@ -39,7 +39,5 @@
   "memory.detail.byPlan": "计划里定的",
   "memory.detail.outcome.confirmed": "已确认",
   "memory.detail.outcome.refuted": "已否定",
-  "memory.detail.outcome.closed": "风险已关闭",
-  "memory.detail.fromMilestone": "来自里程碑 {title}",
-  "memory.detail.fromPlan": "来自计划里的里程碑"
+  "memory.detail.outcome.closed": "风险已关闭"
 }

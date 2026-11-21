@@ -7,7 +7,6 @@ import {
   reasonText,
   touchesNeedsYou,
 } from '@/data/needs-you';
-import { nextStepText } from '@/lib/daemon-text';
 import { setLocaleSync } from '@/i18n';
 import { zh, zhCatalog, zhf } from './i18n-setup.js';
 
@@ -38,9 +37,6 @@ describe('refetch trigger', () => {
 
   it.each([
     'workspace.repository_changed',
-    'lead.question_asked',
-    'lead.question_answered',
-    'task.reported',
     'workspace.provisioning',
     'session.gate_checked',
     'project.gate_set',
@@ -63,20 +59,8 @@ describe('refetch trigger', () => {
     'project.baseline_failed',
     'project.removed',
     'project.restored',
-    'task.stop_requested',
     'session.merge_stuck',
     'session.discard_failed',
-    'workflow.step_created',
-    'workflow.step_changed',
-    'milestone.created',
-    'milestone.revised',
-    'milestone.removed',
-    'task.accepted',
-    'lead.question_kept_open',
-    'lead.question_overruled',
-    'board.plan_paused',
-    'board.plan_resumed',
-    'board.plan_reassessed',
     'session.turn_stalled',
   ])('refreshes attention after %s', (kind) => {
     expect(touchesNeedsYou(kind)).toBe(true);
@@ -136,7 +120,6 @@ describe('reason text', () => {
         revision_conflict: 'revisionConflict',
         artifact_commit_missing: 'artifactCommitMissing',
         daemon_restart: 'daemonRestart',
-        acceptance_pending: 'acceptancePending',
       },
     ],
     [
@@ -221,46 +204,15 @@ describe('attention kept by the backend', () => {
   it.each([
     'permission_voided',
     'answer_undelivered',
-    'task_dispatch_failed',
-    'lead_turn_failed',
-    'lead_closed',
     'merge_stuck',
-    'continuation_limit_reached',
     'workspace_reconciling',
     'stop_unconfirmed',
-    'out_of_scope',
     'rebase_interrupted',
-    'task_retired',
   ])('explains %s in Chinese', (code) => {
     expect(reasonText(code)).not.toBe(code);
   });
 
-  it.each([
-    'session.continuation_skipped',
-    'approval.delivery_failed',
-    'approval.delivered',
-    'board.plan_updated',
-    'board.plan_transferred',
-    'board.lead_wake_failed',
-    'task.start_requested',
-    'task.dispatched',
-    'task.dispatch_failed',
-  ])('refreshes attention after %s', (kind) => {
-    expect(touchesNeedsYou(kind)).toBe(true);
-  });
-});
-
-describe('a lead plan proposal awaiting the user', () => {
-  it('names its reason and its next step in Chinese', () => {
-    expect(reasonText('plan_proposal_awaiting_decision')).toBe(
-      reason('planProposalAwaitingDecision'),
-    );
-    expect(
-      nextStepText({ reason: 'plan_proposal_awaiting_decision', next_step: 'daemon text' }),
-    ).toBe(zh('daemon.nextStep.planProposalAwaitingDecision'));
-  });
-
-  it.each(['board.plan_proposed', 'board.plan_proposal_resolved', 'board.plan_proposal_withdrawn'])(
+  it.each(['session.continuation_skipped', 'approval.delivery_failed', 'approval.delivered'])(
     'refreshes attention after %s',
     (kind) => {
       expect(touchesNeedsYou(kind)).toBe(true);

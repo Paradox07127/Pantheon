@@ -508,7 +508,7 @@ export function ThreadTurn(props: {
   checkpoint?: string | null;
   /** The turn failed and is the session's last, which can take it again. */
   retry?: boolean;
-  /** The tasks finished and milestones reached while this turn was the newest. */
+  /** The marks of the timeline that fall in this turn. */
   marks?: readonly TimelineNode[];
   /** How many memory entries the turn was given; none when it was given none. */
   memoryCount?: number;
@@ -547,12 +547,8 @@ export function ThreadTurn(props: {
   }, [streaming]);
   // A compaction is drawn as a mark, not as a message.
   const compaction = turn.origin === 'compaction';
-  // Every origin but lead is Pantheon writing to the session.
-  const from = turn.origin === 'lead' ? 'lead' : turn.origin ? 'pantheon' : null;
-  const leadRuntime = useBoard((s) => {
-    const lead = s.board?.sessions.find((k) => k.id === turn.session_id)?.task?.lead_session_id;
-    return lead ? s.board?.sessions.find((k) => k.id === lead)?.runtime : undefined;
-  });
+  // Every origin is Pantheon writing to the session.
+  const from = turn.origin ? 'pantheon' : null;
   // In the baseline's own session a baseline turn carries the user's answers to a round; 0 elsewhere.
   const answersRound = useBoard((s) =>
     turn.origin === 'baseline' && s.board?.sessions.find((k) => k.id === turn.session_id)?.baseline
@@ -639,15 +635,6 @@ export function ThreadTurn(props: {
                     <span data-find="input">{shownInput(turn)}</span>
                   )}
                 </div>
-              </div>
-            ) : from === 'lead' ? (
-              <div className={`ss-lead${entering}`} role="note">
-                <div className="ss-from">
-                  {leadRuntime && <RuntimeGlyph runtime={leadRuntime} />}
-                  <b>lead</b>
-                  {sent && <span>{sent}</span>}
-                </div>
-                <p data-find="input">{shownInput(turn)}</p>
               </div>
             ) : (
               <>

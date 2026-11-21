@@ -8,9 +8,7 @@ import { conductorPreparers } from './conductor.js';
 import { changeStoryHandlers } from './change-story.js';
 import type { Handlers, Preparers } from './context.js';
 import { projectFactHandlers } from './project-facts.js';
-import { projectGoalHandlers } from './project-goals.js';
 import { projectBoardHandlers } from './project-board.js';
-import { planPauseHandlers } from './plan-pause.js';
 import { projectHandlers, projectPreparers } from './project.js';
 import { prepareResolve, sessionHandlers } from './session.js';
 import { workbenchSessionHandlers } from './workbench-session.js';
@@ -21,7 +19,6 @@ import { taskDispatchHandlers } from './task-dispatch.js';
 import { taskStatusLineHandlers } from './task-status-line.js';
 import { leadInboxHandlers } from './lead-inbox.js';
 import { workflowPolicyHandlers } from './workflow-policy.js';
-import { milestoneCheckHandlers } from './milestone-checks.js';
 import { inPlaceSessionHandlers } from './in-place-session.js';
 import { visualHandlers } from './visual.js';
 import { appSettingsHandlers } from './app-settings.js';
@@ -42,9 +39,7 @@ export const handlers: Handlers = {
   ...memoryHandlers,
   ...projectHandlers,
   ...projectFactHandlers,
-  ...projectGoalHandlers,
   ...projectBoardHandlers,
-  ...planPauseHandlers,
   ...baselineHandlers,
   ...environmentCheckHandlers,
   ...changeStoryHandlers,
@@ -58,7 +53,6 @@ export const handlers: Handlers = {
   ...taskStatusLineHandlers,
   ...leadInboxHandlers,
   ...workflowPolicyHandlers,
-  ...milestoneCheckHandlers,
   ...inPlaceSessionHandlers,
   ...appSettingsHandlers,
   ...deviceHandlers,

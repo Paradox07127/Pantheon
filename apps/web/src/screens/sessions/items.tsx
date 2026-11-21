@@ -127,7 +127,7 @@ export function Items(props: {
   verbose: boolean;
   ended: boolean;
   folders: readonly string[];
-  /** The session whose thread shows the items; its orchestration calls name tasks of its plan. */
+  /** The session whose thread shows the items. */
   sessionId: string;
   /** The whole list `items` is a part of; ids are counted in it. Defaults to `items`. */
   all?: readonly TranscriptItem[];
@@ -249,7 +249,6 @@ export function Items(props: {
           depth={depth(item)}
           open={props.verbose}
           enter={enter(item)}
-          sessionId={props.sessionId}
         />
       ) : (
         block([item])

@@ -17,7 +17,7 @@ describe('openSettings with a project', () => {
     expect([view.open, view.page, view.detail]).toEqual([true, page, detail]);
   });
 
-  it.each(['workflow', 'gates'] as const)(
+  it.each(['defaults', 'gates'] as const)(
     'keeps the %s page chosen by openSettingsPage',
     (page) => {
       openSettingsPage('p1', page);

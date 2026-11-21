@@ -1,6 +1,5 @@
 {
   "trayPopover.waiting.title": "等你",
-  "trayPopover.waiting.asked": "{name} 问了一个问题",
   "trayPopover.waiting.allow": "允许",
   "trayPopover.waiting.deny": "拒绝",
   "trayPopover.waiting.more": "{count, plural, other {还有 # 条}}",

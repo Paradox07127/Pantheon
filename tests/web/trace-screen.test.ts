@@ -702,7 +702,7 @@ describe('trace screen tabs', () => {
   it("follows the approved-for-you tab's name with what was approved today", async () => {
     const query = vi.fn(async (method: string) =>
       method === 'project.decisions'
-        ? { ok: true, value: { items: [{ kind: 'prompt_approved' }, { kind: 'prompt_by_rule' }] } }
+        ? { ok: true, value: { items: [{ kind: 'prompt_by_rule' }, { kind: 'prompt_by_rule' }] } }
         : { ok: false, error: { code: 'not_found', message: method } },
     );
     vi.stubGlobal('window', { ...window, pantheon: { query } });
