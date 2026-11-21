@@ -131,10 +131,10 @@ function section(html: string, label: string): string {
 }
 
 describe('sidebar zones', () => {
-  it('keeps the project entries and the session list inside the current project', () => {
+  it('keeps the session list inside the current project, with no trace or memory entry', () => {
     const html = render({ sessions: [session('a', 'running')] });
     const project = section(html, side('currentProject'));
-    for (const entry of ['trace', 'memory'].map(screen)) expect(project).toContain(entry);
+    for (const entry of ['trace', 'memory'].map(screen)) expect(project).not.toContain(entry);
     expect(project).toContain(`<nav class="ss-list" aria-label="${screen('sessions')}"`);
     expect(project).toContain('title of a');
     expect(project).not.toContain(screen('settings'));
@@ -184,14 +184,14 @@ describe('sidebar zones', () => {
     const html = render({ collapsed: true });
     expect(html).toContain(`<aside class="sb sb-rail" aria-label="${side('navigation')}"`);
     for (const label of [
-      screen('trace'),
-      screen('memory'),
       side('newSession'),
       screen('projects'),
       screen('settings'),
       side('connectionConnecting'),
     ])
       expect(html).toContain(`aria-label="${label}"`);
+    for (const label of ['trace', 'memory'].map(screen))
+      expect(html).not.toContain(`aria-label="${label}"`);
     expect(html).not.toContain(side('switchProject'));
   });
 });

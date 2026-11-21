@@ -17,6 +17,7 @@ vi.mock('@/components/Toast', async (actual) => ({
   toast: (options: unknown) => mock.toast(options),
 }));
 import { Tip } from '@/components/Tip';
+import { runtimeName } from '@/components/RuntimeGlyph';
 import { ReviewTab } from '@/screens/sessions/panel';
 import { ModelMenu } from '@/screens/sessions/parts';
 import { NewSession } from '@/screens/sessions/SessionsScreen';
@@ -121,6 +122,16 @@ describe('new session runtime picker', () => {
       }),
     );
 
+  it('offers no ACP runtime whose handshake did not answer', async () => {
+    bridge.statuses = [
+      { ...grok(), handshake: true },
+      { ...status('cursor', NATIVE), handshake: false },
+      status('claude', NATIVE),
+    ];
+    const h = await open();
+    expect(named(tree(h), 'ModelMenu').props.runtimes).toEqual(['claude', 'grok']);
+  });
+
   it('lists an ACP runtime from runtime.status and greys it out without write isolation', async () => {
     bridge.statuses = [grok({ read_isolation: true }), status('claude', NATIVE)];
     const h = await open();
@@ -199,6 +210,22 @@ describe('review runtime picker', () => {
 describe('harness page runtime settings', () => {
   const page = () => mounted(() => HarnessPage({ projectId: null }));
   const row = (h: HookHost<any>, runtime: string) => labelled(tree(h), runtime);
+
+  it('lists no ACP runtime whose handshake did not answer, installed or not', async () => {
+    bridge.statuses = [
+      status('claude', NATIVE),
+      { ...grok(), handshake: true },
+      { ...status('cursor', NATIVE), handshake: false },
+      { ...status('gemini', {}), installed: false, handshake: false },
+    ];
+    const h = await page();
+    const groups = nodes(tree(h))
+      .filter((n) => n.props.role === 'group')
+      .map((n) => n.props['aria-label']);
+    expect(groups).toContain(runtimeName('grok'));
+    expect(groups).not.toContain(runtimeName('cursor'));
+    expect(groups).not.toContain(runtimeName('gemini'));
+  });
 
   it('lists the session kinds each runtime can hold', async () => {
     bridge.statuses = [status('claude', NATIVE), grok({ read_isolation: true })];

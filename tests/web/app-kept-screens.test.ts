@@ -225,8 +225,9 @@ it('builds the palette items only while the palette is open', async () => {
   const open = seen.palette.at(-1)!;
   expect(open.open).toBe(true);
   const ids = open.items.map((i) => i.id);
-  expect(ids).toContain('screen-trace');
-  expect(ids).toContain('screen-memory');
+  expect(ids).toContain('screen-projects');
+  expect(ids).not.toContain('screen-trace');
+  expect(ids).not.toContain('screen-memory');
   expect(ids).not.toContain('screen-runtime');
   expect(ids).not.toContain('screen-flow');
   expect(ids).not.toContain('screen-board');

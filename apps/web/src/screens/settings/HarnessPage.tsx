@@ -19,6 +19,7 @@ import { runCommand } from '../../data/commands';
 import { ageText, failureText, useNow } from '../../data/needs-you';
 import { useRuntimeModels, type ModelsState } from '../../data/runtime-models';
 import {
+  listedRuntime,
   sessionKinds,
   unavailableReason,
   useRuntimeStatus,
@@ -157,7 +158,7 @@ export function HarnessPage({ projectId }: { projectId: string | null }) {
   const [args, setArgs] = useState<Record<string, string>>({});
   const [savedArgs, setSavedArgs] = useState<Record<string, string>>({});
   const now = useNow(30_000);
-  const statuses = read.state === 'ready' ? read.statuses : [];
+  const statuses = read.state === 'ready' ? read.statuses.filter(listedRuntime) : [];
   const installed = statuses.filter((s) => s.enabled && s.installed).map((s) => s.runtime);
   const listed = useRuntimeModels(projectId, installed);
   const backends = useBackends();

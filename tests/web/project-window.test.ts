@@ -198,7 +198,7 @@ describe('sidebar of a project window', () => {
     const labels = nodes(tree)
       .filter((n) => n.type === 'button')
       .map((n) => text(n.props.children));
-    expect(labels).toContain(zh('app.screenName.trace'));
+    expect(labels).toContain(zh('app.screenName.settings'));
   });
 
   it('keeps no all projects button on the folded rail', () => {

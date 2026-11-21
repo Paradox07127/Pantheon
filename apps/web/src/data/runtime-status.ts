@@ -108,8 +108,11 @@ const NONE: Readonly<Record<string, string>> = {};
 
 const NO_RUNTIMES: readonly string[] = [];
 
+/** Whether the runtimes page and the runtime pickers list it: an ACP runtime only once its handshake answered. */
+export const listedRuntime = (status: RuntimeStatus): boolean => status.handshake !== false;
+
 const installedOf = (statuses: readonly RuntimeStatus[]) =>
-  statuses.filter((s) => s.installed).map((s) => s.runtime);
+  statuses.filter((s) => s.installed && listedRuntime(s)).map((s) => s.runtime);
 
 /** The installed runtimes of the newest read that answered, for a mount whose own read has not. */
 let lastInstalled: readonly string[] = NO_RUNTIMES;
@@ -127,9 +130,13 @@ export function offeredRuntimes(
   return [...new Set([...installed, ...kept])].sort(compareRuntimes);
 }
 
-/** Sequence of the newest runtime connection change in the stream; 0 when there is none. */
+/** Sequence of the newest runtime connection or ACP handshake change in the stream; 0 when there is none. */
 function connectionTrigger(events: readonly DaemonEvent[]): number {
-  return events.findLast((e) => e.kind === 'runtime.connection_changed')?.sequence ?? 0;
+  return (
+    events.findLast(
+      (e) => e.kind === 'runtime.connection_changed' || e.kind === 'runtime.handshake_changed',
+    )?.sequence ?? 0
+  );
 }
 
 /** Every mounted runtime status reader; the read issued last lands in all of them. */
@@ -156,13 +163,16 @@ export function runtimeChoices(
       : NONE;
   const runtimes =
     read.state === 'ready'
-      ? read.statuses.map((s) => s.runtime).sort(compareRuntimes)
+      ? read.statuses
+          .filter(listedRuntime)
+          .map((s) => s.runtime)
+          .sort(compareRuntimes)
       : NO_RUNTIMES;
   return { runtimes, unavailable };
 }
 
 /**
- * GET /v1/runtime.status on mount, every EVERY_MS and after each connection change; unavailable maps
+ * GET /v1/runtime.status on mount, every EVERY_MS and after each connection or handshake change; unavailable maps
  * a runtime to why it cannot start a session (of `kind` when given).
  */
 export function useRuntimeStatus(kind?: SessionKind) {

@@ -1104,7 +1104,7 @@ export const SETTINGS_INDEX: SettingRecord[] = [
     }),
   },
   {
-    id: 'gates.handbackLimit',
+    id: 'gates.onFail',
     page: 'gates',
     section: gate,
     label: defineMessage({ id: 'settings.gate.onFail', defaultMessage: 'When a gate fails' }),
@@ -1284,8 +1284,8 @@ export const SETTINGS_INDEX: SettingRecord[] = [
     page: 'defaults',
     section: sessionDefaults,
     label: defineMessage({
-      id: 'settings.defaults.leadModelForAll',
-      defaultMessage: "Tasks and reviews also use the lead's model",
+      id: 'settings.defaults.sameModelForReviews',
+      defaultMessage: "Reviews also use the new sessions' model",
     }),
     keywords: defineMessage({
       id: 'settings.search.keywords.singleModel',

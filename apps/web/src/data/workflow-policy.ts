@@ -7,8 +7,6 @@ export type { WorkflowParam, WorkflowPolicy, WorkflowPolicyView };
 
 /** The fields of workflow.policy.set besides project_id; an absent field stays as it is. */
 export interface PolicyPatch {
-  /** null turns it off. */
-  question_defaults?: WorkflowPolicy['question_defaults'] | null;
   runtime_quota_threshold?: number;
   gate_on_fail?: WorkflowPolicy['gate_on_fail'];
   gate_runner?: WorkflowPolicy['gate_runner'];
@@ -54,17 +52,11 @@ export const togglePin = (policy: WorkflowPolicy, param: WorkflowParam): Workflo
 
 // Labels are getters, so each is read in the language loaded by then.
 export const PARAM_LABEL: Record<
-  'gate_on_fail' | 'question_defaults' | 'project_budget' | 'runtime_quota_threshold',
+  'gate_on_fail' | 'project_budget' | 'runtime_quota_threshold',
   string
 > = {
   get gate_on_fail() {
     return t({ id: 'settings.gate.onFail', defaultMessage: 'When a gate fails' });
-  },
-  get question_defaults() {
-    return t({
-      id: 'settings.workflow.questionDefaults',
-      defaultMessage: "Apply the lead's recommended answer to reversible questions after N hours",
-    });
   },
   get project_budget() {
     return t({

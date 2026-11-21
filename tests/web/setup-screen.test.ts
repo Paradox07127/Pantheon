@@ -157,6 +157,19 @@ describe('first-time setup checks', () => {
     );
   });
 
+  it('lists no installed ACP runtime whose handshake did not answer, and opens no project on it', () => {
+    mock.read = {
+      state: 'ready',
+      statuses: [missing('claude'), missing('codex'), status('cursor', { handshake: false })],
+    };
+    const h = mount(() => SetupScreen());
+    const shown = nodes(h.value)
+      .filter((n) => typeof n.type === 'function' && n.type.name === 'RuntimeRow')
+      .map((n) => n.props.runtime);
+    expect(shown).not.toContain('cursor');
+    expect(button(h.value, openProject).props['aria-disabled']).toBe(true);
+  });
+
   it('lets a project open when only an ACP runtime is installed', () => {
     mock.read = {
       state: 'ready',

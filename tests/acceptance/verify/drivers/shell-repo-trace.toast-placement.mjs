@@ -8,8 +8,18 @@ const check = (what, ok, got) => result.checks.push({ what, ok: Boolean(ok), got
 const WAITING = `verify-toast-${Date.now()}`;
 
 // A request shows as a toast only while another project is in view.
-await newProject(`${WAITING}-view`, { 'README.md': '# toast\n' });
-await page.click({ role: 'button', name: '记忆', exact: true });
+const view = await newProject(`${WAITING}-view`, { 'README.md': '# toast\n' });
+// Leaves the new session page for an existing session of the project in view.
+const AWAY = `${WAITING}-away`;
+await call('session.create', {
+  project_id: view.project_id,
+  runtime: 'fixture',
+  input: `${AWAY}\nfixture-script\n${JSON.stringify([{ say: 'ok' }])}`,
+});
+await poll(async () =>
+  (await query('session.list', { project_id: view.project_id })).some((s) => s.title === AWAY),
+);
+await page.click({ role: 'button', name: `${AWAY}，fixture`, exact: false });
 
 // A permission request in boot's project shows as a toast and counts in the title bar.
 await call('session.create', {

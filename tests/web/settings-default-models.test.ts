@@ -81,7 +81,7 @@ const roleModel = (role: string) =>
   format({ id: 'settings.defaults.roleModel', defaultMessage: '' }, { role });
 const WRITER_MODEL = roleModel(WRITER);
 const REVIEWER_MODEL = roleModel(zh('settings.defaults.reviewer'));
-const LEAD_MODEL = zh('settings.defaults.leadModel');
+const LEAD_MODEL = zh('settings.defaults.sameAsNew');
 const ROLES = zh('settings.defaults.roles');
 const PERMISSION = zh('settings.defaults.permissionMode');
 async function mount<T>(body: () => T) {
@@ -94,7 +94,8 @@ const labelled = (t: ReactNode, label: string) => find(t, (n) => n.props['aria-l
 const role = (t: ReactNode, name: string) => nodes(t).filter((n) => n.props.role === name);
 const menu = (h: HookHost<any>) => named(tree(h), 'ModelMenu');
 const alerts = (t: ReactNode) => role(t, 'alert').map((n) => text(n));
-const leadSwitch = (h: HookHost<any>) => labelled(tree(h), zh('settings.defaults.leadModelForAll'));
+const leadSwitch = (h: HookHost<any>) =>
+  labelled(tree(h), zh('settings.defaults.sameModelForReviews'));
 /** What the role chip labelled `label` draws: its menu, or the chip alone when it cannot be chosen. */
 const open = (h: HookHost<any>, label: string) => {
   const chip = find(tree(h), (n) => n.props.label === label);
@@ -142,7 +143,7 @@ describe('default models page', () => {
       zh('settings.defaults.fallback'),
     ]);
     expect(role(table, 'rowheader').map((n) => text(n))).toEqual([
-      zh('settings.defaults.lead'),
+      zh('settings.defaults.newSessions'),
       WRITER,
       zh('settings.defaults.reviewer'),
     ]);
@@ -341,7 +342,7 @@ describe('default models page', () => {
     const h = await mount(() => SessionDefaults({ project: kept as never }));
     const fallback = (role: string) =>
       open(h, format({ id: 'settings.defaults.fallbackOf', defaultMessage: '' }, { role }));
-    expect(text(chosen(fallback('lead')))).toBe('claude-sonnet');
+    expect(text(chosen(fallback(zh('settings.defaults.newSessions'))))).toBe('claude-sonnet');
     expect(text(chosen(fallback(WRITER)))).toBe(zh('settings.defaults.noFallback'));
     pick(fallback(WRITER), 'claude-opus');
     await h.flush();

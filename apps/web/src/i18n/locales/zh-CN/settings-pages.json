@@ -135,8 +135,6 @@
   "settings.harness.args": "{runtime} 的启动参数",
   "settings.harness.artifacts": "发布 artifact",
   "settings.projects.autoGitInit": "自动 git init",
-  "settings.workflow.decrease": "{param} 减一",
-  "settings.workflow.increase": "{param} 加一",
   "settings.harness.quota.fiveHour": "5 小时",
   "settings.harness.quota.sevenDay": "7 天",
   "settings.harness.backends": "后端",

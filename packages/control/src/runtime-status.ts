@@ -17,12 +17,44 @@ import { stopTurn } from './session.js';
 const refreshing = new WeakMap<ControlContext, Promise<void>>();
 const checking = new WeakMap<ControlContext, Map<string, Promise<void>>>();
 
-/** Runs every runtime's preflight; a refresh still running is shared instead of starting another. */
+/**
+ * Runs every runtime's preflight, and the ACP initialize of each ACP-profile runtime; a refresh
+ * still running is shared instead of starting another.
+ */
 export function refreshRuntimeStatus(ctx: ControlContext): Promise<void> {
   const running = refreshing.get(ctx);
   if (running) return running;
   const refresh = Promise.all(
     [...ctx.adapters.values()].map(async (adapter) => {
+      if (Object.hasOwn(acpProfiles, adapter.name) && adapter.reconnect) {
+        // A failed handshake only keeps the runtime unlisted; it holds none of its sessions.
+        const handshake = await adapter.reconnect().then(
+          () => true,
+          () => false,
+        );
+        if (ctx.adapters.get(adapter.name) !== adapter) return;
+        const before = ctx.runtimeStatus.get(adapter.name)?.handshake;
+        ctx.runtimeStatus.set(adapter.name, {
+          ...ctx.runtimeStatus.get(adapter.name),
+          runtime: adapter.name,
+          handshake,
+          checked_at: new Date(ctx.store.now()).toISOString(),
+        });
+        // The interface lists an ACP runtime by its handshake, so a changed one has it read again.
+        if (before === undefined || before === handshake) return;
+        const projects = ctx.store.list<Project>('projects').map((project) => project.id);
+        ctx.store.transaction(() => {
+          for (const project of projects.length ? projects : [''])
+            ctx.store.event(
+              'runtime.handshake_changed',
+              { id: adapter.name, revision: 1 },
+              project,
+              { runtime: adapter.name, handshake },
+            );
+        });
+        ctx.changed();
+        return;
+      }
       if (!adapter.preflight) return;
       const found = await adapter.preflight();
       if (ctx.adapters.get(adapter.name) !== adapter) return;
@@ -71,6 +103,15 @@ export async function runtimeStatus(
   if (refresh) await Promise.all([refreshRuntimeStatus(ctx), findInstalledRuntimes(ctx)]);
   else if ([...ctx.runtimeStatus.values()].every((status) => status.checked_at === undefined))
     await refreshRuntimeStatus(ctx);
+  // A handshake still running, or not run because its adapter came after the refresh began, has not failed.
+  const unanswered = () =>
+    [...ctx.adapters.values()].some(
+      (adapter) =>
+        Object.hasOwn(acpProfiles, adapter.name) &&
+        adapter.reconnect &&
+        ctx.runtimeStatus.get(adapter.name)?.handshake === undefined,
+    );
+  while (unanswered()) await refreshRuntimeStatus(ctx);
   const configured = readUserConfig(ctx.userConfigDir).runtimes;
   const runtimes = new Set([
     ...ctx.adapters.keys(),
@@ -92,6 +133,10 @@ export async function runtimeStatus(
       checked_at: adapter?.report.checked_at ?? new Date(ctx.store.now()).toISOString(),
       ...ctx.runtimeStatus.get(runtime),
       ...config,
+      ...(enabled &&
+        Object.hasOwn(acpProfiles, runtime) && {
+          handshake: ctx.runtimeStatus.get(runtime)?.handshake === true,
+        }),
       unverified_isolation: isolationWaived(ctx, runtime),
       enabled,
       capabilities: enabled ? adapter?.report.capabilities : undefined,

@@ -25,7 +25,6 @@ import {
   Section,
   type Failure,
 } from './ProjectSettingsScreen';
-import { QuestionDefaults } from './QuestionDefaults';
 import { allProjects } from './SettingsNav';
 import { UsagePage } from './UsagePage';
 import { useSettingsView } from './view';
@@ -109,7 +108,7 @@ export function ProjectListPage() {
   );
 }
 
-/** One project's own page: the settings it sets itself, then its gates, worktrees, question defaults, budget, extensions and environment. */
+/** One project's own page: the settings it sets itself, then its gates, worktrees, budget, extensions and environment. */
 function ProjectDetail({ project }: { project: Project }) {
   const read = useProjectDefaults();
   const [busy, setBusy] = useState(false);
@@ -175,9 +174,6 @@ function ProjectDetail({ project }: { project: Project }) {
         <ProjectGate project={project} />
       </div>
       <WorktreesPage project={project} />
-      <Section>
-        <QuestionDefaults project={project} />
-      </Section>
       <Section>
         <UsagePage project={project} only="project_budget" />
       </Section>

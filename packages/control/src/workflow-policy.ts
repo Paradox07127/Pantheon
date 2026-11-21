@@ -1,6 +1,5 @@
 import {
   canonical,
-  DomainError,
   requireThat,
   type Entity,
   type Project,
@@ -31,10 +30,7 @@ export const DEFAULT_WORKFLOW_POLICY: PolicySettings & { runtime_quota_threshold
 };
 
 /** The settings a project follows from the global values unless it sets them itself. */
-const INHERITED = [
-  ...Object.keys(DEFAULT_WORKFLOW_POLICY),
-  'question_defaults',
-] as InheritedParam[];
+const INHERITED = Object.keys(DEFAULT_WORKFLOW_POLICY) as InheritedParam[];
 const SETTINGS: (keyof PolicySettings)[] = [...INHERITED, 'project_budget'];
 
 /**
@@ -221,23 +217,9 @@ export function writeGlobalPolicyChanges(
       );
 }
 
-/** Refuses global values that make no valid policy alone or under a project's own settings. */
-export function checkPolicyDefaults(
-  ctx: ControlContext,
-  value: NonNullable<ProjectDefaults['workflow_policy']>,
-): void {
-  const inherited = { ...structuredClone(DEFAULT_WORKFLOW_POLICY), ...value } as WorkflowPolicy;
-  checkPolicy(inherited);
-  for (const project of ctx.store.list<Project>('projects')) {
-    if (project.removed_at !== undefined) continue;
-    const own = ownPolicySettings(ctx.store.get<WorkflowPolicy>('workflow_policies', project.id));
-    try {
-      checkPolicy({ ...inherited, ...own });
-    } catch (error) {
-      if (!(error instanceof DomainError)) throw error;
-      throw new DomainError(error.code, `${error.message} in project ${project.name}`);
-    }
-  }
+/** Refuses global values that make no valid policy. */
+export function checkPolicyDefaults(value: NonNullable<ProjectDefaults['workflow_policy']>): void {
+  checkPolicy({ ...structuredClone(DEFAULT_WORKFLOW_POLICY), ...value } as WorkflowPolicy);
 }
 
 export const workflowPolicyHandlers: Handlers = {
@@ -253,23 +235,17 @@ export const workflowPolicyHandlers: Handlers = {
   },
   'workflow.policy.set': (ctx, p, c) => {
     userOnly(p);
-    const { project_id, project_budget, question_defaults, ...input } = inputSchemas[
-      'workflow.policy.set'
-    ].parse(c.input);
+    const { project_id, project_budget, ...input } = inputSchemas['workflow.policy.set'].parse(
+      c.input,
+    );
     projectAccess(ctx, p, project_id, c.type);
     ctx.store.must<Project>('projects', project_id);
     const old = ctx.store.get<WorkflowPolicy>('workflow_policies', project_id);
     revision(ctx, c, old);
     const current = workflowPolicy(ctx, project_id),
       own = ownParams(ctx, project_id);
-    const given = [
-      ...Object.keys(input),
-      ...(question_defaults === undefined ? [] : ['question_defaults']),
-    ] as InheritedParam[];
-    const overridden = [...new Set([...own, ...given])];
+    const overridden = [...new Set([...own, ...(Object.keys(input) as InheritedParam[])])];
     const next: WorkflowPolicy = { ...current, ...input };
-    if (question_defaults === null) delete next.question_defaults;
-    else if (question_defaults) next.question_defaults = question_defaults;
     // A changed budget keeps counting from when the first one was set.
     if (project_budget === null) delete next.project_budget;
     else if (project_budget)

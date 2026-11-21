@@ -127,7 +127,31 @@ try {
     await page.click({ role: 'option', name: title, exact: false });
     return poll(() => detail(title));
   };
-  await page.click({ role: 'button', name: '记忆', exact: true });
+  // The memory screen opens from a chart card: pinning it offers the way to the project's diagrams.
+  const SESSION = `verify-memory-chart-${stamp}`;
+  const CHART = `Chart ${stamp}`;
+  const created = await call('session.create', {
+    project_id,
+    runtime: 'fixture',
+    purpose: 'conductor',
+    input: `${SESSION}\nfixture-script\n${JSON.stringify([
+      {
+        tool: {
+          name: 'draw',
+          arguments: { title: CHART, kind: 'mermaid', spec: { source: 'graph TD\n  A-->B' } },
+        },
+      },
+    ])}`,
+  });
+  // visual.list is a command for the user; its receipt carries the visuals.
+  const drawn = await poll(async () => {
+    const receipt = await call('visual.list', { project_id, session_id: created.id });
+    return JSON.stringify(receipt).includes(CHART) && receipt;
+  }, 30_000);
+  check('前置：visual.list 有这个会话画的图', drawn, JSON.stringify(drawn).slice(0, 300));
+  await page.click({ role: 'button', name: `${SESSION}，fixture`, exact: false });
+  await page.click({ role: 'button', name: '钉到图解', exact: true });
+  await page.click({ role: 'button', name: '打开图解', exact: true });
   await page.click({ role: 'tab', name: '条目', exact: true });
   await poll(() =>
     page.evaluate(

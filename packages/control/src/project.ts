@@ -666,7 +666,7 @@ export const projectHandlers: Handlers = {
     userOnly(p);
     const input = inputSchemas['project.defaults.set'].parse(c.input),
       dir = userConfigDirectory(ctx);
-    if (input.key === 'workflow_policy') checkPolicyDefaults(ctx, input.value);
+    if (input.key === 'workflow_policy') checkPolicyDefaults(input.value);
     const value =
       input.key === 'session_defaults' ? checkedSessionDefaults(ctx, input.value) : input.value;
     const before = inheritedPolicy(ctx);

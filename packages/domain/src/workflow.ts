@@ -30,8 +30,6 @@ export interface WorkflowPolicy extends Entity {
   project_id: string;
   /** Starts at 1 and rises by 1 with each change; 0 for the defaults of a project with no row. */
   policy_version: number;
-  /** When set, a reversible question takes its recommended answer after_hours after it was asked unless the user answers first; absent is off. */
-  question_defaults?: { after_hours: number };
   /** Quota use percent from 0 to 100; absent defaults to 90. */
   runtime_quota_threshold?: number;
   gate_on_fail?: 'handback' | 'retry' | 'stop';

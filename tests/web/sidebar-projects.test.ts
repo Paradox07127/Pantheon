@@ -233,14 +233,15 @@ describe('sidebar on the all projects screen', () => {
     expect(labels).toEqual([screen('projects'), screen('settings')]);
   });
 
-  it('keeps the page navigation and drops the project list on a project page', () => {
+  it('drops the project list and offers no trace or memory page on a project page', () => {
     mock.shell.screen = 'trace';
     const { tree, list } = openSidebar();
     expect(list).toBeNull();
     const labels = nodes(tree)
       .filter((n) => n.type === 'button')
       .map((n) => text(n.props.children));
-    for (const page of PAGES) expect(labels).toContain(page);
+    for (const page of PAGES) expect(labels).not.toContain(page);
+    expect(nodes(tree).some((n) => n.props.className === 'ss-list')).toBe(true);
     expect(find(tree, (n) => isFn(n, 'ProjectMenu')).props.current).toBeUndefined();
   });
 });

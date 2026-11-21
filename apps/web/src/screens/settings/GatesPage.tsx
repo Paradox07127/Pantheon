@@ -505,7 +505,7 @@ export function GatePolicy({ project }: { project: Project }) {
   return (
     <div className="ps-grp">
       <div className="ps-rows" aria-busy={pending || undefined}>
-        <div className="ps-row wf-pr" data-setting-id="gates.handbackLimit">
+        <div className="ps-row wf-pr" data-setting-id="gates.onFail">
           <span className="wf-nm">
             <span>{onFail}</span>
           </span>

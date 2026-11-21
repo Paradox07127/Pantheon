@@ -171,11 +171,17 @@ let viaFooter = true;
 try {
   await page.click({ role: 'button', name: `替你批准了 ${todayAll} 项`, exact: false });
 } catch (error) {
-  // No footer to click: the tab is reached from the sidebar, so the table can still be checked.
+  // No footer to click: the trace page opens from the palette's recent activity, so the table can still be checked.
   viaFooter = false;
   result.footer_click = error.message.slice(0, 300);
   await page.press('Escape');
-  await page.click({ role: 'button', name: '轨迹', exact: true });
+  await page.click({ role: 'button', name: '搜索', exact: true });
+  await page.waitFor(`!!document.querySelector('.cmdk input')`, 'the command palette to open');
+  const box = await page.evaluate(
+    `document.querySelector('.cmdk input').getAttribute('aria-label')`,
+  );
+  await page.fill({ role: 'combobox', name: box, exact: true }, '最近动态');
+  await page.click({ role: 'option', name: '最近动态', exact: true });
   await page.click({ role: 'tab', name: '替你批准的', exact: false });
 }
 const selectedTab = () =>

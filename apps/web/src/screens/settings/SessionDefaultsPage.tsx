@@ -40,7 +40,7 @@ type Defaults = {
   effort: EffortLevel | null;
   /** Tasks and reviews also run on this runtime, model and effort; only with a model. */
   single_model: boolean;
-  /** null runs task sessions on the lead's model. */
+  /** null uses the new sessions' model. */
   writer: RuntimeChoice | null;
   /** null reviews on a runtime other than the writer's. */
   reviewer: RuntimeChoice | null;
@@ -64,11 +64,11 @@ export function DefaultsOverrides() {
 }
 registerPageHeader('defaults', { tools: DefaultsOverrides });
 
-/** The writer and the reviewer while every role runs on the lead's model. */
+/** The writer and the reviewer while every role runs on the new sessions' model. */
 function FollowedModel({ label }: { label: string }) {
   return (
     <button type="button" className="chip dp-chip" aria-label={label} disabled>
-      {t({ id: 'settings.defaults.leadModel', defaultMessage: "The lead's model" })}
+      {t({ id: 'settings.defaults.sameAsNew', defaultMessage: 'Same as new sessions' })}
       <ChevronDown aria-hidden="true" />
     </button>
   );
@@ -174,7 +174,7 @@ export function SessionDefaults({ project }: { project: Project | null }) {
   const models = useRuntimeModels(listedIn, offered);
   const model = draft ? draft.model : (saved?.model ?? null);
   const listed = models[runtime];
-  // The modes of the lead's model, or of the runtime's default model without a listed one.
+  // The modes of the new sessions' model, or of the runtime's default model without a listed one.
   const modes = modelPermissionModes(
     runtime,
     listed?.state === 'ready' ? defaultModelFor(listed.models, model ?? undefined) : null,
@@ -240,7 +240,7 @@ export function SessionDefaults({ project }: { project: Project | null }) {
     if (!sending.current && !savedAt) void send(next);
   };
 
-  const lead = t({ id: 'settings.defaults.lead', defaultMessage: 'Lead' });
+  const newSessions = t({ id: 'settings.defaults.newSessions', defaultMessage: 'New sessions' });
   const writer = t({ id: 'settings.defaults.writer', defaultMessage: 'Writing code' });
   const reviewer = t({ id: 'settings.defaults.reviewer', defaultMessage: 'Outside review' });
   const roleModel = (role: string) =>
@@ -272,7 +272,7 @@ export function SessionDefaults({ project }: { project: Project | null }) {
           label={roleModel(name)}
           none={
             role === 'writer'
-              ? t({ id: 'settings.defaults.leadModel', defaultMessage: "The lead's model" })
+              ? t({ id: 'settings.defaults.sameAsNew', defaultMessage: 'Same as new sessions' })
               : t({
                   id: 'settings.defaults.otherRuntime',
                   defaultMessage: "A runtime other than the writer's",
@@ -287,8 +287,8 @@ export function SessionDefaults({ project }: { project: Project | null }) {
     </span>
   );
   const singleModelLabel = t({
-    id: 'settings.defaults.leadModelForAll',
-    defaultMessage: "Tasks and reviews also use the lead's model",
+    id: 'settings.defaults.sameModelForReviews',
+    defaultMessage: "Reviews also use the new sessions' model",
   });
   const permissionLabel = t({
     id: 'settings.defaults.permissionMode',
@@ -320,7 +320,7 @@ export function SessionDefaults({ project }: { project: Project | null }) {
         </div>
         <div className="dp-r" role="row" data-setting-id="defaults.runtime">
           <span className="dp-nm" role="rowheader">
-            {lead}
+            {newSessions}
           </span>
           <span role="cell" className="dp-lead" data-setting-id="defaults.model">
             <ModelMenu
@@ -349,7 +349,7 @@ export function SessionDefaults({ project }: { project: Project | null }) {
               }
             />
           </span>
-          {fallback('lead', lead)}
+          {fallback('lead', newSessions)}
         </div>
         <div className="dp-r" role="row" data-setting-id="defaults.writer">
           <span className="dp-nm" role="rowheader">

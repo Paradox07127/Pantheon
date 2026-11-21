@@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { AcpAdapter, acpProfiles, FixtureAdapter } from '@pantheon/adapters';
 import type { HarnessAdapter, Session, SessionTurn } from '@pantheon/domain';
 import { command } from '@pantheon/protocol';
+import type { ControlContext } from '../../packages/control/dist/context.js';
 import { awaitWorkspaceReady, eventually, fixture, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
@@ -70,6 +71,84 @@ it('lists ACP capabilities and unknown login alongside every native preflight fi
     capabilities: grok.report.capabilities,
   });
   expect(statuses[2]).toMatchObject(native);
+});
+
+it('reports the ACP handshake of each enabled ACP-profile runtime, and a failed one disconnects nothing', async () => {
+  const f = await fixture();
+  cleanups.push(f.close);
+  const answered = Object.assign(
+    new AcpAdapter({ name: 'grok', profile: acpProfiles.grok!, version: '1.0.77' }),
+    { reconnect: async () => {} },
+  );
+  const refused = Object.assign(
+    new AcpAdapter({ name: 'cursor', profile: acpProfiles.cursor!, version: '2026.1' }),
+    {
+      reconnect: async () => {
+        throw new Error('Protocol transport closed');
+      },
+    },
+  );
+  f.control.adapters.set('grok', answered);
+  f.control.adapters.set('cursor', refused);
+  const statuses = await f.control.runtimeStatus(user, true);
+  const of = (runtime: string) => statuses.find((status) => status.runtime === runtime)!;
+  expect(of('grok')).toMatchObject({ installed: true, handshake: true });
+  expect(of('cursor')).toMatchObject({
+    installed: true,
+    handshake: false,
+    connection: { connected: true },
+  });
+  expect(of('gemini')).toMatchObject({ installed: false, handshake: false });
+  expect(of('fixture')).not.toHaveProperty('handshake');
+  expect(of('claude')).not.toHaveProperty('handshake');
+});
+
+it('waits for an ACP handshake still running instead of reporting it failed', async () => {
+  const f = await fixture();
+  cleanups.push(f.close);
+  let answer = () => {};
+  const grok = Object.assign(
+    new AcpAdapter({ name: 'grok', profile: acpProfiles.grok!, version: '1.0.77' }),
+    { reconnect: () => new Promise<void>((resolve) => (answer = resolve)) },
+  );
+  f.control.adapters.set('grok', grok);
+  // As at daemon start: one preflight has answered while the handshake still runs.
+  const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
+  ctx.runtimeStatus.set('claude', { runtime: 'claude', checked_at: new Date().toISOString() });
+  const refresh = f.control.refreshRuntimeStatus();
+  const read = f.control.runtimeStatus(user, false);
+  answer();
+  await refresh;
+  expect((await read).find((status) => status.runtime === 'grok')).toMatchObject({
+    handshake: true,
+  });
+});
+
+it('records a changed ACP handshake in each project, so the interface reads the status again', async () => {
+  const f = await fixture();
+  cleanups.push(f.close);
+  let answers = false;
+  const grok = Object.assign(
+    new AcpAdapter({ name: 'grok', profile: acpProfiles.grok!, version: '1.0.77' }),
+    {
+      reconnect: async () => {
+        if (!answers) throw new Error('RPC timeout: initialize');
+      },
+    },
+  );
+  f.control.adapters.set('grok', grok);
+  const grokOf = async () =>
+    (await f.control.runtimeStatus(user, true)).find((status) => status.runtime === 'grok');
+  const changed = () =>
+    f.store
+      .events(0, f.project.id)
+      .filter((event) => event.kind === 'runtime.handshake_changed')
+      .map((event) => event.payload);
+  expect(await grokOf()).toMatchObject({ handshake: false });
+  expect(changed()).toEqual([]);
+  answers = true;
+  expect(await grokOf()).toMatchObject({ handshake: true });
+  expect(changed()).toEqual([{ runtime: 'grok', handshake: true }]);
 });
 
 it('finds a runtime installed after the start only when the status is checked again', async () => {

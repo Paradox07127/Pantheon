@@ -121,15 +121,15 @@ const waitButton = (h: HookHost<any>) =>
   nodes(h.value).find((n) => n.type === 'button' && n.props.className === 'sb-wait');
 
 describe('sidebar layout', () => {
-  it('runs project row, page rows, the session list headed by its title, then settings', () => {
-    expect(parts(mount(LIST))).toEqual(['project', 'nav', 'list', 'sessions', 'settings']);
+  it('runs project row, the session list headed by its title, then settings', () => {
+    expect(parts(mount(LIST))).toEqual(['project', 'list', 'sessions', 'settings']);
   });
 
-  it('keeps every page row', () => {
+  it('offers no trace or memory page row, only settings', () => {
     const pages = nodes(mount(LIST).value)
       .filter((n) => n.type === 'button' && n.props.className === 'sb-it')
       .map((n) => text(n.props.children));
-    expect(pages).toEqual(['trace', 'memory', 'settings'].map(screen));
+    expect(pages).toEqual([screen('settings')]);
   });
 
   it('draws the project row as the mark, the name and a chevron, with no counts under it', () => {
@@ -177,18 +177,13 @@ describe('sidebar layout', () => {
     expect(mock.shell.openSession).toHaveBeenCalledWith('waiting');
   });
 
-  it('keeps only page icons, new session, all projects and settings on the folded rail', () => {
+  it('keeps only new session, all projects and settings on the folded rail', () => {
     const h = mount(LIST, true);
     expect(nodes(h.value).some((n) => isFn(n, 'ProjectMenu'))).toBe(false);
     const labels = nodes(h.value)
       .filter((n) => n.type === 'button' && n.props.className === 'ib')
       .map((n) => n.props['aria-label']);
-    expect(labels).toEqual([
-      ...['trace', 'memory'].map(screen),
-      zh('components.sidebar.newSession'),
-      allLabel,
-      screen('settings'),
-    ]);
+    expect(labels).toEqual([zh('components.sidebar.newSession'), allLabel, screen('settings')]);
   });
 
   it('keeps only the sidebar toggle and search in the window controls', () => {

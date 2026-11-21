@@ -1,5 +1,5 @@
 import { open } from '../page.mjs';
-const { run, page, query, errors, poll } = await open(process.argv[2]);
+const { run, page, query, call, errors, poll } = await open(process.argv[2]);
 const result = { id: 'sessions.new-session-zone', checks: [] };
 const check = (what, ok, got) => result.checks.push({ what, ok: Boolean(ok), got });
 const COMPOSER = '新会话的第一条消息';
@@ -8,10 +8,19 @@ const composerShown = () =>
     `[...document.querySelectorAll('textarea, [role=textbox]')].some((el) => el.getClientRects().length && (el.getAttribute('aria-label') ?? '') === ${JSON.stringify(COMPOSER)})`,
   );
 
-// Start away from the new session page.
-await page.click({ role: 'button', name: '记忆', exact: true });
+// Start away from the new session page, on an existing session.
+const AWAY = `verify-zone-away-${Date.now()}`;
+await call('session.create', {
+  project_id: run.project_id,
+  runtime: 'fixture',
+  input: `${AWAY}\nfixture-script\n${JSON.stringify([{ say: 'ok' }])}`,
+});
+await poll(async () =>
+  (await query('session.list', { project_id: run.project_id })).some((s) => s.title === AWAY),
+);
+await page.click({ role: 'button', name: `${AWAY}，fixture`, exact: false });
 await poll(async () => !(await composerShown()));
-check('对照组：在记忆页上看不到新会话输入框', !(await composerShown()));
+check('对照组：打开已有会话后看不到新会话输入框', !(await composerShown()));
 
 const placed = await page.evaluate(`(() =>
   [...document.querySelectorAll('button[aria-label="新会话"]')]

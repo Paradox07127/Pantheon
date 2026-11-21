@@ -229,7 +229,8 @@ describe('session defaults model', () => {
     ]);
   });
 
-  const single = (h: HookHost<any>) => labelled(tree(h), zh('settings.defaults.leadModelForAll'));
+  const single = (h: HookHost<any>) =>
+    labelled(tree(h), zh('settings.defaults.sameModelForReviews'));
 
   it('saves the one-model switch with the default model and keeps it across other edits', async () => {
     const h = await mount(() => SessionDefaults({ project: saved as never }));

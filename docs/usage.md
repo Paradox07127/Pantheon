@@ -212,7 +212,6 @@ You can replay a turn and see the file changes of one step.
 
 - **Shortcuts.** Search by name or by keys. Click "Record keys" to change a shortcut. "Restore all defaults" resets all shortcuts.
 - **Notifications.** Each kind of decision, and merges, has "Now", "Brief only" or "Never". During quiet hours, "Now" works as "Brief only". A question that has waited over 4 hours always notifies you.
-- **Question default.** The page of a project in "Settings" > "Projects" has "Apply the lead's recommended answer to reversible questions after N hours". It is off until you turn it on, and it applies to the current project only.
 - **Environment.** "Check environment" on the "Gates" page prepares a fresh worktree the way a session gets one, then runs the gate commands in it. The baseline confirmation card has the same check for the commands that the baseline proposes. When one of them fails, the baseline agent fixes it once.
 - **Devices.** Click "Add device" and enter a host name from `~/.ssh/config`. Pantheon checks the system, the runtime versions and the sign-in state over SSH. You can set labels, resources and the session limit of each device, and probe it again.
 

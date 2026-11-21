@@ -8,7 +8,7 @@ import { useBoard } from '../../data/board';
 import { runCommand } from '../../data/commands';
 import { useDevices } from '../../data/devices';
 import { ageText, failureText, useNow } from '../../data/needs-you';
-import { useRuntimeStatus } from '../../data/runtime-status';
+import { listedRuntime, useRuntimeStatus } from '../../data/runtime-status';
 import { readQuery } from '../../data/workbench-sessions';
 import { t } from '../../i18n';
 import { useShell } from '../../store';
@@ -298,7 +298,7 @@ export function DevicesPage() {
   ): { runtime: string; version?: string; signedIn: boolean }[] =>
     (isLocal(d)
       ? runtimeStatus.read.state === 'ready'
-        ? runtimeStatus.read.statuses.map((s) => ({
+        ? runtimeStatus.read.statuses.filter(listedRuntime).map((s) => ({
             runtime: s.runtime,
             ...(s.installed && { version: s.version ?? '' }),
             signedIn: s.auth.state === 'ok',

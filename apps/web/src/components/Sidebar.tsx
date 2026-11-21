@@ -9,8 +9,6 @@ import {
 import { Menu } from '@base-ui/react/menu';
 import type { WorkbenchSession } from '@pantheon/protocol';
 import {
-  BookOpen,
-  ChartGantt,
   Check,
   ChevronDown,
   ChevronRight,
@@ -1055,24 +1053,6 @@ export function Sidebar({
         )}
         {currentProjectId && !allProjects && (
           <>
-            <button
-              type="button"
-              className="sb-it"
-              aria-current={current('trace')}
-              onClick={() => setScreen('trace')}
-            >
-              <ChartGantt aria-hidden="true" />
-              {SCREEN_NAMES.trace}
-            </button>
-            <button
-              type="button"
-              className="sb-it"
-              aria-current={current('memory')}
-              onClick={() => setScreen('memory')}
-            >
-              <BookOpen aria-hidden="true" />
-              {SCREEN_NAMES.memory}
-            </button>
             <nav
               className="ss-list"
               aria-label={SCREEN_NAMES.sessions}
@@ -1251,24 +1231,6 @@ export function Sidebar({
         <div className="sb-top" />
         {currentProjectId && !allProjects && (
           <>
-            {icon(
-              SCREEN_NAMES.trace,
-              SCREEN_NAMES.trace,
-              () => setScreen('trace'),
-              <ChartGantt aria-hidden="true" />,
-              {
-                current: current('trace'),
-              },
-            )}
-            {icon(
-              SCREEN_NAMES.memory,
-              SCREEN_NAMES.memory,
-              () => setScreen('memory'),
-              <BookOpen aria-hidden="true" />,
-              {
-                current: current('memory'),
-              },
-            )}
             {icon(
               t({ id: 'components.sidebar.newSession', defaultMessage: 'New session' }),
               t(

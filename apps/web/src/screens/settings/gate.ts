@@ -172,9 +172,6 @@ export function lastDuration(command: GateCommand, runs: readonly GateRun[]): nu
   return null;
 }
 
-/** The fix count a workflow policy starts from. */
-export const DEFAULT_FIX_LIMIT = 3;
-
 function checkRow(row: GateRow): { check: RowCheck; command: GateCommand | null } {
   const errors: string[] = [];
   const name = row.name.trim();

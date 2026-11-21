@@ -111,7 +111,7 @@ describe('settings search in zh-CN', () => {
 
   it('finds the brief only choice of the notifications and what a failed gate does', () => {
     expect(new Set(searchSettings('仅简报').map((h) => h.page))).toContain('notifications');
-    expect(ids('门禁失败时')[0]).toBe('gates.handbackLimit');
+    expect(ids('门禁失败时')[0]).toBe('gates.onFail');
   });
 
   it.each([

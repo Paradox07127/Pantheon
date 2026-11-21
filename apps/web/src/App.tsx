@@ -413,12 +413,6 @@ function MainWindow({ kind }: { kind: 'main' | 'project' }) {
                 ]
               : []),
             ...(current
-              ? [page('screen-trace', SCREEN_NAMES.trace, () => setScreen('trace'))]
-              : []),
-            ...(current
-              ? [page('screen-memory', SCREEN_NAMES.memory, () => setScreen('memory'))]
-              : []),
-            ...(current
               ? [
                   action('recent-activity', recentActivityTitle(), () => {
                     setTraceTab('activity');

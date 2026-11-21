@@ -74,6 +74,8 @@ export type RuntimeStatus = PreflightRuntimeStatus & {
   artifacts?: boolean;
   unverified_isolation?: boolean;
   capabilities?: CapabilityReport['capabilities'];
+  /** Enabled ACP-profile runtimes only: whether the ACP initialize of the last check answered. */
+  handshake?: boolean;
   /** Latest reported windows, observed at seen_at (Unix epoch milliseconds). */
   quota?: { windows: QuotaWindow[]; seen_at: number };
 };
@@ -1692,11 +1694,6 @@ export const inputSchemas = {
   /** Changes the given workflow policy parameters of a project; the user only. */
   'workflow.policy.set': z.strictObject({
     project_id: str,
-    /** A reversible question takes its recommended answer after_hours after it was asked; null turns it off. */
-    question_defaults: z
-      .strictObject({ after_hours: z.number().int().min(1).max(168) })
-      .nullable()
-      .optional(),
     runtime_quota_threshold: z.number().optional(),
     gate_on_fail: z.enum(['handback', 'retry', 'stop']).optional(),
     gate_runner: z.enum(['daemon', 'session']).optional(),

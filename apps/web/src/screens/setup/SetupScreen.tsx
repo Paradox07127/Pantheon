@@ -8,6 +8,7 @@ import { TopBar } from '../../components/TopBar';
 import { useNow } from '../../data/needs-you';
 import { finishSetup, useSetupDone } from '../../data/personal-settings';
 import {
+  listedRuntime,
   unavailableReason,
   useConnectionsStatus,
   useRuntimeStatus,
@@ -47,7 +48,7 @@ export function SetupScreen() {
     if (read.state !== 'loading') setSince(null);
   }, [read]);
   const busy = since !== null;
-  const statuses = read.state === 'ready' ? read.statuses : [];
+  const statuses = read.state === 'ready' ? read.statuses.filter(listedRuntime) : [];
   const installed = statuses.some((s) => s.installed);
   // As the runtimes page lists them: installed first, each part in the runtimes' order.
   const sorted = [...statuses].sort((a, b) => compareRuntimes(a.runtime, b.runtime));

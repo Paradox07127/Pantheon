@@ -47,7 +47,6 @@ it('reads the default policy at version 0 when the project has none', async () =
     gate_runner: 'daemon',
     pinned: [],
   });
-  expect(policyOf(f).question_defaults).toBeUndefined();
   expect(f.store.get('workflow_policies', f.project.id)).toBeUndefined();
 });
 
@@ -112,14 +111,28 @@ it('reads a stored policy that still holds removed settings without them, and sa
     max_parallel_limit: 3,
     handback_limit: 3,
     budget: {},
+    question_defaults: { after_hours: 8 },
     gate_on_fail: 'retry',
     pinned: [],
-    overridden: ['improvement_mode', 'eval_runner', 'max_parallel', 'gate_on_fail'],
+    overridden: [
+      'improvement_mode',
+      'eval_runner',
+      'max_parallel',
+      'question_defaults',
+      'gate_on_fail',
+    ],
   };
   f.store.transaction(() =>
     f.store.insert<WorkflowPolicy>('workflow_policies', stored as unknown as WorkflowPolicy),
   );
-  const removed = ['improvement_mode', 'eval_runner', 'plan_changes', 'max_parallel', 'budget'];
+  const removed = [
+    'improvement_mode',
+    'eval_runner',
+    'plan_changes',
+    'max_parallel',
+    'budget',
+    'question_defaults',
+  ];
   const read = f.control.workflowPolicy(user, f.project.id);
   expect(read).toMatchObject({ gate_on_fail: 'retry', policy_version: 1 });
   for (const key of removed) expect(read).not.toHaveProperty(key);
@@ -163,7 +176,6 @@ it('resets a changed policy to the defaults exposed by the query at the current 
   expect(initial.gate_on_fail).toBe(initial.defaults.gate_on_fail);
   set(f, {
     gate_on_fail: 'stop',
-    question_defaults: { after_hours: 8 },
     project_budget: { input_tokens: 1000 },
     pinned: ['runtime_quota_threshold'],
   });

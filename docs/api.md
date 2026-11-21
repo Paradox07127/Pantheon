@@ -532,7 +532,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | type | input | MCP 工具 |
 |---|---|---|
 | `workflow.policy.reset` | `project_id`: string |  |
-| `workflow.policy.set` | `project_id`: string<br>`question_defaults?`: object \| null<br>`runtime_quota_threshold?`: number<br>`gate_on_fail?`: "handback" \| "retry" \| "stop"<br>`gate_runner?`: "daemon" \| "session"<br>`project_budget?`: object \| null<br>`pinned?`: "runtime_quota_threshold"[] |  |
+| `workflow.policy.set` | `project_id`: string<br>`runtime_quota_threshold?`: number<br>`gate_on_fail?`: "handback" \| "retry" \| "stop"<br>`gate_runner?`: "daemon" \| "session"<br>`project_budget?`: object \| null<br>`pinned?`: "runtime_quota_threshold"[] |  |
 
 ### workspace
 

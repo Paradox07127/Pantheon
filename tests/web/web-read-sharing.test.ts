@@ -164,6 +164,18 @@ it('reads the runtime status again after a connection change, not taking a read 
   expect(reads.map((r) => r.method)).toEqual(['runtime.status', 'runtime.status']);
 });
 
+it('reads the runtime status again after an ACP handshake result changes', async () => {
+  const h = mount(() => useRuntimeStatus().read.state);
+  await answer(h);
+  mock.board = {
+    ...mock.board,
+    events: [{ sequence: 5, kind: 'runtime.handshake_changed', aggregate_id: 'dsh' }],
+  };
+  h.render();
+  await answer(h);
+  expect(reads.map((r) => r.method)).toEqual(['runtime.status', 'runtime.status']);
+});
+
 it('sends a device reload while the read of a mount is out', async () => {
   const devices = mount(() => useDevices());
   void devices.value.reload(false);
