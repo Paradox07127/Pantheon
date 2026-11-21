@@ -19,6 +19,8 @@ const git = (cwd, ...args) =>
   execFileSync('git', args, { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 const codexHome = process.env.CODEX_HOME ?? path.join(os.homedir(), '.codex');
 const POLL_MS = 500;
+// The runtime's own limit on a title turn, and a margin.
+const TITLE_WAIT_MS = 35000;
 
 // The first turn of the native session that the adopted condition imports; the task needs nothing from it.
 const OPENER = 'Reply with the single word ready.';
@@ -274,10 +276,19 @@ async function pantheonRun(spec, repo, opener) {
     let approvals = 0,
       after = 0,
       settled = false,
-      turns = [];
+      turns = [],
+      wall,
+      title = null,
+      renamed;
     // The runtime's error of each failed turn, by turn id.
     const failures = new Map();
-    for (const deadline = started + spec.settleMs; Date.now() < deadline;) {
+    // A plain session's runtime names it after the turn ends; closing the daemon earlier cuts that off.
+    for (
+      const deadline = started + spec.settleMs;
+      settled
+        ? !opener && !renamed && Date.now() < started + wall + TITLE_WAIT_MS
+        : Date.now() < deadline;
+    ) {
       await delay(POLL_MS);
       for (
         let page;
@@ -287,6 +298,13 @@ async function pantheonRun(spec, repo, opener) {
         for (const { kind, payload, aggregate_id } of page.events)
           if (kind === 'turn.failed') failures.set(aggregate_id, payload.error);
           else if (
+            kind === 'session.renamed' &&
+            aggregate_id === session.id &&
+            payload.source === 'auto'
+          ) {
+            title = payload.title;
+            renamed = Date.now();
+          } else if (
             kind === 'approval.requested' &&
             payload.kind === 'permission' &&
             payload.session_id === session.id
@@ -299,15 +317,16 @@ async function pantheonRun(spec, repo, opener) {
             approvals += 1;
           }
       }
+      if (settled) continue;
       turns = (await get('board', params)).session_turns.filter(
         (turn) => turn.session_id === session.id,
       );
       if (turns.length && !turns.some(busy)) {
         settled = true;
-        break;
+        wall = Date.now() - started;
       }
     }
-    const wall = Date.now() - started;
+    wall ??= Date.now() - started;
     // The plain session's worktree is the one linked worktree of the repository.
     const tree = opener
       ? repo
@@ -323,6 +342,8 @@ async function pantheonRun(spec, repo, opener) {
       task_turns: turns.length,
       approvals,
       wall_ms: wall,
+      title,
+      title_ms: renamed === undefined ? null : Math.max(0, renamed - started - wall),
     };
   } finally {
     await fixture.close();
@@ -373,6 +394,8 @@ export async function runOne(spec) {
     hidden_passed,
     // true: the hidden check failed once and passed on its second try.
     hidden_unstable,
+    title: null,
+    title_ms: null,
     ...rest,
     native_error: native.error ?? null,
     native_session_id: native.native_session_id ?? null,

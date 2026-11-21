@@ -1298,6 +1298,7 @@ async function generateThreadTitle(
 ): Promise<string> {
   const { rpc, spec } = session;
   let hidden: string | undefined;
+  let closed: (() => void) | undefined;
   try {
     const listed = await rpc.request<{ data?: { model?: string }[] }>('model/list', {
       includeHidden: true,
@@ -1336,7 +1337,9 @@ async function generateThreadTitle(
     if (started.sandbox?.type !== 'readOnly')
       throw new Error('The Codex title thread did not start read-only');
     const thread = hidden;
-    const answer = new Promise<{ status: unknown; text?: string }>((resolve) => {
+    const answer = new Promise<{ status: unknown; text?: string }>((resolve, reject) => {
+      closed = () => reject(new Error('Protocol transport closed'));
+      rpc.once('closed', closed);
       let text: string | undefined;
       session.titleThread = {
         id: thread,
@@ -1350,6 +1353,8 @@ async function generateThreadTitle(
         },
       };
     });
+    // A close before turn/start answers fails that request instead; this rejection then goes unread.
+    answer.catch(() => {});
     const { status, text } = await within(
       rpc
         .request('turn/start', {
@@ -1367,6 +1372,7 @@ async function generateThreadTitle(
     if (!title) throw new Error('Codex title turn returned no title');
     return title;
   } finally {
+    if (closed) rpc.off('closed', closed);
     session.titleThread = undefined;
     if (hidden) await rpc.request('thread/unsubscribe', { threadId: hidden }).catch(() => {});
   }

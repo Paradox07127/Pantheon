@@ -44,6 +44,7 @@ function fakeAppServer(
     status?: string;
     name?: string | null;
     provider?: string;
+    exitAfterTitleStart?: boolean;
   } = {},
 ) {
   const child = Object.assign(new EventEmitter(), {
@@ -88,6 +89,9 @@ function fakeAppServer(
           const thread = String(request.params.threadId),
             id = hidden ? 'title-turn' : `main-turn-${++turns}`;
           reply({ turn: { id } });
+          // The reply reaches the client before the process goes away.
+          if (hidden && options.exitAfterTitleStart)
+            return void setTimeout(() => child.emit('close', 0, null), 50);
           if (hidden) {
             write({ method: 'turn/started', params: { threadId: thread, turn: { id } } });
             write({
@@ -274,6 +278,26 @@ describe('Codex thread titles', () => {
     try {
       await vi.waitFor(() => expect(warn).toHaveBeenCalledTimes(1));
       expect(server.sent('thread/read')).toEqual([]);
+      expect(server.sent('thread/name/set')).toEqual([]);
+      expect(events.some((event) => event.kind === 'title.generated')).toBe(false);
+    } finally {
+      await close();
+    }
+  });
+
+  it('fails the title at once when the app-server exits during the title turn', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const server = fakeAppServer({ exitAfterTitleStart: true });
+    const { events, close } = await run(spec, ['Fix the importer']);
+    try {
+      await vi.waitFor(
+        () =>
+          expect(warn).toHaveBeenCalledWith(
+            'Codex thread title was not generated:',
+            'Protocol transport closed',
+          ),
+        { timeout: 2000 },
+      );
       expect(server.sent('thread/name/set')).toEqual([]);
       expect(events.some((event) => event.kind === 'title.generated')).toBe(false);
     } finally {

@@ -4,8 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { FixtureAdapter } from '@pantheon/adapters';
-import type { SessionSpec } from '@pantheon/domain';
+import { FixtureAdapter } from '@pantheon/adapters';
+import type { AgentEventSink, SessionHandle, SessionSpec } from '@pantheon/domain';
 
 type Row = {
   task: string;
@@ -16,6 +16,9 @@ type Row = {
   hidden_passed: boolean | null;
   turn_error: string | null;
   runtime_version: string;
+  wall_ms: number;
+  title: string | null;
+  title_ms: number | null;
 };
 type Spec = Record<string, unknown>;
 // The tests project only typechecks the scripts it lists, so these modules are imported by URL.
@@ -74,18 +77,45 @@ describe('a fixture eval run', () => {
   }, 600000);
 });
 
+const TITLE_DELAY_MS = 3000;
+
+/** The fixture runtime under its own name, naming a new session some time after its turn ends. */
+class TitlingAdapter extends FixtureAdapter {
+  name = 'titling-fixture';
+  generatesTitles = true;
+  async start(spec: SessionSpec, emit: AgentEventSink): Promise<SessionHandle> {
+    return super.start(spec, (event) => {
+      emit(event);
+      if (event.kind === 'turn.completed' && spec.auto_title)
+        setTimeout(
+          () =>
+            emit({
+              key: 'title',
+              provider_sequence: 1000,
+              kind: 'title.generated',
+              title: 'Write the greeting',
+            }),
+          TITLE_DELAY_MS,
+        );
+    });
+  }
+}
+
 describe('one run', () => {
-  const run = async (mode: string, behaviour: string) => {
+  const run = async (
+    mode: string,
+    behaviour: string,
+    adapters = fixtureTasks.adapters() as FixtureAdapter[],
+  ) => {
     const workspace = fresh(path.join(repoRoot, 'node_modules/.cache'));
     const logs = fresh(path.join(repoRoot, 'node_modules/.cache'));
-    const adapters = fixtureTasks.adapters() as FixtureAdapter[];
     const start = vi.spyOn(adapters[0]!, 'start');
     const row = await runOne({
       workspace,
       logs,
       createRepo: fixtureTasks.createRepo,
       adapters,
-      runtime: 'fixture',
+      runtime: adapters[0]!.name,
       goal: fixtureTasks.goal(behaviour, path.join(workspace, 'repo')),
       condition: { name: mode, mode },
       hiddenCheck: fixtureTasks.hiddenCheck,
@@ -113,6 +143,15 @@ describe('one run', () => {
     expect(row).toMatchObject({ mode: 'plain', outcome: 'changed', hidden_passed: true });
     expect(fs.realpathSync(spec.cwd)).not.toBe(repo);
     expect(fs.realpathSync(gitDir(spec.cwd))).toBe(path.join(repo, '.git'));
+  }, 120000);
+
+  it('keeps the daemon up until a plain session is named, outside the wall time of its turn', async () => {
+    const begun = Date.now();
+    const { row } = await run('plain', 'completes_correctly', [new TitlingAdapter()]);
+    const elapsed = Date.now() - begun;
+    expect(row).toMatchObject({ mode: 'plain', title: 'Write the greeting' });
+    expect(row.title_ms).toBeGreaterThanOrEqual(TITLE_DELAY_MS - 1000);
+    expect(row.wall_ms).toBeLessThanOrEqual(elapsed - row.title_ms!);
   }, 120000);
 
   it('counts a run that leaves nothing as unchanged, without a hidden check', async () => {
