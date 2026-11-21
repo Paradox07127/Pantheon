@@ -7,7 +7,6 @@
   "settings.runtimes.account": "账号",
   "settings.runtimes.binary": "可执行文件",
   "settings.runtimes.argsNone": "无",
-  "settings.runtimes.seeUsage": "看用量",
   "settings.runtimes.keyMissing": "未设置",
   "settings.runtimes.connected": "已连接",
   "settings.runtimes.disconnected": "未连接",

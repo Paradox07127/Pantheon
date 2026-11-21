@@ -180,16 +180,11 @@ describe('session list keys', () => {
     ]);
   });
 
-  it('goes to the project board on G then B, but not while typing', () => {
+  it('goes to no screen on G then B, which had led to the project board', () => {
     mount([session('a')]);
-    const field = { tagName: 'TEXTAREA', isContentEditable: false };
-    pressWindow('g', field);
-    pressWindow('b', field);
-    pressWindow('b');
-    expect(mock.shell.setScreen).not.toHaveBeenCalled();
     pressWindow('g');
     pressWindow('b');
-    expect(mock.shell.setScreen).toHaveBeenCalledWith('board');
+    expect(mock.shell.setScreen).not.toHaveBeenCalled();
   });
 });
 

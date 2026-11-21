@@ -48,7 +48,7 @@ check(
   { faulty, fixed },
 );
 
-// Worst-case data: a long project name and README, long session titles and replies, a long plan.
+// Worst-case data: a long project name and README, long session titles and replies.
 const stamp = Date.now();
 const LONG_PATH =
   '/Users/example/Pantheon/.claude/worktrees/agent-a3a7d9612b917097d/apps/web/src/screens/sessions/SessionRowWithALongName.tsx';
@@ -110,73 +110,12 @@ for (const [key, title] of Object.entries(titles))
     })
   ).id;
 
-// The assistant resident writes a plan whose every text field is as long as the schema allows.
-const today = new Date();
-const day = (offset) => new Date(today.getTime() + offset * 86_400_000).toISOString().slice(0, 10);
-const taskId = (i) =>
-  cap(`task-${String(i).padStart(2, '0')}-with-a-long-dependency-identifier`, 40);
-const lanes = [0, 1, 2].map((i) => ({
-  id: `lane-${i}`,
-  title: cap(`${i} 泳道 ${MIXED} Benachrichtigungseinstellungen`, 80),
-}));
-const iterations = [0, 1].map((i) => ({
-  id: `iteration-${i}`,
-  title: `${i} 迭代 ${MIXED} ${BRANCH} ${stamp}`,
-  starts_on: day(i * 7 - 3),
-  ends_on: day(i * 7 + 3),
-}));
-const tasks = Array.from({ length: 10 }, (_, i) => ({
-  id: taskId(i),
-  title:
-    i % 3 === 1 ? cap(`${BRANCH}-${i}-${stamp}`, 80) : cap(`${i} ${MIXED} ${stamp} ${MIXED}`, 80),
-  goal: cap(`${MIXED} ${LONG_PATH} ${HASH}`, 400),
-  lane: lanes[i % lanes.length].id,
-  milestone: 'milestone-long',
-  iteration: iterations[i % 2].id,
-  estimate: 13,
-  depends_on: Array.from({ length: i }, (_, j) => taskId(j)),
-  source: [cap(`${MIXED} ${HASH}`, 400)],
-  scope: [cap(LONG_PATH.slice(1), 200)],
-  acceptance: [cap(`pnpm exec vitest run ${LONG_PATH} --reporter=verbose ${HASH}`, 400)],
-  kind: { domain: 'frontend-ui', tier: i % 2 ? 't2' : 't1' },
-  priority: 'high',
-}));
-const plan = {
-  base_version: 0,
-  headline: cap(`${MIXED} ${stamp}`, 80),
-  lanes,
-  iterations,
-  tasks,
-  milestones: [
-    {
-      id: 'milestone-long',
-      title: cap(`里程碑 ${MIXED} ${BRANCH}`, 80),
-      criteria: [cap(`${MIXED} ${HASH}`, 400), cap(`${LONG_PATH} ${MIXED}`, 400)],
-      tasks: tasks.map((t) => t.id),
-      due_on: day(10),
-    },
-  ],
-  risks: [{ text: cap(`风险 ${MIXED} ${HASH}`, 400) }, { text: cap(`${LONG_PATH} ${MIXED}`, 400) }],
-  assumptions: [{ text: cap(`假设 ${HASH} ${MIXED}`, 400) }],
-};
-const assistant = (await call('resident.open', { project_id, kind: 'assistant' })).id;
-await call(
-  'session.send',
-  {
-    session_id: assistant,
-    input: `fixture-script\n${JSON.stringify([{ tool: { name: 'update_board', arguments: plan } }])}`,
-  },
-  (await board()).sessions.find((s) => s.id === assistant).revision,
-);
-
 const mineOf = async () =>
-  (await query('session.list', { project_id })).filter(
-    (s) => Object.values(ids).includes(s.id) || s.id === assistant,
-  );
+  (await query('session.list', { project_id })).filter((s) => Object.values(ids).includes(s.id));
 const settled = await poll(async () => {
   const mine = await mineOf();
   const done = mine.every((s) => s.last_turn && !['queued', 'running'].includes(s.last_turn.state));
-  return mine.length === 5 && done;
+  return mine.length === 4 && done;
 }, 30_000);
 // The first line becomes a title of at most 40 characters; a rename takes up to 80.
 for (const [key, title] of Object.entries(titles))
@@ -189,58 +128,11 @@ const renamed = await poll(async () => {
   const mine = await mineOf();
   return mine.filter((s) => s.title?.length === 80).length === 4 && mine;
 });
-const planned = await poll(async () => {
-  const view = await query('board.view', { project_id, days: '7' });
-  return (
-    view.tasks?.filter((t) => tasks.some((p) => t.id.endsWith(`:${p.id}`))).length === tasks.length
-  );
-}, 15_000);
 result.seed.sessions = (renamed || (await mineOf())).map((s) => ({
   title_length: s.title?.length,
   last_turn: s.last_turn?.state,
-  resident: s.id === assistant,
 }));
 result.seed.settled = Boolean(settled);
-result.seed.plan = planned ? `${tasks.length} tasks` : 'plan not on board.view';
-
-// The resident proposes a change to its plan, which waits on the board for the user.
-await call('workflow.policy.set', { project_id, plan_changes: 'confirm' });
-const leadOf = async () =>
-  (await query('board.view', { project_id, days: '7' })).leads?.find(
-    (l) => l.session_id === assistant,
-  );
-const proposal = {
-  base_version: (await leadOf())?.plan_version ?? 1,
-  reason: cap(`${MIXED} ${LONG_PATH} ${HASH}`, 280),
-  ops: [
-    { type: 'remove_task', task_id: taskId(9) },
-    {
-      type: 'add_task',
-      task: {
-        ...tasks[0],
-        id: cap('task-added-with-a-long-dependency-identifier', 40),
-        title: cap(`新增 ${MIXED} ${BRANCH}`, 80),
-        depends_on: tasks.slice(0, 9).map((t) => t.id),
-      },
-    },
-    {
-      type: 'set_dependencies',
-      task_id: taskId(8),
-      depends_on: tasks.slice(0, 6).map((t) => t.id),
-    },
-  ],
-};
-await call(
-  'session.send',
-  {
-    session_id: assistant,
-    input: `fixture-script\n${JSON.stringify([{ tool: { name: 'propose_board', arguments: proposal } }])}`,
-  },
-  (await board()).sessions.find((s) => s.id === assistant).revision,
-);
-const proposed = await poll(async () => (await leadOf())?.pending_proposals?.length > 0, 15_000);
-result.seed.proposal = proposed ? 'pending on board.view' : 'proposal not on board.view';
-
 const findings = [];
 /** Scans the screen now shown, records its findings and adds its two checks. */
 const record = async (screen, within, shot) => {
@@ -272,67 +164,6 @@ if (replyRow) {
 }
 await record('sessions', '.app-main', true);
 await record('sidebar', 'aside.sb', false);
-
-// Board: every view of the view switch.
-await page.click({ role: 'button', name: '项目看板', exact: true });
-await poll(() => page.evaluate(quiet('.app-main')));
-const views = await page.evaluate(
-  `[...document.querySelectorAll('[role=radiogroup][aria-label="看板视图"] [role=radio]')].map((r) => r.getAttribute('aria-label'))`,
-);
-for (const view of views) {
-  await page.click({ role: 'radio', name: view, exact: true });
-  await poll(() =>
-    page.evaluate(
-      `document.querySelector('[role=radio][aria-label=${JSON.stringify(view)}]')?.getAttribute('aria-checked') === 'true' && ${quiet('.app-main')}`,
-    ),
-  );
-  await record(`board ${view}`, '.app-main', true);
-}
-// Leaves the board on its first view for the next run.
-if (views.length) await page.click({ role: 'radio', name: views[0], exact: true });
-
-// Insights: every tab, in the bar or in its More menu.
-await page.click({ role: 'button', name: '工程看板', exact: true });
-await poll(() => page.evaluate(quiet('.app-main')));
-const tabs = `[...document.querySelectorAll('[role=tablist][aria-label="工程看板"] [role=tab]')].map((t) => t.textContent.trim())`;
-const more = { role: 'button', name: '更多标签页', exact: true };
-const moreShown = `!!document.querySelector('button[aria-label="更多标签页"]')`;
-// The bar drops tabs that do not fit over a few frames; read it once two reads agree.
-let sections = [];
-for (let last = null, i = 0; i < 20; last = sections, i++) {
-  sections = await page.evaluate(`${tabs}.concat(${moreShown} ? ['+'] : [])`);
-  if (last && JSON.stringify(last) === JSON.stringify(sections)) break;
-  await new Promise((done) => setTimeout(done, 300));
-}
-sections = sections.filter((s) => s !== '+');
-if (await page.evaluate(moreShown)) {
-  await page.click(more);
-  sections.push(
-    ...(await poll(() =>
-      page.evaluate(
-        `(() => { const items = [...document.querySelectorAll('[role=menuitem]')].map((m) => m.textContent.trim()); return items.length ? items : null; })()`,
-      ),
-    )),
-  );
-  // Escape leaves this menu open; its trigger closes it.
-  await page.click(more);
-  await poll(() => page.evaluate(`!document.querySelector('[role=menu]')`));
-}
-for (const section of sections) {
-  if ((await page.evaluate(tabs)).includes(section))
-    await page.click({ role: 'tab', name: section, exact: true });
-  else {
-    await page.click(more);
-    await page.click({ role: 'menuitem', name: section, exact: true });
-  }
-  await poll(() =>
-    page.evaluate(
-      `[...document.querySelectorAll('[role=tab][aria-selected=true]')].some((t) => t.textContent.trim() === ${JSON.stringify(section)}) && ${quiet('.app-main')}`,
-    ),
-  );
-  await record(`insights ${section}`, '.app-main', true);
-}
-check('every insights tab is scanned', sections.length === 2, sections);
 
 // Settings: every page in its nav.
 await page.click({ role: 'button', name: '设置', exact: true });

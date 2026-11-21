@@ -6,21 +6,15 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from 'react';
-import { ContextMenu } from '@base-ui/react/context-menu';
 import { Menu } from '@base-ui/react/menu';
 import type { WorkbenchSession } from '@pantheon/protocol';
 import {
   BookOpen,
   ChartGantt,
-  ChartLine,
   Check,
   ChevronDown,
   ChevronRight,
-  Clock,
   Columns3,
-  Globe,
-  IdCard,
-  LayoutDashboard,
   LayoutGrid,
   ListFilter,
   Pin,
@@ -29,24 +23,11 @@ import {
   Settings2,
   SquarePen,
 } from 'lucide-react';
-import {
-  agentName,
-  BUILT_IN_NAMES,
-  showAgentProfile,
-  shownAgents,
-  useAgents,
-} from '../data/agents';
-import { useRoutines } from '../data/automations';
 import { useBoard } from '../data/board';
 import { runCommand } from '../data/commands';
 import { saveLayout, setLayout, SIDEBAR, sidebarDrag, useLayout } from '../data/layout';
 import { failureText, useNow, type NeedsYouState } from '../data/needs-you';
-import {
-  crossProjectWaiting,
-  openPersonalAgent,
-  showPersonalProfile,
-  usePersonalOpening,
-} from '../data/personal-agent';
+import { crossProjectWaiting } from '../data/personal-agent';
 import { projectIdle, sortProjects, useProjectsSummary } from '../data/projects-summary';
 import { useRuntimeModels } from '../data/runtime-models';
 import { markRead, markUnread, useUnread } from '../data/unread';
@@ -68,23 +49,18 @@ import {
   treeDepths,
   treeLines,
   unfoldEntered,
-  workerCounts,
   type SessionListView,
   type SessionType,
   type SidebarGroup,
   type SidebarGroupKey,
   type TreeLine,
 } from '../screens/sessions/model';
-import { NewAgentDialog } from '../screens/sessions/AgentForm';
 import { SessionListRow, shownSessionId } from '../screens/sessions/SessionsScreen';
-import { setCreatedHere, useSplitRoom } from '../screens/sessions/shared';
-import { RESIDENTS, workerCountMarks, workerCountsText } from '../screens/sessions/WorkerStrip';
+import { useSplitRoom } from '../screens/sessions/shared';
 import { useShell } from '../store';
 import { Clip } from './Clip';
 import { LoadError } from './LoadError';
-import { MenuItem } from './Menu';
 import { compareRuntimes, RuntimeGlyph, runtimeName } from './RuntimeGlyph';
-import { SessionStateIcon, sessionStateLabel, StateGlyph } from './SessionStateIcon';
 import { ProjectMonogram } from './ProjectMonogram';
 import { KeyHint } from './Shortcuts';
 import { Skeleton } from './Skeleton';
@@ -364,7 +340,6 @@ const CONNECTION = {
 
 /** The list stop an element is: a session row or a group header. */
 const stopOf = (el: HTMLElement): string | undefined => el.dataset?.session ?? el.dataset?.stop;
-const PERSONAL_STOP = 'resident:personal';
 
 function Connection({ side }: { side: 'top' | 'right' }) {
   const status = useBoard((s) => s.status);
@@ -603,8 +578,6 @@ interface SidebarProps {
   list: ReturnType<typeof useSessionList>;
   // The needs-you items of every project.
   allNeeds: NeedsYouState;
-  // The personal agent's open session; absent until it is first opened.
-  personal?: WorkbenchSession | null;
 }
 
 export function Sidebar({
@@ -614,7 +587,6 @@ export function Sidebar({
   onChooseProject,
   list,
   allNeeds,
-  personal = null,
 }: SidebarProps) {
   const screen = useShell((s) => s.screen);
   const sessionId = useShell((s) => s.sessionId);
@@ -630,34 +602,6 @@ export function Sidebar({
   if (!layout.collapsed && peek !== 'shut') setPeek('shut');
   const [view, setView] = useSessionView(currentProjectId);
   const all = list.data ?? [];
-  const agents = useAgents(currentProjectId);
-  const [creating, setCreating] = useState(false);
-  // The project's agents; the built-in ones, opened by kind, until agent.list is read.
-  const zone: { key: string; agentId: string | null; kind: string; name: string }[] = agents
-    ? shownAgents(agents).map((agent) => ({
-        key: agent.id,
-        agentId: agent.id,
-        kind: agent.template,
-        name: agentName(agent),
-      }))
-    : RESIDENTS.map((r) => ({ key: r.kind, agentId: null, kind: r.kind, name: r.name }));
-  // Each agent's newest resident lead that is not archived; null until one is opened.
-  const residentOf = (r: (typeof zone)[number]) =>
-    all
-      .filter(
-        (s) =>
-          !s.archived_at &&
-          (r.agentId && s.resident?.agent_id
-            ? s.resident.agent_id === r.agentId
-            : s.resident?.kind === r.kind && BUILT_IN_NAMES[r.kind] !== undefined),
-      )
-      .sort((a, b) => b.created_at.localeCompare(a.created_at))[0] ?? null;
-  const residents = zone.map((r) => ({ ...r, session: residentOf(r) }));
-  // The automations entry shows once the project has an agent that is not archived.
-  const automated = !!agents && shownAgents(agents).length > 0;
-  const routinesOn =
-    useRoutines(automated ? currentProjectId : null).read?.filter((r) => r.routine.enabled)
-      .length ?? null;
   const runtimes = [
     ...new Set([
       ...all.filter((s) => !s.resident).map((s) => s.runtime),
@@ -730,17 +674,6 @@ export function Sidebar({
     bare: boolean;
     session: WorkbenchSession | null;
   }[] = [
-    ...residents.map((r) => ({
-      key: `resident:${r.key}`,
-      group: 'tree' as const,
-      shut: false,
-      bare: true,
-      session: null,
-    })),
-    ...(automated
-      ? [{ key: 'automations', group: 'tree' as const, shut: false, bare: true, session: null }]
-      : []),
-    { key: PERSONAL_STOP, group: 'tree' as const, shut: false, bare: true, session: null },
     ...groups.flatMap((group) => {
       const shut = !group.bare && folded(group.key, group.folded);
       const rows = shut ? [] : group.rows.flatMap((r) => [r.session, ...r.children]);
@@ -877,7 +810,6 @@ export function Sidebar({
     },
     listed,
   );
-  useShortcut('go-board', () => useShell.getState().setScreen('board'), listed);
   useShortcut('recent-next', () => stepRecent(1), listed);
   useShortcut('recent-back', () => stepRecent(-1), listed);
   // This project's sessions needing attention in list order, then those of the other projects.
@@ -1057,192 +989,6 @@ export function Sidebar({
     );
   };
   const openSettingsHere = () => openSettings(currentProjectId);
-  // resident.open returns the open session of the agent, opening one when there is none.
-  const openResident = (r: (typeof residents)[number]) => {
-    if (!currentProjectId) return;
-    void runCommand(
-      'resident.open',
-      r.agentId ? { agent_id: r.agentId } : { project_id: currentProjectId, kind: r.kind },
-      null,
-    ).then((result) => {
-      if (!result.ok) return toast({ title: failureText(result.error), kind: 'failure' });
-      const id = (result.value as { id?: unknown } | null)?.id;
-      if (typeof id !== 'string') return;
-      setCreatedHere(id);
-      openSession(id);
-    });
-  };
-  const residentRow = (r: (typeof residents)[number]) => {
-    const s = r.session;
-    const key = `resident:${r.key}`;
-    const counts = workerCounts(s ? all.filter((w) => w.lead === s.id && !w.archived_at) : []);
-    const waits = s
-      ? (allNeeds.items ?? []).filter(
-          (item) =>
-            item.project_id === currentProjectId &&
-            (item.session_id === s.id ||
-              (item.source.table === 'sessions' && item.source.id === s.id)),
-        ).length
-      : 0;
-    const name = [
-      r.name,
-      s
-        ? sessionStateLabel(s)
-        : t({ id: 'components.sidebar.residentNotStarted', defaultMessage: 'Not started' }),
-      ...(counts.running + counts.review + counts.failed > 0 ? [workerCountsText(counts)] : []),
-      ...(waits > 0
-        ? [
-            t(
-              {
-                id: 'components.sidebar.residentWaits',
-                defaultMessage:
-                  '{count, plural, one {# item waits for you} other {# items wait for you}}',
-              },
-              { count: waits },
-            ),
-          ]
-        : []),
-    ].join(t({ id: 'sessions.screen.separator', defaultMessage: ', ' }));
-    const row = (
-      <button
-        key={key}
-        type="button"
-        className="ss-rr"
-        aria-current={(!!s && s.id === shownId) || undefined}
-        aria-label={name}
-        data-stop={key}
-        tabIndex={key === tabStop ? 0 : -1}
-        onClick={() => openResident(r)}
-      >
-        {s ? (
-          <SessionStateIcon session={s} place="list" />
-        ) : (
-          <StateGlyph name="idle" place="list" />
-        )}
-        <span className="ss-ttl">{r.name}</span>
-        <span className="ss-rsum">{workerCountMarks(counts)}</span>
-        {waits > 0 && (
-          <span className="ss-rct" aria-hidden="true">
-            {waits}
-          </span>
-        )}
-      </button>
-    );
-    const agentId = r.agentId;
-    if (!agentId) return row;
-    return (
-      <ContextMenu.Root key={key}>
-        <ContextMenu.Trigger>{row}</ContextMenu.Trigger>
-        <ContextMenu.Portal>
-          <ContextMenu.Positioner
-            style={{ zIndex: 40 }}
-            collisionAvoidance={{ side: 'flip', fallbackAxisSide: 'none' }}
-          >
-            <ContextMenu.Popup className="mn mn-menu pop">
-              <MenuItem
-                icon={<IdCard aria-hidden="true" />}
-                onClick={() => {
-                  showAgentProfile(agentId);
-                  if (s) openSession(s.id);
-                  else if (screen !== 'sessions') setScreen('sessions');
-                }}
-              >
-                {t({ id: 'components.sidebar.agentProfile', defaultMessage: 'Profile' })}
-              </MenuItem>
-            </ContextMenu.Popup>
-          </ContextMenu.Positioner>
-        </ContextMenu.Portal>
-      </ContextMenu.Root>
-    );
-  };
-  const personalOpening = usePersonalOpening();
-  const personalName = t({
-    id: 'components.sidebar.personalAgent',
-    defaultMessage: 'Personal agent',
-  });
-  const personalState = personalOpening
-    ? t({ id: 'components.sessionState.starting', defaultMessage: 'Starting' })
-    : personal
-      ? sessionStateLabel(personal)
-      : t({ id: 'components.sidebar.residentNotStarted', defaultMessage: 'Not started' });
-  const personalWaits = crossProjectWaiting(
-    allNeeds.items ?? [],
-    projects.map((p) => p.id),
-  ).length;
-  const personalRow = (
-    <button
-      type="button"
-      className="ss-rr"
-      aria-current={screen === 'personal' || undefined}
-      aria-busy={personalOpening || undefined}
-      aria-label={[
-        personalName,
-        personalState,
-        ...(personalWaits > 0
-          ? [
-              t(
-                {
-                  id: 'components.sidebar.personalWaits',
-                  defaultMessage:
-                    '{count, plural, one {# thing waits across projects} other {# things wait across projects}}',
-                },
-                { count: personalWaits },
-              ),
-            ]
-          : []),
-      ].join(t({ id: 'sessions.screen.separator', defaultMessage: ', ' }))}
-      data-stop={PERSONAL_STOP}
-      tabIndex={PERSONAL_STOP === tabStop ? 0 : -1}
-      onClick={() => void openPersonalAgent()}
-    >
-      {personalOpening ? (
-        <StateGlyph name="starting" place="list" />
-      ) : personal ? (
-        <SessionStateIcon session={personal} place="list" />
-      ) : (
-        <StateGlyph name="idle" place="list" />
-      )}
-      <span className="ss-ttl">{personalName}</span>
-      <Globe className="ic-sm mu" aria-hidden="true" />
-      {personalWaits > 0 && (
-        <span className="ss-rct" aria-hidden="true">
-          {personalWaits}
-        </span>
-      )}
-    </button>
-  );
-  const personalEntry = (
-    <ContextMenu.Root>
-      <ContextMenu.Trigger>{personalRow}</ContextMenu.Trigger>
-      <ContextMenu.Portal>
-        <ContextMenu.Positioner
-          style={{ zIndex: 40 }}
-          collisionAvoidance={{ side: 'flip', fallbackAxisSide: 'none' }}
-        >
-          <ContextMenu.Popup className="mn mn-menu pop">
-            <MenuItem
-              icon={<IdCard aria-hidden="true" />}
-              onClick={() => {
-                showPersonalProfile(true);
-                void openPersonalAgent();
-              }}
-            >
-              {t({ id: 'components.sidebar.agentProfile', defaultMessage: 'Profile' })}
-            </MenuItem>
-          </ContextMenu.Popup>
-        </ContextMenu.Positioner>
-      </ContextMenu.Portal>
-    </ContextMenu.Root>
-  );
-  const newAgentLabel = t({ id: 'components.sidebar.newAgent', defaultMessage: 'New agent' });
-  // Outside the content, so the rail's floating panel closing on the click keeps it.
-  const newAgent = currentProjectId && (
-    <NewAgentDialog
-      projectId={currentProjectId}
-      open={creating}
-      onClose={() => setCreating(false)}
-    />
-  );
   // The open sidebar's content; the rail floats it in a panel too.
   const body = () => (
     <>
@@ -1320,24 +1066,6 @@ export function Sidebar({
             <button
               type="button"
               className="sb-it"
-              aria-current={current('board')}
-              onClick={() => setScreen('board')}
-            >
-              <LayoutDashboard aria-hidden="true" />
-              {SCREEN_NAMES.board}
-            </button>
-            <button
-              type="button"
-              className="sb-it"
-              aria-current={current('insights')}
-              onClick={() => setScreen('insights')}
-            >
-              <ChartLine aria-hidden="true" />
-              {SCREEN_NAMES.insights}
-            </button>
-            <button
-              type="button"
-              className="sb-it"
               aria-current={current('trace')}
               onClick={() => setScreen('trace')}
             >
@@ -1353,41 +1081,6 @@ export function Sidebar({
               <BookOpen aria-hidden="true" />
               {SCREEN_NAMES.memory}
             </button>
-            <div className="sb-sh">
-              <span>{t({ id: 'components.sidebar.agents', defaultMessage: 'Agents' })}</span>
-              {waitingCount > 0 && (
-                <button
-                  type="button"
-                  className="sb-wait"
-                  aria-pressed={waitingOnly}
-                  aria-label={t(
-                    {
-                      id: 'components.sidebar.onlyWaiting',
-                      defaultMessage:
-                        'Show only the {count, plural, one {# session} other {# sessions}} that need you',
-                    },
-                    { count: waitingCount },
-                  )}
-                  onClick={() => {
-                    if (!waitingOnly) openLongestWaiting();
-                    setWaitingIn(waitingOnly ? null : currentProjectId);
-                  }}
-                >
-                  {waitingCount}
-                </button>
-              )}
-              <Tip content={newAgentLabel}>
-                <button
-                  type="button"
-                  className="ib"
-                  aria-label={newAgentLabel}
-                  disabled={!currentProjectId}
-                  onClick={() => setCreating(true)}
-                >
-                  <Plus aria-hidden="true" />
-                </button>
-              </Tip>
-            </div>
             <nav
               className="ss-list"
               aria-label={SCREEN_NAMES.sessions}
@@ -1402,56 +1095,29 @@ export function Sidebar({
                 if (!e.currentTarget.contains(e.relatedTarget)) setFocused(false);
               }}
             >
-              {residents.length > 0 && (
-                <div
-                  className="ss-grp"
-                  role="group"
-                  aria-label={t({
-                    id: 'components.sidebar.residents',
-                    defaultMessage: 'This project',
-                  })}
-                >
-                  {residents.map(residentRow)}
-                  {automated && (
-                    <button
-                      type="button"
-                      className="ss-rr"
-                      aria-current={current('automations')}
-                      aria-label={t(
-                        {
-                          id: 'components.sidebar.automations',
-                          defaultMessage:
-                            'Automations, {count, plural, one {# routine on} other {# routines on}}',
-                        },
-                        { count: routinesOn ?? 0 },
-                      )}
-                      data-stop="automations"
-                      tabIndex={tabStop === 'automations' ? 0 : -1}
-                      onClick={() => setScreen('automations')}
-                    >
-                      <Clock className="ic-sm" aria-hidden="true" />
-                      <span className="ss-ttl">{SCREEN_NAMES.automations}</span>
-                      {routinesOn !== null && (
-                        <span className="ss-rct" aria-hidden="true">
-                          {routinesOn}
-                        </span>
-                      )}
-                    </button>
-                  )}
-                </div>
-              )}
-              <div
-                className="ss-grp ss-pa"
-                role="group"
-                aria-label={t({
-                  id: 'components.sidebar.personalGroup',
-                  defaultMessage: 'Personal',
-                })}
-              >
-                {personalEntry}
-              </div>
               <div className="ss-zh">
                 <span>{SCREEN_NAMES.sessions}</span>
+                {waitingCount > 0 && (
+                  <button
+                    type="button"
+                    className="sb-wait"
+                    aria-pressed={waitingOnly}
+                    aria-label={t(
+                      {
+                        id: 'components.sidebar.onlyWaiting',
+                        defaultMessage:
+                          'Show only the {count, plural, one {# session} other {# sessions}} that need you',
+                      },
+                      { count: waitingCount },
+                    )}
+                    onClick={() => {
+                      if (!waitingOnly) openLongestWaiting();
+                      setWaitingIn(waitingOnly ? null : currentProjectId);
+                    }}
+                  >
+                    {waitingCount}
+                  </button>
+                )}
                 <Tip
                   content={t(
                     {
@@ -1594,24 +1260,6 @@ export function Sidebar({
         {currentProjectId && !allProjects && (
           <>
             {icon(
-              SCREEN_NAMES.board,
-              SCREEN_NAMES.board,
-              () => setScreen('board'),
-              <LayoutDashboard aria-hidden="true" />,
-              {
-                current: current('board'),
-              },
-            )}
-            {icon(
-              SCREEN_NAMES.insights,
-              SCREEN_NAMES.insights,
-              () => setScreen('insights'),
-              <ChartLine aria-hidden="true" />,
-              {
-                current: current('insights'),
-              },
-            )}
-            {icon(
               SCREEN_NAMES.trace,
               SCREEN_NAMES.trace,
               () => setScreen('trace'),
@@ -1686,7 +1334,6 @@ export function Sidebar({
             {body()}
           </div>
         )}
-        {newAgent}
         <Splitter
           label={t({ id: 'components.sidebar.resize', defaultMessage: 'Resize sidebar' })}
           value={SIDEBAR.rail}
@@ -1721,7 +1368,6 @@ export function Sidebar({
     >
       <div className="sb-top" />
       {body()}
-      {newAgent}
       <Splitter
         label={t({ id: 'components.sidebar.resize', defaultMessage: 'Resize sidebar' })}
         value={layout.width}

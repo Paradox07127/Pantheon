@@ -148,7 +148,6 @@
   "settings.workflow.budgetMinutes": "分钟",
   "settings.workflow.budgetPositive": "{param}要是正数",
   "settings.workflow.budgetCell": "{tier} {path} {field}",
-  "settings.harness.quota": "额度",
   "settings.harness.quota.fiveHour": "5 小时",
   "settings.harness.quota.sevenDay": "7 天",
   "settings.harness.backends": "后端",

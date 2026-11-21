@@ -118,8 +118,6 @@
   "projects.import.submit": "{count, plural, other {导入 # 个项目}}",
   "projects.import.openFolder": "打开文件夹",
   "projects.import.open": "导入",
-  "projects.personalAgent": "个人级智能体",
-  "projects.personalAgentWaits": "{count, plural, other {各项目共 # 项等你处理}}",
   "projects.import.hint": "{count, plural, other {这台电脑上还有 # 个文件夹有 Claude Code 或 Codex 的会话}}",
   "projects.import.review": "查看并导入",
   "projects.import.title": "导入其他 agent 的会话",

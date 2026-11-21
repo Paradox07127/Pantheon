@@ -10,12 +10,11 @@ import {
   type LeadQuestion,
   type Milestone,
   type Principal,
-  type Session,
   type SessionTurn,
   type WorkflowPolicy,
 } from '@pantheon/domain';
 import type { CommandType, PersonalAnswerKind } from '@pantheon/protocol';
-import { eventually, fixture, insertSession, user } from '../helpers.js';
+import { fixture, insertSession, user } from '../helpers.js';
 
 type Fixture = Awaited<ReturnType<typeof fixture>>;
 
@@ -96,18 +95,6 @@ function setPolicy(f: Fixture, input: Record<string, unknown>) {
 }
 
 const plan = (f: Fixture) => f.store.must<BoardPlan>('board_plans', 'lead');
-
-/** Waits until the session takes input again with no turn left to run. */
-const idle = (f: Fixture, sessionId: string) =>
-  eventually(
-    () =>
-      f.store.must<Session>('sessions', sessionId).state === 'open' &&
-      f.store
-        .list<SessionTurn>('session_turns')
-        .filter((turn) => turn.session_id === sessionId)
-        .every((turn) => !['queued', 'running'].includes(turn.state)),
-    () => f.control.tick(),
-  );
 
 function askQuestion(f: Fixture) {
   return f.call<{ id: string }>(
@@ -282,17 +269,6 @@ type Situation = (f: Fixture) => {
 };
 
 const situations: Record<string, Situation> = {
-  'a request to the assistant': (f) => ({
-    input: { project_id: f.project.id, input: 'What does the export hold?' },
-    then: async (result) => {
-      const { session_id, turn_id } = result as { session_id: string; turn_id: string };
-      const turn = () => f.store.must<SessionTurn>('session_turns', turn_id);
-      expect(turn()).toMatchObject({ via: { kind: 'personal', key_id: 'k1' } });
-      expect(turn().origin).toBeUndefined();
-      await idle(f, session_id);
-      expect(turn()).toMatchObject({ state: 'completed', routing: { kind: 'answered' } });
-    },
-  }),
   'a request to a session': (f) => {
     const direct = insertSession(f);
     return {
@@ -473,7 +449,6 @@ const outcome = (run: () => unknown): { result?: unknown; code: string } => {
 const ALL: PersonalAnswerKind[] = ['question', 'plan_change', 'milestone_accept'];
 
 it.each<[CommandType, PersonalAnswerKind[], keyof typeof situations, string]>([
-  ['request.send', [], 'a request to the assistant', 'accepted'],
   ['request.send', ALL, 'a request to a session', 'permission_denied'],
   ['lead.question.answer', [], "the lead's question", 'permission_denied'],
   ['lead.question.answer', ['question'], "the lead's question", 'accepted'],
@@ -523,47 +498,6 @@ it.each<[CommandType, PersonalAnswerKind[], keyof typeof situations, string]>([
     await then?.(sent.result);
   },
 );
-
-it("lets a plan task quote the words of a personal agent's request as its source", async () => {
-  const f = await setup([]);
-  const routed = f.call<{ session_id: string }>(
-    'request.send',
-    { project_id: f.project.id, input: 'Add a CSV download to the export page' },
-    null,
-    personal,
-  );
-  await idle(f, routed.session_id);
-  expect(
-    outcome(() =>
-      f.call(
-        'board.plan.update',
-        {
-          project_id: f.project.id,
-          base_version: 0,
-          headline: 'CSV download',
-          lanes: [{ id: 'web', title: 'Web' }],
-          tasks: [
-            {
-              id: 'csv',
-              title: 'CSV download',
-              goal: 'Download the export as CSV',
-              lane: 'web',
-              depends_on: [],
-              source: ['Add a CSV download to the export page'],
-              scope: ['src/export'],
-              acceptance: ['pnpm test'],
-            },
-          ],
-          milestones: [],
-          risks: [],
-          assumptions: [],
-        },
-        null,
-        leadOf(f, routed.session_id),
-      ),
-    ).code,
-  ).toBe('accepted');
-});
 
 it.each<[PersonalAnswerKind[], Record<string, boolean>]>([
   [[], { question: false, relayed: false, proposal: false, milestone: false }],

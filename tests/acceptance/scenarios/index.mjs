@@ -21,7 +21,6 @@ import * as reviewIsolationFindings from './review-isolation-findings.mjs';
 import * as runtimeHandoff from './runtime-handoff.mjs';
 import * as steerAndDelivery from './steer-and-delivery.mjs';
 import * as storageCrashRecovery from './storage-crash-recovery.mjs';
-import * as uiLoop from './ui-loop.mjs';
 import * as workbenchLoop from './workbench-loop.mjs';
 import * as workbenchScreens from './workbench-screens.mjs';
 import * as zeroClickLoop from './zero-click-loop.mjs';
@@ -31,7 +30,6 @@ for (const scenario of [
   repositoryFixtureReproducibility,
   workbenchLoop,
   codexSmoke,
-  uiLoop,
   zeroClickLoop,
   codexZeroClick,
   storageCrashRecovery,

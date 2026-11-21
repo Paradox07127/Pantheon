@@ -43,7 +43,6 @@ import { runtimeSwitch, taskRuntime } from './task-dispatch.js';
 import { changeModel } from './workbench-session.js';
 import { causeTurn, chainDepth } from './progress.js';
 import { retiredBinding, taskGeneration, taskSessions, taskState } from './board-plan.js';
-import { recordRuntimeUnavailable } from './signal-sources.js';
 import { cancelTimer, scheduleTimer, timerHandlers } from './timers.js';
 import { workflowPolicy } from './workflow-policy.js';
 
@@ -1410,7 +1409,6 @@ function tellRuntimeUnavailable(
         note.text.startsWith(`${opening},`),
     );
   if (told) return;
-  recordRuntimeUnavailable(ctx, session, target);
   appendNote(ctx, plan, {
     at: ctx.store.now(),
     session_id: session.id,

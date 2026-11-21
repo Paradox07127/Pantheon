@@ -111,7 +111,7 @@ function openSidebar(choose?: (id: string) => void, current?: string) {
 const projectRows = (list: ReactNode) =>
   nodes(list).filter((n) => n.type === 'button' && /\bsb-pr\b/.test(n.props.className ?? ''));
 
-const PAGES = ['board', 'insights', 'trace', 'memory'].map(screen);
+const PAGES = ['trace', 'memory'].map(screen);
 
 describe('sidebar on the all projects screen', () => {
   it('heads the sidebar with all projects as the current page and lists the projects', () => {
@@ -236,13 +236,15 @@ describe('sidebar on the all projects screen', () => {
   });
 
   it('keeps the page navigation and drops the project list on a project page', () => {
-    mock.shell.screen = 'board';
+    mock.shell.screen = 'trace';
     const { tree, list } = openSidebar();
     expect(list).toBeNull();
     const labels = nodes(tree)
       .filter((n) => n.type === 'button')
       .map((n) => text(n.props.children));
     for (const page of PAGES) expect(labels).toContain(page);
+    for (const gone of ['board', 'insights', 'automations', 'personal'].map(screen))
+      expect(labels).not.toContain(gone);
     expect(find(tree, (n) => isFn(n, 'ProjectMenu')).props.current).toBeUndefined();
   });
 });

@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { LoadError } from '../../components/LoadError';
-import { ChevronRight, Pin } from 'lucide-react';
+import { Pin } from 'lucide-react';
 import { create } from 'zustand';
 import type { BoardSnapshot, BridgeResult } from '@pantheon/protocol';
 import { RuntimeGlyph, runtimeName } from '../../components/RuntimeGlyph';
@@ -27,7 +27,6 @@ import { t } from '../../i18n';
 import { parseUsageTarget, RING_RUNTIMES, type UsageTargets } from '../board/usage-model';
 import { Overrides } from './Overrides';
 import { failureText, Loading, Section } from './ProjectSettingsScreen';
-import { openBoardTab } from './settings-jump';
 import './usage-page.css';
 
 type Project = BoardSnapshot['projects'][number];
@@ -116,7 +115,7 @@ async function saveGlobal(row: UsageRow, command: () => Promise<BridgeResult<unk
   return result.ok;
 }
 
-/** The token targets and quota threshold every project follows, or with a project its own and its budget, and the way to its usage on the board; `only` shows one row. */
+/** The token targets and quota threshold every project follows, or with a project its own and its budget; `only` shows one row. */
 export function UsagePage({ project, only }: { project: Project | null; only?: UsageRow }) {
   const read = useWorkflowPolicy(project?.id ?? null);
   const defaults = useProjectDefaults();
@@ -259,18 +258,6 @@ export function UsagePage({ project, only }: { project: Project | null; only?: U
       <div className="ps-rows">{RING_RUNTIMES.map(targetRow)}</div>
     </Section>
   );
-  const board = (
-    <div className="ps-grp">
-      <div className="ps-rows">
-        <button type="button" className="ps-row us-go" onClick={() => openBoardTab('usage')}>
-          <span className="us-nm">
-            {t({ id: 'settings.usage.openBoard', defaultMessage: 'See usage' })}
-          </span>
-          <ChevronRight aria-hidden="true" />
-        </button>
-      </div>
-    </div>
-  );
   const budgetTitle = t({
     id: 'settings.usage.budgetAndQuota',
     defaultMessage: 'Budget and quota',
@@ -287,7 +274,6 @@ export function UsagePage({ project, only }: { project: Project | null; only?: U
             <Loading />
           )}
         </Section>
-        {only === undefined && board}
       </>
     );
 
@@ -462,7 +448,6 @@ export function UsagePage({ project, only }: { project: Project | null; only?: U
           {quotaRow}
         </div>
       </Section>
-      {board}
     </>
   );
 }

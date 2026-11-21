@@ -245,14 +245,10 @@ describe('usage page budget and quota', () => {
 });
 
 describe('usage page board link', () => {
-  it('opens the usage tab of the engineering board', async () => {
+  it('has no link to the engineering board', async () => {
     const h = await mount();
-    const link = find(
-      tree(h),
-      (n) => n.type === 'button' && text(n).includes(zh('settings.usage.openBoard')),
-    );
-    link.props.onClick();
-    expect(openBoardTab).toHaveBeenCalledWith('usage');
+    expect(nodes(tree(h)).filter((n) => n.type === 'button' && text(n) === '看用量')).toEqual([]);
+    expect(openBoardTab).not.toHaveBeenCalled();
   });
 });
 

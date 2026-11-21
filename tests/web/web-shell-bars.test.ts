@@ -18,8 +18,8 @@ const board = (projects: BoardSnapshot['projects']): BoardSnapshot =>
 const twoProjects = board([project('alpha', 'Alpha app'), project('beta', 'Beta service')]);
 
 describe('shell', () => {
-  it('starts on the board of the remembered project, else on the project picker', () => {
-    expect(startScreen('alpha')).toBe('board');
+  it('starts on the sessions of the remembered project, else on the project picker', () => {
+    expect(startScreen('alpha')).toBe('sessions');
     expect(startScreen(null)).toBe('projects');
   });
 

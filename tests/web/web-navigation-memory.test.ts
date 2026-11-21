@@ -49,16 +49,16 @@ afterEach(() => vi.unstubAllGlobals());
 it('restores the screen and session each project was left on', () => {
   shell().openProject('alpha');
   shell().openSession('alpha-1');
-  shell().setScreen('board');
+  shell().setScreen('trace');
   shell().openProject('beta');
   shell().openSession('beta-1');
 
   shell().openProject('alpha');
-  expect(here()).toEqual({ project: 'alpha', screen: 'board', session: 'alpha-1' });
+  expect(here()).toEqual({ project: 'alpha', screen: 'trace', session: 'alpha-1' });
   shell().openProject('beta');
   expect(here()).toEqual({ project: 'beta', screen: 'sessions', session: 'beta-1' });
   expect(JSON.parse(storage.items.get(PLACES_KEY)!)).toEqual({
-    alpha: { screen: 'board', sessionId: 'alpha-1', sessionTask: null },
+    alpha: { screen: 'trace', sessionId: 'alpha-1', sessionTask: null },
     beta: { screen: 'sessions', sessionId: 'beta-1', sessionTask: null },
   });
 });
@@ -73,28 +73,31 @@ it('opens the personal agent over the current project without making it the proj
   expect(here()).toEqual({ project: 'alpha', screen: 'trace', session: null });
 });
 
-it('lands a project opened for the first time on its board', () => {
+it('lands a project opened for the first time on its sessions', () => {
   shell().openProject('alpha');
   shell().setScreen('trace');
   shell().openProject('beta');
-  expect(here()).toEqual({ project: 'beta', screen: 'board', session: null });
+  expect(here()).toEqual({ project: 'beta', screen: 'sessions', session: null });
 });
 
-it('lands a project stored on the removed inbox screen on its board', () => {
-  storage.setItem(
-    PLACES_KEY,
-    JSON.stringify({ alpha: { screen: 'activity', sessionId: 'alpha-1', sessionTask: null } }),
-  );
-  shell().openProject('alpha');
-  expect(here()).toEqual({ project: 'alpha', screen: 'board', session: 'alpha-1' });
-});
+it.each(['activity', 'board', 'insights', 'automations'])(
+  'lands a project stored on the removed %s screen on its sessions',
+  (screen) => {
+    storage.setItem(
+      PLACES_KEY,
+      JSON.stringify({ alpha: { screen, sessionId: 'alpha-1', sessionTask: null } }),
+    );
+    shell().openProject('alpha');
+    expect(here()).toEqual({ project: 'alpha', screen: 'sessions', session: 'alpha-1' });
+  },
+);
 
 it('restores a project left with its settings open on the screen under them', () => {
   shell().openProject('alpha');
   shell().openSettings('alpha');
   shell().openProject('beta');
   shell().openProject('alpha');
-  expect(shell().screen).toBe('board');
+  expect(shell().screen).toBe('sessions');
 });
 
 it("keeps the current project's place while the app settings show", () => {
@@ -214,11 +217,11 @@ it('switches projects as today when storage fails', () => {
   });
   expect(() => {
     shell().openProject('alpha');
-    shell().setScreen('board');
+    shell().setScreen('trace');
     shell().openProject('beta');
     shell().openProject('alpha');
   }).not.toThrow();
-  expect(here()).toEqual({ project: 'alpha', screen: 'board', session: null });
+  expect(here()).toEqual({ project: 'alpha', screen: 'sessions', session: null });
 });
 
 it("leaves another project's session memory alone while its settings show", () => {

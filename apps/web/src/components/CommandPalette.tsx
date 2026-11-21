@@ -64,10 +64,10 @@ const START_ID = 'new-session-with-text';
 const boardProjects = () => useBoard.getState().board?.projects ?? NO_PROJECTS;
 
 // The project is chosen before the one navigation, which would drop a navigation still owed.
-function openBoard(projectId: string) {
+function openSessions(projectId: string) {
   useCurrentProject.getState().choose(projectId);
   useShell.getState().followFirstSession();
-  useShell.getState().setScreen('board');
+  useShell.getState().setScreen('sessions');
 }
 
 const groupName = (group: PaletteGroup): string =>
@@ -290,7 +290,7 @@ function PaletteBody({
             label: p.name,
             ...(p.roots[0] ? { sub: p.roots[0] } : {}),
             project: p.id,
-            run: () => openBoard(p.id),
+            run: () => openSessions(p.id),
           })),
     [projects, projectText],
   );

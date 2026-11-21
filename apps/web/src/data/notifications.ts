@@ -651,11 +651,11 @@ export function decisionNotices(
 }
 
 /**
- * Opens the project and session of a clicked notification, or the project's board, and asks for
+ * Opens the project and session of a clicked notification, or the project's sessions, and asks for
  * the card of the request given.
  */
 export function openNotice(target: NotificationTarget, request?: string): void {
-  if (target.session_id === INBOX) useShell.getState().openProjectBoard(target.project_id);
+  if (target.session_id === INBOX) useShell.getState().openProjectSessions(target.project_id);
   else useShell.getState().openProjectSession(target.project_id, target.session_id);
   if (request) focusRequest(request);
 }

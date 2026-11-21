@@ -17,6 +17,7 @@ import type {
 } from '@pantheon/domain';
 import { command } from '@pantheon/protocol';
 import type { ControlContext } from '../../packages/control/dist/context.js';
+import { ensureAgents } from '../../packages/control/dist/agents.js';
 import { TOOL_GROUP_MODULES } from '../../packages/control/dist/agent-prompts.js';
 import * as validation from '../../packages/control/dist/validation-executor.js';
 import { eventually, user } from '../helpers.js';
@@ -455,6 +456,8 @@ async function residentToolNames(tools?: AgentProfile['tools']) {
     user,
     command(user.id, 'project.open', { name: 'always-on', roots: [path.join(root, 'project')] }),
   )) as Project;
+  const ctx = (daemon.control as unknown as { ctx: ControlContext }).ctx;
+  ctx.store.transaction(() => ensureAgents(ctx, project.id));
   const profile = daemon.control
     .agentList(user, project.id)
     .find((agent) => agent.template === 'assistant')!;
@@ -468,7 +471,6 @@ async function residentToolNames(tools?: AgentProfile['tools']) {
     turn_count: 0,
     resident: { kind: 'assistant', agent_id: profile.id },
   });
-  const ctx = (daemon.control as unknown as { ctx: ControlContext }).ctx;
   const credential = ctx.issueSessionCredential!(session.id, 'lead');
   const client = new Client({ name: 'always-on-test', version: '1' });
   await client.connect(

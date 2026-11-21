@@ -3,7 +3,6 @@ import type { MenuAction } from '@pantheon/protocol';
 import { noticeResult } from '../components/Toast';
 import { useBoard } from '../data/board';
 import { currentProject, useCurrentProject } from '../data/current-project';
-import { openPersonalAgent } from '../data/personal-agent';
 import { t } from '../i18n';
 import { useProjectsView } from '../screens/projects/view';
 import { copyDiagnostics } from '../screens/settings/AboutPage';
@@ -54,7 +53,6 @@ export function runMenuAction(action: MenuAction): void {
             },
       ),
     );
-  else if (action === 'personal-agent') void openPersonalAgent();
   else if (action === 'open-project' && !runShortcut('open-project'))
     useProjectsView.getState().setOpening(true);
 }

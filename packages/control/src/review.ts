@@ -1015,7 +1015,7 @@ export function settleReview(
   notifyRequestingSession(ctx, next, turns);
 }
 
-/** Why a reviewer gave no full result: its turn did not complete, it could not read the input, or it left neither a finding nor a reply. */
+/** Why a reviewer gave no full result: its turn did not complete, it could not read the input, or it left no verdict, finding or reply. */
 function incompleteReason(
   ctx: ControlContext,
   review: Review,
@@ -1029,6 +1029,7 @@ function incompleteReason(
     if (findings.some((finding) => finding.artifact_error))
       return [`reviewer ${name} could not read the review input`];
     if (
+      !reviewerVerdict(review, sessionId, name) &&
       !findings.some((finding) => finding.status !== 'rejected') &&
       !finalOutput(ctx, sessionId, turn.id)
     )

@@ -365,7 +365,7 @@ it('keeps each workstream its modules inside a project folder, its known depende
   const f = await setup({ managedWorkspaces: true });
   try {
     const head = f.populate();
-    const baseline = await f.startBaseline();
+    const baseline = await leadStart(f);
     await f.submitFolder(baseline, f.folder());
     const valid = f.result(head);
     const exporter = {
@@ -403,7 +403,7 @@ it('keeps each workstream its modules inside a project folder, its known depende
     );
     const [first] = f.store
       .list<SessionTurn>('session_turns')
-      .filter((turn) => turn.session_id === planned.lead_session_id);
+      .filter((turn) => turn.session_id === planned.lead_session_id && turn.origin === 'baseline');
     expect(first!.input).toContain(
       'Modules: src, src/index.ts Depends on: Importer Next: Parse JSON Risks: The JSON format is not settled',
     );
@@ -1106,7 +1106,7 @@ it('hands the next tasks with scope, acceptance and dependencies to the planning
   const f = await setup({ managedWorkspaces: true });
   try {
     const head = f.populate();
-    const baseline = await f.startBaseline();
+    const baseline = await leadStart(f);
     await f.submitFolder(baseline, f.folder());
     const submitted = await f.submit(baseline, { ...f.result(head), tasks: nextTasks() });
     const planned = await f.call<ProjectBaseline & { lead_session_id?: string }>(
@@ -1116,7 +1116,7 @@ it('hands the next tasks with scope, acceptance and dependencies to the planning
     );
     const [first] = f.store
       .list<SessionTurn>('session_turns')
-      .filter((turn) => turn.session_id === planned.lead_session_id);
+      .filter((turn) => turn.session_id === planned.lead_session_id && turn.origin === 'baseline');
     expect(first!.input).toContain('Next tasks:');
     expect(first!.input).toContain(
       '- Document the importer (workstream: Importer): Docs are open Scope: README.md, docs Acceptance: pnpm lint; pnpm build Depends on: Parse JSON rows',
@@ -1134,7 +1134,7 @@ it('hands the planning lead every workstream and contradiction of a long baselin
   const f = await setup({ managedWorkspaces: true });
   try {
     const head = f.populate();
-    const baseline = await f.startBaseline();
+    const baseline = await leadStart(f);
     await f.submitFolder(baseline, f.folder());
     const long = (n: number, what: string) => `${what} ${n} `.padEnd(390, 'x');
     const submitted = await f.submit(baseline, {
@@ -1156,7 +1156,7 @@ it('hands the planning lead every workstream and contradiction of a long baselin
     );
     const [first] = f.store
       .list<SessionTurn>('session_turns')
-      .filter((turn) => turn.session_id === planned.lead_session_id);
+      .filter((turn) => turn.session_id === planned.lead_session_id && turn.origin === 'baseline');
     expect(first!.input.length).toBeGreaterThan(12000);
     expect(first!.input).toContain(long(15, 'Contradiction'));
     expect(first!.input).toContain('- Importer (running): CSV parsing is done');
@@ -1533,42 +1533,11 @@ it.each<[string, (report: FixtureAdapter['report']) => FixtureAdapter['report']]
   },
 );
 
-it('leaves no project configuration behind when opening the planning lead fails', async () => {
+it('hands the baseline result to no session when no lead started the baseline', async () => {
   const f = await setup({ managedWorkspaces: true });
   try {
     const head = f.populate();
-    const baseline = await f.handIn(f.startBaseline(), head);
-    for (const adapter of f.adapters)
-      adapter.report = {
-        ...adapter.report,
-        capabilities: {
-          ...adapter.report.capabilities,
-          read_isolation: { status: 'unknown', evidence: 'Unchecked' },
-        },
-      };
-    await expect(async () =>
-      f.call(
-        'project.baseline.confirm',
-        { baseline_id: baseline.id, answers: [], plan_board: true },
-        baseline.revision,
-      ),
-    ).rejects.toThrow(expect.objectContaining({ code: 'unsupported_capability' }));
-    expect(f.current(baseline).state).toBe('submitted');
-    expect(existsSync(path.join(f.projectRoot, '.pantheon'))).toBe(false);
-  } finally {
-    await f.close();
-  }
-});
-
-it('hands the baseline result to the Assistant resident only when confirmed with plan_board', async () => {
-  const f = await setup({ managedWorkspaces: true });
-  try {
-    const head = f.populate();
-    const worktrees = () =>
-      f.store
-        .list<Session>('sessions')
-        .filter((session) => session.workspace_id && !session.baseline && !session.task);
-    const residents = () => f.store.list<Session>('sessions').filter((session) => session.resident);
+    const sessions = () => f.store.list<Session>('sessions').filter((session) => !session.baseline);
     const confirm = (baseline: ProjectBaseline, extra: Record<string, unknown> = {}) =>
       f.call<Promise<ProjectBaseline & { lead_session_id?: string }>>(
         'project.baseline.confirm',
@@ -1579,32 +1548,34 @@ it('hands the baseline result to the Assistant resident only when confirmed with
     const plain = await confirm(await f.handIn(f.startBaseline(), head));
     expect(plain.state).toBe('confirmed');
     expect(plain).not.toHaveProperty('lead_session_id');
-    expect(residents()).toEqual([]);
 
     const planned = await confirm(await f.handIn(f.startBaseline(), head), { plan_board: true });
     expect(planned.state).toBe('confirmed');
-    expect(worktrees()).toEqual([]);
-    const [lead] = residents();
-    expect(residents()).toHaveLength(1);
-    expect(lead!.resident?.kind).toBe('assistant');
-    expect(planned.lead_session_id).toBe(lead!.id);
-    // The stored baseline names the planning lead, so the board can follow it after a reload.
-    expect(f.store.get<ProjectBaseline>('project_baselines', planned.id)!.plan_session_id).toBe(
-      lead!.id,
-    );
-    const handed = f.store
-      .list<SessionTurn>('session_turns')
-      .filter((turn) => turn.session_id === lead!.id);
-    expect(handed).toHaveLength(1);
-    expect(handed[0]!.origin).toBe('baseline');
-    expect(handed[0]!.input).toContain('update_board');
-    expect(handed[0]!.input).toContain('Importer');
-    expect(handed[0]!.input).toContain('Ship the fixture library');
-    expect(handed[0]!.input).toContain('Is publishing in scope?');
+    expect(planned).not.toHaveProperty('lead_session_id');
+    expect(planned).not.toHaveProperty('plan_session_id');
+    expect(sessions()).toEqual([]);
   } finally {
     await f.close();
   }
 });
+
+/** Starts a baseline from a new workbench lead session, which the confirmed result goes back to. */
+async function leadStart(f: Awaited<ReturnType<typeof setup>>) {
+  const lead = await f.call<Session>('session.create', {
+    project_id: f.project.id,
+    runtime: 'claude',
+    input: 'Plan the importer',
+  });
+  return f.call<Promise<ProjectBaseline>>(
+    'project.baseline.start',
+    { project_id: f.project.id },
+    null,
+    {
+      ...f.principal(lead),
+      role: 'lead',
+    },
+  );
+}
 
 /** A workbench lead session and a baseline it started; confirming it with plan_board returns its receipt. */
 async function leadBaseline(f: Awaited<ReturnType<typeof setup>>) {
@@ -1654,33 +1625,20 @@ it('hands the confirmed baseline a lead started back to that lead', async () => 
   }
 });
 
-it('hands a baseline whose lead has closed to the Assistant resident', async () => {
+it('hands a baseline whose lead has closed to no session', async () => {
   const f = await setup({ managedWorkspaces: true });
   try {
     const { lead, confirm } = await leadBaseline(f);
     const closed = f.store.must<Session>('sessions', lead.id);
     f.store.update<Session>('sessions', { ...closed, state: 'closed' }, closed.revision);
-
-    const worktrees = f.store.list<Session>('sessions').filter((session) => session.workspace_id);
+    const sessions = f.store.list<Session>('sessions').length;
 
     const planned = await confirm();
-    expect(planned.lead_session_id).toBeTruthy();
-    expect(planned.lead_session_id).not.toBe(lead.id);
-    const resident = f.store.must<Session>('sessions', planned.lead_session_id!);
-    expect(resident.resident?.kind).toBe('assistant');
-    expect(planned.plan_session_id).toBe(resident.id);
-    expect(f.store.list<Session>('sessions').filter((session) => session.workspace_id)).toEqual(
-      worktrees,
-    );
+    expect(planned.state).toBe('confirmed');
+    expect(planned).not.toHaveProperty('plan_session_id');
+    expect(f.store.list<Session>('sessions')).toHaveLength(sessions);
     expect(
-      f.store
-        .list<SessionTurn>('session_turns')
-        .filter((turn) => turn.session_id === resident.id && turn.origin === 'baseline'),
-    ).toHaveLength(1);
-    expect(
-      f.store
-        .list<SessionTurn>('session_turns')
-        .filter((turn) => turn.session_id === lead.id && turn.origin === 'baseline'),
+      f.store.list<SessionTurn>('session_turns').filter((turn) => turn.origin === 'baseline'),
     ).toEqual([]);
   } finally {
     await f.close();
@@ -1711,7 +1669,7 @@ it('lets the lead opened on confirm quote the baseline message as a task source'
   const f = await setup({ managedWorkspaces: true });
   try {
     const head = f.populate();
-    const baseline = await f.handIn(f.startBaseline(), head);
+    const baseline = await f.handIn(leadStart(f), head);
     const planned = await f.call<ProjectBaseline & { lead_session_id?: string }>(
       'project.baseline.confirm',
       { baseline_id: baseline.id, answers: [], plan_board: true },
@@ -1754,7 +1712,7 @@ it('opens the lead with the brief and answers the user confirmed, not the propos
   const f = await setup({ managedWorkspaces: true });
   try {
     const head = f.populate();
-    const baseline = await f.handIn(f.startBaseline(), head);
+    const baseline = await f.handIn(leadStart(f), head);
     const planned = await f.call<ProjectBaseline & { lead_session_id?: string }>(
       'project.baseline.confirm',
       {
@@ -1775,7 +1733,7 @@ it('opens the lead with the brief and answers the user confirmed, not the propos
     const lead = f.store.must<Session>('sessions', planned.lead_session_id!);
     const [first] = f.store
       .list<SessionTurn>('session_turns')
-      .filter((turn) => turn.session_id === lead.id);
+      .filter((turn) => turn.session_id === lead.id && turn.origin === 'baseline');
     expect(first!.input).toContain('Yes, to npm');
     const plan = (source: string) =>
       f.call(
@@ -1818,7 +1776,7 @@ it('keeps the user answers in the first plan message and cuts long workstreams i
   const f = await setup({ managedWorkspaces: true });
   try {
     const head = f.populate();
-    const baseline = await f.startBaseline();
+    const baseline = await leadStart(f);
     await f.submitFolder(baseline, f.folder());
     const proposed = f.result(head);
     const importer = proposed.workstreams[0]!;
@@ -1852,7 +1810,7 @@ it('keeps the user answers in the first plan message and cuts long workstreams i
     );
     const [first] = f.store
       .list<SessionTurn>('session_turns')
-      .filter((turn) => turn.session_id === planned.lead_session_id);
+      .filter((turn) => turn.session_id === planned.lead_session_id && turn.origin === 'baseline');
     expect(first!.input).toContain('Importer part 0');
     expect(first!.input).not.toContain('Importer part 11');
     expect(first!.input).toContain('Only to the internal registry');
@@ -1865,7 +1823,7 @@ it('opens the lead with the goals and non-goals of the confirmed brief', async (
   const f = await setup({ managedWorkspaces: true });
   try {
     const head = f.populate();
-    const baseline = await f.handIn(f.startBaseline(), head);
+    const baseline = await f.handIn(leadStart(f), head);
     const planned = await f.call<ProjectBaseline & { lead_session_id?: string }>(
       'project.baseline.confirm',
       {
@@ -1882,7 +1840,7 @@ it('opens the lead with the goals and non-goals of the confirmed brief', async (
     );
     const [first] = f.store
       .list<SessionTurn>('session_turns')
-      .filter((turn) => turn.session_id === planned.lead_session_id);
+      .filter((turn) => turn.session_id === planned.lead_session_id && turn.origin === 'baseline');
     expect(first!.input).toContain('Import CSV files');
     expect(first!.input).toContain('Never upload user files');
   } finally {
@@ -2517,7 +2475,7 @@ it.each([true, false])(
       f.call('app.settings.set', { baseline_visuals: visuals });
       const head = f.populate();
       const valid = f.result(head);
-      const baseline = await f.startBaseline();
+      const baseline = await leadStart(f);
       const now = f.store.now();
       const chart = (id: string, session_id: string | null) => ({
         id,
@@ -2558,7 +2516,9 @@ it.each([true, false])(
       );
       const [first] = f.store
         .list<SessionTurn>('session_turns')
-        .filter((turn) => turn.session_id === planned.lead_session_id);
+        .filter(
+          (turn) => turn.session_id === planned.lead_session_id && turn.origin === 'baseline',
+        );
       for (const text of [
         'risk findings become risks and contradictions become assumptions',
         'Is publishing in scope? Answer: left to you; the recommended option is',

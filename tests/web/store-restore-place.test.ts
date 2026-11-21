@@ -83,18 +83,29 @@ describe('the main window opening', () => {
 
   it.each<[string, Start['sessions']]>([
     [
-      "lands on the project's board when the session it was left on was deleted",
+      "lands on the project's sessions when the session it was left on was deleted",
       [{ id: 'alpha-2' }],
     ],
     [
-      "lands on the project's board when the session it was left on was archived",
+      "lands on the project's sessions when the session it was left on was archived",
       [{ id: 'alpha-1', archived_at: '2026-11-01T00:00:00Z' }],
     ],
-    ["lands on the project's board when the list cannot be read", null],
+    ["lands on the project's sessions when the list cannot be read", null],
   ])('%s', async (_, sessions) => {
     const { here } = await open({ places: left, sessions });
-    expect(here).toEqual({ screen: 'board', session: null });
+    expect(here).toEqual({ screen: 'sessions', session: null });
   });
+
+  it.each(['board', 'insights', 'automations', 'personal'])(
+    'opens a project left on the old %s screen on its sessions, on the session it showed',
+    async (screen) => {
+      const { here } = await open({
+        places: { alpha: { screen, sessionId: 'alpha-1', sessionTask: null } },
+        sessions: [{ id: 'alpha-1', archived_at: null }],
+      });
+      expect(here).toEqual({ screen: 'sessions', session: 'alpha-1' });
+    },
+  );
 
   it('opens on the other page it was left on without reading the list', async () => {
     const { here, query, useShell } = await open({
@@ -105,17 +116,17 @@ describe('the main window opening', () => {
     expect(query).not.toHaveBeenCalled();
   });
 
-  it('opens on the board of a project with no place, and on the projects without a project', async () => {
-    expect((await open({})).here).toEqual({ screen: 'board', session: null });
+  it('opens on the sessions of a project with no place, and on the projects without a project', async () => {
+    expect((await open({})).here).toEqual({ screen: 'sessions', session: null });
     expect((await open({ project: null, places: left })).here).toEqual({
       screen: 'projects',
       session: null,
     });
   });
 
-  it("leaves a project window's start on its board", async () => {
+  it("leaves a project window's start on its sessions", async () => {
     const { here, query } = await open({ kind: 'project', places: left });
-    expect(here).toEqual({ screen: 'board', session: null });
+    expect(here).toEqual({ screen: 'sessions', session: null });
     expect(query).not.toHaveBeenCalled();
   });
 });

@@ -67,7 +67,7 @@ async function running(f: Fixture, session: Session) {
 
 /**
  * A lead with a one-task plan and a worker of that task running a turn; with a requester, the task
- * quotes a request it sent to the Assistant instead of the lead's first message.
+ * quotes a request it sent to the lead instead of the lead's first message.
  */
 async function workerFixture(policy?: Record<string, unknown>, requester?: Principal) {
   const f = await workbenchFixture({ userConfig: true });
@@ -76,7 +76,11 @@ async function workerFixture(policy?: Record<string, unknown>, requester?: Princ
   if (requester) {
     const sent = f.call<{ session_id: string }>(
       'request.send',
-      { project_id: f.project.id, input: request },
+      {
+        project_id: f.project.id,
+        input: request,
+        target: { kind: 'session', session_id: lead.id },
+      },
       null,
       requester,
     );
@@ -405,10 +409,7 @@ it.each<[string, Record<string, unknown> | undefined, Cite, string]>([
   expect(questionItems(f).map((item) => item.request_id)).toEqual([card.id]);
 });
 
-it.each<[string, Principal, boolean]>([
-  ['the user', user, true],
-  ["the user's personal agent", personal, false],
-])(
+it.each<[string, Principal, boolean]>([['the user', user, true]])(
   'lets the lead cite the words of a request %s sent only when the user sent it',
   async (_label, requester, resolves) => {
     const { f, lead, prompt } = await workerFixture(undefined, requester);

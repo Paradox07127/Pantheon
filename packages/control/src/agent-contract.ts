@@ -1,9 +1,8 @@
-import type { AgentContract, AgentProfile, Session, SignalIssue } from '@pantheon/domain';
+import type { AgentContract, AgentProfile, Session } from '@pantheon/domain';
 import { withinHours } from '@pantheon/protocol';
 import type { ControlContext } from './context.js';
 import { turnInputTokens } from './turn-usage.js';
 import { readUserConfig } from './user-config.js';
-import { workflowPolicy } from './workflow-policy.js';
 
 /** Local Monday 00:00 of the week of `now`, when a weekly token cap starts again. */
 export function contractWeekStart(now: number): number {
@@ -67,17 +66,4 @@ export function messageDelivery(
   if (profile.contract?.loudest === 'feed') return 'feed';
   const quiet = contractQuietHours(ctx, profile);
   return quiet && withinHours(quiet, now) && !urgent ? 'feed' : 'notify';
-}
-
-/** True when the issue is the project's and of a class the project's urgent list names. */
-export function urgentIssue(
-  ctx: ControlContext,
-  projectId: string,
-  issue: SignalIssue | undefined,
-): boolean {
-  return (
-    issue?.project_id === projectId &&
-    issue.scope === 'default_branch' &&
-    (workflowPolicy(ctx, projectId).urgent_direct ?? []).includes('main_gate_failed')
-  );
 }

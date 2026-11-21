@@ -1,15 +1,6 @@
 import { expect, it, vi } from 'vitest';
-import type {
-  AgentMessage,
-  AgentProfile,
-  LeadNote,
-  Principal,
-  Session,
-  SignalIssue,
-  WorkflowPolicy,
-} from '@pantheon/domain';
+import type { AgentMessage, AgentProfile, LeadNote, Principal, Session } from '@pantheon/domain';
 import type { ControlContext } from '../../packages/control/dist/context.js';
-import { recordSignal } from '../../packages/control/dist/signals.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
 type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
@@ -135,51 +126,16 @@ it("delivers the Assistant's own message to the user unchanged", async () => {
   expect(r.assistantNotes('agent_report')).toEqual([]);
 });
 
-it('lets a gate failure on the default branch reach the user directly, and routes a task-branch one', async () => {
+it('lets a high-urgency message reach the user directly, and routes a normal one', async () => {
   const r = await reporterFixture('triage');
-  recordSignal(r.ctx, {
-    project_id: r.f.project.id,
-    source: 'gate_failures',
-    fingerprint: 'typecheck:default-branch',
-    title: 'typecheck failed after a merge: error TS2322',
-    scope: 'default_branch',
-  });
-  const main = r.f.store.list<SignalIssue>('signal_issues')[0]!;
-  expect(main.scope).toBe('default_branch');
-  const branch = recordSignal(r.ctx, {
-    project_id: r.f.project.id,
-    source: 'gate_failures',
-    fingerprint: 'unit:task-branch',
-    title: 'unit failed the same way in 3 tasks',
-  });
-
-  const direct = r.tell({ text: 'typecheck fails on main.', signal_issue_id: main.id });
+  const direct = r.tell({ text: 'typecheck fails on main.', urgency: 'high' });
   expect(direct.routed_to).toBeUndefined();
   expect(r.events('agent_message.created')).toHaveLength(1);
 
-  const routed = r.tell({ text: 'unit fails on task branches.', signal_issue_id: branch.id });
+  const routed = r.tell({ text: 'unit fails on task branches.' });
   expect(routed.routed_to).toBe(r.assistant().id);
   expect(r.events('agent_message.created')).toHaveLength(1);
   expect(r.events('agent_message.routed')).toHaveLength(1);
-});
-
-it('routes even a gate failure on the default branch when the urgent list is empty', async () => {
-  const r = await reporterFixture('triage');
-  r.f.call<WorkflowPolicy>('workflow.policy.set', {
-    project_id: r.f.project.id,
-    urgent_direct: [],
-  });
-  recordSignal(r.ctx, {
-    project_id: r.f.project.id,
-    source: 'gate_failures',
-    fingerprint: 'typecheck:default-branch',
-    title: 'typecheck failed after a merge: error TS2322',
-    scope: 'default_branch',
-  });
-  const main = r.f.store.list<SignalIssue>('signal_issues')[0]!;
-  const message = r.tell({ text: 'typecheck fails on main.', signal_issue_id: main.id });
-  expect(message.routed_to).toBe(r.assistant().id);
-  expect(r.events('agent_message.created')).toEqual([]);
 });
 
 it("keeps a routed report as the reporter's own message", async () => {

@@ -9,6 +9,7 @@ import type {
   SessionTurn,
 } from '@pantheon/domain';
 import type { ControlContext } from '../../packages/control/dist/context.js';
+import { ensureAgents } from '../../packages/control/dist/agents.js';
 import { memoryContext } from '../../packages/control/dist/memory.js';
 import { eventually, user } from '../helpers.js';
 import { boundTaskSession, workbenchFixture } from './workbench-fixture.js';
@@ -23,8 +24,11 @@ const as = (f: Fixture, sessionId: string, role: 'lead' | 'worker'): Principal =
   expires_at: f.store.now() + 60_000,
 });
 const current = (f: Fixture, sessionId: string) => f.store.must<Session>('sessions', sessionId);
-const assistantProfile = (f: Fixture) =>
-  f.control.agentList(user, f.project.id).find((agent) => agent.template === 'assistant')!;
+const assistantProfile = (f: Fixture) => {
+  const ctx = f.control['ctx'] as ControlContext;
+  ctx.store.transaction(() => ensureAgents(ctx, f.project.id));
+  return f.control.agentList(user, f.project.id).find((agent) => agent.template === 'assistant')!;
+};
 const open = (f: Fixture) =>
   f.call<Session>('resident.open', { project_id: f.project.id, kind: 'assistant' });
 const residents = (f: Fixture, profile: AgentProfile) =>

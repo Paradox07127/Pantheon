@@ -6,9 +6,8 @@ import {
   type CSSProperties,
   type ReactElement,
 } from 'react';
-import { ExternalLink, SquarePen, User } from 'lucide-react';
+import { ExternalLink, SquarePen } from 'lucide-react';
 import type { BoardSnapshot, WorkbenchSession } from '@pantheon/protocol';
-import { Clip } from '../components/Clip';
 import { runtimeName } from '../components/RuntimeGlyph';
 import { StateGlyph } from '../components/SessionStateIcon';
 import { useBoard } from '../data/board';
@@ -20,13 +19,13 @@ import {
   useNow,
   type NeedsYouItem,
 } from '../data/needs-you';
-import { crossProjectWaiting, latestReply, personalHomeOf } from '../data/personal-agent';
+import { crossProjectWaiting } from '../data/personal-agent';
 import { visibleProjects } from '../data/projects';
 import { useRuntimeStatus } from '../data/runtime-status';
 import type { DaemonEvent } from '../data/sync';
 import { sessionTitle } from '../data/transcript';
 import { readQuery, useFocusTick, useRefetchTick } from '../data/workbench-sessions';
-import { currentLocale, t } from '../i18n';
+import { t } from '../i18n';
 import { keyText, shortcutKeys } from '../lib/shortcuts';
 import { durationText } from '../screens/board/panels-model';
 import { resolveTheme, useShell } from '../store';
@@ -181,7 +180,6 @@ export function TrayPopover() {
       .catch(() => {});
   const reveal = () => void window.pantheon?.revealMain().catch(() => {});
   const newSession = () => void window.pantheon?.revealMain('new-session').catch(() => {});
-  const openPersonal = () => void window.pantheon?.revealMain('personal-agent').catch(() => {});
 
   async function answer(item: NeedsYouItem, decision: 'approve' | 'reject') {
     const id = item.source.id;
@@ -320,44 +318,6 @@ export function TrayPopover() {
     );
   };
 
-  const home = personalHomeOf(board?.projects ?? NO_PROJECTS);
-  const reply = home && board ? latestReply(board, events, home.id) : null;
-  const personalRow = home && (
-    <div className="tp-pa">
-      <button
-        type="button"
-        className="tp-row"
-        aria-label={t({
-          id: 'trayPopover.personalAgent.open',
-          defaultMessage: 'Open Personal agent',
-        })}
-        aria-describedby={reply ? 'tp-pa-reply' : undefined}
-        onClick={openPersonal}
-      >
-        <span className="tp-ic" aria-hidden="true">
-          <User />
-        </span>
-        <span className="tp-nm">
-          {t({ id: 'trayPopover.personalAgent.name', defaultMessage: 'Personal agent' })}
-        </span>
-        {reply && (
-          <time className="tp-ct" dateTime={new Date(reply.at).toISOString()}>
-            {new Intl.DateTimeFormat(currentLocale(), {
-              hour: '2-digit',
-              minute: '2-digit',
-              hourCycle: 'h23',
-            }).format(reply.at)}
-          </time>
-        )}
-      </button>
-      {reply && (
-        <div className="tp-pa-tx">
-          <Clip id="tp-pa-reply" as="div" lines={2} text={reply.text} />
-        </div>
-      )}
-    </div>
-  );
-
   const blocks: ReactElement[] = [];
   if (waiting.length)
     blocks.push(
@@ -478,8 +438,6 @@ export function TrayPopover() {
   return (
     <div className="tp-win">
       <div className="tp" ref={measure}>
-        {personalRow}
-        {personalRow && <hr className="tp-sep" />}
         {blocks.flatMap((block, i) =>
           i ? [<hr key={`sep-${i}`} className="tp-sep" />, block] : [block],
         )}

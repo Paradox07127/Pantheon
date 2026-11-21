@@ -266,7 +266,7 @@ export function NeedsPopover({
       setOpen(false);
       if (action.key === 'budget') openSettingsPage(item.project_id, 'projects');
       else if (action.key === 'board' || action.key === 'accept')
-        useShell.getState().openProjectBoard(item.project_id);
+        useShell.getState().openProjectSessions(item.project_id);
       else openRow(row);
       return;
     }
@@ -300,7 +300,7 @@ export function NeedsPopover({
       sessionId,
       ...(card && { open: () => useShell.getState().openProjectNeed(item.project_id, card) }),
       ...(item.kind === 'board.lane.approval' && {
-        open: () => useShell.getState().openProjectBoard(item.project_id),
+        open: () => useShell.getState().openProjectSessions(item.project_id),
       }),
       ...(item.kind === 'memory.decision_budget' && {
         open: () => openPlanMemory(item.project_id),

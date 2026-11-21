@@ -13,14 +13,6 @@ const current = (f: Fixture, sessionId: string) => f.store.must<Session>('sessio
 const request = (f: Fixture, input: Record<string, unknown>) =>
   f.call<Routed>('request.send', { project_id: f.project.id, ...input });
 
-const leadOf = (f: Fixture, sessionId: string): Principal => ({
-  id: `session:${sessionId}`,
-  role: 'lead',
-  project_id: f.project.id,
-  session_id: sessionId,
-  expires_at: f.store.now() + 60000,
-});
-
 const personal: Principal = { id: 'personal:k1', role: 'personal' };
 
 const assistants = (f: Fixture) =>
@@ -35,56 +27,16 @@ const idle = (f: Fixture, sessionId: string) =>
     () => f.control.tick(),
   );
 
-it('sends a request without a target to the assistant even when the triage plan is newest', async () => {
+it.each([
+  ['no target', {}],
+  ['the assistant as target', { target: { kind: 'assistant' } }],
+])('refuses a request with %s and opens no assistant', async (_case, target) => {
   const f = await workbenchFixture();
-  const assistant = f.call<Session>('resident.open', {
-    project_id: f.project.id,
-    kind: 'assistant',
-  });
-  const triage = f.call<Session>('resident.open', { project_id: f.project.id, kind: 'triage' });
-  f.call(
-    'board.plan.update',
-    {
-      project_id: f.project.id,
-      base_version: 0,
-      headline: 'Triage the inbox',
-      lanes: [{ id: 'core', title: 'Core' }],
-      tasks: [],
-      milestones: [],
-      risks: [],
-      assumptions: [],
-    },
-    null,
-    leadOf(f, triage.id),
+
+  expect(() => request(f, { input: 'Plan the release', ...target })).toThrow(
+    expect.objectContaining({ code: 'invalid_request' }),
   );
-
-  const routed = request(f, { input: 'Add an export button' });
-
-  expect(routed.session_id).toBe(assistant.id);
-  const turn = f.turns(assistant.id).find((each) => each.id === routed.turn_id);
-  expect(turn).toMatchObject({ input: 'Add an export button', kind: 'send' });
-  expect(f.turns(triage.id)).toEqual([]);
-});
-
-it('opens the assistant session when the project has none open', async () => {
-  const f = await workbenchFixture();
   expect(assistants(f)).toEqual([]);
-
-  const routed = request(f, { input: 'Plan the release', target: { kind: 'assistant' } });
-
-  expect(assistants(f).map((session) => session.id)).toEqual([routed.session_id]);
-  expect(f.turns(routed.session_id).map((turn) => turn.id)).toEqual([routed.turn_id]);
-});
-
-it('steers the assistant while its turn runs', async () => {
-  const f = await workbenchFixture();
-  const first = request(f, { input: 'Plan the release' });
-  expect(current(f, first.session_id).state).toBe('running');
-
-  const second = request(f, { input: 'Keep it small' });
-
-  expect(second.session_id).toBe(first.session_id);
-  expect(f.turns(first.session_id).find((turn) => turn.id === second.turn_id)?.kind).toBe('steer');
 });
 
 it('sends a request with a session target to that direct session', async () => {
@@ -141,25 +93,6 @@ it('refuses an archived session and a session of another project', async () => {
   expect(f.turns(foreign.id)).toEqual([]);
 });
 
-it("sends a personal agent's request to the assistant as the user's request, marked with its key", async () => {
-  const f = await workbenchFixture();
-  const routed = f.call<Routed>(
-    'request.send',
-    { project_id: f.project.id, input: 'Plan the release' },
-    null,
-    personal,
-  );
-
-  expect(assistants(f).map((session) => session.id)).toEqual([routed.session_id]);
-  const turn = f.turns(routed.session_id).find((each) => each.id === routed.turn_id);
-  expect(turn).toMatchObject({
-    input: 'Plan the release',
-    kind: 'send',
-    via: { kind: 'personal', key_id: 'k1' },
-  });
-  expect(turn?.origin).toBeUndefined();
-});
-
 it.each<[string, (f: Fixture, sessionId: string) => () => unknown]>([
   [
     'a request to a session',
@@ -178,12 +111,14 @@ it.each<[string, (f: Fixture, sessionId: string) => () => unknown]>([
   [
     'a reroute of its request',
     (f) => {
-      const routed = f.call<Routed>(
-        'request.send',
-        { project_id: f.project.id, input: 'Plan the release' },
-        null,
-        personal,
-      );
+      const assistant = f.call<Session>('resident.open', {
+        project_id: f.project.id,
+        kind: 'assistant',
+      });
+      const routed = request(f, {
+        input: 'Plan the release',
+        target: { kind: 'session', session_id: assistant.id },
+      });
       return () =>
         f.call('request.reroute', { turn_id: routed.turn_id, to: 'new_plan' }, null, personal);
     },

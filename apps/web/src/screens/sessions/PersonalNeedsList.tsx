@@ -16,13 +16,13 @@ import { useShell } from '../../store';
 
 const SHOWN = 5;
 
-/** Opens the item where the needs-you popover opens it: its card, its board, its session or its project. */
+/** Opens the item where the needs-you popover opens it: its card, its sessions, its session or its project. */
 function openNeed(item: NeedsYouItem) {
   const shell = useShell.getState();
   const card = item.kind === 'lead.question' ? needsKey(item) : null;
   const sessionId = item.session_id ?? (item.source.table === 'sessions' ? item.source.id : null);
   if (card) shell.openProjectNeed(item.project_id, card);
-  else if (item.kind === 'board.lane.approval') shell.openProjectBoard(item.project_id);
+  else if (item.kind === 'board.lane.approval') shell.openProjectSessions(item.project_id);
   else if (sessionId) shell.openProjectSession(item.project_id, sessionId);
   else shell.openProject(item.project_id);
 }

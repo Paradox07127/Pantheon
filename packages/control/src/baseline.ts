@@ -62,7 +62,6 @@ import { runtime } from './admission.js';
 import { runGit } from './git.js';
 import { collectFacts, type ProjectFacts } from './baseline-facts.js';
 import { renderScanSeed } from './baseline-brief.js';
-import { openResident } from './resident.js';
 import { acceptInput } from './session.js';
 import { queueTurn } from './task-tracking.js';
 import { readAppSettings } from './app-settings.js';
@@ -1071,7 +1070,7 @@ function confirm(ctx: ControlContext, p: Principal, c: Command, gitRoots: Set<st
   const starter = baseline.lead_session_id
     ? ctx.store.get<Session>('sessions', baseline.lead_session_id)
     : undefined;
-  // A starter lead that no longer takes input leaves the result to a new lead.
+  // A starter lead that no longer takes input gets no result.
   let takesInput = !!starter;
   try {
     if (starter) acceptInput(ctx, starter, starter.state === 'running' ? 'steer' : 'send');
@@ -1089,15 +1088,7 @@ function confirm(ctx: ControlContext, p: Principal, c: Command, gitRoots: Set<st
     );
     return { ...next, lead_session_id: starter.id };
   }
-  const lead = openResident(ctx, p, projectId, 'assistant', c.command_id);
-  acceptInput(ctx, lead, lead.state === 'running' ? 'steer' : 'send');
-  queueTurn(ctx, lead, firstPlanMessage(result, brief, rounds), 'baseline', c.command_id);
-  const planned = ctx.store.update<ProjectBaseline>(
-    'project_baselines',
-    { ...next, plan_session_id: lead.id },
-    next.revision,
-  );
-  return { ...planned, lead_session_id: lead.id };
+  return next;
 }
 
 export const baselineHandlers: Handlers = {

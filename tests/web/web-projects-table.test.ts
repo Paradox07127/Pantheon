@@ -168,10 +168,10 @@ describe('project table row', () => {
     expect(byLabel(actions, zhf('projects.row.more', { name: 'name of project-b' }))).toBeTruthy();
   });
 
-  it('opens the project board from the row', () => {
+  it('opens the project sessions from the row', () => {
     opener(row(full)).props.onClick();
     expect(mock.current.choose).toHaveBeenCalledWith('project-b');
-    expect(mock.shell.setScreen).toHaveBeenCalledWith('board');
+    expect(mock.shell.setScreen).toHaveBeenCalledWith('sessions');
   });
 
   it('ends the row with its menu and no arrow', () => {
@@ -463,16 +463,15 @@ describe('project region', () => {
     expect(text(tree)).not.toContain(zhf('data.attention.blocks', { count: 6 }));
   });
 
-  it('opens the project board on its overview from the brief line', () => {
+  it('opens the project sessions from the brief line', () => {
     const line = byLabel(
       row(asking),
       zhf('projects.row.brief', { text: 'The refund audit log merged.' }),
     );
     expect(line.type).toBe('button');
     line.props.onClick();
-    expect(stored).toContainEqual(['pantheon.board-page.project-b', 'overview']);
     expect(mock.current.choose).toHaveBeenCalledWith('project-b');
-    expect(mock.shell.setScreen).toHaveBeenCalledWith('board');
+    expect(mock.shell.setScreen).toHaveBeenCalledWith('sessions');
   });
 
   it('draws no brief line without a brief', () => {
@@ -611,12 +610,8 @@ describe('projects screen', () => {
     ).toEqual(['alpha']);
   });
 
-  it('lists no row for the personal agent’s home and opens the personal agent from the bar', async () => {
+  it('lists no row for the personal agent’s home', async () => {
     mock.board.board.projects.push({ ...project('home'), roots: [], kind: 'personal' });
-    mock.board.refresh = () => {};
-    mock.shell.openPersonal = vi.fn();
-    const command = vi.fn(async () => ({ ok: true, value: { id: 'personal-1' } }));
-    window.pantheon!.command = command as never;
     const h = mount(() => ProjectsScreen({ onOpenSettings() {}, onOpenProject() {} }));
     await h.flush();
     const table = byLabel(h.value, zh('projects.title'));
@@ -625,21 +620,6 @@ describe('projects screen', () => {
         .filter((n) => typeof n.type === 'function' && n.type.name === 'ProjectRow')
         .map((r) => r.props.project.id),
     ).toEqual(['alpha', 'beta']);
-    expect(zh('projects.personalAgent')).toBe('个人级智能体');
-    // Two items wait in alpha; the one of a project not listed is not counted.
-    const entry = byLabel(
-      h.value,
-      [zh('projects.personalAgent'), zhf('projects.personalAgentWaits', { count: 2 })].join(
-        zh('sessions.screen.separator'),
-      ),
-    );
-    expect(text(entry)).toBe(`${zh('projects.personalAgent')}2`);
-    entry.props.onClick();
-    await h.flush();
-    expect(command).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'resident.open', input: { kind: 'personal' } }),
-    );
-    expect(mock.shell.openPersonal).toHaveBeenCalledWith('personal-1');
   });
 
   it.each([
@@ -693,22 +673,15 @@ describe('projects screen', () => {
   it.each([
     ['with no project yet', []],
     ['with projects', [project('alpha')]],
-  ])(
-    'puts the personal agent, import and open in the bar and no filter %s',
-    async (_name, projects) => {
-      mock.board = { ...mock.board, board: { cursor: 1, projects, project_briefs: [] } };
-      const h = mount(() => ProjectsScreen({ onOpenSettings() {}, onOpenProject() {} }));
-      await h.flush();
-      expect(nodes(h.value).some((n) => n.type === 'input')).toBe(false);
-      const bar = named(h.value, 'TopBar');
-      // The personal agent's button counts the two items waiting in alpha once alpha is listed.
-      expect(buttons(bar).map(text)).toEqual([
-        `${zh('projects.personalAgent')}${projects.length ? '2' : ''}`,
-        zh('projects.import.open'),
-      ]);
-      expect(named(bar, 'OpenProjectButton')).toBeTruthy();
-    },
-  );
+  ])('puts import and open in the bar and no filter %s', async (_name, projects) => {
+    mock.board = { ...mock.board, board: { cursor: 1, projects, project_briefs: [] } };
+    const h = mount(() => ProjectsScreen({ onOpenSettings() {}, onOpenProject() {} }));
+    await h.flush();
+    expect(nodes(h.value).some((n) => n.type === 'input')).toBe(false);
+    const bar = named(h.value, 'TopBar');
+    expect(buttons(bar).map(text)).toEqual([zh('projects.import.open')]);
+    expect(named(bar, 'OpenProjectButton')).toBeTruthy();
+  });
 
   const candidate = (name: string, extra: Partial<ImportCandidate> = {}): ImportCandidate => ({
     root: `/work/${name}`,

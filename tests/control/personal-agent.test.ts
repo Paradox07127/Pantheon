@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, expect, it, vi, type MockInstance } from 'vitest';
@@ -257,18 +257,6 @@ function request(projectId: string, approvalId: string): Approval {
   });
 }
 
-/** An event of the project that adds no waiting item. */
-const unrelated = (projectId: string) =>
-  f.store.transaction(() =>
-    f.store.event('note.unrelated', { id: 'unrelated', revision: 1 }, projectId, {}, ''),
-  );
-
-async function secondProject(): Promise<Project> {
-  const root = path.join(f.root, 'second');
-  mkdirSync(root);
-  return await f.call<Promise<Project>>('project.open', { name: 'second', roots: [root] });
-}
-
 const homeProject = () =>
   f.store.list<Project>('projects').find((each) => each.kind === 'personal');
 const homeNotes = (kind: LeadNote['kind']) => {
@@ -292,166 +280,6 @@ const homeTrackerTurns = () => {
 };
 const personalItemReads = () =>
   vi.mocked(needsYou).mock.calls.filter(([, principal]) => principal.role === 'personal').length;
-
-it('wakes once for new waiting items in two projects', async () => {
-  openPersonal();
-  const second = await secondProject();
-  request(f.project.id, 'first');
-  request(second.id, 'second');
-  await f.control.tick();
-  await f.control.tick();
-  expect(homeNotes('personal_attention').map((note) => note.text)).toEqual([
-    '2 new items wait for the user. In "fixture": permission (1). In "second": permission (1).',
-  ]);
-  const turns = homeTrackerTurns();
-  expect(turns).toHaveLength(1);
-  expect(turns[0]!.wake?.causes).toContain('personal_attention');
-  expect(turns[0]!.input).toContain('read needs_you');
-});
-
-it('writes no note when the waiting items are the ones it already woke for', async () => {
-  openPersonal();
-  const approval = request(f.project.id, 'first');
-  await f.control.tick();
-  clock += 31 * MINUTE;
-  unrelated(f.project.id);
-  await f.control.tick();
-  f.store.transaction(() => {
-    const next = f.store.update<Approval>(
-      'approvals',
-      { ...approval, input_summary: 'ls' },
-      approval.revision,
-    );
-    f.store.event('approval.updated', next, f.project.id, {}, '');
-  });
-  await f.control.tick();
-  expect(homeNotes('personal_attention')).toHaveLength(1);
-});
-
-it('holds a new item that comes within 30 minutes of a wake until the gap ends', async () => {
-  openPersonal();
-  request(f.project.id, 'first');
-  await f.control.tick();
-  clock += 10 * MINUTE;
-  request(f.project.id, 'second');
-  await f.control.tick();
-  expect(homeNotes('personal_attention')).toHaveLength(1);
-  clock += 20 * MINUTE;
-  await f.control.tick();
-  expect(homeNotes('personal_attention').map((note) => note.text)).toEqual([
-    '1 new item waits for the user. In "fixture": permission (1).',
-    '1 new item waits for the user. In "fixture": permission (1).',
-  ]);
-});
-
-it("writes no note in the app's quiet hours, and one with every new item after them", async () => {
-  f.call('app.settings.set', { quiet_hours: { from: '12:00', to: '13:00' } });
-  openPersonal();
-  request(f.project.id, 'first');
-  await f.control.tick();
-  clock += 30 * MINUTE;
-  request(f.project.id, 'second');
-  await f.control.tick();
-  expect(homeNotes('personal_attention')).toEqual([]);
-  clock += 31 * MINUTE;
-  await f.control.tick();
-  expect(homeNotes('personal_attention').map((note) => note.text)).toEqual([
-    '2 new items wait for the user. In "fixture": permission (2).',
-  ]);
-});
-
-it('writes no note once its weekly input tokens are spent', async () => {
-  const session = openPersonal();
-  await firstTurnSpec(session);
-  await eventually(
-    () =>
-      f.store
-        .list<SessionTurn>('session_turns')
-        .some((turn) => turn.session_id === session.id && turn.state === 'completed'),
-    () => f.control.tick(),
-  );
-  const turn = f.store
-    .list<SessionTurn>('session_turns')
-    .find((each) => each.session_id === session.id)!;
-  f.store.update<SessionTurn>(
-    'session_turns',
-    { ...turn, usage: { input_tokens: 150, output_tokens: 0 } },
-    turn.revision,
-  );
-  const { profile } = home();
-  f.call('agent.update', {
-    agent_id: profile.id,
-    revision: profile.revision,
-    contract: { weekly_input_tokens: 100 },
-  });
-  clock += MINUTE;
-  request(f.project.id, 'first');
-  await f.control.tick();
-  expect(homeNotes('personal_attention')).toEqual([]);
-  const capped = f.store.must<AgentProfile>('agents', profile.id);
-  f.call('agent.update', {
-    agent_id: capped.id,
-    revision: capped.revision,
-    contract: { weekly_input_tokens: 1000 },
-  });
-  await f.control.tick();
-  expect(homeNotes('personal_attention')).toHaveLength(1);
-});
-
-it('is not woken by the waiting items of its own home', async () => {
-  openPersonal();
-  request(homeProject()!.id, 'own');
-  await f.control.tick();
-  expect(homeNotes('personal_attention')).toEqual([]);
-  clock += MINUTE;
-  request(f.project.id, 'first');
-  await f.control.tick();
-  expect(homeNotes('personal_attention').map((note) => note.text)).toEqual([
-    '1 new item waits for the user. In "fixture": permission (1).',
-  ]);
-});
-
-it('reads no waiting items on ticks while nothing has happened', async () => {
-  openPersonal();
-  await f.control.tick();
-  const reads = personalItemReads();
-  expect(reads).toBeGreaterThan(0);
-  await f.control.tick();
-  await f.control.tick();
-  await f.control.tick();
-  expect(personalItemReads()).toBe(reads);
-  clock += MINUTE;
-  request(f.project.id, 'first');
-  await f.control.tick();
-  expect(personalItemReads()).toBe(reads + 1);
-});
-
-it('reads the waiting items at most once a minute while events keep coming', async () => {
-  openPersonal();
-  await f.control.tick();
-  const reads = personalItemReads();
-  for (let i = 0; i < 3; i++) {
-    unrelated(f.project.id);
-    await f.control.tick();
-  }
-  expect(personalItemReads()).toBe(reads);
-  clock += MINUTE;
-  unrelated(f.project.id);
-  await f.control.tick();
-  expect(personalItemReads()).toBe(reads + 1);
-});
-
-it('is not woken once its built-in key is revoked', async () => {
-  const session = openPersonal();
-  const profile = f.store.must<AgentProfile>('agents', session.resident!.agent_id!);
-  const key = f.store.must<PersonalKey>('personal_keys', profile.personal_key_id!);
-  f.call('personal.key.revoke', { key_id: key.id }, key.revision);
-  const reads = personalItemReads();
-  request(f.project.id, 'first');
-  await f.control.tick();
-  expect(homeNotes('personal_attention')).toEqual([]);
-  expect(personalItemReads()).toBe(reads);
-});
 
 /** Revokes the built-in key of the open personal agent and returns its profile. */
 function revokeBuiltIn(session: Session): AgentProfile {
@@ -510,14 +338,13 @@ it('runs the next turn of its open conversation on the new key', async () => {
   );
 });
 
-it('neither wakes nor gets a new key on ticks after the built-in key is revoked', async () => {
+it('gets no new key on ticks after the built-in key is revoked', async () => {
   const profile = revokeBuiltIn(openPersonal());
   request(f.project.id, 'first');
   await f.control.tick();
   clock += 31 * MINUTE;
   request(f.project.id, 'second');
   await f.control.tick();
-  expect(homeNotes('personal_attention')).toEqual([]);
   expect(f.store.must<AgentProfile>('agents', profile.id).personal_key_id).toBe(
     profile.personal_key_id,
   );

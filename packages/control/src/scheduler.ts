@@ -5,7 +5,6 @@ import { startTurn, stopConversations } from './session.js';
 import { isRuntimeHeld } from './runtime-status.js';
 import { fireDueTimers } from './timers.js';
 import { tickExternalSources } from './external-sources.js';
-import { tickExternalIntake } from './external-events.js';
 import {
   deliverPermissionAnswer,
   recordAnswerDelivery,
@@ -18,9 +17,9 @@ import { removeReviewDirectories } from './review-removal.js';
 import { startWorkspaceProvisioning } from './provisioning.js';
 import { tickChangeStories } from './change-story.js';
 import { tickProjectBaselines } from './baseline.js';
+import { tickSessions } from './session-tick.js';
 import { tickTaskTracking } from './task-tracking.js';
 import { tickSessionStalls } from './session-stall.js';
-import { tickPersonalAttention } from './personal-agent.js';
 import { readDispatchOpenings } from './task-dispatch.js';
 import { forgetRetrospectiveScan, recordRetrospectives } from './retrospective.js';
 
@@ -33,16 +32,15 @@ export async function tick(ctx: ControlContext): Promise<void> {
     await autoMergesRead(ctx);
     ctx.store.transaction(() => tickProjectBaselines(ctx));
     ctx.store.transaction(() => tickChangeStories(ctx));
-    tickExternalIntake(ctx);
     // The dispatch in the tracker's transaction opens sessions from these start points; awaited
     // only when there is git to read, so a tick with nothing to read does not yield here.
     const openings = readDispatchOpenings(ctx);
     if (openings) await openings;
     try {
       rollbackTransaction(ctx, () => {
+        tickSessions(ctx);
         tickTaskTracking(ctx);
         tickSessionStalls(ctx);
-        tickPersonalAttention(ctx);
         recordRetrospectives(ctx);
       });
     } catch (error) {

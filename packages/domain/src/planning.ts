@@ -10,6 +10,7 @@ export interface EnvironmentCheck extends Entity {
   cause:
     | { kind: 'user' }
     | { kind: 'baseline'; baseline_id: string; attempt: 1 | 2 }
+    // Disused: only checks of older databases have this cause.
     | { kind: 'signal'; issue_id: string };
   state: 'running' | 'passed' | 'failed' | 'inconclusive';
   reason_code?:

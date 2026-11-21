@@ -9,9 +9,9 @@ const composerShown = () =>
   );
 
 // Start away from the new session page.
-await page.click({ role: 'button', name: '项目看板', exact: true });
+await page.click({ role: 'button', name: '记忆', exact: true });
 await poll(async () => !(await composerShown()));
-check('对照组：在项目看板上看不到新会话输入框', !(await composerShown()));
+check('对照组：在记忆页上看不到新会话输入框', !(await composerShown()));
 
 const placed = await page.evaluate(`(() =>
   [...document.querySelectorAll('button[aria-label="新会话"]')]

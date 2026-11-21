@@ -50,8 +50,6 @@ const answerCommands = {
   milestone_accept: 'milestone.accept',
 } as const satisfies Record<PersonalAnswerKind, string>;
 
-const sendRequest = inputSchemas['request.send'].omit({ attachments: true });
-
 // The CLI does not depend on zod, so these build on the protocol's schemas: an empty strict object and the answer kinds.
 const answerDecision = querySchemas['projects.summary'].extend({
   kind: inputSchemas['app.settings.set'].shape.personal_answers
@@ -71,11 +69,6 @@ const answerDecision = querySchemas['projects.summary'].extend({
 });
 
 const commandTools = {
-  send_request: {
-    schema: sendRequest,
-    description:
-      "Send the user's request to a project's assistant, or with target to one of its sessions.",
-  },
   answer_decision: {
     schema: answerDecision,
     description:
@@ -83,7 +76,7 @@ const commandTools = {
   },
 } as const;
 
-/** The MCP server of a personal key: cross-project reads, requests and the decisions the user allowed. */
+/** The MCP server of a personal key: cross-project reads and the decisions the user allowed. */
 export async function createPersonalMcpServer(
   daemonUrl: string,
   token: string,
@@ -123,11 +116,7 @@ export async function createPersonalMcpServer(
         return { content: [{ type: 'text', text: JSON.stringify(result) }] };
       }
       let sent;
-      if (params.name === 'send_request') {
-        const parsed = sendRequest.safeParse(args);
-        if (!parsed.success) throw new CommandError('invalid_request', prettifyError(parsed.error));
-        sent = command(actor, 'request.send', parsed.data);
-      } else if (params.name === 'answer_decision') {
+      if (params.name === 'answer_decision') {
         const parsed = answerDecision.safeParse(args);
         if (!parsed.success) throw new CommandError('invalid_request', prettifyError(parsed.error));
         const input = answerInputs[parsed.data.kind].safeParse(parsed.data.input);

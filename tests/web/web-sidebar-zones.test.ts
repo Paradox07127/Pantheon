@@ -134,22 +134,13 @@ describe('sidebar zones', () => {
   it('keeps the project entries and the session list inside the current project', () => {
     const html = render({ sessions: [session('a', 'running')] });
     const project = section(html, side('currentProject'));
-    for (const entry of ['board', 'trace', 'memory'].map(screen)) expect(project).toContain(entry);
+    for (const entry of ['trace', 'memory'].map(screen)) expect(project).toContain(entry);
+    for (const gone of ['board', 'insights', 'automations'].map(screen))
+      expect(project).not.toContain(gone);
     expect(project).toContain(`<nav class="ss-list" aria-label="${screen('sessions')}"`);
     expect(project).toContain('title of a');
     expect(project).not.toContain(screen('settings'));
     expect(html).toContain(screen('settings'));
-  });
-
-  it('puts the engineering board right after the project board, open and folded', () => {
-    const project = section(render(), side('currentProject'));
-    expect(project).toMatch(
-      /项目看板<\/button><button type="button" class="sb-it"><svg[^>]*lucide-chart-line[^>]*>.*?<\/svg>工程看板<\/button>/,
-    );
-    const rail = render({ collapsed: true });
-    const at = (label: string) => rail.indexOf(`aria-label="${label}"`);
-    expect(at(screen('board'))).toBeLessThan(at(screen('insights')));
-    expect(at(screen('insights'))).toBeLessThan(at(screen('trace')));
   });
 
   it('leaves the theme and all projects out of the open sidebar', () => {
@@ -196,7 +187,6 @@ describe('sidebar zones', () => {
     const html = render({ collapsed: true });
     expect(html).toContain(`<aside class="sb sb-rail" aria-label="${side('navigation')}"`);
     for (const label of [
-      screen('board'),
       screen('trace'),
       screen('memory'),
       side('newSession'),
@@ -205,6 +195,8 @@ describe('sidebar zones', () => {
       side('connectionConnecting'),
     ])
       expect(html).toContain(`aria-label="${label}"`);
+    for (const gone of ['board', 'insights', 'automations'].map(screen))
+      expect(html).not.toContain(`aria-label="${gone}"`);
     expect(html).not.toContain(side('switchProject'));
   });
 });
@@ -265,13 +257,11 @@ describe('session list title row', () => {
     { ...session('d', 'waiting'), archived_at: '2026-01-02T00:00:00.000Z' },
   ];
 
-  it('counts the sessions that need you in a chip on the agents title, and puts new session and the group, sort and filter menu on the sessions title', () => {
+  it('counts the sessions that need you in a chip on the sessions title, and puts new session and the group, sort and filter menu after it', () => {
     const html = render({ sessions: waiting });
+    expect(html).not.toContain('>智能体<');
     expect(html).toMatch(
-      /<div class="sb-sh"><span>智能体<\/span><button type="button" class="sb-wait" aria-pressed="false" aria-label="只看等你的 2 个会话">2<\/button><button[^>]*aria-label="新建智能体"[^>]*>.*?<\/button><\/div>/,
-    );
-    expect(html).toMatch(
-      /<div class="ss-zh"><span>会话<\/span><button[^>]*aria-label="新会话"[^>]*><svg[^>]*>.*?<\/svg><span class="kbd hk" aria-hidden="true">⌘N<\/span><\/button><button[^>]*aria-label="分组、排序与筛选"[^>]*>.*?<\/button><\/div>/,
+      /<div class="ss-zh"><span>会话<\/span><button type="button" class="sb-wait" aria-pressed="false" aria-label="只看等你的 2 个会话">2<\/button><button[^>]*aria-label="新会话"[^>]*><svg[^>]*>.*?<\/svg><span class="kbd hk" aria-hidden="true">⌘N<\/span><\/button><button[^>]*aria-label="分组、排序与筛选"[^>]*>.*?<\/button><\/div>/,
     );
   });
 

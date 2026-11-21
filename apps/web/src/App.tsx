@@ -40,7 +40,7 @@ import {
   type Look,
 } from './data/layout';
 import { failureText, reasonText, useNeedsYou } from './data/needs-you';
-import { crossProjectWaiting, personalHomeOf, personalSessionOf } from './data/personal-agent';
+import { crossProjectWaiting } from './data/personal-agent';
 import { visibleProjects } from './data/projects';
 import { applySessionDisplay, useSessionDisplay } from './data/session-display';
 import { useSystemReducedMotion, windowColours } from './data/theme';
@@ -51,16 +51,13 @@ import { useHeldModifier } from './lib/held-keys';
 import { listText } from './lib/list-text';
 import { runShortcut, shortcutKeys, SHORTCUTS, useShortcut } from './lib/shortcuts';
 import { SCREEN_NAMES } from './screens';
-import { AutomationsScreen } from './screens/automations/AutomationsScreen';
-import { BoardScreen, PanelBoundary } from './screens/board/BoardScreen';
+import { PanelBoundary } from './screens/board/BoardScreen';
 import { startBaseline } from './screens/board/project-setup';
-import { InsightsScreen } from './screens/insights/InsightsScreen';
 import { MemoryScreen } from './screens/memory/MemoryScreen';
 import { ProjectsScreen } from './screens/projects/ProjectsScreen';
 import { useAppDisplay } from './screens/sessions/app-display';
 import { answerBrowser } from './screens/sessions/BrowserPanel';
 import { groupWorkbenchSessions, sessionRow } from './screens/sessions/model';
-import { PersonalAgentScreen } from './screens/sessions/PersonalAgentScreen';
 import { SessionsScreen } from './screens/sessions/SessionsScreen';
 import { SettingsDialog } from './screens/settings/SettingsDialog';
 import { AddProject } from './screens/projects/AddProject';
@@ -74,16 +71,7 @@ import { shownWindow } from './shell/window-kind';
 import { resolveTheme, useShell, type Screen } from './store';
 
 const NO_PROJECTS: readonly never[] = [];
-const KEPT: readonly Screen[] = [
-  'sessions',
-  'board',
-  'insights',
-  'trace',
-  'memory',
-  'automations',
-  'projects',
-  'personal',
-];
+const KEPT: readonly Screen[] = ['sessions', 'trace', 'memory', 'projects'];
 
 /** Whether the screen belongs to a project that is not there. */
 export function showsMissingProject(screen: Screen, current: string | null): boolean {
@@ -357,9 +345,6 @@ function MainWindow({ kind }: { kind: 'main' | 'project' }) {
     [allNeeds.items, projects],
   );
   const list = useSessionList(current);
-  const home = personalHomeOf(allProjects);
-  const homeList = useSessionList(home?.id ?? null);
-  const personal = home ? personalSessionOf(homeList.data ?? []) : null;
   const layout = useSidebarLayout();
   const look = useLook();
   const [palette, setPalette] = useState(false);
@@ -425,12 +410,6 @@ function MainWindow({ kind }: { kind: 'main' | 'project' }) {
               resetLayout,
             ),
             ...(current
-              ? [page('screen-board', SCREEN_NAMES.board, () => setScreen('board'))]
-              : []),
-            ...(current
-              ? [page('screen-insights', SCREEN_NAMES.insights, () => setScreen('insights'))]
-              : []),
-            ...(current
               ? [
                   action(
                     'build-baseline',
@@ -453,15 +432,6 @@ function MainWindow({ kind }: { kind: 'main' | 'project' }) {
               : []),
             ...(current
               ? [page('screen-memory', SCREEN_NAMES.memory, () => setScreen('memory'))]
-              : []),
-            ...(current
-              ? [
-                  page(
-                    'screen-automations',
-                    t({ id: 'app.palette.automations', defaultMessage: 'Open automations' }),
-                    () => setScreen('automations'),
-                  ),
-                ]
               : []),
             ...(current
               ? [
@@ -516,6 +486,10 @@ function MainWindow({ kind }: { kind: 'main' | 'project' }) {
   useEffect(() => {
     if (loaded && showsMissingProject(screen, current)) setScreen('projects');
   }, [loaded, screen, current]);
+  // A screen this window does not draw, which an older state may still hold, leaves for the sessions.
+  useEffect(() => {
+    if (!KEPT.includes(screen)) setScreen('sessions');
+  }, [screen]);
 
   // Another window asks this one to show a place, or the menu to open the project in a window.
   useEffect(
@@ -580,7 +554,6 @@ function MainWindow({ kind }: { kind: 'main' | 'project' }) {
         onChooseProject={openProject}
         list={list}
         allNeeds={allNeeds}
-        personal={personal}
       />
       <div className="app-main" ref={main}>
         <RuntimeBanner />
@@ -590,31 +563,12 @@ function MainWindow({ kind }: { kind: 'main' | 'project' }) {
             <PanelBoundary model={s === screen}>
               {s === 'sessions' ? (
                 <SessionsScreen projectId={current} needs={needs} list={list} />
-              ) : s === 'board' ? (
-                <BoardScreen projectId={current} onOpenSession={openSession} />
-              ) : s === 'insights' ? (
-                <InsightsScreen projectId={current} onOpenSession={openSession} />
               ) : s === 'trace' ? (
                 <TraceScreen projectId={current} sessions={list.data} />
               ) : s === 'memory' ? (
                 <MemoryScreen projectId={current} />
-              ) : s === 'automations' ? (
-                <AutomationsScreen projectId={current} />
-              ) : s === 'personal' ? (
-                <PersonalAgentScreen
-                  // Every project's needs hold the home's, so they take no read of their own.
-                  needs={{
-                    ...allNeeds,
-                    items: allNeeds.items?.filter((i) => i.project_id === home?.id) ?? null,
-                  }}
-                  list={homeList}
-                />
               ) : (
-                <ProjectsScreen
-                  onOpenSettings={openSettings}
-                  onOpenProject={openProject}
-                  personal={personal}
-                />
+                <ProjectsScreen onOpenSettings={openSettings} onOpenProject={openProject} />
               )}
             </PanelBoundary>
           </Activity>

@@ -43,7 +43,7 @@ import { buildTranscript } from '@/data/transcript';
 import { SessionListRow, SessionRowButton } from '@/screens/sessions/SessionRow';
 import { ThreadTurn } from '@/screens/sessions/Thread';
 import { Items } from '@/screens/sessions/items';
-import { WorkerStrip, workerCountsText } from '@/screens/sessions/WorkerStrip';
+import { WorkerStrip } from '@/screens/sessions/WorkerStrip';
 
 const AT = '2026-11-16T10:00:00.000Z';
 const session = (id: string, extra: Partial<WorkbenchSession> = {}): WorkbenchSession => ({
@@ -91,7 +91,7 @@ beforeEach(() => {
     refresh() {},
   };
   mock.shell = {
-    screen: 'board',
+    screen: 'sessions',
     sessionId: null,
     sessionGroup: null,
     renaming: null,
@@ -140,77 +140,27 @@ const order = (h: HookHost<any>) =>
   nodes(h.value).flatMap((n) =>
     n.type === SessionListRow ? [n.props.session.id as string] : (residentName(n) ?? []),
   );
-const residentRow = (h: HookHost<any>, name: string) =>
-  nodes(h.value).find((n) => residentName(n) === name)!;
 
-describe('resident zone', () => {
-  it('lists Assistant then Triage above every session, also before either is opened', () => {
-    const list = [
-      session('direct', { last_activity_at: '2026-11-16T12:00:00.000Z' }),
-      resident('res-triage', 'triage'),
+describe('sidebar without a resident zone', () => {
+  it('lists workers and the user’s own sessions under Sessions, with no row for a resident or an agent', () => {
+    agentMock.agents = [
+      agent('agent-assistant', 'assistant'),
+      agent('agent-ideas', 'ideas', { name: 'Idea box' }),
     ];
-    expect(order(sidebar(list))).toEqual([ASSISTANT, TRIAGE, 'direct']);
-  });
-
-  it('opens a resident that does not exist yet through resident.open and shows it', async () => {
-    const h = sidebar([]);
-    residentRow(h, ASSISTANT).props.onClick();
-    await h.flush();
-    expect(runCommand.mock.calls).toEqual([
-      ['resident.open', { project_id: 'alpha', kind: 'assistant' }, null],
-    ]);
-    expect(mock.shell.openSession).toHaveBeenCalledWith('new-assistant');
-  });
-
-  it('lists workers and the user’s own sessions under Sessions, not under the resident row', () => {
     const h = sidebar([
       resident('res-assistant', 'assistant'),
+      resident('res-triage', 'triage'),
       worker('w-run', 'a', { state: 'running' }),
       session('mine'),
     ]);
-    expect(order(h)).toEqual([ASSISTANT, TRIAGE, 'w-run', 'mine']);
-    const row = residentRow(h, ASSISTANT);
-    expect(nodes(row.props.children).some((n) => n.type === SessionListRow)).toBe(false);
+    expect(order(h)).toEqual(['w-run', 'mine']);
+    expect(nodes(h.value).filter((n) => n.props.role === 'group')).toEqual([]);
+    expect(nodes(h.value).some((n) => text(n) === 'Idea box')).toBe(false);
     const titles = nodes(h.value).filter(
       (n) => n.type === 'span' && n.props.children === zh('app.screenName.sessions'),
     );
     expect(titles).toHaveLength(1);
-  });
-
-  it('counts the resident’s running, awaiting review and gate failed workers on its row', () => {
-    const h = sidebar([
-      resident('res-assistant', 'assistant'),
-      worker('w-run', 'a', { state: 'running' }),
-      worker('w-ready', 'a', { state: 'ready' }),
-      worker('w-gate', 'b', { gate: { state: 'failed', passed: 1, failed: 1, running: 0 } }),
-      worker('w-merged', 'b', { state: 'merged' }),
-    ]);
-    expect(residentRow(h, ASSISTANT).props['aria-label']).toContain(
-      workerCountsText({ running: 1, review: 1, failed: 1 }),
-    );
-  });
-
-  it('lists the agents agent.list returns without the archived ones, and opens a not started one by its id', async () => {
-    agentMock.agents = [
-      agent('agent-ideas', 'ideas', { name: 'Idea box', created_at: 3 }),
-      agent('agent-triage', 'triage', { created_at: 1 }),
-      agent('agent-old', 'custom', { name: 'Release notes', created_at: 2, archived_at: 5 }),
-      agent('agent-assistant', 'assistant', { created_at: 1 }),
-    ];
-    const h = sidebar([resident('res-assistant', 'assistant')]);
-    const rows = agentRows(h);
-    expect(rows.map(rowName)).toEqual([
-      ASSISTANT,
-      TRIAGE,
-      'Idea box',
-      zh('app.screenName.automations'),
-    ]);
-    const ideas = rows[2]!;
-    expect(ideas.props['aria-label']).toContain(zh('components.sidebar.residentNotStarted'));
-    ideas.props.onClick();
-    await h.flush();
-    expect(runCommand.mock.calls).toEqual([['resident.open', { agent_id: 'agent-ideas' }, null]]);
-    expect(mock.shell.openSession).toHaveBeenCalledWith('new-assistant');
+    expect(runCommand).not.toHaveBeenCalled();
   });
 });
 
@@ -229,17 +179,6 @@ const agent = (id: string, template: string, extra: Record<string, unknown> = {}
   created_at: 1,
   ...extra,
 });
-/** The rows of the Agents zone, top to bottom. */
-const agentRows = (h: HookHost<any>) => {
-  const zone = nodes(h.value).find(
-    (n) => n.props.role === 'group' && n.props['aria-label'] === zh('components.sidebar.residents'),
-  )!;
-  return nodes(zone.props.children).filter(
-    (n) => n.type === 'button' && typeof n.props['aria-label'] === 'string',
-  );
-};
-const rowName = (n: ReturnType<typeof nodes>[number]) =>
-  String(n.props['aria-label']).split(zh('sessions.screen.separator'))[0];
 /** The control a visible label names, through its htmlFor. */
 const labelled = (tree: unknown, name: string) => {
   const label = nodes(tree as never).find((n) => n.type === 'label' && text(n) === name)!;
@@ -712,15 +651,9 @@ describe('type and runtime filters', () => {
     const h = sidebar(LIST);
     for (const type of ['typeDirect', 'typeReview'])
       pick(h, zh(`components.sidebar.${type}`), false);
-    expect(order(h)).toEqual([ASSISTANT, TRIAGE, 'w-claude', 'w-codex']);
+    expect(order(h)).toEqual(['w-claude', 'w-codex']);
     unmountAll();
-    expect(order(sidebar(LIST))).toEqual([ASSISTANT, TRIAGE, 'w-claude', 'w-codex']);
-  });
-
-  it('keeps the agents when their runtime is unchecked, since the menu filters only the sessions', () => {
-    const h = sidebar(LIST);
-    pick(h, runtimeName('claude'), false);
-    expect(order(h)).toEqual([ASSISTANT, TRIAGE, 'w-codex']);
+    expect(order(sidebar(LIST))).toEqual(['w-claude', 'w-codex']);
   });
 
   it('leaves out the sessions of an unchecked runtime, and still after a remount', () => {

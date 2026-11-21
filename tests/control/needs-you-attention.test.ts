@@ -3,6 +3,7 @@ import path from 'node:path';
 import { expect, it, onTestFinished, vi } from 'vitest';
 import {
   hash,
+  type Approval,
   type BoardPlan,
   type Principal,
   type Project,
@@ -669,6 +670,36 @@ it('records one event when a merge becomes stuck, and another after it progresse
   advance(31 * 60_000);
   await f.control.tick();
   expect(stuck()).toHaveLength(2);
+});
+
+it('escalates an unanswered permission request and records a stuck merge in a project without a plan', async () => {
+  const f = await workbenchFixture();
+  const session = await idleSession(f);
+  const advance = skewedClock(f);
+  expect(f.store.list<BoardPlan>('board_plans')).toEqual([]);
+  f.store.insert<Approval>('approvals', {
+    id: 'unanswered-request',
+    revision: 1,
+    project_id: f.project.id,
+    kind: 'permission',
+    session_id: session.id,
+    request_id: 'unanswered-request',
+    tool: 'mcp__docs__search',
+    input_hash: 'a'.repeat(64),
+    decider: 'user',
+    state: 'pending',
+    created_at: f.store.now(),
+  });
+  const merging = patch(f, session.id, { merge: { state: 'running' } });
+  f.store.event('session.merge_started', merging, merging.project_id, {});
+  const recorded = (kind: string) =>
+    f.store.events(0, undefined, 10000).filter((event) => event.kind === kind);
+  advance(31 * 60_000);
+  await f.control.tick();
+  expect(recorded('approval.escalated').map((event) => event.aggregate_id)).toEqual([
+    'unanswered-request',
+  ]);
+  expect(recorded('session.merge_stuck').map((event) => event.aggregate_id)).toEqual([session.id]);
 });
 
 it('records why a continuation is skipped and lists a session past the continuation limit', async () => {

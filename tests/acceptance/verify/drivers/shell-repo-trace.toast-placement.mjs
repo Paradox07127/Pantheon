@@ -9,7 +9,7 @@ const WAITING = `verify-toast-${Date.now()}`;
 
 // A request shows as a toast only while another project is in view.
 await newProject(`${WAITING}-view`, { 'README.md': '# toast\n' });
-await page.click({ role: 'button', name: '项目看板', exact: true });
+await page.click({ role: 'button', name: '记忆', exact: true });
 
 // A permission request in boot's project shows as a toast and counts in the title bar.
 await call('session.create', {

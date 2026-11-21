@@ -167,19 +167,6 @@ describe('menu actions in the desktop app', () => {
     expect(mock.shell.openSettings).toHaveBeenCalledWith(null);
   });
 
-  it('opens the personal agent for the tray’s personal agent row', async () => {
-    const command = vi.fn(async () => ({ ok: true, value: { id: 'personal-1' } }));
-    stubWindow({ ...desktop, command });
-    mock.board.refresh = () => {};
-    mountShell('board');
-    mock.shell.openPersonal = vi.fn();
-    menu('personal-agent');
-    await vi.waitFor(() => expect(mock.shell.openPersonal).toHaveBeenCalledWith('personal-1'));
-    expect(command).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'resident.open', input: { kind: 'personal' } }),
-    );
-  });
-
   it('stops listening once unmounted', () => {
     mountShell('board');
     unmountAll();

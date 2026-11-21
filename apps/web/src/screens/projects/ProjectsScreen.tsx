@@ -21,13 +21,12 @@ import { Clip } from '../../components/Clip';
 import { NeedsPopover, SessionsPopover } from '../../components/NeedsPopover';
 import { PathText } from '../../components/PathText';
 import { ProjectMonogram } from '../../components/ProjectMonogram';
-import { SessionStateIcon, StateGlyph, type GlyphName } from '../../components/SessionStateIcon';
+import { StateGlyph, type GlyphName } from '../../components/SessionStateIcon';
 import { Skeleton } from '../../components/Skeleton';
 import { Tip } from '../../components/Tip';
 import { TopBar } from '../../components/TopBar';
 import { blocksText, decisionText } from '../../data/attention';
 import { useBoard } from '../../data/board';
-import { pickBoardPage } from '../../data/board-page';
 import { useCurrentProject } from '../../data/current-project';
 import { useImportCandidates } from '../../data/import';
 import {
@@ -37,11 +36,6 @@ import {
   useNow,
   type NeedsYouItem,
 } from '../../data/needs-you';
-import {
-  crossProjectWaiting,
-  openPersonalAgent,
-  usePersonalOpening,
-} from '../../data/personal-agent';
 import {
   findProjectByRoots,
   removeProject,
@@ -128,15 +122,9 @@ interface ProjectsScreenProps {
   onOpenSettings: (projectId: string) => void;
   /** Makes the project current and shows its sessions. */
   onOpenProject: (projectId: string) => void;
-  /** The personal agent's open session; absent until it is first opened. */
-  personal?: WorkbenchSession | null;
 }
 
-export function ProjectsScreen({
-  onOpenSettings,
-  onOpenProject,
-  personal = null,
-}: ProjectsScreenProps) {
+export function ProjectsScreen({ onOpenSettings, onOpenProject }: ProjectsScreenProps) {
   const board = useBoard((s) => s.board);
   const summary = useProjectsSummary();
   const needs = useNeedsYou(null);
@@ -147,17 +135,11 @@ export function ProjectsScreen({
   // An import's failures stay on screen after the projects it did open appear.
   const [welcomeHeld, setWelcomeHeld] = useState(false);
   const now = useNow(30_000);
-  const personalOpening = usePersonalOpening();
   const [all, setAll] = useState(false);
   // Taken once per opening when both reads are in, so the rows keep their places while it is open.
   const held = useRef<string[] | null>(null);
 
   const projects = board ? visibleProjects(board.projects) : [];
-  const personalWaits = crossProjectWaiting(
-    needs.items ?? [],
-    projects.map((p) => p.id),
-  ).length;
-  const personalName = t({ id: 'projects.personalAgent', defaultMessage: 'Personal agent' });
   const summaries = summary.data ?? [];
   const needItems = needs.items ?? [];
   const sorted = sortProjects(projects, summaries);
@@ -183,41 +165,6 @@ export function ProjectsScreen({
     <div className="tb-pg">
       <TopBar title={SCREEN_NAMES.projects} count={board ? projects.length : undefined}>
         <div className="tb-end">
-          <button
-            type="button"
-            className="btn"
-            aria-label={
-              personalWaits > 0
-                ? [
-                    personalName,
-                    t(
-                      {
-                        id: 'projects.personalAgentWaits',
-                        defaultMessage:
-                          '{count, plural, one {# thing waits across projects} other {# things wait across projects}}',
-                      },
-                      { count: personalWaits },
-                    ),
-                  ].join(t({ id: 'sessions.screen.separator', defaultMessage: ', ' }))
-                : personalName
-            }
-            aria-busy={personalOpening || undefined}
-            onClick={() => void openPersonalAgent()}
-          >
-            {personalOpening ? (
-              <StateGlyph name="starting" />
-            ) : personal ? (
-              <SessionStateIcon session={personal} place="list" />
-            ) : (
-              <StateGlyph name="idle" />
-            )}
-            {personalName}
-            {personalWaits > 0 && (
-              <span className="ss-rct" aria-hidden="true">
-                {personalWaits}
-              </span>
-            )}
-          </button>
           <button type="button" className="btn" onClick={() => setImporting(true)}>
             <Import className="ic-sm" aria-hidden="true" />
             {t({ id: 'projects.import.open', defaultMessage: 'Import' })}
@@ -431,10 +378,10 @@ export function SummaryPanel({
 }
 
 // The project is chosen before the one navigation, which would drop a navigation still owed.
-function openBoard(projectId: string) {
+function openSessions(projectId: string) {
   useCurrentProject.getState().choose(projectId);
   useShell.getState().followFirstSession();
-  useShell.getState().setScreen('board');
+  useShell.getState().setScreen('sessions');
 }
 
 /** Up and down move the focus from a row's open button to the one above or below it. */
@@ -554,7 +501,7 @@ export function ProjectRow(props: {
         <ProjectMonogram id={project.id} name={project.name} />
       </span>
       <span className="pr-name">
-        <button type="button" className="pr-open" onClick={() => openBoard(project.id)}>
+        <button type="button" className="pr-open" onClick={() => openSessions(project.id)}>
           {project.name}
         </button>
         {project.roots[0] && <PathText path={project.roots[0]} className="pr-path mono" />}
@@ -750,10 +697,7 @@ export function ProjectRow(props: {
             { id: 'projects.row.brief', defaultMessage: 'Since you left: {text}' },
             { text: summary.brief },
           )}
-          onClick={() => {
-            pickBoardPage(project.id, 'overview');
-            openBoard(project.id);
-          }}
+          onClick={() => openSessions(project.id)}
         >
           <Clip text={summary.brief} />
         </button>

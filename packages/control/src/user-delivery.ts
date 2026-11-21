@@ -1,17 +1,11 @@
-import {
-  id,
-  type AgentMessage,
-  type AgentProfile,
-  type Session,
-  type SignalIssue,
-} from '@pantheon/domain';
+import { id, type AgentMessage, type AgentProfile, type Session } from '@pantheon/domain';
 import { wakeAgent } from './agent-always-on.js';
-import { messageDelivery, urgentIssue } from './agent-contract.js';
+import { messageDelivery } from './agent-contract.js';
 import { ensureAgents } from './agents.js';
 import type { ControlContext } from './context.js';
 
 type Sender = { profile: AgentProfile; session: Session };
-type MessageInput = Pick<AgentMessage, 'text' | 'urgency'> & { signal_issue_id?: string };
+type MessageInput = Pick<AgentMessage, 'text' | 'urgency'>;
 
 const insertMessage = (
   ctx: ControlContext,
@@ -55,15 +49,6 @@ export function deliverToUser(
   return message;
 }
 
-/** True when the message cites a signal issue of the project that the project's urgent list names. */
-function urgent(ctx: ControlContext, projectId: string, input: MessageInput): boolean {
-  const issue =
-    input.signal_issue_id !== undefined
-      ? ctx.store.get<SignalIssue>('signal_issues', input.signal_issue_id)
-      : undefined;
-  return urgentIssue(ctx, projectId, issue);
-}
-
 /**
  * Delivers the main agent's message, or an urgent one, to the user; the message of any other
  * agent goes to the main agent, which decides what the user hears.
@@ -75,7 +60,7 @@ export function tellUser(
   cause: string,
 ): AgentMessage {
   const projectId = from.session.project_id;
-  const urgentMessage = urgent(ctx, projectId, input);
+  const urgentMessage = input.urgency === 'high';
   if (from.profile.template === 'assistant' || urgentMessage)
     return deliverToUser(ctx, from, input, urgentMessage, cause);
   const assistant = ensureAgents(ctx, projectId).find((agent) => agent.template === 'assistant')!;

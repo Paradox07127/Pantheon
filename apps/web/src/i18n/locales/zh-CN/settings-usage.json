@@ -1,7 +1,6 @@
 {
   "settings.usage.budgetAndQuota": "预算与额度",
   "settings.usage.noTarget": "不设",
-  "settings.usage.openBoard": "看用量",
   "settings.usage.percent": "{param}要在 0 到 100 之间",
   "settings.usage.pin": "钉住{param}",
   "settings.usage.positive": "{param}要是正整数",

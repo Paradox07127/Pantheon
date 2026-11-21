@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import type { EntriesFilters } from '../screens/memory/EntriesBar';
 import { useShell } from '../store';
-import { askMilestone, pickBoardPage } from './board-page';
 import { useCurrentProject } from './current-project';
 
 interface MemoryViewState {
@@ -34,9 +33,7 @@ export function openPlanMemory(projectId: string): void {
   useShell.getState().openProjectMemory(projectId, 'entries');
 }
 
-/** Opens the project board's overview with the plan's milestone unfolded. */
-export function openPlanMilestone(projectId: string, milestoneId: string): void {
-  askMilestone(projectId, milestoneId);
-  pickBoardPage(projectId, 'overview');
-  useShell.getState().openProjectBoard(projectId);
+/** Opens the sessions of the project whose plan milestone an entry came from. */
+export function openPlanMilestone(projectId: string): void {
+  useShell.getState().openProjectSessions(projectId);
 }

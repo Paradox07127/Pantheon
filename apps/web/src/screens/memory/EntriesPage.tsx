@@ -386,7 +386,7 @@ export function EntriesPage({ projectId }: { projectId: string }) {
         onOpen={select}
         // The entry carries the tag, so it stays in the list and stays open.
         onTag={(tag) => setFilters({ ...filters, tag: [tag] })}
-        onOpenMilestone={(milestoneId) => openPlanMilestone(projectId, milestoneId)}
+        onOpenMilestone={() => openPlanMilestone(projectId)}
         onClose={() => select(null)}
       />
     );

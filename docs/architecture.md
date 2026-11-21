@@ -73,7 +73,6 @@ apps/daemon ──> packages/control ─> packages/adapters, packages/store, pac
 - 调度与恢复:`scheduler.ts`、`timers.ts`、`recovery.ts`、`continuation.ts`(daemon 驱动会话的续跑：重启打断后、用量额度重置后)
 - 本机工具与 GitHub:`local-command.ts`(跑本机的连接检查和 `gh` 命令)、`connections-status.ts`(GitHub、Hugging Face、Cloudflare 的登录)、`mcp-status.ts`(MCP server 的连接状态与重连、`mcp.app.resource` 读 MCP Apps 界面 HTML、`mcp.app.tool_call` 让界面经 Codex 调可见性含 app 的工具)、`github.ts`(`github.items`、消息里 PR 和 issue 引用的正文、`github.pr.create`)、`browser.ts`(`BrowserRelay`:会话的浏览器工具调用交给连着的桌面窗口，等它回答)、`wsl-mount.ts`(WSL 里 Windows 盘的挂载根，取 `/etc/wsl.conf` 的 `[automount]`;`git.ts` 和 `git-config-cache.ts` 靠它认出挂载盘上的路径)
 - 外部事件:`external-sources.ts`(来源接口、到期轮询、每个来源的状态；来源由 `ControlOptions.externalSources` 注册)、`github-notifications.ts`(GitHub 来源：通知的条件轮询，只为设了 `external_events` 的项目跑；经 `gh api`)、`external-events.ts`(来源报来的事件落 `external_events` 表、按发生去重、按触发者准入、同一主体静默后成组交出；`tickExternalIntake` 把每组写成项目常驻 Triage 会话计划里的一条 note,按项目档位决定该主体是否等用户批准；`external.approve` 按主体放行)
-- 信号:`signals.ts`(`recordSignal` 把事件归并成按指纹去重的 `signal_issues`,按来源规则定优先级:interrupt 30 秒成组、每个 agent 每小时最多 6 次，digest 每小时一次，record 不送达；同一状态 4 小时内不重发；送给 `listens` 订阅了该来源的常驻 agent;`signal.list`、`signal.mute`、`signal.resolve`)、`signal-sources.ts`(门禁失败、不稳定测试、app 错误、会话失败、轨迹发现几个来源的接入，以及会话集中失败时的压制)、`signal-normalize.ts`(错误文本归一和指纹)
 
 
 ## web

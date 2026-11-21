@@ -242,14 +242,6 @@ export const SHORTCUTS = [
     scope: 'app',
   },
   {
-    id: 'go-board',
-    keys: 'G B',
-    get label() {
-      return t({ id: 'lib.shortcuts.label.goBoard', defaultMessage: 'Go to the project board' });
-    },
-    scope: 'app',
-  },
-  {
     id: 'open-project',
     keys: 'Meta+O',
     get label() {

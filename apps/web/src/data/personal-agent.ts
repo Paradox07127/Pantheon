@@ -2,11 +2,9 @@ import { useEffect, useSyncExternalStore } from 'react';
 import type { AgentProfile, PersonalKey } from '@pantheon/domain';
 import type { BoardSnapshot, WorkbenchSession } from '@pantheon/protocol';
 import { toast } from '../components/Toast';
-import { useShell } from '../store';
 import { useBoard } from './board';
 import { runCommand } from './commands';
 import { failureText, type NeedsYouItem } from './needs-you';
-import type { DaemonEvent } from './sync';
 import type { ToolItem } from './transcript';
 import { useQuery } from './workbench-sessions';
 
@@ -32,70 +30,6 @@ export function crossProjectWaiting(
   visibleIds: readonly string[],
 ): NeedsYouItem[] {
   return items.filter((item) => visibleIds.includes(item.project_id));
-}
-
-/**
- * The first line of the newest completed turn's reply in the home and when it came, from the
- * events already received; null when they hold none.
- */
-export function latestReply(
-  board: Pick<BoardSnapshot, 'session_turns'>,
-  events: readonly DaemonEvent[],
-  homeId: string,
-): { text: string; at: number } | null {
-  const done = new Set(
-    board.session_turns
-      .filter((turn) => turn.project_id === homeId && turn.state === 'completed')
-      .map((turn) => turn.id),
-  );
-  const replies = new Map<string, { text: string; at: number }>();
-  for (const event of events) {
-    const { turn_id, text } = (event.payload ?? {}) as { turn_id?: unknown; text?: unknown };
-    if (event.kind !== 'agent.message.delta' || typeof turn_id !== 'string' || !done.has(turn_id))
-      continue;
-    replies.set(turn_id, {
-      text: (replies.get(turn_id)?.text ?? '') + (typeof text === 'string' ? text : ''),
-      at: event.created_at,
-    });
-  }
-  const newest = [...replies.values()]
-    .map((reply) => ({ text: reply.text.trim().split('\n')[0]!, at: reply.at }))
-    .filter((reply) => reply.text)
-    .sort((a, b) => b.at - a.at)[0];
-  return newest ?? null;
-}
-
-let opening = false;
-const openingListeners = new Set<() => void>();
-const setOpening = (now: boolean) => {
-  opening = now;
-  openingListeners.forEach((listener) => listener());
-};
-
-/** Whether the personal agent's resident.open is still out. */
-export function usePersonalOpening(): boolean {
-  return useSyncExternalStore(
-    (listener) => {
-      openingListeners.add(listener);
-      return () => void openingListeners.delete(listener);
-    },
-    () => opening,
-    () => opening,
-  );
-}
-
-/** Opens the personal agent's conversation once the daemon returns it; the first open creates its home. */
-export async function openPersonalAgent(): Promise<void> {
-  if (opening) return;
-  setOpening(true);
-  const result = await runCommand('resident.open', { kind: 'personal' }, null);
-  setOpening(false);
-  if (!result.ok) {
-    toast({ title: failureText(result.error), kind: 'failure' });
-    return;
-  }
-  const id = (result.value as { id?: unknown } | null)?.id;
-  if (typeof id === 'string') useShell.getState().openPersonal(id);
 }
 
 let profileShown = false;

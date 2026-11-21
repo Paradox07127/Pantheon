@@ -1240,7 +1240,7 @@ export interface ExternalEvent {
 /** A kind of system signal the app records and an agent may listen to. */
 export type SignalSource =
   'gate_failures' | 'flaky_tests' | 'app_errors' | 'session_failures' | 'trace_findings';
-/** The signals of one source with one fingerprint, grouped into one issue. */
+/** Disused: a signal_issues row of an older database; nothing records issues any more. */
 export interface SignalIssue extends Entity {
   project_id: string;
   source: SignalSource;

@@ -61,14 +61,7 @@ const THEME_KEY = 'pantheon.theme';
 // Project id → ProjectPlace.
 const PLACES_KEY = 'pantheon.projectPlaces';
 const HISTORY_LIMIT = 50;
-const PROJECT_SCREENS: readonly string[] = [
-  'sessions',
-  'board',
-  'insights',
-  'trace',
-  'memory',
-  'automations',
-];
+const PROJECT_SCREENS: readonly string[] = ['sessions', 'trace', 'memory'];
 
 /** The stored theme; anything unreadable follows the system. */
 export function readTheme(storage?: Pick<Storage, 'getItem'>): Theme {
@@ -85,9 +78,9 @@ export function resolveTheme(theme: Theme, prefersDark: boolean): 'light' | 'dar
   return prefersDark ? 'dark' : 'light';
 }
 
-/** The board when a project was chosen before, else the project picker. */
+/** The sessions when a project was chosen before, else the project picker. */
 export function startScreen(storedProjectId: string | null): Screen {
-  return storedProjectId ? 'board' : 'projects';
+  return storedProjectId ? 'sessions' : 'projects';
 }
 
 function readPlaces(): Record<string, ProjectPlace> {
@@ -111,7 +104,7 @@ function readPlace(projectId: string): ProjectPlace {
   const place = readPlaces()[projectId];
   const sessionId = typeof place?.sessionId === 'string' ? place.sessionId : null;
   return {
-    screen: PROJECT_SCREENS.includes(place?.screen as string) ? place!.screen : 'board',
+    screen: PROJECT_SCREENS.includes(place?.screen as string) ? place!.screen : 'sessions',
     sessionId,
     sessionTask: sessionId === '' && isTask(place?.sessionTask) ? place.sessionTask : null,
   };
@@ -121,7 +114,7 @@ function writePlace(projectId: string, place: ProjectPlace) {
   try {
     localStorage.setItem(PLACES_KEY, JSON.stringify({ ...readPlaces(), [projectId]: place }));
   } catch {
-    // The switch then lands on the board, as with no memory.
+    // The switch then lands on the sessions, as with no memory.
   }
 }
 
@@ -198,8 +191,8 @@ interface ShellState {
   openProject: (projectId: string) => void;
   // Makes the project current and opens one of its sessions, in one switch.
   openProjectSession: (projectId: string, sessionId: string) => void;
-  // Makes the project current and opens its board, whose needs strip holds its decisions, in one switch.
-  openProjectBoard: (projectId: string) => void;
+  // Makes the project current and opens its sessions, in one switch.
+  openProjectSessions: (projectId: string) => void;
   // Makes the project current and opens one tab of its memory, in one switch.
   openProjectMemory: (projectId: string, tab: MemoryTab) => void;
   // Makes the project current and opens its runs going now, whose needs-you strip answers the wait.
@@ -314,7 +307,7 @@ async function startLocation(): Promise<ShellLocation> {
   if (!projectId || kind !== 'main' || !readPlaces()[projectId]) return fresh;
   const place = readPlace(projectId);
   if (place.screen !== 'sessions' || !place.sessionId) return { projectId, ...place };
-  // A session deleted or archived since, or a list that cannot be read, opens the board instead.
+  // A session deleted or archived since, or a list that cannot be read, opens the sessions instead.
   const result = await readQuery('session.list', { project_id: projectId });
   const sessions =
     result.ok && Array.isArray(result.value) ? (result.value as WorkbenchSession[]) : null;
@@ -468,10 +461,12 @@ export const useShell = create<ShellState>((set) => ({
       }),
       projectId,
     ),
-  openProjectBoard: (projectId) =>
+  openProjectSessions: (projectId) =>
     navigate(
       {
-        screen: 'board',
+        screen: 'sessions',
+        sessionId: null,
+        sessionRestored: false,
         sessionTab: null,
         sessionRun: null,
         sessionGroup: null,

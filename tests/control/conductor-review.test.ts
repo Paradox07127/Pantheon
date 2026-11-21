@@ -209,6 +209,32 @@ it('leaves the blocking sentence out of a passing review', async () => {
   expect(sent[0]).not.toContain(BLOCKING_TAIL);
 });
 
+it('keeps a passing verdict complete when tool events arrive after the reply', async () => {
+  const { f, reviewer, request, ready, settled, messages } = await conductorFixture();
+  const { review_id } = await request();
+  await ready();
+  const review = f.store.must<Review>('reviews', review_id);
+  reviewer.emit({ kind: 'message.delta', text: 'Pass. Checked answer.txt.' });
+  f.call('review.verdict', { verdict: 'pass', summary: 'Checked answer.txt' }, null, {
+    id: `session:${review.session_ids[0]}`,
+    role: 'reviewer',
+    session_id: review.session_ids[0],
+    project_id: f.project.id,
+    expires_at: f.store.now() + 60000,
+  });
+  for (const call of ['first', 'second']) {
+    reviewer.emit({ kind: 'tool.started', name: 'exec', tool_call_id: call, input: {} });
+    reviewer.emit({ kind: 'tool.completed', tool_call_id: call, ok: true });
+  }
+  reviewer.emit({ kind: 'turn.completed', status: 'completed' });
+  await settled(review_id);
+  expect(f.store.must<Review>('reviews', review_id)).not.toHaveProperty('incomplete');
+  const sent = messages();
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).toContain('Verdict pass: Checked answer.txt');
+  expect(sent[0]).not.toContain('Incomplete');
+});
+
 it('tells the conductor its review failed when the reviewer turn fails', async () => {
   const { f, reviewer, request, ready, settled, messages } = await conductorFixture();
   const { review_id } = await request();

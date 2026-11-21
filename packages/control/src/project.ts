@@ -39,7 +39,6 @@ import {
   type Handlers,
   type Preparers,
 } from './context.js';
-import { ensureAgents } from './agents.js';
 import { runGit } from './git.js';
 import { projectFactHandlers } from './project-facts.js';
 import { releaseIdleConversations } from './session.js';
@@ -380,13 +379,9 @@ function openProject(
     const { removed_at, ...kept } = existing;
     const restored = ctx.store.update('projects', kept, existing.revision);
     ctx.store.event('project.restored', restored, restored.id, { removed_at }, cause);
-    ensureAgents(ctx, restored.id);
     return restored;
   }
-  if (existing) {
-    ensureAgents(ctx, existing.id);
-    return existing;
-  }
+  if (existing) return existing;
   disjointFromOthers(ctx, roots);
   // The project seen before git ran no longer has these roots.
   requireThat(config, 'conflict', 'Projects changed while this one opened; open it again');
@@ -416,7 +411,6 @@ function openProject(
       input: { project_id: project.id, ...config.brief },
       expected_revision: null,
     });
-  ensureAgents(ctx, project.id);
   return project;
 }
 

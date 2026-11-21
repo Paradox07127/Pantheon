@@ -9,14 +9,12 @@ import type {
   Principal,
   Session,
   SessionTurn,
-  SignalIssue,
   Usage,
   WorkflowPolicy,
 } from '@pantheon/domain';
 import type { ControlContext } from '../../packages/control/dist/context.js';
 import { wakeHold } from '../../packages/control/dist/agent-contract.js';
 import { residentPlan } from '../../packages/control/dist/agent-always-on.js';
-import { recordSignal } from '../../packages/control/dist/signals.js';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { eventually } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
@@ -272,69 +270,6 @@ it("keeps the project budget's stop when the agent's own cap is not spent", asyn
   expect(holds(f)).toEqual([]);
 });
 
-/** A gate failure of the project, recorded the way the gate failure source records it. */
-const gateFailure = (f: Fixture, fingerprint: string, scope?: SignalIssue['scope']) =>
-  recordSignal(f.control['ctx'] as ControlContext, {
-    project_id: f.project.id,
-    source: 'gate_failures',
-    fingerprint,
-    title: `${fingerprint} fails`,
-    ...(scope && { scope }),
-  });
-
-it.each([
-  ['on the default branch wakes', 'default_branch', undefined, true],
-  ['on another branch stays held', undefined, undefined, false],
-  ['on the default branch stays held without an urgent class', 'default_branch', [], false],
-] as const)('in quiet hours a gate failure %s', async (_case, scope, urgentDirect, wakes) => {
-  const { f, assistant: triage, as, setContract, advance } = await clockFixture('triage');
-  if (urgentDirect)
-    f.call<WorkflowPolicy>('workflow.policy.set', {
-      project_id: f.project.id,
-      urgent_direct: urgentDirect,
-    });
-  setContract({ quiet_hours: { from: '09:00', to: '12:00' } });
-  as('agent.routine.set', { prompt: 'Look for stale bugs', every_minutes: 60, enabled: true });
-  advance(60 * MINUTE);
-  await ticks(f);
-  expect(notesOf(f, 'routine')).toHaveLength(1);
-  expect(trackerTurns(f, triage.id)).toEqual([]);
-
-  gateFailure(f, 'typecheck', scope);
-  advance(31_000);
-  await ticks(f);
-  advance(MINUTE);
-  await ticks(f);
-  expect(notesOf(f, 'signal')).toHaveLength(1);
-  const turns = trackerTurns(f, triage.id);
-  if (!wakes) {
-    expect(turns).toEqual([]);
-    return;
-  }
-  expect(turns).toHaveLength(1);
-  expect(turns[0]!.lead_note_ids).toEqual(
-    [...notesOf(f, 'routine'), ...notesOf(f, 'signal')].map((note) => note.id),
-  );
-  expect([...turns[0]!.wake!.causes].sort()).toEqual(['routine', 'signal']);
-});
-
-it('keeps a held agent held for a digest note, even one naming a gate failure on the default branch', async () => {
-  const { f, assistant: triage, setContract, advance } = await clockFixture('triage');
-  setContract({ quiet_hours: { from: '09:00', to: '12:00' } });
-  // One more failure than the hourly interrupts, so the last one goes to the digest.
-  for (let index = 0; index < 7; index++) gateFailure(f, `check:${index}`, 'default_branch');
-  advance(31_000);
-  await eventually(
-    () => trackerTurns(f, triage.id).length === 1 && ended(f, triage.id),
-    () => f.control.tick(),
-  );
-
-  advance(60 * MINUTE);
-  await ticks(f);
-  expect(notesOf(f, 'signal').filter((note) => note.signal === 'digest')).toHaveLength(1);
-  expect(trackerTurns(f, triage.id)).toHaveLength(1);
-});
-
 it.each([
   ['feed with loudest feed', { loudest: 'feed' }, false, 'feed'],
   [
@@ -356,11 +291,9 @@ it.each([
   async (_case, contract, urgent, delivery) => {
     const { f, as, setContract } = await clockFixture();
     if (contract) setContract(contract);
-    const issue = urgent ? gateFailure(f, 'typecheck', 'default_branch') : undefined;
     const message = as<AgentMessage>('agent.tell_user', {
       text: 'The export task merged.',
-      urgency: 'normal',
-      ...(issue && { signal_issue_id: issue.id }),
+      urgency: urgent ? 'high' : 'normal',
     });
     expect(f.store.must<AgentMessage>('agent_messages', message.id).delivery ?? 'notify').toBe(
       delivery,

@@ -49,6 +49,7 @@ const resultsGate = (results: GateResults | undefined): ChangeRow['gate'] => {
 function sessionStatus(
   listed: WorkbenchSession,
   todo: Set<string>,
+  landed: Set<string>,
 ): ChangeRow['status'] | undefined {
   const { state } = listed;
   if (state === 'failed' || listed.merge?.state === 'blocked') return 'failed';
@@ -57,6 +58,8 @@ function sessionStatus(
   if (state === 'waiting' || todo.has(listed.id)) return 'needs_you';
   if (state === 'ready' || state === 'merging' || (state === 'idle' && (listed.ahead ?? 0) > 0))
     return 'ready';
+  // A session that stays open after it lands, as a conductor does, with no commit since.
+  if (state === 'idle' && landed.has(listed.id)) return 'merged';
   return undefined;
 }
 
@@ -79,12 +82,15 @@ export function projectChanges(
     .list<Review>('reviews')
     .filter((review) => review.project_id === projectId && review.session_id);
   const checked = ctx.store.kindEvents(projectId, ['session.gate_checked']);
+  const landed = new Set(
+    ctx.store.kindEvents(projectId, ['session.merged']).map((event) => event.aggregate_id),
+  );
   const rows: ChangeRow[] = [];
   for (const listed of sessionList(ctx, reader, projectId, 'cached')) {
     const session = ctx.store.must<Session>('sessions', listed.id);
     if (!listed.workspace_id || session.review_id || session.runtime_review || session.resident)
       continue;
-    const status = sessionStatus(listed, waiting);
+    const status = sessionStatus(listed, waiting, landed);
     if (!status) continue;
     const review = reviews.findLast((each) => each.session_id === listed.id);
     const gateFailedMerge = listed.merge?.state === 'blocked' && listed.merge.gate;

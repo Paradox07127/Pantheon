@@ -3,7 +3,6 @@ import type { BoardPlan, Principal, Session, SessionTurn } from '@pantheon/domai
 import type { ControlContext } from '../../packages/control/dist/context.js';
 import { residentPlan } from '../../packages/control/dist/agent-always-on.js';
 import { appendNote } from '../../packages/control/dist/lead-inbox.js';
-import { recordSignal } from '../../packages/control/dist/signals.js';
 import { wakeLead } from '../../packages/control/dist/task-tracking.js';
 import { eventually, settle } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
@@ -60,22 +59,6 @@ async function followUpWake() {
   advance(31 * MINUTE);
   await f.control.tick();
   return trackerTurns(f, assistant.id)[0]!;
-}
-
-async function signalWake() {
-  const { f, ctx, advance } = await assistantFixture();
-  recordSignal(ctx, {
-    project_id: f.project.id,
-    source: 'gate_failures',
-    fingerprint: 'typecheck',
-    title: 'Typecheck fails on main',
-  });
-  advance(31_000);
-  await f.control.tick();
-  const triage = f.store
-    .list<Session>('sessions')
-    .find((session) => session.resident?.kind === 'triage')!;
-  return trackerTurns(f, triage.id)[0]!;
 }
 
 async function answerWake() {
@@ -144,10 +127,6 @@ it.each([
   {
     via: 'a follow-up timer',
     wake: async () => ({ turn: await followUpWake(), expected: { causes: ['follow_up'] } }),
-  },
-  {
-    via: 'a signal that interrupts',
-    wake: async () => ({ turn: await signalWake(), expected: { causes: ['signal'] } }),
   },
   {
     via: "the user's answer to a lead question",

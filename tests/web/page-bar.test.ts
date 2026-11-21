@@ -134,15 +134,14 @@ describe('app top bar', () => {
     return renderToStaticMarkup(createElement(App));
   };
 
-  it.each([
-    ['names the project board in its one top bar', 'board'],
-    ['names the memory page in its one top bar', 'memory'],
-    ['names the automations page in its one top bar', 'automations'],
-  ] as const)('%s', (_name, screen) => {
-    const html = app(screen);
-    expect(html.match(/<header class="tb">/g)).toHaveLength(1);
-    expect(html).toContain(`<header class="tb"><h1>${SCREEN_NAMES[screen]}</h1>`);
-  });
+  it.each([['names the memory page in its one top bar', 'memory']] as const)(
+    '%s',
+    (_name, screen) => {
+      const html = app(screen);
+      expect(html.match(/<header class="tb">/g)).toHaveLength(1);
+      expect(html).toContain(`<header class="tb"><h1>${SCREEN_NAMES[screen]}</h1>`);
+    },
+  );
 
   it('draws no location path on any screen', () => {
     vi.stubGlobal('window', { innerWidth: 1440 });

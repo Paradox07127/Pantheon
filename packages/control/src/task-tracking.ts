@@ -69,13 +69,7 @@ import {
   turnLoop,
   type TurnLoop,
 } from './progress.js';
-import {
-  acceptInput,
-  advanceQueuedHandoffs,
-  releaseIdleConversation,
-  taskReportGeneration,
-  unsnooze,
-} from './session.js';
+import { acceptInput, releaseIdleConversation, taskReportGeneration, unsnooze } from './session.js';
 import {
   admitted,
   dispatchQueue,
@@ -85,10 +79,9 @@ import {
   selectedParts,
   taskPlaces,
 } from './task-dispatch.js';
-import { executed, stuckMerge } from './needs-you.js';
+import { executed } from './needs-you.js';
 import { finishingMerge } from './project-facts.js';
 import { advanceMilestoneVerifications } from './milestone-verify.js';
-import { finishStops } from './workbench-session.js';
 import { projectOverBudget, workflowPolicy } from './workflow-policy.js';
 import { wakeHold } from './agent-contract.js';
 import { advanceMergeReviews } from './merge-review.js';
@@ -128,8 +121,6 @@ const HANDED_BACK = [
 ];
 /** Merge problems of its direct task a lead is given turns to fix; after a fix it reports the task again. */
 const DIRECT_HANDED_BACK = [...HANDED_BACK, 'head_moved', 'verification_changed'];
-/** A permission request unanswered this long, in milliseconds, is escalated once: the user and the lead are reminded. */
-const ESCALATION_MS = 10 * 60_000;
 const BACKGROUND_TEXT: Record<BackgroundTask['kind'], string> = {
   shell: 'command',
   agent: 'agent',
@@ -349,6 +340,20 @@ function latestEvent(
     .get(aggregateId, kind) as
     { sequence: number; created_at: number; payload: string } | undefined;
   return row && { ...row, payload: JSON.parse(row.payload) };
+}
+
+/** Whether the lead got a waiting note of the session after the event at sequence. */
+function waitingToldSince(
+  ctx: ControlContext,
+  plan: BoardPlan,
+  sessionId: string,
+  sequence: number,
+): boolean {
+  return !!ctx.store
+    .statement(
+      "SELECT 1 FROM events WHERE aggregate_id=? AND kind='lead.note_added' AND sequence>? AND json_extract(payload,'$.kind')='waiting' AND json_extract(payload,'$.session_id')=? LIMIT 1",
+    )
+    .get(plan.id, sequence, sessionId);
 }
 
 /** The merge the automatic merge skipped after the session's latest turn, while it stays idle. */
@@ -866,37 +871,21 @@ function reportDirectTask(
 }
 
 export function tickTaskTracking(ctx: ControlContext): void {
-  // Every tick runs this, so the stops of all worktree sessions carry on here too.
-  finishStops(ctx);
-  advanceQueuedHandoffs(ctx);
-  // A merge that gets stuck records nothing itself, so open views hear of it from this event, once per stop.
-  for (const session of ctx.store.list<Session>('sessions')) {
-    const progress = stuckMerge(ctx, session);
-    if (
-      progress &&
-      (latestEvent(ctx, session.id, 'session.merge_stuck')?.sequence ?? 0) < progress.sequence
-    )
-      ctx.store.event('session.merge_stuck', session, session.project_id, {});
-  }
-  // The event marks the request escalated for needs-you, once; the lead of a task session hears of it below.
-  const escalated = new Map<string | undefined, number>();
-  for (const approval of ctx.store.list<Approval>('approvals')) {
-    const waited = ctx.store.now() - approval.created_at;
-    if (
-      approval.kind !== 'permission' ||
-      approval.state !== 'pending' ||
-      waited <= ESCALATION_MS ||
-      latestEvent(ctx, approval.id, 'approval.escalated') ||
-      relayingQuestion(ctx, approval)
-    )
-      continue;
-    ctx.store.event('approval.escalated', approval, approval.project_id, { waited_ms: waited });
-    escalated.set(approval.session_id, waited);
-  }
   wrapUpOverBudget(ctx);
   replanTriggers(ctx);
   const plans = ctx.store.list<BoardPlan>('board_plans');
   if (!plans.length) return;
+  // The latest escalation of a pending permission request, by session; the lead hears of each once.
+  const escalated = new Map<string | undefined, { sequence: number; waited: number }>();
+  for (const approval of ctx.store.list<Approval>('approvals')) {
+    if (approval.kind !== 'permission' || approval.state !== 'pending') continue;
+    const event = latestEvent(ctx, approval.id, 'approval.escalated');
+    if (event && (escalated.get(approval.session_id)?.sequence ?? 0) < event.sequence)
+      escalated.set(approval.session_id, {
+        sequence: event.sequence,
+        waited: (event.payload as { waited_ms: number }).waited_ms,
+      });
+  }
   const sessions = ctx.store
     .list<Session>('sessions')
     .filter((session) => session.workspace_id && session.task);
@@ -953,8 +942,9 @@ export function tickTaskTracking(ctx: ControlContext): void {
       // The lead hears nothing of a removed task's sessions, whose id a new task may reuse.
       if (session.task!.lead_session_id !== plan.id || retiredBinding(plan, session)) continue;
       if (blockedReport(ctx, session)) continue;
-      const waited = escalated.get(session.id);
-      if (waited !== undefined) {
+      const escalation = escalated.get(session.id);
+      if (escalation && !waitingToldSince(ctx, plan, session.id, escalation.sequence)) {
+        const { waited } = escalation;
         notes.push(
           recordNote(ctx, plan, {
             at: ctx.store.now(),

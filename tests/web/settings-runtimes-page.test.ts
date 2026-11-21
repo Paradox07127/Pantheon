@@ -22,12 +22,10 @@ vi.mock('@/components/Toast', async (actual) => ({
 }));
 import { RuntimeGlyph } from '@/components/RuntimeGlyph';
 import { useBoard } from '@/data/board';
-import { useCurrentProject } from '@/data/current-project';
 import { HarnessPage } from '@/screens/settings/HarnessPage';
 import { Row } from '@/screens/settings/ProjectSettingsScreen';
 import { pageHeader } from '@/screens/settings/settings-header';
 import { useSettingsView } from '@/screens/settings/view';
-import { useShell } from '@/store';
 import { t } from '@/i18n';
 import { zh, zhf } from './i18n-setup.js';
 
@@ -304,22 +302,13 @@ describe('runtimes page groups', () => {
     expect(buttons(shown, zh('settings.harness.logIn'))).toHaveLength(1);
   });
 
-  it('links to the usage tab of the board instead of drawing the quota', async () => {
+  it('draws neither the quota nor a link to the engineering board for it', async () => {
     bridge.answers['runtime.status'] = [status('codex', { quota })];
     const h = await page('alpha');
     const codex = group(tree(h), 'Codex');
     expect(nodes(codex).filter((n) => n.props.role === 'meter')).toEqual([]);
-    const [usage] = buttons(
-      row(codex, zh('settings.harness.quota')),
-      zh('settings.runtimes.seeUsage'),
-    );
-    useShell.setState({ screen: 'sessions' });
-    useCurrentProject.setState({ projectId: 'alpha' });
-    useSettingsView.setState({ open: true });
-    usage!.props.onClick();
-    expect(useSettingsView.getState().open).toBe(false);
-    expect(useCurrentProject.getState().projectId).toBe('alpha');
-    expect(useShell.getState().screen).toBe('insights');
+    expect(rows(codex).filter((r) => r.props.settingId === 'harness.quota')).toEqual([]);
+    expect(buttons(codex, '看用量')).toEqual([]);
   });
 
   it('says no executable was found and asks for its path', async () => {

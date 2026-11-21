@@ -9,7 +9,6 @@ import { startDaemon } from '@pantheon/daemon';
 import type {
   AgentProfile,
   BoardPlan,
-  ExternalEvent,
   Principal,
   Project,
   Session,
@@ -27,7 +26,6 @@ import {
   TRIAGE_TEMPLATE,
 } from '../../packages/control/dist/agent-templates.js';
 import { residentInstructions, ROLE_PROMPTS } from '../../packages/control/dist/agent-prompts.js';
-import { receiveExternalEvent } from '../../packages/control/dist/external-events.js';
 import { eventually, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
@@ -82,8 +80,9 @@ async function send(f: Fixture, sessionId: string, input: string) {
 const lastInstructions = (f: Fixture) =>
   (f.resume.mock.calls.at(-1)![0] as SessionSpec).control_instructions;
 
-it('gives a new project an assistant and a triage profile once, with their template defaults', async () => {
+it('gives a project an assistant and a triage profile once, with their template defaults', async () => {
   const f = await workbenchFixture();
+  ensure(f);
   const listed = agents(f);
   expect(listed.map((agent) => agent.template).sort()).toEqual(['assistant', 'triage']);
   for (const [template, defaults] of [
@@ -138,6 +137,7 @@ it('gives a new project an assistant and a triage profile once, with their templ
 
 it('lists the tools and listens each profile works with, its template’s while it stores none', async () => {
   const f = await workbenchFixture();
+  ensure(f);
   expect(profileOf(f, 'triage')).toMatchObject({
     effective_tools: TRIAGE_TEMPLATE.tools,
     effective_listens: TRIAGE_TEMPLATE.listens,
@@ -316,6 +316,8 @@ async function residentTools(tools?: AgentProfile['tools']) {
     user,
     command(user.id, 'project.open', { name: 'agents', roots: [path.join(root, 'project')] }),
   )) as Project;
+  const ctx = (daemon.control as unknown as { ctx: ControlContext }).ctx;
+  ctx.store.transaction(() => ensureAgents(ctx, project.id));
   const profile = daemon.control
     .agentList(user, project.id)
     .find((agent) => agent.template === 'assistant')!;
@@ -329,7 +331,6 @@ async function residentTools(tools?: AgentProfile['tools']) {
     turn_count: 0,
     resident: { kind: 'assistant', agent_id: profile.id },
   });
-  const ctx = (daemon.control as unknown as { ctx: ControlContext }).ctx;
   const credential = ctx.issueSessionCredential!(session.id, 'lead');
   const client = new Client({ name: 'agent-tools-test', version: '1' });
   await client.connect(
@@ -584,6 +585,7 @@ it('cancels the timer of a routine an update removes, and refuses the agents gro
 
 it('stores a contract given on create, changes or removes it on update, and refuses an unknown level or a zero cap', async () => {
   const f = await workbenchFixture();
+  ensure(f);
   const contract = {
     weekly_input_tokens: 200_000,
     loudest: 'notify',
@@ -615,6 +617,7 @@ it('stores a contract given on create, changes or removes it on update, and refu
 
 it('archives an agent between turns, closing its session and its routine timers, and reschedules them once unarchived', async () => {
   const f = await workbenchFixture();
+  ensure(f);
   const helper = create(f, {
     name: 'Checker',
     routines: [{ id: 'hourly', prompt: 'Check the gates', every_minutes: 60, enabled: true }],
@@ -642,58 +645,4 @@ it('lists list_agents to the default assistant and not to a lead that is not a r
   const tools = leadSessionTools(f.control['ctx'] as ControlContext, current(f, direct.id));
   expect(tools).toContain('board.plan.update');
   expect(tools).not.toContain('agent.agents');
-});
-
-it('hands a GitHub event to the oldest agent that listens to GitHub, and fails it when none does and triage is archived', async () => {
-  const f = await workbenchFixture({
-    externalSources: [{ id: 'stub', poll: async () => MINUTE }],
-  });
-  const ctx = f.control['ctx'] as ControlContext;
-  f.call(
-    'project.externalEvents.set',
-    { project_id: f.project.id, mode: 'auto' },
-    f.store.must<Project>('projects', f.project.id).revision,
-  );
-  let reported = 0;
-  const report = (subject: string) => {
-    const event = receiveExternalEvent(ctx, {
-      project_id: f.project.id,
-      source: 'github',
-      subject_key: subject,
-      dedup_key: `github:7:${reported++}`,
-      kind: 'issue_assigned',
-      actor: 'taylor',
-      actor_trust: 'self',
-      title: 'Totals are wrong',
-      url: 'https://github.com/acme/reports/issues/12',
-      texts: [{ author: 'taylor', own: true, text: 'The weekly total counts refunds twice.' }],
-    });
-    f.store.update<ExternalEvent>(
-      'external_events',
-      { ...event, received_at: event.received_at - 3 * MINUTE },
-      event.revision,
-    );
-    return event.id;
-  };
-  const triage = profileOf(f, 'triage');
-  f.call('agent.update', { agent_id: triage.id, revision: triage.revision, listens: [] });
-  const watcher = create(f, { name: 'Watcher', listens: ['github'] });
-  const routed = report('github:acme/reports#12');
-  await f.control.tick();
-  const [resident] = residentsOf(f, watcher.id);
-  expect(f.store.must<ExternalEvent>('external_events', routed)).toMatchObject({
-    state: 'handled',
-    session_id: resident!.id,
-  });
-  expect(residentsOf(f, triage.id)).toEqual([]);
-
-  await settleResident(f, resident!.id);
-  f.call('agent.archive', { agent_id: watcher.id });
-  f.call('agent.archive', { agent_id: triage.id });
-  const failed = report('github:acme/reports#13');
-  await f.control.tick();
-  expect(f.store.must<ExternalEvent>('external_events', failed)).toMatchObject({
-    state: 'failed',
-    error: 'No agent listens to GitHub',
-  });
 });

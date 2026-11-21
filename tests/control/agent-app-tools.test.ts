@@ -16,6 +16,7 @@ import {
 } from '@pantheon/domain';
 import { command, type CommandType } from '@pantheon/protocol';
 import type { ControlContext } from '../../packages/control/dist/context.js';
+import { ensureAgents } from '../../packages/control/dist/agents.js';
 import type { LocalCommand } from '../../packages/control/src/local-command.js';
 import { fixture, user } from '../helpers.js';
 import { boundTaskSession, workbenchFixture } from './workbench-fixture.js';
@@ -173,6 +174,8 @@ async function residentMcp(tools?: AgentProfile['tools']) {
     user,
     command(user.id, 'project.open', { name: 'agents', roots: [path.join(root, 'project')] }),
   )) as Project;
+  const ctx = (daemon.control as unknown as { ctx: ControlContext }).ctx;
+  ctx.store.transaction(() => ensureAgents(ctx, project.id));
   const profile = daemon.control
     .agentList(user, project.id)
     .find((agent) => agent.template === 'assistant')!;
@@ -186,7 +189,6 @@ async function residentMcp(tools?: AgentProfile['tools']) {
     turn_count: 0,
     resident: { kind: 'assistant', agent_id: profile.id },
   });
-  const ctx = (daemon.control as unknown as { ctx: ControlContext }).ctx;
   const issued = ctx.issueSessionCredential!(session.id, 'lead');
   const client = new Client({ name: 'app-tools-test', version: '1' });
   await client.connect(

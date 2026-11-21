@@ -807,17 +807,6 @@ export const SETTINGS_INDEX: SettingRecord[] = [
     options: runtimes,
   },
   {
-    id: 'harness.quota',
-    page: 'harness',
-    section: PAGE_NAME.harness,
-    label: defineMessage({ id: 'settings.harness.quota', defaultMessage: 'Quota' }),
-    keywords: defineMessage({
-      id: 'settings.search.keywords.harnessQuota',
-      defaultMessage: 'usage, limit, rate limit',
-    }),
-    options: runtimes,
-  },
-  {
     id: 'harness.backends',
     page: 'harness',
     label: defineMessage({ id: 'settings.harness.backends', defaultMessage: 'Backends' }),

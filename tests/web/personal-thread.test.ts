@@ -174,7 +174,7 @@ beforeEach(() => {
     openProject: vi.fn(),
     openProjectSession: vi.fn(),
     openProjectNeed: vi.fn(),
-    openProjectBoard: vi.fn(),
+    openProjectSessions: vi.fn(),
     openPersonal: vi.fn(),
   };
   runCommand.mockClear();
@@ -282,19 +282,15 @@ describe('a project turn a personal key sent', () => {
     turn({ project_id: 'billing', via: { kind: 'personal', key_id: key } });
   const project = listed({ resident: { kind: 'assistant', agent_id: 'a' } });
 
-  it('names the personal agent, which it opens, when its built-in key sent it', async () => {
+  it('names the personal agent, with no way to open it, when its built-in key sent it', () => {
     const h = host(project, [], { turn: via('k-built'), personalKey: 'k-built' });
     const from = find(
       h.value,
       (n) => n.props['aria-label'] === zh('sessions.personalAgent.sentBy'),
     );
-    const open = find(from, (n) => n.type === 'button');
-    expect(text(open)).toBe(zh('app.screenName.personal'));
+    expect(text(from)).toBe(zh('app.screenName.personal'));
+    expect(nodes(from).filter((n) => n.type === 'button')).toEqual([]);
     expect(text(h.value).includes(zh('sessions.thread.viaPersonal'))).toBe(false);
-    runCommand.mockResolvedValueOnce({ ok: true, value: { id: 'session-p' } });
-    open.props.onClick();
-    await h.flush();
-    expect(runCommand).toHaveBeenCalledWith('resident.open', { kind: 'personal' }, null);
   });
 
   it('keeps the key marker for another key', () => {

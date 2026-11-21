@@ -53,21 +53,3 @@
 .ps-sec-bd > .us-err {
   padding: 0 16px 8px;
 }
-
-/* The way to the board: the whole row is the button. */
-.ps-rows > .ps-row.us-go {
-  grid-template-columns: minmax(0, 1fr) auto;
-  width: 100%;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  transition: background-color var(--dur-1) var(--ease-std);
-}
-.us-go:hover {
-  background: var(--st-hov);
-}
-.us-go > svg {
-  color: var(--mu);
-}

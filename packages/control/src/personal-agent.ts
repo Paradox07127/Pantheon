@@ -2,16 +2,12 @@ import {
   id,
   requireThat,
   type AgentProfile,
-  type BoardPlan,
-  type NeedsYouItem,
   type PersonalKey,
   type Project,
 } from '@pantheon/domain';
-import { wakeHold } from './agent-contract.js';
-import { scheduleRoutine, wakeAgent } from './agent-always-on.js';
+import { scheduleRoutine } from './agent-always-on.js';
 import { AGENT_TEMPLATES } from './agent-templates.js';
 import type { ControlContext } from './context.js';
-import { needsYou } from './needs-you.js';
 import { openOf } from './resident.js';
 import { releaseIdleConversation } from './session.js';
 import { afterCommit } from './workbench-session.js';
@@ -97,88 +93,4 @@ export function personalHome(
   ctx.store.event('agent_profile.created', profile, homeId, profile, cause);
   for (const routine of profile.routines) scheduleRoutine(ctx, profile, routine);
   return { project, profile };
-}
-
-/** New waiting items wake the personal agent at most once in this long. */
-const PERSONAL_ATTENTION_MS = 30 * 60_000;
-
-/** The waiting items are read again at most once in this long, however many events arrive. */
-const PERSONAL_READ_MS = 60_000;
-
-/** The event cursor and time of the last tick that read the waiting items, by context. */
-const attentionReads = new WeakMap<ControlContext, { cursor: number; at: number }>();
-
-/** A waiting item's identity; an item whose revision changes keeps it. */
-export const attentionKey = (item: NeedsYouItem) =>
-  `${item.kind}:${item.source.table}:${item.source.id}:${item.reason}:${item.request_id ?? ''}`;
-
-/**
- * Wakes the personal agent with one note when items it has not seen wait for the user in other
- * projects. The cheap checks come first, since reading the items of every project is not.
- */
-export function tickPersonalAttention(ctx: ControlContext): void {
-  const project = ctx.store.list<Project>('projects').find((each) => each.kind === 'personal');
-  if (!project) return;
-  const read = attentionReads.get(ctx);
-  if (read && (read.cursor === ctx.store.cursor() || ctx.store.now() - read.at < PERSONAL_READ_MS))
-    return;
-  const profile = ctx.store
-    .list<AgentProfile>('agents')
-    .find((agent) => agent.project_id === project.id && agent.template === 'personal');
-  if (!profile || profile.archived_at) return;
-  const now = ctx.store.now();
-  const { at } = ctx.store.db
-    .prepare(
-      "SELECT max(created_at) AS at FROM events WHERE project_id=? AND kind='lead.note_added' AND json_extract(payload,'$.kind')='personal_attention'",
-    )
-    .get(project.id) as { at: number | null };
-  if (at !== null && now - at < PERSONAL_ATTENTION_MS) return;
-  // Held, the items stay unseen, so the first tick after the hold names them all.
-  if (wakeHold(ctx, profile, now)) return;
-  // A woken agent whose key is revoked could read nothing.
-  if (ctx.store.get<PersonalKey>('personal_keys', profile.personal_key_id!)?.revoked_at) return;
-  const items = needsYou(ctx, {
-    id: `personal:${profile.personal_key_id}`,
-    role: 'personal',
-  }).items.filter((item) => item.project_id !== project.id);
-  const keys = items.map(attentionKey);
-  const resident = openOf(ctx, profile);
-  const seen = resident && ctx.store.get<BoardPlan>('board_plans', resident.id)?.personal_seen;
-  const known = new Set(seen?.keys);
-  const fresh = items.filter((_item, index) => !known.has(keys[index]!));
-  if (fresh.length) {
-    const counts = new Map<string, Map<string, number>>();
-    for (const item of fresh) {
-      const kinds = counts.get(item.project_id) ?? new Map<string, number>();
-      counts.set(item.project_id, kinds.set(item.kind, (kinds.get(item.kind) ?? 0) + 1));
-    }
-    const projects = [...counts].map(
-      ([projectId, kinds]) =>
-        `In "${ctx.store.must<Project>('projects', projectId).name}": ${[...kinds]
-          .map(([kind, count]) => `${kind} (${count})`)
-          .join(', ')}.`,
-    );
-    wakeAgent(
-      ctx,
-      profile,
-      'personal_attention',
-      [
-        fresh.length === 1
-          ? '1 new item waits for the user.'
-          : `${fresh.length} new items wait for the user.`,
-        ...projects,
-      ].join(' '),
-      'personal-attention',
-    );
-  }
-  // A key that leaves the set counts as new when it comes back.
-  if (fresh.length || (seen && keys.join('\n') !== seen.keys.join('\n'))) {
-    const plan = ctx.store.must<BoardPlan>('board_plans', openOf(ctx, profile)!.id);
-    ctx.store.update<BoardPlan>(
-      'board_plans',
-      { ...plan, personal_seen: { keys, at: now } },
-      plan.revision,
-    );
-  }
-  attentionReads.set(ctx, { cursor: ctx.store.cursor(), at: now });
 }

@@ -119,7 +119,11 @@ it('tells the conductor once when a turn of the session it spawned completes', a
   const f = await workbenchFixture();
   const conductor = await openConductor(f);
 
-  const { session_id } = await spawn(f, conductor.id, 'Write the docs');
+  const { session_id } = await spawn(
+    f,
+    conductor.id,
+    script({ write: { path: 'docs.txt', text: 'docs\n' } }, { commit: 'Write the docs' }),
+  );
   await settle(f, row(f, session_id));
   await eventually(
     () => trackerTurns(f, conductor.id).length === 1,
@@ -142,6 +146,16 @@ it('tells the conductor once when a turn of the session it spawned completes', a
   );
   await settle(f, row(f, conductor.id));
   expect(trackerTurns(f, conductor.id)).toHaveLength(1);
+
+  // Once the list has read the worktree, the next message says how far ahead its detached HEAD is.
+  await f.prefetch();
+  f.call('session.send', { session_id, input: 'Look again' }, row(f, session_id).revision);
+  await settle(f, row(f, session_id));
+  await eventually(
+    () => trackerTurns(f, conductor.id).length === 2,
+    () => f.control.tick(),
+  );
+  expect(trackerTurns(f, conductor.id)[1]!.input).toContain('It is 1 commits ahead of main.');
 });
 
 it('tells the conductor when a turn of the session it spawned fails', async () => {

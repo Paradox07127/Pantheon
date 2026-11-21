@@ -111,7 +111,6 @@ import { residentInstructions } from './agent-prompts.js';
 import { residentProfile } from './agent-templates.js';
 import { afterResidentTurn } from './resident.js';
 import { afterSpawnedTurn } from './conductor.js';
-import { recordRouting } from './front-door.js';
 import { personalKeyId } from './personal-scope.js';
 import {
   applyModel,
@@ -1256,7 +1255,6 @@ export function createTurnQueue(ctx: ControlContext, initial: SessionTurn, resum
         resolveTurn = undefined;
         waitingForInput = true;
         ctx.idleConversations.set(initial.session_id, ctx.store.now());
-        recordRouting(ctx, current.id);
         // After the conversation is idle, so a resident that closes releases its process.
         afterResidentTurn(ctx, initial.session_id, current.id);
         return;
@@ -1271,7 +1269,6 @@ export function createTurnQueue(ctx: ControlContext, initial: SessionTurn, resum
         const finished = ctx.store.update('session_turns', { ...t, state }, t.revision);
         ctx.store.event(`turn.${state}`, finished, t.project_id, { error: failure });
       });
-      recordRouting(ctx, current.id);
       sent = send(next);
     }
   };
@@ -2089,7 +2086,6 @@ export async function finishTurn(
     if (s.review_id) settleReview(ctx, s.review_id);
     if (turns.length) unsnooze(ctx, s.id, 'turn_ended');
   });
-  recordRouting(ctx, key);
   afterResidentTurn(ctx, ctx.store.must<SessionTurn>('session_turns', key).session_id, key);
   afterSpawnedTurn(ctx, ctx.store.must<SessionTurn>('session_turns', key).session_id);
   if (stop?.receipt?.stopped === true)

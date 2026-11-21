@@ -345,7 +345,7 @@ describe('command palette', () => {
       })),
     });
 
-    it('lists only the projects after @, each with its monogram, name and root, and opens its board', () => {
+    it('lists only the projects after @, each with its monogram, name and root, and opens its sessions', () => {
       withProjects();
       const setScreen = vi.fn();
       const followFirstSession = vi.fn();
@@ -374,7 +374,7 @@ describe('command palette', () => {
       expect(onOpenChange).toHaveBeenCalledWith(false);
       expect(picked).toHaveBeenCalledWith('p2');
       expect(followFirstSession).toHaveBeenCalledOnce();
-      expect(setScreen).toHaveBeenCalledWith('board');
+      expect(setScreen).toHaveBeenCalledWith('sessions');
     });
 
     it('locks the search to the highlighted project on tab, searches in it, and unlocks on backspace', () => {

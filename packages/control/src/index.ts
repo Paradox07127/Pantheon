@@ -132,10 +132,9 @@ import { projectBrief } from './project-brief.js';
 import { decisionsForUser } from './decisions-for-user.js';
 import { personalKeyList } from './personal-keys.js';
 import { timerHandlers } from './timers.js';
-import { agentList, agentTemplates, ensureAgents } from './agents.js';
+import { agentList, agentTemplates } from './agents.js';
 import { agentRoutines, agentWakes } from './agent-wakes.js';
 import { agentLedger } from './agent-ledger.js';
-import { recordTraceFindings, signalList } from './signals.js';
 import { continueSession } from './continuation.js';
 import { appendNote } from './lead-inbox.js';
 import type { ProtectionPaths } from './protection.js';
@@ -746,9 +745,6 @@ export class Control extends EventEmitter {
   agentRoutines(principal: Principal, projectId: string) {
     return agentRoutines(this.ctx, principal, projectId);
   }
-  signalList(principal: Principal, projectId: string, state?: 'open' | 'muted' | 'resolved') {
-    return signalList(this.ctx, principal, projectId, state);
-  }
   projectUsageRead(principal: Principal, projectId: string) {
     return projectUsageRead(this.ctx, principal, projectId);
   }
@@ -1153,10 +1149,6 @@ export class Control extends EventEmitter {
     return symbolsSearch(this.ctx, principal, projectId, sessionId, q);
   }
   async recover(): Promise<void> {
-    this.store.transaction(() => {
-      for (const project of this.store.list<Project>('projects'))
-        if (project.removed_at === undefined) ensureAgents(this.ctx, project.id);
-    });
     recoverWorkspaceProvisioning(this.ctx);
     await recover(this.ctx);
     // The first list after a start then finds the worktrees read or being read.
@@ -1185,7 +1177,6 @@ export class Control extends EventEmitter {
     const trace = this.ctx.trace;
     if (!trace) return;
     const progress = await trace.scan(traceProjects(this.ctx), budgetMs);
-    if (this.store.transaction(() => recordTraceFindings(this.ctx))) this.ctx.changed();
     // A query's own scan may have read the change in first; compare with what was announced.
     if (trace.revision !== this.announcedTrace) {
       this.announcedTrace = trace.revision;

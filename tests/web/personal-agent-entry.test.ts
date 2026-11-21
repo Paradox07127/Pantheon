@@ -1,15 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkbenchSession } from '@pantheon/protocol';
-import {
-  deferred,
-  type HookHost,
-  mount as host,
-  named,
-  nodes,
-  text,
-  unmountAll,
-} from './web-hook-host.js';
-import { zh, zhf } from './i18n-setup.js';
+import { type HookHost, mount as host, named, nodes, text, unmountAll } from './web-hook-host.js';
+import { zh } from './i18n-setup.js';
 const mock = vi.hoisted(() => ({ board: {} as any, shell: {} as any }));
 vi.mock('react', async (actual) =>
   (await import('./web-hook-host.js')).reactMock(actual, { layoutEffect: true }),
@@ -36,9 +28,7 @@ vi.mock('@/data/agents', async (actual) => ({
 const toast = vi.hoisted(() => vi.fn());
 vi.mock('@/components/Toast', async (actual) => ({ ...(await actual<object>()), toast }));
 import { Sidebar } from '@/components/Sidebar';
-import { StateGlyph } from '@/components/SessionStateIcon';
 import { currentProject } from '@/data/current-project';
-import { failureText } from '@/data/needs-you';
 import { visibleProjects } from '@/data/projects';
 import { PersonalAgentScreen } from '@/screens/sessions/PersonalAgentScreen';
 
@@ -78,7 +68,7 @@ beforeEach(() => {
     refresh() {},
   };
   mock.shell = {
-    screen: 'board',
+    screen: 'sessions',
     sessionId: null,
     sessionGroup: null,
     renaming: null,
@@ -108,10 +98,7 @@ describe('the personal agent’s home project', () => {
   });
 });
 
-const sidebar = (
-  personal?: WorkbenchSession,
-  { projects = [ALPHA], items = [] as unknown[] } = {},
-) =>
+const sidebar = ({ projects = [ALPHA], items = [] as unknown[] } = {}) =>
   host(() =>
     Sidebar({
       layout: {
@@ -127,88 +114,10 @@ const sidebar = (
       onChooseProject: () => {},
       list: { data: [], loading: false, error: null, reload() {} } as any,
       allNeeds: { items, error: null } as any,
-      ...(personal ? { personal } : {}),
     }),
   );
 
-const THIS_PROJECT = zh('components.sidebar.residents');
-const PERSONAL_GROUP = zh('components.sidebar.personalGroup');
-const PERSONAL = zh('components.sidebar.personalAgent');
-const groupIndex = (h: HookHost<any>, name: string) =>
-  nodes(h.value).findIndex((n) => n.props.role === 'group' && n.props['aria-label'] === name);
-const personalRows = (h: HookHost<any>) =>
-  nodes(nodes(h.value)[groupIndex(h, PERSONAL_GROUP)]!.props.children).filter(
-    (n) => n.type === 'button',
-  );
-const personalRow = (h: HookHost<any>) => personalRows(h)[0]!;
-
-describe('personal agent entry in a project’s sidebar', () => {
-  it('names the groups 本项目 and 个人级 and the row 个人级智能体', () => {
-    expect([THIS_PROJECT, PERSONAL_GROUP, PERSONAL]).toEqual(['本项目', '个人级', '个人级智能体']);
-  });
-
-  it('lists this project’s agents, then a Personal group with one Personal agent row', () => {
-    const h = sidebar();
-    expect(groupIndex(h, THIS_PROJECT)).toBeGreaterThan(-1);
-    expect(groupIndex(h, PERSONAL_GROUP)).toBeGreaterThan(groupIndex(h, THIS_PROJECT));
-    const rows = personalRows(h);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!.props['aria-label']).toBe(
-      [PERSONAL, zh('components.sidebar.residentNotStarted')].join(zh('sessions.screen.separator')),
-    );
-  });
-
-  it('shows the state of the personal session on its row', () => {
-    const h = sidebar(session('personal-1', { state: 'running' }));
-    expect(personalRow(h).props['aria-label']).toBe(
-      [PERSONAL, zh('components.sessionState.running')].join(zh('sessions.screen.separator')),
-    );
-  });
-
-  it('opens the personal agent through resident.open, showing the row as starting until it answers', async () => {
-    const answer = deferred<any>();
-    runCommand.mockImplementationOnce(() => answer.promise);
-    const h = sidebar();
-    personalRow(h).props.onClick();
-    h.render();
-    expect(runCommand.mock.calls).toEqual([['resident.open', { kind: 'personal' }, null]]);
-    expect(personalRow(h).props['aria-busy']).toBe(true);
-    expect(
-      nodes(personalRow(h).props.children).find((n) => n.type === StateGlyph)?.props.name,
-    ).toBe('starting');
-    expect(mock.shell.openPersonal).not.toHaveBeenCalled();
-    answer.resolve({ ok: true, value: { id: 'personal-1' } });
-    await h.flush();
-    expect(mock.shell.openPersonal).toHaveBeenCalledWith('personal-1');
-    h.render();
-    expect(personalRow(h).props['aria-busy']).toBeUndefined();
-  });
-
-  it('marks the row current on the personal screen and keeps the project’s sidebar', () => {
-    mock.shell.screen = 'personal';
-    const h = sidebar(session('personal-1'));
-    expect(personalRow(h).props['aria-current']).toBe(true);
-    expect(groupIndex(h, THIS_PROJECT)).toBeGreaterThan(-1);
-    expect(
-      nodes(h.value).some((n) => n.type === 'button' && text(n) === zh('app.screenName.board')),
-    ).toBe(true);
-  });
-
-  it('shows a refused open’s failure text and stays on the screen it was on', async () => {
-    const error = { code: 'permission_denied', message: 'Only the user opens the personal agent' };
-    runCommand.mockResolvedValueOnce({ ok: false, error });
-    const h = sidebar();
-    personalRow(h).props.onClick();
-    await h.flush();
-    expect(toast).toHaveBeenCalledWith({ title: failureText(error), kind: 'failure' });
-    expect(mock.shell.openPersonal).not.toHaveBeenCalled();
-    h.render();
-    expect(personalRow(h).props['aria-busy']).toBeUndefined();
-  });
-});
-
-describe('the number on the personal agent’s sidebar row', () => {
-  const BETA = { id: 'beta', revision: 1, name: 'Beta', roots: ['/work/beta'] };
+describe('a project’s sidebar', () => {
   const waiting = (project_id: string, id: string) => ({
     source: { table: 'approvals', id, revision: 1 },
     kind: 'permission',
@@ -219,36 +128,20 @@ describe('the number on the personal agent’s sidebar row', () => {
     reason: 'permission_requested',
     actions: [],
   });
-  const count = (h: HookHost<any>) =>
-    nodes(personalRow(h).props.children).find((n) => n.props.className === 'ss-rct');
 
-  it('counts what waits in every visible project and leaves the home’s items out', () => {
-    const h = sidebar(undefined, {
-      projects: [ALPHA, BETA],
-      items: [
-        waiting('alpha', 'a-1'),
-        waiting('alpha', 'a-2'),
-        waiting('beta', 'b-1'),
-        waiting('home', 'h-1'),
-      ],
-    });
-    expect(personalRow(h).props['aria-label']).toBe(
-      [
-        PERSONAL,
-        zh('components.sidebar.residentNotStarted'),
-        zhf('components.sidebar.personalWaits', { count: 3 }),
-      ].join(zh('sessions.screen.separator')),
+  it('has no personal agent row and no group of agents, also while other projects wait', () => {
+    const h = sidebar({ items: [waiting('alpha', 'a-1'), waiting('home', 'h-1')] });
+    const tree = nodes(h.value);
+    expect(tree.filter((n) => n.props.role === 'group')).toEqual([]);
+    expect(tree.filter((n) => String(n.props['data-stop'] ?? '').startsWith('resident:'))).toEqual(
+      [],
     );
-    expect(personalRow(h).props['aria-label'].endsWith('各项目共 3 项等你处理')).toBe(true);
-    expect(text(count(h))).toBe('3');
-  });
-
-  it('shows no number when only the home has something waiting', () => {
-    const h = sidebar(undefined, { items: [waiting('home', 'h-1')] });
-    expect(count(h)).toBeUndefined();
-    expect(personalRow(h).props['aria-label']).toBe(
-      [PERSONAL, zh('components.sidebar.residentNotStarted')].join(zh('sessions.screen.separator')),
-    );
+    expect(
+      tree.filter(
+        (n) => text(n).includes('个人级') || String(n.props['aria-label'] ?? '').includes('个人级'),
+      ),
+    ).toEqual([]);
+    expect(runCommand).not.toHaveBeenCalled();
   });
 
   it('marks the project menu only for what waits in a visible project', () => {
@@ -257,8 +150,8 @@ describe('the number on the personal agent’s sidebar row', () => {
         (n) => n.props.className === 'sb-dot' && n.props['aria-label'] === ATTENTION,
       );
     const ATTENTION = zh('components.sidebar.attention');
-    expect(dot(sidebar(undefined, { items: [waiting('home', 'h-1')] }))).toBe(false);
-    expect(dot(sidebar(undefined, { items: [waiting('alpha', 'a-1')] }))).toBe(true);
+    expect(dot(sidebar({ items: [waiting('home', 'h-1')] }))).toBe(false);
+    expect(dot(sidebar({ items: [waiting('alpha', 'a-1')] }))).toBe(true);
   });
 });
 

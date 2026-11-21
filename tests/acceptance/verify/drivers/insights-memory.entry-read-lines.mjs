@@ -20,17 +20,34 @@ try {
     (await board()).projects.find((p) => p.id === project_id).revision,
   );
   const HEAD = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo }).toString().trim();
-  const agent = (await call('resident.open', { project_id, kind: 'assistant' })).id;
+  // A lead session, which carries the memory tools; its first turn ends before the turns below are sent.
+  const TITLE = `verify-memory-read-${stamp}`;
+  await call('session.create', {
+    project_id,
+    runtime: 'fixture',
+    purpose: 'lead',
+    input: `${TITLE}\nfixture-script\n${JSON.stringify([{ say: `Ready ${stamp}` }])}`,
+  });
+  const first = await poll(
+    async () =>
+      (await query('session.list', { project_id })).find(
+        (s) =>
+          s.title === TITLE && s.last_turn && !['queued', 'running'].includes(s.last_turn.state),
+      ),
+    30_000,
+  );
+  check('前置：会话的第一个回合结束', first, first?.last_turn?.state);
+  const session = first?.id;
   // Sends one turn and waits until it ends.
   const send = async (steps) => {
-    const before = (await board()).session_turns.filter((t) => t.session_id === agent).length;
+    const before = (await board()).session_turns.filter((t) => t.session_id === session).length;
     await call(
       'session.send',
-      { session_id: agent, input: `fixture-script\n${JSON.stringify(steps)}` },
-      (await board()).sessions.find((s) => s.id === agent).revision,
+      { session_id: session, input: `fixture-script\n${JSON.stringify(steps)}` },
+      (await board()).sessions.find((s) => s.id === session).revision,
     );
     const turn = await poll(async () => {
-      const turns = (await board()).session_turns.filter((t) => t.session_id === agent);
+      const turns = (await board()).session_turns.filter((t) => t.session_id === session);
       const last = turns.at(-1);
       return turns.length > before && !['queued', 'running'].includes(last.state) && last;
     }, 30_000);

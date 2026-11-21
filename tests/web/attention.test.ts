@@ -92,7 +92,7 @@ beforeEach(() => {
   mock.shell = {
     openProjectSession: vi.fn(),
     openProject: vi.fn(),
-    openProjectBoard: vi.fn(),
+    openProjectSessions: vi.fn(),
     askedNeed: null,
   };
   vi.mocked(runCommand).mockClear();
@@ -169,7 +169,7 @@ describe('what needs you, by the decision it asks', () => {
     expect(rows(h.value)).toHaveLength(0);
   });
 
-  it('approves the plan of a lane that waits for it, and opens the board from the row', async () => {
+  it("approves the plan of a lane that waits for it, and opens the project's sessions from the row", async () => {
     const lane = need({
       source: { table: 'board_plans', id: 'lead-1', revision: 4 },
       kind: 'board.lane.approval',
@@ -187,7 +187,7 @@ describe('what needs you, by the decision it asks', () => {
       zh('board.needs.actions.approvePlan'),
     ]);
     buttons(row!)[0]!.props.onClick();
-    expect(mock.shell.openProjectBoard).toHaveBeenCalledWith('alpha');
+    expect(mock.shell.openProjectSessions).toHaveBeenCalledWith('alpha');
     expect(mock.shell.openProjectSession).not.toHaveBeenCalled();
     buttons(row!)[1]!.props.onClick();
     await h.flush();

@@ -101,7 +101,7 @@ function parts(h: HookHost<any>): string[] {
     if (isFn(n, 'ProjectMenu')) out.push('project');
     else if (n.type === 'button' && name === 'sb-it')
       out.push(text(n.props.children) === screen('settings') ? 'settings' : 'nav');
-    else if (name === 'sb-sh') out.push('sessions');
+    else if (name === 'ss-zh') out.push('sessions');
     else if (n.type === 'nav' && name === 'ss-list') out.push('list');
   }
   return out.filter((part, i) => part !== out[i - 1]);
@@ -121,15 +121,15 @@ const waitButton = (h: HookHost<any>) =>
   nodes(h.value).find((n) => n.type === 'button' && n.props.className === 'sb-wait');
 
 describe('sidebar layout', () => {
-  it('runs project row, page rows, sessions title, session list, then settings', () => {
-    expect(parts(mount(LIST))).toEqual(['project', 'nav', 'sessions', 'list', 'settings']);
+  it('runs project row, page rows, the session list headed by its title, then settings', () => {
+    expect(parts(mount(LIST))).toEqual(['project', 'nav', 'list', 'sessions', 'settings']);
   });
 
   it('keeps every page row', () => {
     const pages = nodes(mount(LIST).value)
       .filter((n) => n.type === 'button' && n.props.className === 'sb-it')
       .map((n) => text(n.props.children));
-    expect(pages).toEqual(['board', 'insights', 'trace', 'memory', 'settings'].map(screen));
+    expect(pages).toEqual(['trace', 'memory', 'settings'].map(screen));
   });
 
   it('draws the project row as the mark, the name and a chevron, with no counts under it', () => {
@@ -184,7 +184,7 @@ describe('sidebar layout', () => {
       .filter((n) => n.type === 'button' && n.props.className === 'ib')
       .map((n) => n.props['aria-label']);
     expect(labels).toEqual([
-      ...['board', 'insights', 'trace', 'memory'].map(screen),
+      ...['trace', 'memory'].map(screen),
       zh('components.sidebar.newSession'),
       allLabel,
       screen('settings'),

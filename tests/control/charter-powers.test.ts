@@ -6,18 +6,11 @@ import {
   type BoardPlan,
   type CharterMode,
   type CharterPower,
-  type ExternalEvent,
   type Milestone,
   type Principal,
-  type Project,
   type Session,
   type WorkflowPolicy,
 } from '@pantheon/domain';
-import type { ControlContext } from '../../packages/control/src/context.js';
-import {
-  receiveExternalEvent,
-  tickExternalIntake,
-} from '../../packages/control/dist/external-events.js';
 import { awaitWorkspaceReady, eventually, fixture, insertSession, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
@@ -35,8 +28,7 @@ async function plain() {
   return f;
 }
 
-const MINUTE = 60_000,
-  REQUEST = 'Ship the export API this week.',
+const REQUEST = 'Ship the export API this week.',
   MERGE_REASON = 'The README names the new module';
 
 /** What came of a lead's use of a power: applied at once, waiting for the user, or refused. */
@@ -138,7 +130,7 @@ function commit(repository: string, name: string, contents: string) {
 }
 
 const scenarios: Record<
-  'plan_change' | 'accept_milestone' | 'merge_out_of_scope' | 'start_external',
+  'plan_change' | 'accept_milestone' | 'merge_out_of_scope',
   (mode: CharterMode) => Promise<Outcome>
 > = {
   async plan_change(mode) {
@@ -288,44 +280,6 @@ const scenarios: Record<
       ...refusal,
     };
   },
-  async start_external(mode) {
-    const f = await workbenchFixture({
-        externalSources: [{ id: 'stub', poll: async () => MINUTE }],
-      }),
-      ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
-    if (mode !== 'off')
-      f.call(
-        'project.externalEvents.set',
-        { project_id: f.project.id, mode: mode === 'on' ? 'auto' : 'approve' },
-        f.store.must<Project>('projects', f.project.id).revision,
-      );
-    const event = receiveExternalEvent(ctx, {
-      project_id: f.project.id,
-      source: 'github',
-      subject_key: 'github:acme/reports#12',
-      dedup_key: 'github:acme/reports#12:assigned:501',
-      kind: 'issue_assigned',
-      actor: 'taylor',
-      actor_trust: 'self',
-      title: 'Totals are wrong',
-      url: 'https://github.com/acme/reports/issues/12',
-      texts: [{ author: 'taylor', own: true, text: 'The weekly total counts refunds twice.' }],
-    });
-    f.store.update<ExternalEvent>(
-      'external_events',
-      { ...event, received_at: event.received_at - 3 * MINUTE },
-      event.revision,
-    );
-    tickExternalIntake(ctx);
-    const held = waiting(f, 'external.approval');
-    return {
-      applied:
-        !held &&
-        f.store.list<ExternalEvent>('external_events').every((each) => each.state === 'handled'),
-      waiting: held,
-      recorded: recorded(f, 'start_external'),
-    };
-  },
 };
 
 const MILESTONE_CARD = 'The user accepts milestone release on the milestone card';
@@ -373,9 +327,6 @@ it.each<Row>([
     refused: 'permission_denied',
     reason: "The project's charter does not let a lead merge files outside a task's scope",
   },
-  { power: 'start_external', mode: 'on', applied: true, waiting: false, recorded: false },
-  { power: 'start_external', mode: 'ask', applied: false, waiting: true, recorded: false },
-  { power: 'start_external', mode: 'off', applied: false, waiting: false, recorded: false },
 ])(
   "with $power set to $mode, the lead's use is applied: $applied, waits for the user: $waiting, refused: $refused",
   async ({ power, mode, reason, ...expected }) => {

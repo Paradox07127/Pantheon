@@ -379,7 +379,6 @@ describe('harness page', () => {
     );
     expect(found(zh('settings.harness.artifacts'))).toContain('harness.artifacts');
     expect(found(zh('settings.harness.kinds'))).toContain('harness.kinds');
-    expect(found(zh('settings.harness.quota'))).toContain('harness.quota');
   });
 
   it('shows the version number alone, whatever text the runtime prints around it', async () => {

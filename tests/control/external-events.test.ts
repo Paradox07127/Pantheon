@@ -3,7 +3,6 @@ import type { ExternalEvent } from '@pantheon/domain';
 import type { ControlContext } from '../../packages/control/src/context.js';
 import {
   receiveExternalEvent,
-  settledExternalEvents,
   type ExternalEventInput,
 } from '../../packages/control/dist/external-events.js';
 import { fixture } from '../helpers.js';
@@ -30,9 +29,7 @@ async function eventFixture() {
       ...fields,
     });
   const stored = () => f.store.list<ExternalEvent>('external_events');
-  const settled = () =>
-    settledExternalEvents(ctx).map((events) => events.map((event) => event.kind));
-  return { ...f, clock, report, stored, settled };
+  return { ...f, clock, report, stored };
 }
 
 it('stores one event when a source reports the same occurrence twice', async () => {
@@ -49,50 +46,19 @@ it('stores one event when a source reports the same occurrence twice', async () 
   }
 });
 
-it.each(['other', 'bot'] as const)(
-  'drops an event whose actor is %s and never hands it on',
-  async (actor_trust) => {
-    const f = await eventFixture();
-    try {
-      expect(f.report({ actor_trust })).toMatchObject({ state: 'dropped' });
-      f.clock.advance(10 * MINUTE);
-      expect(f.settled()).toEqual([]);
-    } finally {
-      await f.close();
-    }
-  },
-);
-
-it.each(['self', 'write'] as const)('keeps an event whose actor is %s', async (actor_trust) => {
+it.each(['other', 'bot'] as const)('drops an event whose actor is %s', async (actor_trust) => {
   const f = await eventFixture();
   try {
-    expect(f.report({ actor_trust })).toMatchObject({ state: 'pending' });
+    expect(f.report({ actor_trust })).toMatchObject({ state: 'dropped' });
   } finally {
     await f.close();
   }
 });
 
-it('hands on the events about one subject together once the subject was quiet for two minutes', async () => {
+it.each(['self', 'write'] as const)('keeps an event whose actor is %s', async (actor_trust) => {
   const f = await eventFixture();
   try {
-    f.report({ dedup_key: 'assigned', kind: 'issue_assigned' });
-    f.report({
-      subject_key: 'github:acme/reports#40',
-      dedup_key: 'review',
-      kind: 'review_requested',
-    });
-    expect(f.settled()).toEqual([]);
-    f.clock.advance(MINUTE);
-    f.report({ dedup_key: 'comment-1', kind: 'issue_comment' });
-    f.clock.advance(MINUTE / 2);
-    f.report({ dedup_key: 'comment-2', kind: 'issue_labeled' });
-    f.clock.advance(MINUTE / 2);
-    expect(f.settled()).toEqual([['review_requested']]);
-    f.clock.advance(MINUTE + MINUTE / 2);
-    expect(f.settled()).toEqual([
-      ['issue_assigned', 'issue_comment', 'issue_labeled'],
-      ['review_requested'],
-    ]);
+    expect(f.report({ actor_trust })).toMatchObject({ state: 'pending' });
   } finally {
     await f.close();
   }

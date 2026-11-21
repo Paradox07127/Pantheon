@@ -42,7 +42,6 @@ import { useMemorySessionTurns } from '../../data/memory';
 import { reducedMotion } from '../../lib/motion';
 import { failureText, type NeedsYouState } from '../../data/needs-you';
 import {
-  openPersonalAgent,
   personalCall,
   personalHomeOf,
   useBuiltInPersonalKey,
@@ -761,13 +760,7 @@ export function ThreadTurn(props: {
                       })}
                     >
                       <User aria-hidden="true" />
-                      <button
-                        type="button"
-                        className="pn-ref"
-                        onClick={() => void openPersonalAgent()}
-                      >
-                        {SCREEN_NAMES.personal}
-                      </button>
+                      {SCREEN_NAMES.personal}
                     </span>
                   ) : (
                     <span className="apd-from">

@@ -28,7 +28,6 @@ const DEFAULTED = [
   'recent-next',
   'recent-back',
   'thread-find',
-  'go-board',
   'open-project',
   'list-up',
   'list-down',

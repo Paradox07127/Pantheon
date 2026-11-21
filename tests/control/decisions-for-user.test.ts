@@ -565,19 +565,6 @@ it.each<[string, Act, DecisionForUser['kind'] | undefined]>([
     'personal_answer',
   ],
   [
-    'a request the personal key sent',
-    answeredBy(personal, (f, by) => {
-      f.call(
-        'request.send',
-        { project_id: f.project.id, input: 'What does the export hold?' },
-        null,
-        by,
-      );
-      return {};
-    }),
-    undefined,
-  ],
-  [
     'the personal key marking the project seen',
     answeredBy(personal, (f, by) => {
       f.call('project.seen', { project_id: f.project.id }, null, by);

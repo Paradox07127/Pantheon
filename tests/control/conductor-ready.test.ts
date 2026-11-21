@@ -9,7 +9,7 @@ import type {
   Session,
   SessionTurn,
 } from '@pantheon/domain';
-import { insideSandbox, awaitWorkspaceReady, eventually } from '../helpers.js';
+import { insideSandbox, awaitWorkspaceReady, eventually, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
 type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
@@ -219,6 +219,41 @@ it.skipIf(insideSandbox)(
     expect(payloads(f, session.id, 'session.merge_started')).toEqual([{}]);
     expect(messages(f, session.id)).toEqual([expect.stringContaining(`landed on main at ${head}`)]);
     expect(current(f, session.id)).not.toHaveProperty('ready');
+    expect(current(f, session.id).outcome).toBeUndefined();
+  },
+);
+
+it.skipIf(insideSandbox)(
+  'keeps a conductor in the project folder open once its work lands',
+  async () => {
+    const f = await readyFixture();
+    const { session } = await idle(
+      f,
+      await f.call<Promise<Session>>('session.create', {
+        project_id: f.project.id,
+        runtime: f.adapter.name,
+        input: 'Ship the answer',
+        purpose: 'conductor',
+        workspace: 'in_place',
+      }),
+    );
+    expect(session.in_place).toBeDefined();
+    const head = commit(f.source, 'answer.txt', 'in place\n');
+    await f.call('session.gates.run', { session_id: session.id }, current(f, session.id).revision);
+    await eventually(
+      () => f.control.sessionGates(user, session.id).last?.commit === head,
+      () => f.control.tick(),
+      10000,
+    );
+    duringNextTurn(f, () => ready(f, session.id));
+    send(f, session.id);
+    await eventually(
+      () => payloads(f, session.id, 'session.merged').length > 0,
+      () => f.control.tick(),
+      10000,
+    );
+    expect(git(f.source, 'rev-parse', 'main')).toBe(head);
+    expect(current(f, session.id).state).not.toBe('closed');
     expect(current(f, session.id).outcome).toBeUndefined();
   },
 );

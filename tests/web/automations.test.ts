@@ -424,31 +424,13 @@ const sidebar = () =>
   );
 
 describe('sidebar entry', () => {
-  it("ends the project's agents with Automations and the count of routines on", async () => {
-    mock.shell.screen = 'board';
-    const h = sidebar();
-    const group = one(h.value, 'group', 'This project');
-    const entry = one(group, 'button', 'Automations, 2 routines on');
-    expect(entry.props['aria-current']).toBeUndefined();
-    expect(
-      nodes(group)
-        .filter((n) => n.type === 'button')
-        .at(-1),
-    ).toBe(entry);
-    await press(h, entry);
-    expect(mock.shell.setScreen).toHaveBeenCalledWith('automations');
-  });
-
-  it('marks the entry current on the automations page', () => {
-    expect(one(sidebar().value, 'button', 'Automations, 2 routines on').props['aria-current']).toBe(
-      'page',
-    );
-  });
-
-  it('leaves the entry out while the project has no agent that is not archived', () => {
-    data.agents = [agent('ag-ideas', 'ideas', { archived_at: 5 })];
-    expect(nodes(sidebar().value).filter((n) => n.props['data-stop'] === 'automations')).toEqual(
-      [],
-    );
-  });
+  it.each(['sessions', 'automations'] as const)(
+    'has no automations entry on the %s screen while the project has agents with routines on',
+    (screen) => {
+      mock.shell.screen = screen;
+      const tree = sidebar().value;
+      expect(nodes(tree).filter((n) => n.props['data-stop'] === 'automations')).toEqual([]);
+      expect(all(tree, 'button').filter((n) => nameOf(n).startsWith('Automations'))).toEqual([]);
+    },
+  );
 });

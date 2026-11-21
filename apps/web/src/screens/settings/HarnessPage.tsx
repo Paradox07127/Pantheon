@@ -29,7 +29,6 @@ import { t } from '../../i18n';
 import { ipcFailure } from './editors';
 import { Loading, Row, Section } from './ProjectSettingsScreen';
 import { registerPageHeader } from './settings-header';
-import { openBoardTab } from './settings-jump';
 import { EmptyState } from '../../components/EmptyState';
 import './harness-page.css';
 
@@ -454,16 +453,6 @@ export function HarnessPage({ projectId }: { projectId: string | null }) {
               settingId="harness.models"
             >
               {listedModels}
-            </Row>
-          )}
-          {s.installed && projectId !== null && (s.quota?.windows.length ?? 0) > 0 && (
-            <Row
-              label={t({ id: 'settings.harness.quota', defaultMessage: 'Quota' })}
-              settingId="harness.quota"
-            >
-              <button type="button" className="btn ghost sm" onClick={() => openBoardTab('usage')}>
-                {t({ id: 'settings.runtimes.seeUsage', defaultMessage: 'See usage' })}
-              </button>
             </Row>
           )}
         </div>

@@ -43,7 +43,7 @@ async function connect(server: Awaited<ReturnType<typeof createMcpServer>>) {
   return client;
 }
 
-it('lists the six personal tools for a personal key', async () => {
+it('lists the five personal tools for a personal key', async () => {
   stubDaemon(() => ({}));
   const client = await connect(
     await createPersonalMcpServer('http://127.0.0.1:4321', 'personal-token', 'key'),
@@ -54,16 +54,11 @@ it('lists the six personal tools for a personal key', async () => {
     'project_brief',
     'project_decisions',
     'projects_overview',
-    'send_request',
   ]);
 });
 
-it('sends needs_you and send_request to the daemon with the personal key and returns its answers', async () => {
-  const seen = stubDaemon((entry) =>
-    entry.method === 'GET'
-      ? { items: [{ kind: 'lead.question', project_id: 'project' }] }
-      : { receipt: { session_id: 'assistant', turn_id: 'turn' } },
-  );
+it('sends needs_you to the daemon with the personal key and returns its answer', async () => {
+  const seen = stubDaemon(() => ({ items: [{ kind: 'lead.question', project_id: 'project' }] }));
   const client = await connect(
     await createPersonalMcpServer('http://127.0.0.1:4321', 'personal-token', 'key'),
   );
@@ -78,27 +73,11 @@ it('sends needs_you and send_request to the daemon with the personal key and ret
       text: JSON.stringify({ items: [{ kind: 'lead.question', project_id: 'project' }] }),
     },
   ]);
-  const sent = await client.callTool({
-    name: 'send_request',
-    arguments: { project_id: 'project', input: 'Ship the release notes' },
-  });
-  expect(sent.isError).not.toBe(true);
-  expect(JSON.stringify(sent.content)).toContain('turn');
   expect(seen).toMatchObject([
     {
       method: 'GET',
       authorization: 'Bearer personal-token',
       url: { pathname: '/v1/needs_you.list', search: '?project_id=project' },
-    },
-    {
-      method: 'POST',
-      authorization: 'Bearer personal-token',
-      url: { pathname: '/v1/commands' },
-      body: {
-        actor: 'personal:key',
-        type: 'request.send',
-        input: { project_id: 'project', input: 'Ship the release notes' },
-      },
     },
   ]);
 });

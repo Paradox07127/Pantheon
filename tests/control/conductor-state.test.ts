@@ -225,3 +225,43 @@ it("lists the project's changes, their review and to-dos to a conductor session 
   for (const principal of [user, credential(quiet, 'lead'), credential(worker, 'worker')])
     expect(await refusal(f, principal), principal.role).toBe('permission_denied');
 });
+
+it('lists the work a conductor landed as merged while it stays open', async () => {
+  const f = await workbenchFixture();
+  const conductor = await idle(
+    f,
+    await f.call<Promise<Session>>('session.create', {
+      project_id: f.project.id,
+      runtime: f.adapter.name,
+      input: 'Ship the export',
+      purpose: 'conductor',
+    }),
+  );
+  commitIn(f, conductor, 'Conductor work');
+  await f.call(
+    'session.merge',
+    { session_id: conductor.id },
+    f.store.must<Session>('sessions', conductor.id).revision,
+  );
+  await eventually(
+    () =>
+      f.store
+        .kindEvents(f.project.id, ['session.merged'])
+        .some((event) => event.aggregate_id === conductor.id),
+    () => f.control.tick(),
+    10000,
+  );
+  await idle(f, conductor);
+  expect(f.store.must<Session>('sessions', conductor.id).state).not.toBe('closed');
+
+  waitOutStatusReuse();
+  await f.prefetch();
+  const state = (await f.control.execute(
+    credential(conductor, 'conductor'),
+    command(`session:${conductor.id}`, 'conductor.state', {}),
+  )) as ConductorState;
+  expect(state.changes.find((row) => row.id === `session:${conductor.id}`)).toMatchObject({
+    status: 'merged',
+    self: true,
+  });
+});

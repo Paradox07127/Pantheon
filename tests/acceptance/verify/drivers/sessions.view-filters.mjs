@@ -7,10 +7,6 @@ const check = (what, ok, got) => result.checks.push({ what, ok: Boolean(ok), got
 const stamp = Date.now();
 const NAME = `verify-filter-${stamp}`;
 const { project_id } = await newProject(NAME);
-// The sidebar keys a resident row by its agent's id.
-const ASSISTANT = (await query('agent.list', { project_id })).find(
-  (a) => a.template === 'assistant',
-).id;
 const board = () => query('board', { project_id });
 const projectRow = async () => (await board()).projects.find((p) => p.id === project_id);
 await call(
@@ -60,10 +56,23 @@ const worker = await poll(
 );
 check('前置：session.list 有运行中的 worker', worker, worker?.id);
 
+// A direct session, whose row the Worker filter leaves in place.
+const DIRECT = `verify-direct-${stamp}`;
+await call('session.create', {
+  project_id,
+  runtime: 'fixture',
+  input: `${DIRECT}\nfixture-script\n${JSON.stringify([{ say: 'ok' }])}`,
+});
+const direct = await poll(
+  async () => (await query('session.list', { project_id })).find((s) => s.title === DIRECT),
+  30_000,
+);
+check('前置：session.list 有一个直接会话', direct, direct?.id);
+
 const shownRows = () =>
   page.evaluate(`({
     worker: !!document.querySelector('nav.ss-list [data-session="${worker?.id}"]'),
-    resident: !!document.querySelector('nav.ss-list [data-stop="resident:${ASSISTANT}"]'),
+    direct: !!document.querySelector('nav.ss-list [data-session="${direct?.id}"]'),
   })`);
 const menuItems = () =>
   page.evaluate(`(() => {
@@ -103,10 +112,8 @@ check(
   menu?.checks,
 );
 check(
-  '视图菜单按钮在会话标题行，不在智能体标题行',
-  await page.evaluate(
-    `!!document.querySelector('.ss-zh [aria-label="分组、排序与筛选"]') && !document.querySelector('.sb-sh [aria-label="分组、排序与筛选"]')`,
-  ),
+  '视图菜单按钮在会话标题行',
+  await page.evaluate(`!!document.querySelector('.ss-zh [aria-label="分组、排序与筛选"]')`),
   null,
 );
 check(
@@ -121,7 +128,7 @@ const hidden = await poll(async () => {
   const rows = await shownRows();
   return !rows.worker && rows;
 });
-check('取消勾选 Worker 后 worker 行消失、常驻行还在', hidden && hidden.resident, hidden);
+check('取消勾选 Worker 后 worker 行消失、直接会话行还在', hidden && hidden.direct, hidden);
 
 // Reload the page: the view is stored per project and must still apply.
 const before = await errors();
@@ -138,13 +145,17 @@ await page.waitFor(
 );
 const afterReload = await poll(async () => {
   const rows = await shownRows();
-  return rows.resident && rows;
+  return rows.direct && rows;
 });
 const stored = await page.evaluate(
   `Object.keys(localStorage).filter((k) => k.endsWith(${JSON.stringify(project_id)})).map((k) => localStorage.getItem(k))`,
 );
 result.stored = stored;
-check('刷新后筛选还在：worker 行仍隐藏、常驻行在', afterReload && !afterReload.worker, afterReload);
+check(
+  '刷新后筛选还在：worker 行仍隐藏、直接会话行在',
+  afterReload && !afterReload.worker,
+  afterReload,
+);
 check(
   '刷新后存下的视图 hiddenTypes 含 worker',
   stored.some((v) => v?.includes('"worker"')),

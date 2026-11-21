@@ -404,7 +404,7 @@ it('refuses to send a fail verdict to the task session at the round limit', asyn
   expect(runs(f)[0]).not.toHaveProperty('turn_id');
 });
 
-it("gives both the incomplete reason and the reviewer's fail verdict when a blocking review step fails", async () => {
+it("fails a blocking review step by the reviewer's fail verdict alone when the reviewer wrote no reply", async () => {
   const { f, reviewerId } = await reviewingLoop(SilentReviewer);
   f.call(
     'review.verdict',
@@ -418,11 +418,8 @@ it("gives both the incomplete reason and the reviewer's fail verdict when a bloc
     10000,
   );
   const reason = runs(f)[0]!.reason!;
-  expect(reason).toContain(
-    'incomplete: reviewer reviewer ended its turn with no finding and no reply',
-  );
+  expect(reason).not.toContain('incomplete');
   expect(reason).toContain('failed by verdict:\nreviewer: The export drops the header row');
-  expect(reason.indexOf('incomplete')).toBeLessThan(reason.indexOf('failed by verdict'));
 });
 
 it('keeps the verdicts of two reviewers on the same runtime and fails the step by the fail verdict', async () => {

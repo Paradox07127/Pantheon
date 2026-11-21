@@ -34,7 +34,7 @@ import {
   sessionList,
 } from './workbench-session.js';
 
-/** The only instructions Pantheon adds to a conductor session. */
+/** The instructions Pantheon adds to a conductor session after the line on where it works. */
 export const CONDUCTOR_INSTRUCTIONS =
   "Pantheon gives this session four tools. request_review: another vendor reviews your committed changes; the result comes back to you as a message. report_ready: your committed changes go through the project's gate and land. spawn_session: another vendor's session starts in a new worktree from your current commit; you hear when its turn ends. read_state: this project's changes, checks, landing queue and items waiting for the user. Plan, split work and run subagents with your own tools.";
 
@@ -246,7 +246,9 @@ export function afterSpawnedTurn(ctx: ControlContext, sessionId: string): void {
               : ''
           }.`,
         ]
-      : []),
+      : listed?.ahead !== undefined && target
+        ? [`It is ${listed.ahead} commits ahead of ${target}.`]
+        : []),
     ...(turn.state === 'completed'
       ? ['Review it with request_review, land it with report_ready, or read it in its worktree.']
       : []),

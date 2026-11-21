@@ -20,7 +20,6 @@ import {
 } from './web-hook-host.js';
 import { toastManager } from '@/components/Toast';
 import { useBoard } from '@/data/board';
-import { askMilestone, useAskedMilestone, useBoardPage } from '@/data/board-page';
 import { openPlanMemory, useMemoryView } from '@/data/memory-view';
 import { failureText } from '@/data/needs-you';
 import { EntriesBar, EntriesTopControls, type EntriesFilters } from '@/screens/memory/EntriesBar';
@@ -290,7 +289,7 @@ describe('memory entries page', () => {
     expect(useMemoryView.getState().askedFilters).toBeNull();
   });
 
-  it("names an entry's milestone from the directory and goes to the board overview from it", async () => {
+  it("names an entry's milestone from the directory and goes to the project's sessions from it", async () => {
     const milestones = [{ id: 'ms-release', title: 'Release', count: 1 }];
     pages = () => ({
       ok: true,
@@ -302,18 +301,7 @@ describe('memory entries page', () => {
     const detail = named(h.value, 'EntryDetail');
     expect(detail.props.milestones).toEqual(milestones);
     detail.props.onOpenMilestone();
-    expect(useShell.getState().screen).toBe('board');
-  });
-
-  it("asks the board overview to unfold the entry's milestone", async () => {
-    const h = await mount();
-    list(h).props.onSelect('r1');
-    await rerender(h);
-    named(h.value, 'EntryDetail').props.onOpenMilestone('ms-release');
-    expect(useShell.getState().screen).toBe('board');
-    expect(mountHost(() => useBoardPage(projectId)).value).toBe('overview');
-    expect(mountHost(() => useAskedMilestone(projectId)).value).toBe('ms-release');
-    askMilestone(null);
+    expect(useShell.getState().screen).toBe('sessions');
   });
 
   it('names the session that proposed a pending entry from the board', async () => {

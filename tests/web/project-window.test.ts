@@ -102,7 +102,7 @@ beforeEach(() => {
   mock.board = { board: null, events: [], status: { state: 'live' } };
   inWindow({ kind: 'main' });
   vi.stubGlobal('navigator', { userAgent: 'Macintosh' });
-  useShell.setState({ screen: 'board', sessionId: null, sessionGroup: null });
+  useShell.setState({ screen: 'sessions', sessionId: null, sessionGroup: null });
 });
 afterEach(() => {
   unmountAll();
@@ -145,7 +145,7 @@ describe('current project of a project window', () => {
       project_id: 'alpha',
     });
     expect(useCurrentProject.getState().projectId).toBe('alpha');
-    expect(useShell.getState().screen).toBe('board');
+    expect(useShell.getState().screen).toBe('sessions');
 
     otherWindowWrites(CURRENT_KEY, 'gamma');
     useShell.getState().openProject('alpha');
@@ -166,7 +166,7 @@ describe('current project of a project window', () => {
       session_id: 'beta-1',
     });
     expect(useCurrentProject.getState().projectId).toBe('alpha');
-    expect(useShell.getState().screen).toBe('board');
+    expect(useShell.getState().screen).toBe('sessions');
   });
 
   it('opens the new-session composer of another project in the main window', async () => {
@@ -198,7 +198,7 @@ describe('sidebar of a project window', () => {
     const labels = nodes(tree)
       .filter((n) => n.type === 'button')
       .map((n) => text(n.props.children));
-    expect(labels).toContain(zh('app.screenName.board'));
+    expect(labels).toContain(zh('app.screenName.trace'));
   });
 
   it('keeps no all projects button on the folded rail', () => {

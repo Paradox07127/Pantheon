@@ -153,7 +153,7 @@ beforeAll(async () => {
     board: { projects: [project('alpha'), project('beta')] } as never,
   });
   useCurrentProject.getState().choose('alpha');
-  useShell.setState({ screen: 'board' });
+  useShell.setState({ screen: 'sessions' });
   const { createRoot } = await import('react-dom/client');
   root = createRoot(container as never);
   await act(() => root.render(createElement(App)));
@@ -165,41 +165,50 @@ afterAll(() => {
 });
 
 it('keeps a visited screen mounted and hidden while another screen shows', async () => {
-  expect(shown('board')?.style.display).not.toBe('none');
+  expect(shown('sessions')?.style.display).not.toBe('none');
   await go('trace');
   expect(shown('trace')?.style.display).not.toBe('none');
   // display:none takes the screen out of the accessibility tree.
-  expect(shown('board')?.style.display).toBe('none');
-  await go('board');
-  expect(shown('board')?.style.display).toBe('');
+  expect(shown('sessions')?.style.display).toBe('none');
+  await go('sessions');
+  expect(shown('sessions')?.style.display).toBe('');
   expect(shown('trace')?.style.display).toBe('none');
-  expect(seen.mounts).toMatchObject({ board: 1, trace: 1 });
+  expect(seen.mounts).toMatchObject({ sessions: 1, trace: 1 });
 });
 
+it.each(['board', 'insights', 'automations', 'personal'] as const)(
+  'shows the sessions for the %s screen an older state may still hold',
+  async (old) => {
+    await go(old);
+    expect(useShell.getState().screen).toBe('sessions');
+    expect(shown('sessions')?.style.display).toBe('');
+    expect(shown(old)).toBeUndefined();
+  },
+);
+
 it('opens the palette from the search button beside the sidebar toggle, on every page', async () => {
-  for (const page of ['board', 'sessions'] as const) {
+  for (const page of ['trace', 'sessions'] as const) {
     await go(page);
     await act(() => seen.controls!.onSearch());
     expect(seen.palette.at(-1)!.open).toBe(true);
     await act(() => seen.palette.at(-1)!.onOpenChange(false));
     expect(seen.palette.at(-1)!.open).toBe(false);
   }
-  await go('board');
 });
 
 it('mounts the memory page once and keeps it while another screen shows', async () => {
   await go('memory');
   expect(shown('memory')?.style.display).not.toBe('none');
-  await go('board');
+  await go('sessions');
   expect(shown('memory')?.style.display).toBe('none');
   await go('memory');
   expect(shown('memory')?.style.display).toBe('');
   expect(seen.mounts.memory).toBe(1);
-  await go('board');
+  await go('sessions');
 });
 
 it('holds transitions for one frame after a screen switch, so entrances in a kept screen do not replay', async () => {
-  const main = shown('board')!.parentNode as InstanceType<typeof FakeElement>;
+  const main = shown('sessions')!.parentNode as InstanceType<typeof FakeElement>;
   frame();
   frame();
   expect(main.hasAttribute('data-switching')).toBe(false);
@@ -209,7 +218,7 @@ it('holds transitions for one frame after a screen switch, so entrances in a kep
   expect(main.hasAttribute('data-switching')).toBe(true);
   frame();
   expect(main.hasAttribute('data-switching')).toBe(false);
-  await go('board');
+  await go('sessions');
 });
 
 it('builds the palette items only while the palette is open', async () => {
@@ -224,7 +233,9 @@ it('builds the palette items only while the palette is open', async () => {
   expect(ids).toContain('screen-memory');
   expect(ids).not.toContain('screen-runtime');
   expect(ids).not.toContain('screen-flow');
-  expect(ids.indexOf('screen-insights')).toBe(ids.indexOf('screen-board') + 1);
+  expect(ids).not.toContain('screen-board');
+  expect(ids).not.toContain('screen-insights');
+  expect(ids).not.toContain('screen-automations');
 });
 
 it('asks for a chart from the palette the way the empty canvas does, with a new session', async () => {
@@ -291,7 +302,7 @@ it('drops the kept screens when the current project changes', async () => {
   expect(shown('trace')).toBeDefined();
   await act(() => useCurrentProject.getState().choose('beta'));
   expect(shown('trace')).toBeUndefined();
-  expect(shown('board')).toBeUndefined();
+  expect(shown('sessions')).toBeUndefined();
   expect(shown('projects')?.style.display).not.toBe('none');
   await go('trace');
   expect(seen.mounts.trace).toBe(2);
@@ -324,14 +335,14 @@ it('puts a failure line in place of a screen that throws, keeps the sidebar, and
 
 it('mounts a screen that threw again when it shows again', async () => {
   const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
-  seen.broken = 'board';
-  await go('board');
-  expect(shown('board')).toBeUndefined();
-  expect(alert()?.textContent).toContain('bad board screen');
+  seen.broken = 'sessions';
+  await go('sessions');
+  expect(shown('sessions')).toBeUndefined();
+  expect(alert()?.textContent).toContain('bad sessions screen');
   await go('trace');
   seen.broken = null;
-  await go('board');
-  expect(shown('board')?.style.display).toBe('');
+  await go('sessions');
+  expect(shown('sessions')?.style.display).toBe('');
   expect(alert()).toBeUndefined();
   quiet.mockRestore();
 });

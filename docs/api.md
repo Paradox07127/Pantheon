@@ -254,8 +254,6 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `agent.routine.set` | `project_id`: string<br>`id?`: string<br>`prompt`: string<br>`every_minutes?`: integer<br>`at?`: string<br>`active_hours?`: object<br>`enabled`: boolean | routine_set (lead) |
 | `agent.session_read` | `session_id`: string<br>`turns?`: integer | session_read (lead) |
 | `agent.sessions` | `state?`: string | session_list (lead) |
-| `agent.signal_read` | `id`: string | signal_read (lead) |
-| `agent.signals` | `state?`: "new" \| "ongoing" \| "escalating" \| "regressed" \| "holding" \| "resolved" \| "muted"<br>`source?`: "gate_failures" \| "flaky_tests" \| "app_errors" \| "session_failures" \| "trace_findings" | signal_list (lead) |
 | `agent.tell_user` | `project_id`: string<br>`text`: string<br>`urgency`: "normal" \| "high"<br>`signal_issue_id?`: string | tell_user (lead) |
 | `agent.unarchive` | `agent_id`: string |  |
 | `agent.update` | `agent_id`: string<br>`revision`: integer<br>`name?`: string<br>`role?`: string<br>`instructions?`: string<br>`brief?`: string<br>`tools?`: ("board" \| "dispatch" \| "memory" \| "browser" \| "app" \| "sessions" \| "github" \| "always_on" \| "agents" \| "signals")[]<br>`listens?`: ("github" \| "gate_failures" \| "flaky_tests" \| "app_errors" \| "session_failures" \| "trace_findings")[]<br>`runtime?`: string<br>`model?`: string<br>`effort?`: "none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max" \| "ultra"<br>`routines?`: object[]<br>`contract?`: object \| null |  |
@@ -601,14 +599,6 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `session.steer` | `session_id`: string<br>`input`: string<br>`refs?`: (object \| object)[]<br>`attachments?`: string[]<br>`skills?`: object[]<br>`app?`: object |  |
 | `session.unarchive` | `session_id`: string |  |
 
-### signal
-
-| type | input | MCP 工具 |
-|---|---|---|
-| `signal.app_error` | `kind`: "error" \| "unhandled_rejection" \| "console" \| "crash"<br>`message`: string<br>`stack?`: string<br>`reason?`: string<br>`exit_code?`: integer |  |
-| `signal.mute` | `id`: string |  |
-| `signal.resolve` | `id`: string |  |
-
 ### task
 
 | type | input | MCP 工具 |
@@ -746,7 +736,6 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `session.tool_image` | `session_id`: string<br>`hash`: string |
 | `session.trace` | `project_id`: string<br>`lane_key`: string<br>`turn?`: string |
 | `session.turn_diff` | `session_id`: string<br>`turn_id`: string |
-| `signal.list` | `project_id`: string<br>`state?`: "open" \| "muted" \| "resolved" |
 | `symbols.search` | `project_id`: string<br>`session_id?`: string<br>`q`: string |
 | `task.thread` | `project_id`: string<br>`lead_session_id`: string<br>`task_id`: string |
 | `task.trace` | `project_id`: string<br>`lead_session_id`: string<br>`task_id`: string |

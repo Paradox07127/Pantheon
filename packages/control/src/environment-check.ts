@@ -6,8 +6,6 @@ import {
   type Principal,
   type Project,
   type ProjectBaseline,
-  type Session,
-  type SignalIssue,
   type Workspace,
 } from '@pantheon/domain';
 import { inputSchemas } from '@pantheon/protocol';
@@ -15,7 +13,6 @@ import { baselineChecked, baselineCommands } from './baseline.js';
 import { projectAccess, userOnly, type ControlContext, type Handlers } from './context.js';
 import { runGit } from './git.js';
 import { gateFailed, gateTemporary, runCandidateCommand } from './landing.js';
-import { noteSignalHistory } from './signals.js';
 import { afterCommit } from './workbench-session.js';
 import { registerWorkspace } from './workspace.js';
 
@@ -60,18 +57,6 @@ function finish(
   });
   checkEvent(ctx, 'finished', ended);
   if (ended.cause.kind === 'baseline') baselineChecked(ctx, ended);
-  if (ended.cause.kind !== 'signal') return;
-  const base = ended.commit?.slice(0, 7) ?? 'the base commit',
-    failed = ended.commands.find((command) => command.exit_code !== 0);
-  noteSignalHistory(
-    ctx,
-    ended.cause.issue_id,
-    ended.state === 'passed'
-      ? `Passes on ${base} in a fresh worktree`
-      : failed
-        ? `Fails on ${base} in a fresh worktree: ${failed.name} exit ${failed.exit_code}`
-        : `The check on ${base} in a fresh worktree did not finish: ${ended.reason_code}`,
-  );
 }
 
 /** Waits for the worktree's provisioning, then runs the commands in it and ends the row. */
@@ -253,52 +238,6 @@ export function startEnvironmentCheck(
   checkEvent(ctx, 'started', row);
   checkEnvironment(ctx, row, input.commands, own ?? input.setup);
   return row;
-}
-
-/**
- * Starts a check of the issue's failed gate command, or of the whole gate without a name, on the
- * head of the root the session's gate ran in. Each issue gets one check, and a project runs one at
- * a time; a muted issue leaves the check to the issue that muted it. The caller owns the
- * transaction.
- */
-export function checkOnBase(
-  ctx: ControlContext,
-  issue: SignalIssue,
-  sessionId: string | undefined,
-  name?: string,
-): void {
-  if (
-    issue.state === 'muted' ||
-    ctx.store
-      .list<EnvironmentCheck>('environment_checks')
-      .some(
-        (row) =>
-          row.project_id === issue.project_id &&
-          (row.state === 'running' ||
-            (row.cause.kind === 'signal' && row.cause.issue_id === issue.id)),
-      )
-  )
-    return;
-  const project = ctx.store.must<Project>('projects', issue.project_id),
-    workspaceId = sessionId && ctx.store.get<Session>('sessions', sessionId)?.workspace_id,
-    root =
-      (workspaceId && ctx.store.get<Workspace>('workspaces', workspaceId)?.source) ||
-      project.roots[0]!;
-  const commands = (project.gates?.[root] ?? []).filter(
-    (command) => command.enabled !== false && (name === undefined || command.name === name),
-  );
-  if (!commands.length) return;
-  try {
-    startEnvironmentCheck(ctx, {
-      project_id: project.id,
-      root,
-      commands,
-      base_ref: 'HEAD',
-      cause: { kind: 'signal', issue_id: issue.id },
-    });
-  } catch {
-    // A root Pantheon cannot make a worktree of gets no check; the gate run is still recorded.
-  }
 }
 
 export const environmentCheckHandlers: Handlers = {

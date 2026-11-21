@@ -2662,18 +2662,6 @@ export const inputSchemas = {
   /** The user only; revokes the personal agent key at once, and it stays revoked after a restart. */
   'personal.key.revoke': z.strictObject({ key_id: str }),
   'external.approve': z.strictObject({ project_id: str, subject_key: str }),
-  /** SignalIssue; the user only. Mutes the issue: it keeps counting and wakes no agent. */
-  'signal.mute': z.strictObject({ id: str }),
-  /** SignalIssue; the user only. Resolves the issue; its next signal is a regression. */
-  'signal.resolve': z.strictObject({ id: str }),
-  /** SignalIssue; the user only. Reports an error or a crash of the app itself to the project whose root is the checkout the app runs from; null when no open project is. */
-  'signal.app_error': z.strictObject({
-    kind: z.enum(['error', 'unhandled_rejection', 'console', 'crash']),
-    message: z.string().min(1).max(500),
-    stack: z.string().max(4000).optional(),
-    reason: z.string().min(1).max(200).optional(),
-    exit_code: z.number().int().optional(),
-  }),
   /** The user only; returns the open session of the agent, by agent_id, by the kind of a built-in one or as the personal agent, opening one when there is none. */
   'resident.open': z.union([
     z.strictObject({ project_id: str, kind: z.enum(['assistant', 'triage']) }),
@@ -3071,11 +3059,6 @@ export const querySchemas = {
   'needs_you.list': z.strictObject({ project_id: str.optional() }),
   /** The user only; returns ExternalRead. */
   'external.read': z.strictObject({ project_id: str }),
-  /** The user only; returns the project's SignalIssue records without samples, newest first; open is every one not muted or resolved. */
-  'signal.list': z.strictObject({
-    project_id: str,
-    state: z.enum(['open', 'muted', 'resolved']).optional(),
-  }),
   'projects.summary': z.strictObject({}),
   /** ProjectBrief; what happened in the project after since, by default after the caller's seen cursor. */
   'project.brief': z.strictObject({

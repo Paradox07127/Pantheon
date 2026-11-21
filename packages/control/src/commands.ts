@@ -34,7 +34,6 @@ import { agentWakeHandlers } from './agent-wakes.js';
 import { agentAppToolPreparers } from './agent-app-tools.js';
 import { agentPromptPreparers } from './agent-prompts.js';
 import { agentPreparers } from './agents.js';
-import { signalHandlers, signalPreparers } from './signals.js';
 import { projectBriefHandlers } from './project-brief.js';
 import { briefProseHandlers } from './project-brief-prose.js';
 import { personalKeyHandlers } from './personal-keys.js';
@@ -68,7 +67,6 @@ export const handlers: Handlers = {
   ...frontDoorHandlers,
   ...agentAlwaysOnHandlers,
   ...agentWakeHandlers,
-  ...signalHandlers,
   ...projectBriefHandlers,
   ...briefProseHandlers,
   ...personalKeyHandlers,
@@ -90,5 +88,4 @@ export const preparers: Preparers = {
   ...agentAppToolPreparers,
   ...agentPreparers,
   ...agentPromptPreparers,
-  ...signalPreparers,
 };

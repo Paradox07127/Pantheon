@@ -474,10 +474,13 @@ describe('notification click', () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it('opens the board of the project of a notice about no session in one navigation', () => {
+  it('opens the sessions of the project of a notice about no session in one navigation', () => {
     openNotice({ project_id: 'beta', session_id: '' });
     expect(useCurrentProject.getState().projectId).toBe('beta');
-    expect(useShell.getState().screen).toBe('board');
+    expect({ screen: useShell.getState().screen, session: useShell.getState().sessionId }).toEqual({
+      screen: 'sessions',
+      session: null,
+    });
     expect(useShell.getState().history).toHaveLength(2);
   });
 

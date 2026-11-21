@@ -93,7 +93,6 @@
   "settings.search.keywords.sessionRecap": "摘要, 进度, 近况, 标题, recap",
   "settings.search.keywords.unverifiedIsolation": "沙箱, 隔离, 工作树, 不安全, 准入",
   "settings.search.keywords.harnessKinds": "写代码, 审查, 文本, 能力",
-  "settings.search.keywords.harnessQuota": "用量, 限额, 速率限制",
   "settings.search.keywords.personalExport": "备份, 保存设置",
   "settings.search.keywords.personalImport": "恢复, 载入设置",
   "settings.search.keywords.gateRunner": "门禁运行位置, daemon, 会话工作树"

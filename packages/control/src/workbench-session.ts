@@ -4234,9 +4234,16 @@ async function prepareLand(
       return next;
     }
     requireMergeReady(ctx, session, { ...reads, worktree: () => worktree });
+    // A conductor stays open in the folder; the landed commit is the base of its next work.
     const next = ctx.store.update(
       'sessions',
-      { ...session, state: 'closed' as const, outcome: 'merged' as const, merge: undefined },
+      session.conductor
+        ? {
+            ...session,
+            in_place: { ...session.in_place, base_sha: worktree.head },
+            merge: undefined,
+          }
+        : { ...session, state: 'closed' as const, outcome: 'merged' as const, merge: undefined },
       session.revision,
     );
     ctx.store.event(
@@ -4255,6 +4262,16 @@ async function prepareLand(
       },
       c.command_id,
     );
+    if (session.conductor) {
+      forgetWorktreeReads(workspace.id);
+      notifyMergeWatcher(
+        ctx,
+        next,
+        `landed on ${reads.source(workspace)!.branch} at ${worktree.head}`,
+        c.command_id,
+      );
+      return next;
+    }
     unsnooze(ctx, session.id, 'session_ended', c.command_id);
     if (readUserConfig(ctx.userConfigDir).auto_archive_merged)
       archiveSession(ctx, session.id, c.command_id);
