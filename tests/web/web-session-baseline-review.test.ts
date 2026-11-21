@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { ReactElement, ReactNode } from 'react';
 import type { ProjectBaseline } from '@pantheon/domain';
+import type { SessionGates } from '@pantheon/protocol';
 import { find, mount as host, named, nodes, text, unmountAll } from './web-hook-host.js';
 const mock = vi.hoisted(() => ({ board: {} as any, openSession: (_id: string) => {} }));
 vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMock(actual));
@@ -12,12 +13,14 @@ vi.mock('@/data/board', () => ({
     getState: () => mock.board,
   }),
 }));
-vi.mock('@/store', () => ({
-  useShell: (selector: any) => selector({ openSession: mock.openSession }),
-}));
+vi.mock('@/store', () => {
+  const state = () => ({ openSession: mock.openSession, sessionRun: null });
+  return { useShell: Object.assign((selector: any) => selector(state()), { getState: state }) };
+});
 import { BaselineReview } from '@/screens/sessions/SessionsScreen';
-import { ReviewBaseline } from '@/screens/projects/BaselineBlocks';
-import { zh, zhf } from './i18n-setup.js';
+import { FindGate, ReviewBaseline } from '@/screens/projects/BaselineBlocks';
+import { ChecksTab } from '@/screens/sessions/panel';
+import { zh } from './i18n-setup.js';
 
 const session = {
   id: 'baseline-session-a',
@@ -33,42 +36,30 @@ const baseline = (id: string, state: ProjectBaseline['state']): ProjectBaseline 
   facts_id: 'facts-a',
   dropped: 0,
   created_at: 1,
-  result: { folders: [], workstreams: [], contradictions: [], findings: [], questions: [] },
+  result: {
+    folders: [
+      {
+        root: '/work/a',
+        gate: [
+          { name: 'test', argv: ['pnpm', 'test'], sources: ['file:package.json'] },
+          { name: 'lint', argv: ['pnpm', 'lint'], sources: ['file:package.json'] },
+        ],
+        setup: { argv: ['pnpm', 'install'], sources: ['file:package.json'] },
+      },
+    ],
+  },
 });
 
 let read: ProjectBaseline | null;
 let commands: { type: string; input: any }[];
-/** The project introduction's body; undefined for an introduction without one. */
-let body: string | undefined;
-const introRead = () => ({
-  intro: {
-    project_id: 'project-a',
-    summary: 'A project',
-    sources: [],
-    features: [],
-    modules: [],
-    languages: [],
-    weeks: [],
-    heads: [],
-    session_id: null,
-    written_at: 1,
-    ...(body !== undefined && { body }),
-  },
-  behind: 0,
-  writing_session_id: null,
-});
 const render = (element: ReactElement<any>) =>
   (element.type as (props: unknown) => ReactNode)(element.props);
-/** Renders the review and, when there is one, the form it opens and the task graph in it. */
+/** Renders the review and, when there is one, the form it opens. */
 async function mount() {
   const h = host(() => {
     const review = BaselineReview({ session }) as ReactElement<any> | null;
     if (!review) return review;
-    const form = render(review);
-    const graph = nodes(form).find(
-      (n) => typeof n.type === 'function' && n.type.name === 'TaskGraph',
-    );
-    return { review, form, graph: graph && render(graph) };
+    return { review, form: render(review) };
   });
   await h.flush();
   return h;
@@ -76,7 +67,6 @@ async function mount() {
 
 beforeEach(() => {
   read = null;
-  body = undefined;
   mock.board = {
     board: { cursor: 1 },
     events: [],
@@ -92,17 +82,15 @@ beforeEach(() => {
     pantheon: {
       command: vi.fn(async (command: any) => {
         commands.push(command);
-        return { ok: true, value: { ...command.input, state: 'confirmed' } };
+        return {
+          ok: true,
+          value:
+            command.type === 'project.baseline.start'
+              ? { ...baseline('baseline-new', 'running'), session_id: 'baseline-session-new' }
+              : { ...command.input, state: 'confirmed' },
+        };
       }),
-      query: vi.fn(async (method: string) => ({
-        ok: true,
-        value:
-          method === 'project.facts.read'
-            ? { workstreams: [], facts: null }
-            : method === 'project.intro.read'
-              ? introRead()
-              : read,
-      })),
+      query: vi.fn(async () => ({ ok: true, value: read })),
     },
   });
 });
@@ -115,9 +103,8 @@ it('shows the review form when the session baseline is the newest one and submit
   read = baseline('baseline-a', 'submitted');
   const h = await mount();
   expect(named(h.value!.review, 'ReviewBaseline').props.baseline).toEqual(read);
-  expect(
-    find(h.value!.form, (n) => n.props['aria-label'] === zh('projects.baseline.goal')),
-  ).toBeTruthy();
+  const gates = find(h.value!.form, (n) => n.props['aria-label'] === zh('projects.baseline.gates'));
+  expect(text(gates)).toContain('pnpm install');
 });
 
 it.each([
@@ -130,45 +117,8 @@ it.each([
   expect(h.value).toBeNull();
 });
 
-it('waits for the next round after the user asked for more', async () => {
-  read = { ...baseline('baseline-a', 'running'), rounds: [{ questions: [], answers: [], at: 1 }] };
-  const h = await mount();
-  expect(named(h.value!.review, 'ReviewBaseline').props.baseline).toEqual(read);
-  expect(named(h.value!.form, 'RunningBaseline')).toBeTruthy();
-});
-
-const answeredRound = {
-  questions: [
-    {
-      id: 'license',
-      header: 'License',
-      question: 'Which license?',
-      options: [{ label: 'MIT', description: '' }],
-      multiSelect: false,
-    },
-  ],
-  answers: [
-    { question_id: 'license', question: 'Which license?', answer: 'MIT', by: 'user' as const },
-  ],
-  at: 1,
-};
-
-it('confirms the brief the newest round handed back, not the one drafted while it ran', async () => {
-  const withBrief = (state: ProjectBaseline['state'], goal: string, revision: number) => {
-    const base = baseline('baseline-a', state);
-    return {
-      ...base,
-      revision,
-      rounds: [answeredRound],
-      result: { ...base.result!, brief: { goal, goals: [], non_goals: [], sources: [] } },
-    };
-  };
-  // The thread keeps one review from Ask me more until the next round is handed back.
-  let current = withBrief('running', 'Ship the importer', 3);
-  const h = host(() => ReviewBaseline({ baseline: current }));
-  await h.flush();
-  current = withBrief('submitted', 'Ship the importer and the exporter', 4);
-  h.render();
+it('confirms with only the baseline and the checked gate commands', async () => {
+  const h = host(() => ReviewBaseline({ baseline: baseline('baseline-a', 'submitted') }));
   await h.flush();
   find(
     h.value,
@@ -178,121 +128,80 @@ it('confirms the brief the newest round handed back, not the one drafted while i
       n.props.label === zh('projects.baseline.confirmBaseline'),
   ).props.onPress();
   await h.flush();
-  expect(commands).toMatchObject([
-    {
-      type: 'project.baseline.confirm',
-      input: { brief: { goal: 'Ship the importer and the exporter' } },
-    },
-  ]);
+  expect(commands.map((c) => c.type)).toEqual(['project.baseline.confirm']);
+  expect(commands[0]!.input).toEqual({
+    baseline_id: 'baseline-a',
+    gates: [
+      {
+        root: '/work/a',
+        commands: [
+          { name: 'test', argv: ['pnpm', 'test'] },
+          { name: 'lint', argv: ['pnpm', 'lint'] },
+        ],
+      },
+    ],
+  });
 });
 
-const task = (id: string, title: string, depends_on: string[] = []) => ({
-  id,
-  title,
-  workstream: 'paging',
-  why: `Why ${title}`,
-  scope: [`src/${id}.ts`],
-  acceptance: [`pnpm test ${id}`, `pnpm lint ${id}`],
-  depends_on,
-  sources: [`file:src/${id}.ts`],
-});
-const withTasks = (tasks?: ReturnType<typeof task>[]): ProjectBaseline => {
-  const submitted = baseline('baseline-a', 'submitted');
-  return {
-    ...submitted,
-    result: {
-      ...submitted.result!,
-      workstreams: [
-        {
-          id: 'paging',
-          title: 'Cursor paging',
-          status: 'running',
-          reason: 'Pages are slow',
-          items: [],
-          commits: [],
-          next: [],
-          blockers: [],
-        },
-      ],
-      ...(tasks && { tasks }),
-    },
-  };
-};
-const block = (tree: ReactNode, id: string) =>
-  nodes(tree).find((n) => n.props['aria-label'] === zh(id));
+const noGates = { data: { configured: false, running: false, last: null } as SessionGates };
+/** The checks tab without gate commands, with the find button it offers drawn in place. */
+function checks(readOnly: boolean) {
+  return host(() => {
+    const tab = ChecksTab({
+      gates: { ...noGates, error: null, reload: () => {} },
+      readOnly,
+      projectId: 'project-a',
+      merging: false,
+      busy: false,
+      attached: new Set<string>(),
+      onAttach: () => {},
+      onRun: () => {},
+      onSettings: () => {},
+    });
+    const offer = nodes(tab).find((n) => n.type === FindGate);
+    return { tab, find: offer && render(offer) };
+  });
+}
 
-it('draws the next tasks along their dependencies and details the picked one', async () => {
-  read = withTasks([
-    task('a', 'Page by cursor'),
-    task('b', 'Report on pages', ['a']),
-    task('c', 'Docs'),
-  ]);
-  const h = await mount();
-  expect(block(h.value!.form, 'projects.baseline.tasks.label')).toBeTruthy();
-  const graph = find(h.value!.graph, (n) => n.props.role === 'group');
-  expect(graph.props['aria-label']).toBe(
-    zhf('projects.baseline.tasks.graph', { tasks: 3, deps: 1 }),
-  );
-  const buttons = () => nodes(h.value!.graph).filter((n) => n.type === 'button');
-  expect(buttons().map((b) => b.props['aria-pressed'])).toEqual([true, false, false]);
-  expect(text(buttons()[0])).toContain('Page by cursor');
-  expect(text(buttons()[0])).toContain('Cursor paging');
-  const detail = () => find(h.value!.graph, (n) => n.props['aria-live'] === 'polite');
-  expect(text(detail())).toContain('src/a.ts');
-  expect(find(detail(), (n) => n.props.children === 'pnpm test a')).toBeTruthy();
-  expect(find(detail(), (n) => n.props.children === 'pnpm lint a')).toBeTruthy();
-  buttons()[1]!.props.onClick();
+it('offers to find gate commands beside the empty checks state, except read-only', async () => {
+  const open = checks(false);
+  await open.flush();
+  expect(text(open.value.find)).toBe(zh('projects.baseline.findGate'));
+  expect(
+    nodes(open.value.find).some(
+      (n) => n.type === 'button' && text(n) === zh('projects.baseline.findGate'),
+    ),
+  ).toBe(true);
+  const shut = checks(true);
+  await shut.flush();
+  expect(shut.value.find).toBeUndefined();
+  expect(text(shut.value.tab)).not.toContain(zh('projects.baseline.findGate'));
+});
+
+const press = (tree: ReactNode) =>
+  find(
+    tree,
+    (n) => n.type === 'button' && text(n) === zh('projects.baseline.findGate'),
+  ).props.onClick();
+
+it('opens the running baseline session instead of starting another', async () => {
+  read = { ...baseline('baseline-a', 'running'), session_id: 'baseline-session-a' };
+  const h = host(() => FindGate({ project_id: 'project-a' }));
   await h.flush();
-  expect(buttons().map((b) => b.props['aria-pressed'])).toEqual([false, true, false]);
-  expect(text(detail())).toContain('src/b.ts');
-  expect(text(detail())).not.toContain('src/a.ts');
-  expect(find(detail(), (n) => n.props.children === 'pnpm test b')).toBeTruthy();
-});
-
-it.each([
-  ['an empty task list', []],
-  ['no task list', undefined],
-] as const)('leaves the next tasks out for %s', async (_, tasks) => {
-  read = withTasks(tasks as ReturnType<typeof task>[] | undefined);
-  const h = await mount();
-  expect(block(h.value!.form, 'projects.baseline.tasks.label')).toBeUndefined();
-  expect(h.value!.graph).toBeUndefined();
-});
-
-const mermaid = '```mermaid\ngraph LR\n  fetch --> reconcile\n```';
-const withMermaid = `Intro\n\n${mermaid}\n\nMore text`;
-const withCode = 'Intro\n\n```ts\nconst a = 1;\n```';
-it.each([
-  ['an introduction with a mermaid block', withMermaid, withMermaid],
-  ['an introduction without one', withCode, withCode],
-  ['no introduction body', undefined, null],
-] as const)(
-  'draws the whole introduction body as the main flow for %s',
-  async (_, introBody, drawn) => {
-    read = baseline('baseline-a', 'submitted');
-    body = introBody;
-    const h = await mount();
-    const flow = block(h.value!.form, 'projects.baseline.flow.label');
-    if (drawn === null) expect(flow).toBeUndefined();
-    else expect(nodes(flow).map((n) => n.props.text)).toContain(drawn);
-  },
-);
-
-// Last: the confirmed read it leaves in the shared query cache would reach the tests after it.
-it('keeps the answered rounds in the thread once the baseline is confirmed', async () => {
-  read = { ...baseline('baseline-a', 'confirmed'), rounds: [answeredRound, answeredRound] };
-  const h = host(() => BaselineReview({ session }));
+  press(h.value);
   await h.flush();
-  const rounds = nodes(h.value).filter(
-    (n) => typeof n.type === 'function' && n.type.name === 'AnsweredRound',
-  );
-  expect(rounds.map((n) => n.props.n)).toEqual([1, 2]);
-  const row = host(() => (rounds[0]!.type as (props: unknown) => ReactNode)(rounds[0]!.props));
-  const button = find(row.value, (n) => n.type === 'button');
-  expect(text(button)).toContain(zhf('projects.baseline.roundRow', { round: 1 }));
-  expect(button.props['aria-expanded']).toBe(false);
-  button.props.onClick();
-  row.render();
-  expect(text(row.value)).toContain('Which license?');
-  expect(text(row.value)).toContain('MIT');
+  expect(mock.openSession).toHaveBeenCalledWith('baseline-session-a');
+  expect(commands).toEqual([]);
+});
+
+it('starts a baseline for the project without one and opens its session', async () => {
+  read = null;
+  const h = host(() => FindGate({ project_id: 'project-a' }));
+  await h.flush();
+  press(h.value);
+  await h.flush();
+  expect(commands.map((c) => [c.type, c.input])).toEqual([
+    ['project.baseline.start', { project_id: 'project-a' }],
+  ]);
+  expect(mock.openSession).toHaveBeenCalledWith('baseline-session-new');
 });

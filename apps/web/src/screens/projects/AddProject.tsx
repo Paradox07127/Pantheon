@@ -4,8 +4,6 @@ import { ArrowUp, CircleAlert, Folder } from 'lucide-react';
 import type { BoardSnapshot, BridgeResult, ImportCandidate } from '@pantheon/protocol';
 import { ProjectMonogram } from '../../components/ProjectMonogram';
 import { compareRuntimes, RuntimeGlyph, runtimeName } from '../../components/RuntimeGlyph';
-import { StateGlyph } from '../../components/SessionStateIcon';
-import { useBaselineRead } from '../../data/baseline-read';
 import { useBoard } from '../../data/board';
 import { runCommand } from '../../data/commands';
 import { useImportCandidates } from '../../data/import';
@@ -13,19 +11,16 @@ import { ageText, failureText, reasonText, useNow } from '../../data/needs-you';
 import { nameFromPath, openRejectText } from '../../data/projects';
 import { t } from '../../i18n';
 import { useShortcut } from '../../lib/shortcuts';
-import { durationText } from '../../lib/time-text';
 import { scrimFlag } from '../../lib/root-flag';
-import { Result, ReviewBaseline, RunningBaseline, StartBaseline } from './BaselineBlocks';
-import { baselineEntry, baselineStartRequest } from './baseline';
+import { Result } from './BaselineBlocks';
 import { briefRequest } from './brief';
-import { Button, Chip, useSend } from './parts';
+import { Button, useSend } from './parts';
 import { useProjectsView } from './view';
 import '../../components/button-busy.css';
 import './project-setup.css';
 import './add-project.css';
 
 type Project = BoardSnapshot['projects'][number];
-type Step = 2 | 3;
 type Listing = {
   path: string;
   parent: string | null;
@@ -51,16 +46,6 @@ interface Row {
 const BROWSE_DELAY_MS = 120;
 const RECENT = 5;
 const PLACES = 3;
-
-// Labels are getters, so each is read in the language loaded by then.
-const RESULT: Record<'empty' | 'confirmed', string> = {
-  get empty() {
-    return t({ id: 'projects.open.result.empty', defaultMessage: 'Empty project' });
-  },
-  get confirmed() {
-    return t({ id: 'projects.open.result.confirmed', defaultMessage: 'Goal confirmed' });
-  },
-};
 
 // Stands for the path, which the error sets in mono.
 const PATH_MARK = '\u0000';
@@ -109,7 +94,7 @@ interface AddProjectProps {
   onOpened: (project_id: string) => void;
 }
 
-/** ⌘O anywhere: type or pick a folder, open it as a project, then scan it and set its goal. */
+/** ⌘O anywhere: type or pick a folder, open it as a project, then set its goal. */
 export function AddProject({ projects, onOpened }: AddProjectProps) {
   const { opening: open, setOpening } = useProjectsView();
   const id = useId();
@@ -120,7 +105,6 @@ export function AddProject({ projects, onOpened }: AddProjectProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<{ id: string; path: string } | null>(null);
-  const [step, setStep] = useState<Step>(2);
   const candidates = useImportCandidates();
   const now = useNow(30_000);
   const popup = useRef<HTMLDivElement>(null);
@@ -142,7 +126,6 @@ export function AddProject({ projects, onOpened }: AddProjectProps) {
       setBusy(false);
       setError(null);
       setCreated(null);
-      setStep(2);
     }
   }
 
@@ -287,7 +270,6 @@ export function AddProject({ projects, onOpened }: AddProjectProps) {
     const opened = result.value as Project;
     if (live.some((p) => p.id === opened.id)) return enter(opened.id);
     setCreated({ id: opened.id, path });
-    setStep(2);
   }
 
   async function choose() {
@@ -617,9 +599,6 @@ export function AddProject({ projects, onOpened }: AddProjectProps) {
               key={created.id}
               project_id={created.id}
               path={tilde(created.path)}
-              step={step}
-              onNext={() => setStep(3)}
-              onBack={() => setCreated(null)}
               onEnter={() => enter(created.id)}
             />
           )}
@@ -629,151 +608,21 @@ export function AddProject({ projects, onOpened }: AddProjectProps) {
   );
 }
 
-/** The scan and the goal of the folder just added: baseline it, then set its goal. */
+/** The goal of the folder just added. */
 export function Setup({
   project_id,
   path,
-  step,
-  onNext,
-  onBack,
   onEnter,
 }: {
   project_id: string;
   path: string;
-  step: Step;
-  onNext: () => void;
-  onBack: () => void;
   onEnter: () => void;
 }) {
-  const baseline = useBaselineRead(project_id);
-  const [settled, setSettled] = useState(false);
-  if (!baseline.loading && !settled) setSettled(true);
-  const entry = baselineEntry(settled ? baseline.read : null, false);
-  const retry = useSend();
   const goal = useSend();
-  const now = useNow();
   // The folder may already carry a brief, or the restored project kept one.
   const brief = useBoard((s) => s.board?.project_briefs?.find((b) => b.project_id === project_id));
   const [edited, setText] = useState<string | null>(null);
   const text = edited ?? brief?.goal ?? '';
-
-  useEffect(() => {
-    if (step === 2 && entry.kind === 'review') onNext();
-  }, [step, entry.kind, onNext]);
-
-  const head = (
-    <div className="ap-steps">
-      <span className="ap-at">
-        <Folder aria-hidden="true" />
-        <span className="mono">{path}</span>
-      </span>
-      {step === 2 && entry.kind === 'running' && (
-        <span className="ap-took">
-          <StateGlyph name="running" />
-          {t(
-            { id: 'projects.add.reading', defaultMessage: 'Reading the repository {duration}' },
-            { duration: durationText(now - entry.baseline.created_at) },
-          )}
-        </span>
-      )}
-    </div>
-  );
-
-  const readError = baseline.error && (
-    <div className="ps-err" role="alert">
-      {baseline.error}
-    </div>
-  );
-
-  if (step === 2) {
-    const failure = entry.kind === 'start' ? entry.failure : undefined;
-    const outcome =
-      entry.kind === 'empty' || entry.kind === 'confirmed' ? RESULT[entry.kind] : null;
-    const ended = failure !== undefined || outcome !== null;
-    return (
-      <>
-        {head}
-        <div className="pj-stp">
-          {readError}
-          {!settled ? (
-            <span className="mu">
-              {t({ id: 'projects.open.reading', defaultMessage: 'Reading…' })}
-            </span>
-          ) : ended ? (
-            <>
-              {failure && (
-                <div className="ps-err" role="alert">
-                  {failure}
-                </div>
-              )}
-              {outcome && (
-                <span className="hm-row">
-                  <Chip text={outcome} tone="" />
-                </span>
-              )}
-              <Result send={retry} />
-            </>
-          ) : entry.kind === 'start' ? (
-            <StartBaseline project_id={project_id} entry={entry} />
-          ) : entry.kind === 'running' ? (
-            <RunningBaseline baseline={entry.baseline} />
-          ) : null}
-        </div>
-        <div className="pj-df">
-          <Button
-            label={t({ id: 'projects.add.another', defaultMessage: 'Choose another folder' })}
-            tone="ghost"
-            onPress={onBack}
-          />
-          <span style={{ flex: 1 }} />
-          {ended ? (
-            <>
-              {failure !== undefined && (
-                <Button
-                  label={t({ id: 'board.baseline.restart', defaultMessage: 'Rebuild baseline' })}
-                  busy={retry.busy}
-                  onPress={() => void retry.send(baselineStartRequest(project_id))}
-                />
-              )}
-              <Button
-                label={t({ id: 'projects.open.next', defaultMessage: 'Next' })}
-                tone="pri"
-                onPress={onNext}
-              />
-            </>
-          ) : (
-            <>
-              <Button
-                label={t({ id: 'projects.add.skipBaseline', defaultMessage: 'Skip baseline' })}
-                onPress={onNext}
-              />
-              {entry.kind === 'running' && (
-                <Button
-                  label={t({ id: 'projects.open.enter', defaultMessage: 'Enter project' })}
-                  tone="pri"
-                  onPress={onEnter}
-                />
-              )}
-            </>
-          )}
-        </div>
-      </>
-    );
-  }
-
-  if (entry.kind === 'review')
-    return (
-      <>
-        {head}
-        {readError && <div className="pj-stp">{readError}</div>}
-        <ReviewBaseline
-          key={entry.baseline.id}
-          baseline={entry.baseline}
-          onConfirmed={onEnter}
-          dialog
-        />
-      </>
-    );
 
   const request = briefRequest(project_id, brief, {
     goal: text,
@@ -783,7 +632,12 @@ export function Setup({
   const kept = brief !== undefined && text.trim() === brief.goal;
   return (
     <>
-      {head}
+      <div className="ap-steps">
+        <span className="ap-at">
+          <Folder aria-hidden="true" />
+          <span className="mono">{path}</span>
+        </span>
+      </div>
       <div className="pj-stp">
         <label className="ev-goal">
           <span className="pj-lb">

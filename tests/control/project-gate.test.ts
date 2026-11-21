@@ -1,6 +1,7 @@
 import { insideSandbox, awaitWorkspaceReady } from '../helpers.js';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { FixtureAdapter } from '@pantheon/adapters';
@@ -306,6 +307,78 @@ it.skipIf(insideSandbox)(
     expect(f.events('session.gate_checked')[0]!.sequence).toBeLessThan(
       f.events('session.merged')[0]!.sequence,
     );
+  },
+);
+
+it.skipIf(insideSandbox)("runs gate commands with the user's environment variables", async () => {
+  const f = await gateFixture(),
+    clone = await f.open(),
+    target = commit(clone.path),
+    commands = [
+      {
+        name: 'Read user variable',
+        argv: [
+          process.execPath,
+          '-e',
+          "process.stdout.write(process.env.GATE_USER_ONLY_VALUE ?? 'missing')",
+        ],
+      },
+    ];
+  process.env.GATE_USER_ONLY_VALUE = 'from the user environment';
+  cleanups.push(async () => {
+    delete process.env.GATE_USER_ONLY_VALUE;
+  });
+  f.installGate(commands);
+  await f.merge();
+  await f.settle();
+  expect(f.events('session.gate_checked')).toMatchObject([
+    {
+      payload: {
+        commit: target,
+        results: [{ ...commands[0], exit_code: 0, output: 'from the user environment' }],
+      },
+    },
+  ]);
+  expect(f.current()).toMatchObject({ state: 'closed', outcome: 'merged' });
+});
+
+it.skipIf(insideSandbox)(
+  'lets a gate command write outside the candidate and records its exit code and output',
+  async () => {
+    const f = await gateFixture(),
+      clone = await f.open(),
+      target = commit(clone.path),
+      outside = mkdtempSync(path.join(os.tmpdir(), 'pantheon-gate-outside-')),
+      written = path.join(outside, 'written-by-gate'),
+      commands = [
+        {
+          name: 'Write outside',
+          argv: [
+            process.execPath,
+            '-e',
+            `require('node:fs').writeFileSync(${JSON.stringify(written)}, 'gate wrote this'); process.stdout.write('wrote outside', () => process.exit(6));`,
+          ],
+        },
+      ];
+    cleanups.push(async () => rmSync(outside, { recursive: true, force: true }));
+    f.installGate(commands);
+    await f.merge();
+    await f.settle();
+    expect(f.current().merge).toMatchObject({
+      state: 'blocked',
+      reason: 'gate_failed',
+      gate: { name: 'Write outside', output: 'wrote outside' },
+      failure_class: 'code',
+    });
+    expect(f.events('session.gate_checked')).toMatchObject([
+      {
+        payload: {
+          commit: target,
+          results: [{ ...commands[0], exit_code: 6, timed_out: false, output: 'wrote outside' }],
+        },
+      },
+    ]);
+    expect(readFileSync(written, 'utf8')).toBe('gate wrote this');
   },
 );
 

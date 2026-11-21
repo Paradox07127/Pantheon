@@ -8,21 +8,11 @@ export type { ProjectFactsRead };
 
 const isFactsRead = (value: unknown): boolean => {
   const read = value as Partial<ProjectFactsRead> | null;
-  return (
-    !!read &&
-    Array.isArray(read.workstreams) &&
-    (read.facts === null || Array.isArray(read.facts?.folders))
-  );
+  return !!read && (read.facts === null || Array.isArray(read.facts?.folders));
 };
 
-/** Events that change the snapshot, the submitted or confirmed baseline's workstreams, or whether a root has commits. */
-const FACTS_KINDS: ReadonlySet<string> = new Set([
-  'project.facts_collected',
-  'project.baseline_submitted',
-  'project.baseline_confirmed',
-  'project.baseline_continued',
-  ...REPOSITORY_KINDS,
-]);
+/** Events that change the snapshot, or whether a root has commits. */
+const FACTS_KINDS: ReadonlySet<string> = new Set(['project.facts_collected', ...REPOSITORY_KINDS]);
 
 /** GET /v1/project.facts.read: the newest measured snapshot, read again after the events that change it. */
 export function useFactsRead(project_id: string | null) {

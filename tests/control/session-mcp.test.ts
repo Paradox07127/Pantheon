@@ -113,14 +113,6 @@ async function sessionFixture(role: 'reviewer' | 'planner') {
         return Response.json(f.control.sessionPrincipal(principal));
       if (url.pathname === '/v1/commands')
         return Response.json({ receipt: await f.control.execute(principal, await request.json()) });
-      if (url.pathname === '/v1/extensions.inventory')
-        return Response.json(
-          await f.control.extensionsInventory(
-            principal,
-            url.searchParams.get('project_id')!,
-            url.searchParams.get('runtime')!,
-          ),
-        );
       throw new Error(`Unexpected route ${url.pathname}`);
     } catch (error) {
       return Response.json(
@@ -197,7 +189,11 @@ const refusalCode = (run: () => unknown) => {
 };
 
 it('describes project_read facts without promising feedback', async () => {
-  const client = await connect((await sessionFixture('planner')).spec);
+  const f = await sessionFixture('planner');
+  // The baseline session reads no project, so an introduction session lists project_read here.
+  const session = f.store.must<Session>('sessions', f.spec.platform_session_id);
+  f.store.update('sessions', { ...session, baseline: undefined, intro: true }, session.revision);
+  const client = await connect(f.spec);
   const tool = (await client.listTools()).tools.find((tool) => tool.name === 'project_read');
   expect(tool).toBeDefined();
   for (const fact of ['details', 'brief', "every lead's board plan"])
@@ -206,59 +202,27 @@ it('describes project_read facts without promising feedback', async () => {
   expect(tool!.description).not.toMatch(/feedback/i);
 });
 
-it('binds baseline tools to the session baseline and explains a refused input', async () => {
+it('binds the baseline submission to the session baseline and explains a refused input', async () => {
   const f = await sessionFixture('planner');
   const baseline = f.store.list<ProjectBaseline>('project_baselines')[0]!;
   expect(baseline.session_id).toBe(f.spec.platform_session_id);
   writeFileSync(path.join(f.projectRoot, 'package.json'), '{"scripts":{"test":"vitest"}}');
   const client = await connect(f.spec);
   const tools = (await client.listTools()).tools;
-  expect(tools.map((tool) => tool.name).sort()).toEqual(
-    [
-      'memory_context',
-      'memory_search',
-      'memory_related',
-      'memory_get',
-      'memory_propose',
-      'draw',
-      'project_baseline_submit',
-      'project_baseline_submit_folder',
-      'project_intro_submit',
-      'project_extensions_inventory',
-      'project_read',
-    ].sort(),
-  );
-  for (const name of ['project_baseline_submit_folder', 'project_baseline_submit']) {
-    const schema = tools.find((tool) => tool.name === name)!.inputSchema;
-    expect(schema.type).toBe('object');
-    expect(schema.properties).not.toHaveProperty('baseline_id');
-    expect(schema.properties).not.toHaveProperty('expected_revision');
-    expect(JSON.stringify(schema)).not.toMatch(/"type":"(number|integer)"/);
-  }
+  expect(tools.map((tool) => tool.name)).toEqual(['project_baseline_submit']);
+  const schema = tools[0]!.inputSchema;
+  expect(schema.type).toBe('object');
+  expect(schema.properties).not.toHaveProperty('baseline_id');
+  expect(schema.properties).not.toHaveProperty('expected_revision');
+  expect(JSON.stringify(schema)).not.toMatch(/"type":"(number|integer)"/);
   const folder = {
     root: f.project.roots[0]!,
-    stage: 'active',
     gate: [{ name: 'test', argv: ['pnpm', 'test'], sources: ['file:package.json'] }],
   };
-  const stored = await client.callTool({
-    name: 'project_baseline_submit_folder',
-    arguments: folder,
-  });
-  expect(stored.isError).not.toBe(true);
-  expect(text(stored)).toMatch(`Accepted project.baseline.submit_folder: id=${baseline.id}`);
-  expect(f.store.must<ProjectBaseline>('project_baselines', baseline.id)).toMatchObject({
-    folders: [folder],
-  });
-  const sent = await new Request(...(f.fetcher.mock.calls.at(-1) as [string, RequestInit])).json();
-  expect(sent).toMatchObject({
-    type: 'project.baseline.submit_folder',
-    expected_revision: null,
-    input: { ...folder, baseline_id: baseline.id },
-  });
 
   const refused = await client.callTool({
-    name: 'project_baseline_submit_folder',
-    arguments: { ...folder, stage: 'finished' },
+    name: 'project_baseline_submit',
+    arguments: { folders: [{ ...folder, stage: 'active' }] },
   });
   expect(refused.isError).toBe(true);
   expect(receipt(refused)).toMatchObject({
@@ -266,59 +230,29 @@ it('binds baseline tools to the session baseline and explains a refused input', 
     message: expect.stringContaining('stage'),
   });
   const bound = await client.callTool({
-    name: 'project_baseline_submit_folder',
-    arguments: { ...folder, baseline_id: 'another-assessment' },
+    name: 'project_baseline_submit',
+    arguments: { folders: [folder], baseline_id: 'another-assessment' },
   });
   expect(receipt(bound)).toMatchObject({
     error: 'invalid_request',
     message: expect.stringContaining('baseline_id'),
   });
-});
-
-it('lists enabled extensions to the baseline session only', async () => {
-  const f = await sessionFixture('planner');
-  Object.assign(f.adapter, {
-    inventory: async () => ({
-      runtime: f.adapter.name,
-      mcp_servers: [
-        { name: 'browser-automation', enabled: true, plugin: 'web-tools@market' },
-        { name: 'retired-server', enabled: false },
-      ],
-      plugins: [{ id: 'web-tools@market', enabled: true }],
-      skills: [{ id: '/skills/deploy/SKILL.md', name: 'deploy', enabled: true }],
-      apps: false,
-      hooks: [],
-    }),
+  const stored = await client.callTool({
+    name: 'project_baseline_submit',
+    arguments: { folders: [folder] },
   });
-  const session = f.store.must<Session>('sessions', f.spec.platform_session_id);
-  f.store.update('sessions', { ...session, baseline: undefined }, session.revision);
-  const plain = await connect(f.spec);
-  expect((await plain.listTools()).tools.map((tool) => tool.name)).not.toContain(
-    'project_extensions_inventory',
-  );
-  const refused = await plain.callTool({ name: 'project_extensions_inventory', arguments: {} });
-  expect(refused.isError).toBe(true);
-  expect(receipt(refused).error).toBe('permission_denied');
-
-  const plainSession = f.store.must<Session>('sessions', session.id);
-  f.store.update(
-    'sessions',
-    { ...plainSession, baseline: session.baseline },
-    plainSession.revision,
-  );
-  const client = await connect(f.spec);
-  expect((await client.listTools()).tools.map((tool) => tool.name)).toContain(
-    'project_extensions_inventory',
-  );
-  const listed = await client.callTool({ name: 'project_extensions_inventory', arguments: {} });
-  expect(listed.isError).not.toBe(true);
-  expect(text(listed)).toContain(f.adapter.name);
-  expect(text(listed)).toContain('browser-automation (plugin web-tools@market)');
-  expect(text(listed)).toContain('web-tools@market');
-  expect(text(listed)).toContain('deploy');
-  expect(text(listed)).toContain('/skills/deploy/SKILL.md');
-  expect(text(listed)).not.toContain('retired-server');
-  expect(text(listed)).not.toContain('{');
+  expect(stored.isError).not.toBe(true);
+  expect(text(stored)).toMatch(`Accepted project.baseline.submit: id=${baseline.id}`);
+  expect(f.store.must<ProjectBaseline>('project_baselines', baseline.id)).toMatchObject({
+    state: 'submitted',
+    result: { folders: [folder] },
+  });
+  const sent = await new Request(...(f.fetcher.mock.calls.at(-1) as [string, RequestInit])).json();
+  expect(sent).toMatchObject({
+    type: 'project.baseline.submit',
+    expected_revision: null,
+    input: { folders: [folder], baseline_id: baseline.id },
+  });
 });
 
 it.each([
@@ -334,22 +268,7 @@ it.each([
       'review_verdict',
     ],
   ],
-  [
-    'planner',
-    [
-      'memory_context',
-      'memory_search',
-      'memory_related',
-      'memory_get',
-      'memory_propose',
-      'project_read',
-      'draw',
-      'project_baseline_submit_folder',
-      'project_baseline_submit',
-      'project_intro_submit',
-      'project_extensions_inventory',
-    ],
-  ],
+  ['planner', ['project_baseline_submit']],
 ] as const)(
   'lists only the authenticated %s session tools and keeps credentials out of storage',
   async (role, names) => {
@@ -925,9 +844,15 @@ it('offers sortable tables through draw and returns table cell errors', async ()
 it('exposes introduction submission only to its purpose sessions with no bound or measured input fields', async () => {
   const f = await sessionFixture('planner');
   const baselineClient = await connect(f.spec);
-  expect((await baselineClient.listTools()).tools.map((tool) => tool.name)).toContain(
+  expect((await baselineClient.listTools()).tools.map((tool) => tool.name)).not.toContain(
     'project_intro_submit',
   );
+  const byBaseline = await baselineClient.callTool({
+    name: 'project_intro_submit',
+    arguments: { summary: 'Reads notes.', sources: ['file:README.md'], features: [], modules: [] },
+  });
+  expect(byBaseline.isError).toBe(true);
+  expect(receipt(byBaseline).error).toBe('permission_denied');
   const session = f.store.must<Session>('sessions', f.spec.platform_session_id);
   f.store.update('sessions', { ...session, baseline: undefined, intro: true }, session.revision);
   const client = await connect(f.spec);

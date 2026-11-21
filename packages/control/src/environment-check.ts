@@ -123,13 +123,12 @@ function checkEnvironment(
           const run = () =>
             runCandidateCommand(
               ctx,
-              { projectId: row.project_id, cancelled, allGates: true },
+              { projectId: row.project_id, cancelled },
               key,
               command,
               workspace.path,
               commit,
               temporary,
-              false,
             );
           let result = await run();
           // A failure of the machine may not repeat, so the same worktree runs the command once more.
@@ -280,7 +279,7 @@ export const environmentCheckHandlers: Handlers = {
           project_id: project.id,
           root: folder.root,
           commands: baselineCommands(folder),
-          ...(folder.commands?.setup && { setup: { argv: folder.commands.setup.argv } }),
+          ...(folder.setup && { setup: { argv: folder.setup.argv } }),
           base_ref: 'HEAD',
           cause: { kind: 'baseline', baseline_id: baseline.id, attempt: 1 },
         }),

@@ -21,7 +21,7 @@ try {
     (await projectOf()).revision,
   );
 
-  // (a) Settings > Projects > the project: the gate GPU switch.
+  // Settings > Projects > the project.
   await page.click({ role: 'button', name: '设置', exact: true });
   await page.click({ role: 'button', name: '项目', exact: true });
   result.all_projects_button = (await names('所有项目')).some((n) => n.role === 'button');
@@ -57,26 +57,6 @@ try {
   })()`);
 
   await page.click({ role: 'button', name: NAME, exact: false });
-  const GPU = '门禁命令可使用 GPU';
-  const gpuJs = `(() => { const b = [...document.querySelectorAll('input[type=checkbox]')].find((i) => i.getAttribute('aria-label') === ${JSON.stringify(GPU)} && i.getClientRects().length); return b ? { checked: b.checked, disabled: b.disabled } : null; })()`;
-  const sw0 = await poll(() => page.evaluate(gpuJs));
-  const p0 = await projectOf();
-  check('项目页有 "门禁命令可使用 GPU" 开关，默认未选中', sw0 && sw0.checked === false, sw0);
-  check('后端对照：Project.gate_gpu 默认不是 true', p0.gate_gpu !== true, p0.gate_gpu ?? null);
-  // The first open settles before the switch is clicked; the mark splits the record in two.
-  result.first_open = await poll(async () => {
-    const seen = await page.evaluate('window.__verifySections ?? []');
-    return /^\d+$/.test(seen.at(-1) ?? '') && seen.includes('busy:0') && seen;
-  }, 8000);
-  await page.evaluate(`window.__verifySections.push('click')`);
-  await page.click({ role: 'checkbox', name: GPU, exact: true });
-  const on = await poll(async () => (await projectOf()).gate_gpu === true);
-  const sw1 = await poll(async () => {
-    const s = await page.evaluate(gpuJs);
-    return s?.checked && !s.disabled && s;
-  });
-  check('点一下后 Project.gate_gpu 为 true', on, (await projectOf()).gate_gpu);
-  check('点一下后界面为选中', sw1?.checked === true, sw1 || (await page.evaluate(gpuJs)));
 
   // (c) The extension sections: settled, and never more drawn than the settled count.
   const sections = await poll(async () => {

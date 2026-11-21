@@ -231,6 +231,7 @@ describe('session panel', () => {
           reload: () => {},
         },
         readOnly: false,
+        projectId: null,
         merging: false,
         busy: false,
         attached: new Set<string>(),

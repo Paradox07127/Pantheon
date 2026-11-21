@@ -44,7 +44,6 @@ const profile = (extra: Partial<Parameters<typeof ProjectProfile>[0]> = {}) =>
     branch: 'main',
     committedAt: null,
     now: NOW,
-    stack: ['Node.js', 'Fastify'],
     languages,
     ...extra,
   });
@@ -78,46 +77,37 @@ describe('project profile', () => {
     expect(cls(summary, 'mo-pf-ref')[0]!.props.base).toBe('/work/refunds');
   });
 
-  it('follows the branch with when the head was committed, before the divider', () => {
+  it('follows the branch with when the head was committed', () => {
     const row = cls(profile({ committedAt: NOW - 12 * 60_000 }), 'mo-pf-chips')[0]!;
     const top = (row.props.children as ReactNode[]).flat().filter(Boolean) as ReactElement<any>[];
     expect(top.map((n) => n.props.content)).toEqual([
       zh('memory.overview.branch'),
       zh('memory.overview.committed'),
-      undefined,
-      undefined,
-      undefined,
     ]);
     const commit = top[1]!.props.children as ReactElement<any>;
     expect(commit.props.className).toBe('chip');
     expect(text(commit)).toBe('12 分钟');
-    expect(top[2]!.props.className).toBe('mo-pf-sep');
     const detached = cls(
       profile({ branch: null, committedAt: NOW - 12 * 60_000 }),
       'mo-pf-chips',
     )[0]!;
-    expect(text(detached)).toBe('12 分钟Node.jsFastify');
+    expect(text(detached)).toBe('12 分钟');
   });
 
-  it('puts the branch, a divider and the stack in one row of chips', () => {
+  it('puts the branch in a chip of the chips row', () => {
     const row = cls(profile(), 'mo-pf-chips')[0]!;
     const items = nodes(row.props.children).filter((n) => n !== row);
     const top = (row.props.children as ReactNode[]).flat().filter(Boolean) as ReactElement<any>[];
     expect(top[0]!.props.content).toBe(zh('memory.overview.branch'));
     top[0] = top[0]!.props.children;
-    expect(top.map((n) => n.props.className)).toEqual(['chip', 'mo-pf-sep', 'chip', 'chip']);
+    expect(top.map((n) => n.props.className)).toEqual(['chip']);
     expect(text(top[0])).toBe('main');
     expect(items.some((n) => n.props.className === 'mono' && text(n) === 'main')).toBe(true);
-    expect(top.slice(2).map(text)).toEqual(['Node.js', 'Fastify']);
   });
 
-  it('leaves out the branch on a detached head and the divider without a stack', () => {
+  it('leaves out the branch on a detached head', () => {
     const detached = cls(profile({ branch: null }), 'mo-pf-chips')[0]!;
-    expect(text(detached)).toBe('Node.jsFastify');
-    expect(cls(detached, 'mo-pf-sep')).toHaveLength(0);
-    const bare = cls(profile({ stack: [] }), 'mo-pf-chips')[0]!;
-    expect(cls(bare, 'mo-pf-sep')).toHaveLength(0);
-    expect(text(bare)).toBe('main');
+    expect(text(detached)).toBe('');
   });
 
   it('heads the language cell with the line count and lists only shares in two columns', () => {
@@ -186,15 +176,11 @@ const confirmed = {
   created_at: 0,
   result: {
     folders: [
-      { root: '/work/refunds', stage: 'active', stack: ['Node.js', 'React'], gate: [] },
-      { root: '/work/refunds-web', stage: 'active', stack: ['React', 'Vite'], gate: [] },
+      { root: '/work/refunds', gate: [] },
+      { root: '/work/refunds-web', gate: [] },
     ],
-    workstreams: [],
-    contradictions: [],
-    findings: [],
-    questions: [],
   },
-} as unknown as ProjectBaseline;
+} as ProjectBaseline;
 
 beforeEach(() => {
   mock.board = {
@@ -277,8 +263,6 @@ describe('memory overview', () => {
       committedAt: NOW - 60_000,
       languages,
     });
-    // Folders share one row of stack chips, each named once.
-    expect(shown.stack).toEqual(['Node.js', 'React', 'Vite']);
     expect(blocks[2]!.props.projectId).toBe('refunds');
   });
 });
@@ -374,7 +358,6 @@ describe('memory overview first draw', () => {
     expect(named(page(), 'ProjectProfile').props).toMatchObject({
       summary: 'Payout service',
       branch: 'main',
-      stack: ['Node.js', 'React', 'Vite'],
       languages,
     });
     // Later reads update the drawn page in place.

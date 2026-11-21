@@ -77,8 +77,6 @@ export interface Draft extends DraftMessage {
 export interface Answers {
   picked: readonly (readonly string[])[];
   typed: readonly string[];
-  /** Questions left to the model; absent is none. */
-  decided?: readonly boolean[];
 }
 
 export const EMPTY_DRAFT: Draft = {

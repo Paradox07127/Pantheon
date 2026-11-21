@@ -1061,6 +1061,7 @@ export function SessionInspector(props: {
           gates={gates}
           history={gatesHistory}
           readOnly={readOnly}
+          projectId={projectId}
           merging={merging}
           busy={busy}
           attached={attached}

@@ -12,7 +12,6 @@ import { reviewerTools, workflowInputSchemas } from './workflow-tools.js';
 import type {
   AgentToolGroup,
   ApprovalQuestion,
-  BaselineWorkstream,
   GraphColor,
   GraphIcon,
   GraphStatus,
@@ -257,7 +256,6 @@ export const sessionTools = {
 export const coordinationTools = {
   trace_evidence: 'trace.evidence',
   trace_report: 'trace.report',
-  project_baseline_submit_folder: 'project.baseline.submit_folder',
   project_baseline_submit: 'project.baseline.submit',
   project_intro_submit: 'project.intro.submit',
   change_story_submit: 'change_story.submit',
@@ -636,17 +634,6 @@ const sourceRef = str.regex(/^(?:file:[^/\0][^\0]*|commit:[0-9a-fA-F]{7,40})$/);
 const sources = z.array(sourceRef).min(1).max(16);
 const baselineStage = z.enum(['empty', 'early', 'active', 'maintenance']);
 const projectBrief = z.strictObject({ goal: str, goals: strings, non_goals: strings });
-/** An extension suggested off for coding sessions; `name` is written as the inventory lists it. */
-const baselineExtensions = z
-  .array(
-    z.strictObject({
-      runtime: str,
-      kind: z.enum(['mcp_server', 'plugin', 'skill']),
-      name: str,
-      reason: boardText,
-    }),
-  )
-  .max(64);
 const sessionFrom = z.union([z.strictObject({ branch: str }), z.strictObject({ session_id: str })]);
 const sessionWorkspace = {
   /**
@@ -690,116 +677,13 @@ const commandSet = <T extends z.ZodType>(item: T) =>
     lint: item.optional(),
     dev: item.optional(),
   });
-/** Paths and `file:` sources inside a folder block are relative to that folder's root. */
+/** `file:` sources inside a folder block are relative to that folder's root. */
 const baselineFolderSchema = z.strictObject({
   root: str,
-  stage: baselineStage,
-  stack: strings.optional(),
-  context: z.strictObject({ instructions: strings, docs: strings, task_lists: strings }).optional(),
   // The model writes no numbers, so a gate timeout comes only from the user.
   gate: z.array(gateCommand.omit({ timeout_ms: true }).extend({ sources })),
-  commands: commandSet(z.strictObject({ argv, sources })).optional(),
+  setup: z.strictObject({ argv, sources }).optional(),
 });
-const baselinePreview = z.discriminatedUnion('kind', [
-  z.strictObject({
-    kind: z.literal('graph'),
-    // visualSpecs is defined further down.
-    spec: z.lazy(() =>
-      visualSpecs.graph.refine((spec) => spec.nodes.length <= 40, {
-        message: 'A preview graph has at most 40 nodes',
-        path: ['nodes'],
-      }),
-    ),
-  }),
-  z.strictObject({
-    kind: z.literal('mermaid'),
-    spec: z.strictObject({ source: z.string().min(1).max(4000) }),
-  }),
-]);
-const baselineQuestion = z
-  .strictObject({
-    id: str,
-    header: z.string().min(1).max(12),
-    question: str,
-    options: z
-      .array(
-        z.strictObject({
-          label: z.string().min(1).max(80),
-          description: boardText,
-          preview: baselinePreview.optional(),
-        }),
-      )
-      .min(2)
-      .max(4),
-    multiSelect: z.boolean(),
-    recommended: z.string().min(1).max(80).optional(),
-    kind: z.literal('direction').optional(),
-  })
-  .refine(
-    (question) =>
-      question.recommended === undefined ||
-      question.options.some((option) => option.label === question.recommended),
-    { message: 'recommended must be the label of an option', path: ['recommended'] },
-  );
-/** Multi-select answers join the chosen labels with "; "; `by: 'model'` leaves the choice to the model. */
-const baselineAnswers = z
-  .array(
-    z.strictObject({
-      question_id: str,
-      question: str,
-      answer: z.string().max(65536),
-      by: z.enum(['user', 'model']),
-    }),
-  )
-  .max(5);
-/** Project-level `file:` sources are accepted when they resolve inside any project root. */
-const baselineSubmission = {
-  workstreams: z
-    .array(
-      z.strictObject({
-        id: str,
-        title: z.string().min(1).max(80),
-        status: z.enum(['done', 'running', 'next', 'blocked']),
-        reason: boardText,
-        /** `file:<path>:<line>` of a checklist item, the path relative to its folder. */
-        items: z.array(str.regex(/^file:[^/\0][^\0]*:[1-9][0-9]*$/)).max(200),
-        /** `section:<path>#<heading>` of a whole checklist section, the path relative to its folder. */
-        sections: z.array(str.regex(/^section:[^/\0][^#\0]*#[^\0]*$/)).max(50),
-        commits: z.array(str.regex(/^commit:[0-9a-fA-F]{7,40}$/)).max(50),
-        next: z.array(boardText).max(12),
-        blockers: z.array(boardText).max(12),
-        /** Directories or files relative to a project root. */
-        modules: z.array(str).max(16).optional(),
-        /** Ids of other workstreams above. */
-        depends_on: z.array(str).max(12).optional(),
-        risks: z.array(boardText).max(8).optional(),
-      }),
-    )
-    .max(12),
-  contradictions: z.array(z.strictObject({ text: boardText, refs: sources })).max(16),
-  findings: z
-    .array(z.strictObject({ text: boardText, refs: sources, severity: z.enum(['info', 'risk']) }))
-    .max(16),
-  brief: projectBrief.extend({ sources }).optional(),
-  questions: z.array(baselineQuestion).max(5),
-  extensions: baselineExtensions.optional(),
-  /** `workstream` is the id of a workstream above; `scope` holds repo-relative paths, `acceptance` shell commands. */
-  tasks: z
-    .array(
-      z.strictObject({
-        id: str,
-        title: planTitle,
-        workstream: str,
-        why: boardText,
-        scope: z.array(str).min(1).max(16),
-        acceptance: z.array(str).max(8),
-        depends_on: z.array(str).max(12),
-        sources,
-      }),
-    )
-    .max(12)
-    .default([]),
-};
 /** `.pantheon/config.json`, committed with the project. */
 export const pantheonConfigSchema = z.strictObject({
   version: z.literal(1),
@@ -1859,21 +1743,18 @@ export const inputSchemas = {
     architecture: visualSpecs.graph.optional(),
     body: z.string().max(20000).optional(),
   }),
-  'project.baseline.submit_folder': baselineFolderSchema.extend({ baseline_id: str }),
-  'project.baseline.submit': z.strictObject({ baseline_id: str, ...baselineSubmission }),
+  'project.baseline.submit': z.strictObject({
+    baseline_id: str,
+    folders: z.array(baselineFolderSchema).min(1).max(256),
+  }),
   'project.facts.refresh': z.strictObject({ project_id: str }),
   'project.baseline.confirm': z.strictObject({
     baseline_id: str,
-    brief: projectBrief.optional(),
     gates: z
       .array(z.strictObject({ root: str, commands: z.array(gateCommand) }))
       .max(256)
       .optional(),
-    answers: baselineAnswers,
-    extensions: baselineExtensions.optional(),
   }),
-  /** The user only; stores this round's answers and asks the baseline session for the next round. */
-  'project.baseline.continue': z.strictObject({ baseline_id: str, answers: baselineAnswers }),
   'project.brief.set': z.strictObject({
     project_id: str,
     goal: str,
@@ -1935,8 +1816,6 @@ export const inputSchemas = {
     targets: z.record(z.string(), z.number().int().nonnegative().nullable()),
   }),
   'project.sessionDefaults.set': z.strictObject({ project_id: str, ...sessionDefaults }),
-  /** The user only; lets the project's gate commands on macOS open the GPU, its kernel driver included. */
-  'project.gateGpu.set': z.strictObject({ project_id: str, enabled: z.boolean() }),
   'project.externalEvents.set': z.strictObject({ project_id: str, mode: externalEventsMode }),
   /** Sets the value of one setting that every project follows where it has none of its own; the user only. */
   'project.defaults.set': z.discriminatedUnion('key', [
@@ -2943,16 +2822,6 @@ export interface ProjectFactsRead {
   collected_at: number | null;
   /** Every project folder holds no code yet, as a baseline start judges it now. */
   empty: boolean;
-  workstreams: (Pick<
-    BaselineWorkstream,
-    'id' | 'title' | 'status' | 'modules' | 'depends_on' | 'risks'
-  > &
-    Partial<Pick<BaselineWorkstream, 'next' | 'blockers'>> & {
-      done: number;
-      open: number;
-      /** Items whose text is no longer found in the folder's checklists. */
-      missing: number;
-    })[];
 }
 export interface FilesReadResult {
   path: string;

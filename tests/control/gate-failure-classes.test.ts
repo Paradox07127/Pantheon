@@ -84,7 +84,7 @@ const failing = {
 };
 
 const sandboxRefused = {
-  name: 'Refused by the sandbox',
+  name: 'Prints a sandbox refusal',
   argv: [
     process.execPath,
     '-e',
@@ -145,7 +145,7 @@ it.skipIf(insideSandbox)(
 );
 
 it.skipIf(insideSandbox)(
-  'classifies a gate the sandbox refused as an environment failure',
+  'classifies a failed gate that prints a sandbox refusal as a code failure',
   async () => {
     const f = await mergeFixture();
     const { session, workspace, sourceHead } = await idleSession(f);
@@ -160,8 +160,8 @@ it.skipIf(insideSandbox)(
     expect(current(f, session.id).merge).toMatchObject({
       state: 'blocked',
       reason: 'gate_failed',
-      failure_class: 'environment',
-      gate: { name: 'Refused by the sandbox' },
+      failure_class: 'code',
+      gate: { name: 'Prints a sandbox refusal' },
     });
     expect(git(f.source, 'rev-parse', 'main')).toBe(sourceHead);
   },

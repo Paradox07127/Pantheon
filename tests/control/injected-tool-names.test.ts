@@ -13,7 +13,6 @@ import { CONDUCTOR_INSTRUCTIONS } from '../../packages/control/src/conductor.js'
 const known = new Set([
   ...Object.values(sessionTools).flatMap((tools) => Object.keys(tools)),
   ...Object.keys(coordinationTools),
-  'project_extensions_inventory',
 ]);
 
 // A snake_case or dotted name, alone or in a list, right after call, use, "tools are" or "tools and".
@@ -26,13 +25,11 @@ const LIST = new RegExp(
 const toolNames = (text: string) =>
   [...text.matchAll(LIST)].flatMap((match) => match[1]!.split(/,\s*|\s+and\s+|\s+or\s+/));
 
-const purpose = (tag: Partial<Session>) => purposeSessionInstructions(tag as Session, baseline)!;
-const baseline = { rounds: 3, visuals: true };
+const purpose = (tag: Partial<Session>) => purposeSessionInstructions(tag as Session)!;
 
 const injected: Record<string, string> = {
   conductor: CONDUCTOR_INSTRUCTIONS,
-  'baseline with visuals': baselineSkill({ rounds: 3, visuals: true }),
-  'baseline without visuals': baselineSkill({ rounds: 3, visuals: false }),
+  baseline: baselineSkill,
   intro: purpose({ intro: {} as Session['intro'] }),
   'change story': purpose({ change_story: {} as Session['change_story'] }),
   reviewer: purpose({ review_id: 'review-1' }),

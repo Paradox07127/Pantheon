@@ -1,17 +1,16 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { Copy, RefreshCw, X, Zap } from 'lucide-react';
-import type { BaselineFolder } from '@pantheon/domain';
 import type { FileRef } from '@pantheon/protocol';
 import { Markdown, openFailureText } from '../../components/Markdown';
 import { GraphDiagram } from '../../components/visual/GraphDiagram';
 import { RUNNING, RunningFor } from '../../components/RunningFor';
 import { runtimeName } from '../../components/RuntimeGlyph';
 import { Tip } from '../../components/Tip';
+import { useBaselineRead } from '../../data/baseline-read';
 import { useBoard } from '../../data/board';
 import { startIntro, useIntroRead, type ProjectIntro } from '../../data/intro-read';
 import { currentLocale, t } from '../../i18n';
 import { listText } from '../../lib/list-text';
-import { BaselinePopover } from '../projects/BaselineBlocks';
 import { useSize } from '../../components/ChartParts';
 import {
   DARK_SHADE,
@@ -23,7 +22,6 @@ import {
   squarify,
   stepRange,
 } from './intro-model';
-import { useProjectSetup } from '../../data/project-setup';
 import './intro.css';
 
 /** The architecture's height in px before a taller graph grows it. */
@@ -33,24 +31,6 @@ const TREEMAP_HEIGHT = 192;
 const TREEMAP_WIDTH = 480;
 /** A treemap cell lower than this shows no text. */
 const LABEL_MIN = 40;
-
-type CommandKey = keyof NonNullable<BaselineFolder['commands']>;
-const COMMAND_KEYS: readonly CommandKey[] = ['setup', 'build', 'test', 'lint', 'dev'];
-
-function commandLabel(key: CommandKey): string {
-  switch (key) {
-    case 'setup':
-      return t({ id: 'board.intro.command.setup', defaultMessage: 'Install' });
-    case 'build':
-      return t({ id: 'board.intro.command.build', defaultMessage: 'Build' });
-    case 'test':
-      return t({ id: 'board.intro.command.test', defaultMessage: 'Test' });
-    case 'lint':
-      return t({ id: 'board.intro.command.lint', defaultMessage: 'Lint' });
-    case 'dev':
-      return t({ id: 'board.intro.command.dev', defaultMessage: 'Run' });
-  }
-}
 
 const count = (n: number) => new Intl.NumberFormat(currentLocale()).format(n);
 const linesText = (n: number) =>
@@ -247,7 +227,7 @@ export function Treemap({
 /** The project introduction: what the project does and aims at, how to run it and how it is built. */
 export function IntroView({ projectId }: { projectId: string }) {
   const { read, error } = useIntroRead(projectId);
-  const setup = useProjectSetup(projectId);
+  const { read: baseline } = useBaselineRead(projectId);
   const brief = useBoard((s) => s.board?.project_briefs?.find((b) => b.project_id === projectId));
   const root = useBoard((s) => s.board?.projects.find((p) => p.id === projectId)?.roots[0]);
   const writingId = read?.writing_session_id ?? null;
@@ -262,8 +242,6 @@ export function IntroView({ projectId }: { projectId: string }) {
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
-  const [choosing, setChoosing] = useState(false);
-  const startButton = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (picked === null) return;
     const onKey = (e: KeyboardEvent) => {
@@ -297,51 +275,15 @@ export function IntroView({ projectId }: { projectId: string }) {
     setStarting(false);
     if (!result.ok) setStartError(result.error);
   };
-  const assessed = setup?.baseline?.state === 'confirmed' ? (setup.baseline.result ?? null) : null;
-  // The baseline start shared with the board; a running or handed-back baseline takes no other.
-  const held = setup?.state === 'running' || setup?.state === 'submitted';
-  const baselineLabel =
-    setup?.state === 'failed'
-      ? t({ id: 'board.baseline.restart', defaultMessage: 'Rebuild baseline' })
-      : setup?.state === 'running'
-        ? t({ id: 'board.setup.running', defaultMessage: 'Building baseline' })
-        : t({ id: 'board.baseline.start', defaultMessage: 'Build baseline' });
-  const action =
-    intro || assessed ? (
-      <button type="button" className="btn sm" disabled={writing} onClick={() => void start()}>
-        <RefreshCw className="ic-sm" aria-hidden="true" />
-        {intro
-          ? t({ id: 'memory.intro.survey', defaultMessage: 'Survey again' })
-          : t({ id: 'board.intro.generate', defaultMessage: 'Generate introduction' })}
-      </button>
-    ) : (
-      setup?.state &&
-      setup.state !== 'empty_folder' && (
-        <>
-          <button
-            ref={startButton}
-            type="button"
-            className="btn sm"
-            disabled={writing || held || setup.busy}
-            aria-busy={setup.state === 'running' || setup.busy || undefined}
-            onClick={() => setChoosing(true)}
-          >
-            {baselineLabel}
-          </button>
-          {choosing && (
-            <BaselinePopover
-              project_id={projectId}
-              anchor={startButton}
-              label={baselineLabel}
-              busy={setup.busy}
-              onClose={() => setChoosing(false)}
-              onStart={setup.start}
-            />
-          )}
-        </>
-      )
-    );
-  const failure = startError ?? (!intro && !assessed ? setup?.error : null);
+  const assessed = baseline?.state === 'confirmed' ? (baseline.result ?? null) : null;
+  const action = (
+    <button type="button" className="btn sm" disabled={writing} onClick={() => void start()}>
+      <RefreshCw className="ic-sm" aria-hidden="true" />
+      {intro
+        ? t({ id: 'memory.intro.survey', defaultMessage: 'Survey again' })
+        : t({ id: 'board.intro.generate', defaultMessage: 'Generate introduction' })}
+    </button>
+  );
   const head = (
     <div className="in-hd">
       <h2 className="in-h2">
@@ -386,9 +328,9 @@ export function IntroView({ projectId }: { projectId: string }) {
       )}
       {writing && <RunningFor label={RUNNING.writing} since={since} />}
       <span className="in-acts">
-        {failure && (
+        {startError && (
           <span className="in-err" role="alert">
-            {failure}
+            {startError}
           </span>
         )}
         {action}
@@ -406,21 +348,24 @@ export function IntroView({ projectId }: { projectId: string }) {
       </section>
     );
 
-  const commands = (assessed?.folders ?? []).flatMap((folder) =>
-    COMMAND_KEYS.flatMap((key) => {
-      const entry = folder.commands?.[key];
-      return entry
-        ? [
-            {
-              key,
-              root: folder.root,
-              command: shellLine(entry.argv),
-              source: entry.sources[0] && sourceText(entry.sources[0]),
-            },
-          ]
-        : [];
-    }),
-  );
+  const commands = (assessed?.folders ?? []).flatMap((folder) => [
+    ...(folder.setup
+      ? [
+          {
+            key: `${folder.root}:setup`,
+            label: t({ id: 'board.intro.command.setup', defaultMessage: 'Install' }),
+            command: shellLine(folder.setup.argv),
+            source: folder.setup.sources[0] && sourceText(folder.setup.sources[0]),
+          },
+        ]
+      : []),
+    ...folder.gate.map((entry) => ({
+      key: `${folder.root}:gate:${entry.name}`,
+      label: entry.name,
+      command: shellLine(entry.argv),
+      source: entry.sources[0] && sourceText(entry.sources[0]),
+    })),
+  ]);
   const goals = brief?.goals ?? [];
   const nonGoals = brief?.non_goals ?? [];
   const modules = [...intro.modules].sort((a, b) => b.lines - a.lines);
@@ -506,12 +451,7 @@ export function IntroView({ projectId }: { projectId: string }) {
             </div>
             <ul className="in-cmds">
               {commands.map((c) => (
-                <CommandRow
-                  key={`${c.root}:${c.key}`}
-                  label={commandLabel(c.key)}
-                  command={c.command}
-                  source={c.source}
-                />
+                <CommandRow key={c.key} label={c.label} command={c.command} source={c.source} />
               ))}
             </ul>
           </section>

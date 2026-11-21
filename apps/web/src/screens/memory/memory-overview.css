@@ -88,13 +88,6 @@
   width: 12px;
   height: 12px;
 }
-.mo-pf-sep {
-  flex: none;
-  align-self: stretch;
-  width: var(--hair);
-  margin: 0 4px;
-  background: var(--bd2);
-}
 
 /* Languages: a heading with the line count, one bar of parts and a two-column legend of shares */
 .mo-pf-ch {

@@ -1,10 +1,9 @@
 import { existsSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { expect, it, vi } from 'vitest';
+import { expect, it } from 'vitest';
 import { startEnvironmentCheck } from '@pantheon/control';
 import type { EnvironmentCheck, Principal, Project, Workspace } from '@pantheon/domain';
 import type { ControlContext } from '../../packages/control/dist/context.js';
-import * as validation from '../../packages/control/dist/validation-executor.js';
 import { eventually, gateFolder, insideSandbox, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
@@ -98,36 +97,6 @@ it
             failure_class: 'code',
           }),
         ],
-      },
-    ],
-    [
-      'ends inconclusive when the gate sandbox refuses a library load',
-      {
-        gate: [
-          'sh',
-          '-c',
-          'echo "xcrun: error: unable to load libxcrun (dlopen(/x/libxcrun.dylib, 0x0005): tried: \'/x/libxcrun.dylib\' (file system sandbox blocked open()))." >&2; exit 1',
-        ],
-      },
-      {
-        state: 'inconclusive',
-        reason_code: 'checks_environment',
-        commands: [expect.objectContaining({ name: 'Gate', failure_class: 'environment' })],
-      },
-    ],
-    [
-      'ends inconclusive when the gate sandbox refuses a nested sandbox',
-      {
-        gate: [
-          'sh',
-          '-c',
-          'echo "sandbox-exec: sandbox_apply: Operation not permitted" >&2; exit 1',
-        ],
-      },
-      {
-        state: 'inconclusive',
-        reason_code: 'checks_environment',
-        commands: [expect.objectContaining({ name: 'Gate', failure_class: 'environment' })],
       },
     ],
     [
@@ -288,30 +257,6 @@ it.skipIf(insideSandbox)('records one event when a check starts and one when it 
   ]);
   expect(events('environment.check_started')).toHaveLength(1);
 });
-
-it.skipIf(insideSandbox)(
-  'opens the GPU the user allowed the gate commands to the candidate commands it checks',
-  async () => {
-    const f = await workbenchFixture();
-    f.call(
-      'project.gateGpu.set',
-      { project_id: f.project.id, enabled: true },
-      f.store.must<Project>('projects', f.project.id).revision,
-    );
-    const execute = vi.spyOn(validation, 'runValidationCommand');
-    try {
-      const row = start(f, { commands: [{ name: 'Candidate', argv: ['sh', '-c', 'true'] }] });
-      await ended(f, row);
-      expect(
-        execute.mock.calls
-          .filter(([input]) => input.argv.join(' ') === 'sh -c true')
-          .map(([input]) => input.gpu),
-      ).toEqual([true]);
-    } finally {
-      execute.mockRestore();
-    }
-  },
-);
 
 it.skipIf(insideSandbox)('refuses a second check while one of the project runs', async () => {
   const f = await workbenchFixture();

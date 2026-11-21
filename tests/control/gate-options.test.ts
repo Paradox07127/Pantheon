@@ -16,12 +16,6 @@ const result = (exit_code: number | null = 0, timedOut = false): validation.Vali
   stdout_sha256: '',
   stderr_sha256: '',
   output_truncated: false,
-  boundary: {
-    kind: 'macos-seatbelt',
-    network: 'loopback',
-    supported: true,
-    stop_scope: 'process-group',
-  },
 });
 async function setup(commands: object[]) {
   const f = await workbenchFixture({ delay: 1 });
@@ -123,7 +117,7 @@ it('runs local session gates in the session workspace with the configured timeou
   expect(execute.mock.calls[0]![0]).toMatchObject({ cwd: workspace.path, timeoutMs: 1234 });
 });
 
-it('marks only the fresh gate clone as a disposable root', async () => {
+it('runs daemon gates in a fresh clone and session gates in the session workspace', async () => {
   const execute = vi.spyOn(validation, 'runValidationCommand').mockResolvedValue(result());
   const { f, session, workspace } = await setup([{ name: 'check', argv: ['check'] }]);
   const idle = () =>
@@ -134,12 +128,10 @@ it('marks only the fresh gate clone as a disposable root', async () => {
   await run(f, session);
   await idle();
   expect(execute.mock.calls[0]![0].cwd).not.toBe(workspace.path);
-  expect(execute.mock.calls[0]![0].disposable).toBe(true);
   f.call('workflow.policy.set', { project_id: f.project.id, gate_runner: 'session' });
   await run(f, session);
   await idle();
   expect(execute.mock.calls[1]![0]).toMatchObject({ cwd: workspace.path });
-  expect(execute.mock.calls[1]![0].disposable).toBeUndefined();
 });
 
 it('refuses session gates in the live worktree while input waits for a turn', async () => {

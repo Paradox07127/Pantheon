@@ -87,6 +87,7 @@ const check = (gates: SessionGates, readOnly = false) =>
       revision: 17,
       gates: { data: gates, error: null, reload() {} },
       readOnly,
+      projectId: null,
       merging: false,
       busy: false,
       attached: new Set(),

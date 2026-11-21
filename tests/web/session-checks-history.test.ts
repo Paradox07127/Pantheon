@@ -69,6 +69,7 @@ function checks(
       gates: read(latest),
       history,
       readOnly: false,
+      projectId: null,
       merging: false,
       busy: false,
       attached: new Set<string>(),

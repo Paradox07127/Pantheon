@@ -51,7 +51,6 @@ import { listText } from './lib/list-text';
 import { runShortcut, shortcutKeys, SHORTCUTS, useShortcut } from './lib/shortcuts';
 import { SCREEN_NAMES } from './screens';
 import { PanelBoundary } from './components/PanelBoundary';
-import { startBaseline } from './data/project-setup';
 import { MemoryScreen } from './screens/memory/MemoryScreen';
 import { ProjectsScreen } from './screens/projects/ProjectsScreen';
 import { useAppDisplay } from './screens/sessions/app-display';
@@ -404,15 +403,6 @@ function MainWindow({ kind }: { kind: 'main' | 'project' }) {
               t({ id: 'app.palette.resetLayout', defaultMessage: 'Reset layout' }),
               resetLayout,
             ),
-            ...(current
-              ? [
-                  action(
-                    'build-baseline',
-                    t({ id: 'board.baseline.start', defaultMessage: 'Build baseline' }),
-                    () => void startBaseline(current),
-                  ),
-                ]
-              : []),
             ...(current
               ? [
                   action(

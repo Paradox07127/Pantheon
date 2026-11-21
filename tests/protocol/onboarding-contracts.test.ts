@@ -62,89 +62,80 @@ it('accepts the merge archive switch independently and the session pull retry', 
   );
 });
 
-it('accepts a baseline start with a runtime, model and effort and a submission without next tasks', () => {
+it('accepts a baseline start with a runtime, model and effort', () => {
   const start = { project_id: 'project', runtime: 'codex', model: 'gpt-5-mini', effort: 'low' };
   expect(inputSchemas['project.baseline.start'].parse(start)).toEqual(start);
   expect(schemas['project.baseline.start']!.safeParse({ ...start, effort: 'huge' }).success).toBe(
     false,
   );
-  const submission = {
-    baseline_id: 'baseline',
-    workstreams: [],
-    contradictions: [],
-    findings: [],
-    questions: [],
-  };
-  expect(inputSchemas['project.baseline.submit'].parse(submission).tasks).toEqual([]);
-  const task = {
-    id: 'json',
-    title: 'Parse JSON rows',
-    workstream: 'importer',
-    why: 'JSON parsing is open',
-    scope: ['src'],
-    acceptance: ['pnpm build'],
-    depends_on: [],
-    sources: ['file:TODO.md:5'],
-  };
-  const submit = schemas['project.baseline.submit']!;
-  expect(submit.safeParse({ ...submission, tasks: [task] }).success).toBe(true);
-  expect(submit.safeParse({ ...submission, tasks: [{ ...task, scope: [] }] }).success).toBe(false);
 });
 
-const emptySubmission = {
-  baseline_id: 'baseline',
-  workstreams: [],
-  contradictions: [],
-  findings: [],
-};
-const scopeQuestion = {
-  id: 'scope',
-  header: 'Scope',
-  question: 'Is publishing in scope?',
-  options: [
-    { label: 'Yes', description: 'Publish to npm' },
-    {
-      label: 'No',
-      description: 'Keep it internal',
-      preview: { kind: 'mermaid', spec: { source: 'graph LR; a-->b' } },
-    },
-  ],
-  multiSelect: false,
-  recommended: 'No',
+const folder = {
+  root: '/repo',
+  gate: [{ name: 'test', argv: ['pnpm', 'test'], sources: ['file:package.json'] }],
+  setup: { argv: ['pnpm', 'install'], sources: ['file:package.json'] },
 };
 it.each([
   [
-    'a question card',
+    'a folder with its gate and setup',
     'project.baseline.submit',
-    { ...emptySubmission, questions: [scopeQuestion] },
+    { baseline_id: 'baseline', folders: [folder] },
     true,
   ],
   [
-    'a recommended label that names no option',
+    'a folder without git and its empty gate',
     'project.baseline.submit',
-    { ...emptySubmission, questions: [{ ...scopeQuestion, recommended: 'Maybe' }] },
-    false,
+    { baseline_id: 'baseline', folders: [{ root: '/notes', gate: [] }] },
+    true,
   ],
+  ['no folders', 'project.baseline.submit', { baseline_id: 'baseline', folders: [] }, false],
   [
-    'six questions',
+    'a gate command without sources',
     'project.baseline.submit',
     {
-      ...emptySubmission,
-      questions: Array.from({ length: 6 }, (_, i) => ({ ...scopeQuestion, id: `q${i}` })),
+      baseline_id: 'baseline',
+      folders: [{ ...folder, gate: [{ name: 'test', argv: ['pnpm', 'test'], sources: [] }] }],
     },
     false,
   ],
   [
-    'a continued round with the answers so far',
-    'project.baseline.continue',
+    'a gate command with a timeout the model wrote',
+    'project.baseline.submit',
     {
       baseline_id: 'baseline',
-      answers: [
-        { question_id: 'scope', question: 'Is publishing in scope?', answer: 'No', by: 'user' },
-        { question_id: 'stack', question: 'Which stack?', answer: '', by: 'model' },
+      folders: [{ ...folder, gate: [{ ...folder.gate[0], timeout_ms: 1000 }] }],
+    },
+    false,
+  ],
+  [
+    'a folder with the retired stage',
+    'project.baseline.submit',
+    { baseline_id: 'baseline', folders: [{ ...folder, stage: 'active' }] },
+    false,
+  ],
+  [
+    'a project-wide assessment',
+    'project.baseline.submit',
+    { baseline_id: 'baseline', folders: [folder], workstreams: [], questions: [] },
+    false,
+  ],
+  ['a confirmation without gates', 'project.baseline.confirm', { baseline_id: 'baseline' }, true],
+  [
+    'a confirmation with the gates the user kept',
+    'project.baseline.confirm',
+    {
+      baseline_id: 'baseline',
+      gates: [
+        { root: '/repo', commands: [{ name: 'test', argv: ['pnpm', 'test'], timeout_ms: 60000 }] },
       ],
     },
     true,
+  ],
+  [
+    'a confirmation with answers',
+    'project.baseline.confirm',
+    { baseline_id: 'baseline', answers: [] },
+    false,
   ],
   ['six baseline rounds', 'app.settings.set', { baseline_rounds: 6 }, false],
   ['three baseline rounds', 'app.settings.set', { baseline_rounds: 3 }, true],

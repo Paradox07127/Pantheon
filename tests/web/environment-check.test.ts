@@ -20,7 +20,6 @@ import { durationText } from '@/lib/time-text';
 import { ReviewBaseline } from '@/screens/projects/BaselineBlocks';
 import { Button } from '@/screens/projects/parts';
 import { ProjectGate } from '@/screens/settings/GatesPage';
-import { setupRead } from './setup-fixture.js';
 
 type Command = { type: string; input: Record<string, unknown>; expected_revision: number | null };
 
@@ -345,19 +344,13 @@ describe('the environment check of a baseline', () => {
       folders: [
         {
           root: ROOT,
-          stage: 'active',
-          gate: [{ ...test, sources: [] }],
-          commands: {
-            build: { argv: build.argv, sources: [] },
-            test: { argv: test.argv, sources: [] },
-          },
+          gate: [
+            { ...test, sources: [] },
+            { ...build, sources: [] },
+          ],
         },
       ],
-      workstreams: [],
-      contradictions: [],
-      findings: [],
-      questions: [],
-    } as never,
+    },
     ...patch,
   });
   const ofBaseline = (attempt: 1 | 2, patch: Partial<Check> = {}) =>
@@ -483,22 +476,14 @@ describe('where the environment check is drawn', () => {
         folders: [
           {
             root: ROOT,
-            stage: 'active',
             // A gate command turned off is not checked, so it is not planned.
             gate: [
               { ...test, sources: [] },
               { ...lint, enabled: false, sources: [] },
+              { ...build, sources: [] },
             ],
-            commands: {
-              build: { argv: build.argv, sources: [] },
-              test: { argv: test.argv, sources: [] },
-            },
           },
         ],
-        workstreams: [],
-        contradictions: [],
-        findings: [],
-        questions: [],
       },
     };
     const onOpenSession = vi.fn();

@@ -1,7 +1,7 @@
 import { runtimeReviewHandlers } from './runtime-review.js';
 import { memoryHandlers, memoryPreparers } from './memory.js';
 import { projectIntroPreparers } from './project-intro.js';
-import { baselineHandlers, baselinePreparers } from './baseline.js';
+import { baselinePreparers } from './baseline.js';
 import { environmentCheckHandlers } from './environment-check.js';
 import { branchLandingPreparers } from './branch-landing.js';
 import { conductorPreparers } from './conductor.js';
@@ -26,7 +26,6 @@ export const handlers: Handlers = {
   ...memoryHandlers,
   ...projectHandlers,
   ...projectFactHandlers,
-  ...baselineHandlers,
   ...environmentCheckHandlers,
   ...changeStoryHandlers,
   ...sessionHandlers,

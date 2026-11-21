@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-const mock = vi.hoisted(() => ({ baseline: null as any }));
+import type { ApprovalQuestion } from '@pantheon/domain';
 vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
   (await import('./web-live-stores.js')).liveStores(actual as never),
 );
@@ -10,54 +10,22 @@ vi.mock('@/data/board', () => ({
     getState: () => ({}),
   }),
 }));
-vi.mock('@/store', () => ({ useShell: (selector: any) => selector({ openSession() {} }) }));
-vi.mock('@/data/baseline-read', () => ({ useBaselineRead: () => ({ read: mock.baseline }) }));
-vi.mock('@/data/facts-read', () => ({ useFactsRead: () => ({ read: null }) }));
-vi.mock('@/data/intro-read', () => ({ useIntroRead: () => ({ read: null }) }));
-vi.mock('@/data/app-settings', () => ({
-  useAppSettings: () => ({ settings: { baseline_rounds: 3 } }),
-}));
 vi.mock('@/components/Clip', async (actual) => {
   const { Clip } = (await actual()) as typeof import('@/components/Clip');
   return { Clip: vi.fn(Clip) };
 });
 import { Clip } from '@/components/Clip';
 import { Markdown } from '@/components/Markdown';
-import { QuestionCard, type CardQuestion } from '@/components/QuestionCard';
+import { QuestionCard } from '@/components/QuestionCard';
 import { useDrafts } from '@/data/drafts';
-import { ReviewBaseline } from '@/screens/projects/BaselineBlocks';
 import { jumpToQuestion, PendingQuestions } from '@/screens/sessions/RequestCards';
 import { zh, zhf } from './i18n-setup.js';
 
 beforeEach(() => {
   useDrafts.setState({ answers: {} });
-  mock.baseline = null;
 });
 
-const direction: CardQuestion = {
-  question: 'Which direction should the next stretch of work take?',
-  header: 'Direction',
-  multiSelect: false,
-  options: [
-    {
-      label: 'Pass release acceptance',
-      description: 'Make the full acceptance pass',
-      preview: {
-        kind: 'graph',
-        spec: {
-          nodes: [
-            { id: 'fix', label: 'Fix failing acceptance scenarios on every platform' },
-            { id: 'run', label: 'Run acceptance on the release candidate' },
-            { id: 'sign', label: 'Fix signing docs' },
-          ],
-          edges: [{ from: 'run', to: 'fix' }],
-        },
-      },
-    },
-    { label: 'Stabilize orchestration', description: 'Make dispatch reliable' },
-  ],
-} as CardQuestion;
-const smoke: CardQuestion = {
+const smoke: ApprovalQuestion = {
   question: 'Which packages must pass a device smoke test?',
   header: 'Smoke',
   multiSelect: true,
@@ -65,8 +33,8 @@ const smoke: CardQuestion = {
     { label: 'macOS arm64', description: 'Signed dmg' },
     { label: 'Linux x64', description: 'deb and AppImage' },
   ],
-} as CardQuestion;
-const track: CardQuestion = {
+} as ApprovalQuestion;
+const track: ApprovalQuestion = {
   question: 'Where should open work be tracked?',
   header: 'Track',
   multiSelect: false,
@@ -74,11 +42,12 @@ const track: CardQuestion = {
     { label: 'Pantheon board', description: 'The lead plan' },
     { label: 'GitHub issues', description: 'The issue tracker' },
   ],
-} as CardQuestion;
+} as ApprovalQuestion;
 
-const card = (questions: CardQuestion[]) =>
+const answerable = { reason: null, busy: false, error: null, onSend: () => {} };
+const card = (questions: ApprovalQuestion[]) =>
   renderToStaticMarkup(
-    createElement(QuestionCard, { group: true, draft: 'd', questions, label: 'Open questions' }),
+    createElement(QuestionCard, { ...answerable, draft: 'd', questions, label: 'Open questions' }),
   );
 /** The markup of the element whose opening tag carries `attr`, up to the next `until`. */
 const slice = (html: string, attr: string, until: string) => {
@@ -86,20 +55,6 @@ const slice = (html: string, attr: string, until: string) => {
   expect(start).toBeGreaterThan(-1);
   return html.slice(start, html.indexOf(until, start + attr.length));
 };
-
-it('draws an option preview as a task graph whose every node carries its full name', () => {
-  const option = slice(card([direction]), 'Pass release acceptance', 'Stabilize orchestration');
-  const picture = slice(option, 'role="img"', '</button>');
-  expect(picture.match(/<path /g)).toHaveLength(1);
-  const named = [...picture.matchAll(/title="([^"]*)"[^>]*>([^<]*)</g)].map((m) => [m[1], m[2]]);
-  expect(named).toEqual(
-    [
-      'Fix failing acceptance scenarios on every platform',
-      'Run acceptance on the release candidate',
-      'Fix signing docs',
-    ].map((label) => [label, label]),
-  );
-});
 
 it('draws a picked option of a multiple choice question as a ticked box, a picked single choice by its letter', () => {
   useDrafts.getState().answer('d', {
@@ -123,14 +78,9 @@ it('marks only the questions still unanswered as open', () => {
 const LONG = Array.from({ length: 40 }, (_, n) => `Step ${n + 1} of the release checklist.`).join(
   ' ',
 );
-it.each([
-  ['a list option', { ...track, options: [{ label: 'Pantheon board', description: LONG }] }],
-  [
-    'an option with a picture',
-    { ...direction, options: [{ ...direction.options[0]!, description: LONG }] },
-  ],
-])('cuts the description of %s to six lines outside the option, which it describes', (_, q) => {
-  const html = card([q as CardQuestion]);
+it('cuts the description of an option to six lines outside the option, which it describes', () => {
+  const q = { ...track, options: [{ label: 'Pantheon board', description: LONG }] };
+  const html = card([q]);
   const option = slice(html, 'role="radio"', '</button>');
   expect(option).not.toContain('<button');
   expect(option).not.toContain(LONG);
@@ -148,7 +98,7 @@ it.each([
 });
 
 it('gives each of two copies of a question its own description ids, each option pointing into its copy', () => {
-  const props = { group: true, draft: 'd', questions: [track], label: 'Open questions' } as const;
+  const props = { ...answerable, draft: 'd', questions: [track], label: 'Open questions' };
   const html = renderToStaticMarkup(
     createElement(
       'div',
@@ -166,32 +116,7 @@ it('gives each of two copies of a question its own description ids, each option 
     expect([...copy.matchAll(/aria-describedby="([^"]+)"/g)].map((m) => m[1])).toEqual(ids[n]);
 });
 
-const session = {
-  id: 's1',
-  project_id: 'p1',
-  workspace_id: null,
-  baseline: { baseline_id: 'b1' },
-} as any;
-const baseline: any = {
-  id: 'b1',
-  revision: 1,
-  project_id: 'p1',
-  state: 'submitted',
-  dropped: 0,
-  facts_id: 'f1',
-  created_at: 1,
-  result: {
-    folders: [],
-    workstreams: [],
-    contradictions: [],
-    findings: [],
-    questions: [
-      { id: 'q1', ...smoke },
-      { id: 'q2', ...track },
-    ],
-  },
-};
-const pending = (questions: CardQuestion[]) => [
+const pending = (questions: ApprovalQuestion[]) => [
   { id: 'approval-1', tool: 'AskUserQuestion', revision: 1, questions } as any,
 ];
 const jump = (props: any) =>
@@ -199,28 +124,16 @@ const jump = (props: any) =>
     createElement(PendingQuestions, { scroller: { current: null }, pending: [], ...props }),
   );
 
-it('offers a jump to the questions a baseline and a pending request still wait on, until all are answered', () => {
-  mock.baseline = baseline;
+it('offers a jump to the questions a pending request still waits on, until all are answered', () => {
+  useDrafts.getState().answer('approval-1', { picked: [[], ['GitHub issues']], typed: ['', ''] });
+  const html = jump({ pending: pending([smoke, track]) });
+  expect(html).toContain('<button');
+  expect(html).toContain(zhf('sessions.card.pendingQuestions', { count: 1 }));
+
   useDrafts
     .getState()
-    .answer('baseline:b1:1', { picked: [[], ['GitHub issues']], typed: ['', ''] });
-  const html = jump({ session, pending: pending([track]) });
-  expect(html).toContain('<button');
-  expect(html).toContain(zhf('sessions.card.pendingQuestions', { count: 2 }));
-
-  useDrafts.getState().answer('baseline:b1:1', { picked: [['Linux x64'], []], typed: ['', 'x'] });
-  useDrafts.getState().answer('approval-1', { picked: [['Pantheon board']], typed: [''] });
-  expect(jump({ session, pending: pending([track]) })).toBe('');
-});
-
-it('does not count a question left to the model as one to answer', () => {
-  useDrafts.getState().answer('approval-1', { picked: [[]], typed: [''], decided: [true] });
-  expect(jump({ session, pending: pending([track]) })).toBe('');
-});
-
-it('does not count a baseline that no longer waits for confirmation', () => {
-  mock.baseline = { ...baseline, state: 'confirmed' };
-  expect(jump({ session })).toBe('');
+    .answer('approval-1', { picked: [['Linux x64'], ['GitHub issues']], typed: ['', ''] });
+  expect(jump({ pending: pending([smoke, track]) })).toBe('');
 });
 
 it('scrolls to the first open question and focuses its first control', () => {
@@ -231,15 +144,6 @@ it('scrolls to the first open question and focuses its first control', () => {
   expect(scroller.querySelector).toHaveBeenCalledWith('[data-open]');
   expect(question.scrollIntoView).toHaveBeenCalled();
   expect(control.focus).toHaveBeenCalled();
-});
-
-it('keeps the answered count and the baseline buttons together in one bar under the questions', () => {
-  const html = renderToStaticMarkup(createElement(ReviewBaseline, { baseline }));
-  const bar = slice(html, `aria-label="${zh('projects.baseline.answerBar')}"`, '</div>');
-  expect(bar).toContain(zh('projects.baseline.askMore'));
-  expect(bar).toContain(zh('projects.baseline.confirmBaseline'));
-  expect(bar).toContain(zhf('projects.baseline.answered', { answered: 0, total: 2 }));
-  expect(html.indexOf(track.question)).toBeLessThan(html.indexOf(bar));
 });
 
 it('names a mermaid card by the title in its front matter, else by its kind', () => {

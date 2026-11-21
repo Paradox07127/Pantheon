@@ -37,7 +37,6 @@ type Identity = {
   review_id?: string;
   baseline_id?: string;
   story_id?: string;
-  extension_runtimes?: string[];
   allowed_tool_names?: string[];
 };
 
@@ -75,10 +74,8 @@ const descriptions: Record<ToolCommand, string> = {
     "Read the project: details, brief, and every lead's board plan with each task's state and sessions. A lead also gets a lead section: workflow policy (paths), devices, and recent retrospectives and runtime reviews. Call it before you plan or decide, and after a board update when you need the current state; a task session calls it to see the tasks around its own. It returns plan_version, which update_board needs as base_version. To rewrite the plan from the repository, use sync_board instead.",
   'project.intro.submit':
     'Write the project introduction. summary: 1–280 characters; sources: 1–16 file:<relative path>, file:<relative path>:<line> or commit:<7–40 hex digits> references, with at least one resolving in a project root. features: at most 12 { title: 1–80 characters, text: 1–400 characters, sources: same rules }. modules: at most 40 { path: unique root-relative directory inside a project root, role: 1–400 characters, entry?: a file inside that directory, relative to the same root }; if several roots match path, the first is used. architecture?: graph { nodes: [{ id, label, group? }], edges: [{ from, to, label? }], direction?: "LR" | "TB" }, 1–200 nodes with unique ids, at most 400 edges naming existing nodes; one node for each module, grouped by layer, with labelled edges. body?: Markdown, at most 20000 characters. Pantheon measures all numbers: do not send lines, commits_30d, languages, weeks or heads. The project is bound to your session. Returns { written: true }; correct named fields if refused.',
-  'project.baseline.submit_folder':
-    'Submit the assessment of one project folder. Call once for each folder in the brief.',
   'project.baseline.submit':
-    'Submit the project-wide assessment: workstreams (each with its modules, depends_on, risks and the items, sections and commits that show its progress), contradictions, questions, and tasks (next tasks with scope, acceptance and dependencies). Each question has id, header (at most 12 characters), question, 2–4 options { label, description, preview? }, multiSelect, and optional recommended and kind; preview is { kind: "graph", spec } with at most 40 nodes or { kind: "mermaid", spec: { source } }. The first round has exactly one question with kind "direction": 2–3 options, each with a preview. The last round has empty questions. Call it once after every folder and project_intro_submit are submitted, and again in each later round with the complete revised assessment; after each call end the turn.',
+    'Submit the gate commands you found: one entry for each project folder in your first message, with root written as given, gate (each command with name, argv and sources) and an optional setup { argv, sources } that prepares a fresh worktree. A folder without git gets an empty gate. Call it once, then end the turn; when Pantheon sends back a failed command, call it again with every folder.',
   'change_story.submit':
     'Submit your interpretation of the landed diff as change cards. Call once; if it returns errors, fix them and submit again, then end the turn.',
   'browser.open':
@@ -97,46 +94,8 @@ const descriptions: Record<ToolCommand, string> = {
     "Read this project's changes, their checks (gate, reviews), the landing queue and the items waiting for the user.",
 };
 
-const INVENTORY_TOOL = 'project_extensions_inventory';
-const inventoryDescription =
-  'List the MCP servers, plugins and skills that are on for each coding runtime. Call once before project_baseline_submit.';
-
-type InventoryView = {
-  runtime: string;
-  mcp_servers: { name: string; enabled: boolean; plugin?: string }[];
-  plugins: { id: string; enabled: boolean }[];
-  skills: { id: string; name: string; enabled: boolean }[];
-};
-
-function inventoryText(inventories: InventoryView[]): string {
-  const list = (items: string[]) => (items.length ? items.map((item) => `- ${item}`) : ['- none']);
-  if (!inventories.length) return 'No runtime reports its extensions.';
-  return inventories
-    .map((inventory) =>
-      [
-        `# Runtime ${inventory.runtime}`,
-        'MCP servers:',
-        ...list(
-          inventory.mcp_servers
-            .filter((server) => server.enabled)
-            .map((server) => server.name + (server.plugin ? ` (plugin ${server.plugin})` : '')),
-        ),
-        'Plugins:',
-        ...list(inventory.plugins.filter((plugin) => plugin.enabled).map((plugin) => plugin.id)),
-        'Skills:',
-        ...list(
-          inventory.skills
-            .filter((skill) => skill.enabled)
-            .map((skill) => skill.id + (skill.name === skill.id ? '' : ` (${skill.name})`)),
-        ),
-      ].join('\n'),
-    )
-    .join('\n\n');
-}
-
-/** The session supplies these tools' baseline and revision; the model never sees them. */
-const baselineBound = (type: CommandType) =>
-  type === 'project.baseline.submit_folder' || type === 'project.baseline.submit';
+/** The session supplies this tool's baseline and revision; the model never sees them. */
+const baselineBound = (type: CommandType) => type === 'project.baseline.submit';
 /** The session supplies these tools' story and revision; the model never sees them. */
 const storyBound = (type: CommandType) => type === 'change_story.submit';
 
@@ -181,11 +140,7 @@ const boundRevision = (type: CommandType) =>
   browserTool(type);
 
 // Submits after which the session ends its turn; other write receipts carry ids the next call needs.
-const terminalSubmits = new Set<CommandType>([
-  'project.baseline.submit_folder',
-  'project.baseline.submit',
-  'change_story.submit',
-]);
+const terminalSubmits = new Set<CommandType>(['project.baseline.submit', 'change_story.submit']);
 
 const accepted = (type: CommandType, receipt: unknown) => {
   const fields = (['id', 'revision', 'state', 'board', 'board_problem', 'plan_version'] as const)
@@ -296,15 +251,13 @@ export async function createMcpServer(daemonUrl: string, token: string): Promise
   const schemas = Object.fromEntries(
     Object.entries(tools).map(([name, type]) => {
       const unbound =
-        type === 'project.baseline.submit_folder'
+        type === 'project.baseline.submit'
           ? inputSchemas[type].omit({ baseline_id: true })
-          : type === 'project.baseline.submit'
-            ? inputSchemas[type].omit({ baseline_id: true })
-            : type === 'change_story.submit'
-              ? inputSchemas[type].omit({ story_id: true })
-              : type === 'visual.draw'
-                ? visualDrawInputSchema
-                : inputSchemas[type];
+          : type === 'change_story.submit'
+            ? inputSchemas[type].omit({ story_id: true })
+            : type === 'visual.draw'
+              ? visualDrawInputSchema
+              : inputSchemas[type];
       boundInputs[name] = boundFields.filter(
         (field) => 'shape' in unbound && field in unbound.shape,
       );
@@ -347,24 +300,13 @@ export async function createMcpServer(daemonUrl: string, token: string): Promise
     try {
       await authenticate();
       return {
-        tools: [
-          ...Object.entries(tools).map(([name, type]) => ({
-            name,
-            description: descriptions[type as ToolCommand],
-            inputSchema: schemas[name]!.toJSONSchema({
-              override: hideRetired,
-            }) as Tool['inputSchema'],
-          })),
-          ...(identity.baseline_id === undefined
-            ? []
-            : [
-                {
-                  name: INVENTORY_TOOL,
-                  description: inventoryDescription,
-                  inputSchema: { type: 'object' as const, properties: {} },
-                },
-              ]),
-        ],
+        tools: Object.entries(tools).map(([name, type]) => ({
+          name,
+          description: descriptions[type as ToolCommand],
+          inputSchema: schemas[name]!.toJSONSchema({
+            override: hideRetired,
+          }) as Tool['inputSchema'],
+        })),
       };
     } catch (error) {
       throw new McpError(
@@ -376,36 +318,6 @@ export async function createMcpServer(daemonUrl: string, token: string): Promise
   server.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
     try {
       const current = await authenticate();
-      if (params.name === INVENTORY_TOOL && current.baseline_id !== undefined) {
-        // Claude discovery may take ten seconds; the daemon gives up after twelve.
-        const runtimes = current.extension_runtimes ?? [];
-        const inventories = await Promise.allSettled(
-          runtimes.map(
-            (runtime) =>
-              request(
-                `/v1/extensions.inventory?${new URLSearchParams({ project_id: current.principal.project_id!, runtime })}`,
-                undefined,
-                15_000,
-              ) as Promise<unknown> as Promise<InventoryView>,
-          ),
-        );
-        const text = inventories.length
-          ? inventories
-              .map((inventory, index) => {
-                if (inventory.status === 'fulfilled') return inventoryText([inventory.value]);
-                const error = inventory.reason;
-                return `# Runtime ${runtimes[index]}\n${refused(
-                  INVENTORY_TOOL,
-                  error instanceof CommandError ? error.code : 'invalid_request',
-                  error instanceof CommandError ? error.daemonMessage : undefined,
-                )}`;
-              })
-              .join('\n\n')
-          : inventoryText([]);
-        const none =
-          runtimes.length > 0 && !inventories.some((inventory) => inventory.status === 'fulfilled');
-        return { content: [{ type: 'text', text }], ...(none ? { isError: true } : {}) };
-      }
       if (!Object.hasOwn(tools, params.name)) throw new CommandError('permission_denied');
       const args = Object.fromEntries(
         Object.entries(params.arguments ?? {}).filter(

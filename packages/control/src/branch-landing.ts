@@ -35,11 +35,13 @@ function landTarget(ctx: ControlContext, principal: Principal, command: Command)
   const input = inputSchemas['project.land'].parse(command.input);
   const { root, project } = projectAtRoot(ctx, principal, input.root, command.type);
   revision(ctx, command);
-  requireThat(
-    projectGateCommands(project, root)?.length,
-    'invalid_state',
-    `${root} has no gate commands; a branch lands only through the gate of its root`,
-  );
+  // project.baseline.start with this project_id finds gate commands to confirm.
+  if (!projectGateCommands(project, root)?.length)
+    throw new DomainError(
+      'no_gate_commands',
+      `${root} has no gate commands; a branch lands only through the gate of its root`,
+      { project_id: project.id },
+    );
   return { input, root, project };
 }
 

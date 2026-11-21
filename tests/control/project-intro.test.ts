@@ -57,14 +57,15 @@ async function setup() {
   git(['add', '.']);
   git(['commit', '--quiet', '-m', 'Use writer'], 1);
   write('src/untracked.ts', 'not counted\n');
-  const baseline = await f.call<Promise<ProjectBaseline>>('project.baseline.start', {
-    project_id: f.project.id,
-  });
+  const { session_id: sessionId } = await f.call<Promise<{ session_id: string }>>(
+    'project.intro.start',
+    { project_id: f.project.id },
+  );
   const principal: Principal = {
-    id: `session:${baseline.session_id}`,
+    id: `session:${sessionId}`,
     role: 'planner',
     project_id: f.project.id,
-    session_id: baseline.session_id,
+    session_id: sessionId,
     expires_at: now + 60000,
   };
   const input = {
@@ -89,11 +90,9 @@ async function setup() {
       f.store.update('session_turns', { ...turn, state: 'completed' }, turn.revision);
     for (const session of f.store.list<Session>('sessions'))
       f.store.update('sessions', { ...session, state: 'open' }, session.revision);
-    const current = f.store.must<ProjectBaseline>('project_baselines', baseline.id);
-    f.store.update('project_baselines', { ...current, state: 'failed' }, current.revision);
     for (const job of f.store.pending()) f.store.mark(job.id, 'done');
   };
-  return { ...f, write, git, baseline, principal, input, submit, read, end };
+  return { ...f, write, git, sessionId, principal, input, submit, read, end };
 }
 
 it('stores the measured introduction, emits its event and replaces the prior submission', async () => {
@@ -101,7 +100,7 @@ it('stores the measured introduction, emits its event and replaces the prior sub
   expect(await f.read()).toEqual({
     intro: null,
     behind: 0,
-    writing_session_id: f.baseline.session_id,
+    writing_session_id: f.sessionId,
   });
   expect(await f.submit()).toEqual({ written: true });
   expect(await f.read()).toEqual({
@@ -115,11 +114,11 @@ it('stores the measured introduction, emits its event and replaces the prior sub
       ],
       weeks: [1, 0, 0, 0, 0, 1, 0, 1],
       heads: [{ root: realpathSync(f.projectRoot), sha: f.git(['rev-parse', 'HEAD']) }],
-      session_id: f.baseline.session_id,
+      session_id: f.sessionId,
       written_at: now,
     },
     behind: 0,
-    writing_session_id: f.baseline.session_id,
+    writing_session_id: f.sessionId,
   });
   expect(
     f.store.events(0, f.project.id).filter((event) => event.kind === 'project.intro.written'),
@@ -226,30 +225,22 @@ it('starts a read-only introduction session with baseline runtime selection, fac
   const f = await setup();
   await f.submit();
   f.end();
-  const baseline = f.store.must<ProjectBaseline>('project_baselines', f.baseline.id);
+  const started = await f.call<Promise<ProjectBaseline>>('project.baseline.start', {
+    project_id: f.project.id,
+  });
+  const baseline = f.store.must<ProjectBaseline>('project_baselines', started.id);
+  const gate = [{ name: 'test', argv: ['pnpm', 'test'], sources: ['file:README.md'] }];
+  const confirmedSetup = { argv: ['pnpm', 'install'], sources: ['file:README.md'] };
   f.store.update(
     'project_baselines',
     {
       ...baseline,
       state: 'confirmed',
-      result: {
-        folders: [
-          {
-            root: realpathSync(f.projectRoot),
-            stage: 'active',
-            stack: ['TypeScript'],
-            gate: [],
-            commands: { test: { argv: ['pnpm', 'test'], sources: ['file:README.md'] } },
-          },
-        ],
-        workstreams: [],
-        contradictions: [],
-        findings: [],
-        questions: [],
-      },
+      result: { folders: [{ root: realpathSync(f.projectRoot), gate, setup: confirmedSetup }] },
     },
     baseline.revision,
   );
+  f.end();
   f.write('lib/store.ts', 'export const store = 1;\n');
   f.write('src/cli.ts', "import { store } from '../lib/store.js';\nread();\nwrite();");
   f.git(['add', 'lib/store.ts', 'src/cli.ts']);
@@ -259,9 +250,9 @@ it('starts a read-only introduction session with baseline runtime selection, fac
   });
   const session = f.store.must<Session>('sessions', session_id);
   expect(session.intro).toBe(true);
-  expect(session.runtime).toBe(f.store.must<Session>('sessions', f.baseline.session_id!).runtime);
+  expect(session.runtime).toBe(f.store.must<Session>('sessions', started.session_id!).runtime);
   expect(session.requested_model).toBe(
-    f.store.must<Session>('sessions', f.baseline.session_id!).requested_model,
+    f.store.must<Session>('sessions', started.session_id!).requested_model,
   );
   expect(session.workspace_id).toBeUndefined();
   expect(purposeSessionTools(session)).toEqual([
@@ -284,13 +275,14 @@ it('starts a read-only introduction session with baseline runtime selection, fac
     f.projectRoot,
     'src',
     '4',
-    'TypeScript',
-    'pnpm',
+    `Confirmed setup: ${JSON.stringify(confirmedSetup)}\nConfirmed gate: ${JSON.stringify(gate)}\n`,
     'Reads and writes notes.',
     'file:',
     '### Measured code dependencies\nPantheon measured these from manifests and import statements, without a model.\nModule edges, most imports first:\n- src -> lib: 1 imports (file:src/cli.ts:1)\n',
   ])
     expect(brief).toContain(text);
+  for (const retired of ['Confirmed stack', 'Confirmed commands'])
+    expect(brief).not.toContain(retired);
   await eventually(
     () => starts.mock.calls.length > 0,
     () => f.control.tick(),
@@ -305,78 +297,80 @@ it('starts a read-only introduction session with baseline runtime selection, fac
   });
 });
 
-it('limits submission to assessment and introduction sessions and shares their authoring instructions', async () => {
+it('limits submission to introduction sessions, refuses an assessment session and gives it the authoring instructions', async () => {
   const f = await setup();
-  const baseline = f.store.must<Session>('sessions', f.baseline.session_id!);
-  expect(purposeSessionTools(baseline)).toContain('project.intro.submit');
-  const intro: Session = { ...baseline, baseline: undefined, intro: true };
+  const intro = f.store.must<Session>('sessions', f.sessionId);
   expect(purposeSessionTools(intro)).toContain('project.intro.submit');
   for (const session of [
+    { ...intro, intro: undefined, baseline: { baseline_id: 'baseline' } },
     { ...intro, intro: undefined },
     { ...intro, intro: undefined, review_id: 'review' },
     { ...intro, intro: undefined, change_story: { story_id: 'story' } },
   ])
     expect(purposeSessionTools(session) ?? []).not.toContain('project.intro.submit');
-  for (const session of [baseline, intro]) {
-    const instructions = purposeSessionInstructions(session, { rounds: 5, visuals: true })!;
-    for (const text of [
-      'first time',
-      'summary',
-      'features',
-      'modules',
-      'architecture',
-      'mermaid',
-      'vega-lite',
-      'kline',
-      'project_intro_submit',
-      'draw no import edge the list lacks',
-      'with no edge from every importer',
-      'draw only the edges its block lists',
-      'HTTP, IPC, WebSocket, processes, stores, queues',
-    ])
-      expect(instructions).toContain(text);
-  }
+  const instructions = purposeSessionInstructions(intro)!;
+  for (const text of [
+    'first time',
+    'summary',
+    'features',
+    'modules',
+    'architecture',
+    'mermaid',
+    'vega-lite',
+    'kline',
+    'project_intro_submit',
+    'draw no import edge the list lacks',
+    'with no edge from every importer',
+    'draw only the edges its block lists',
+    'HTTP, IPC, WebSocket, processes, stores, queues',
+  ])
+    expect(instructions).toContain(text);
+  expect(
+    purposeSessionInstructions({
+      ...intro,
+      intro: undefined,
+      baseline: { baseline_id: 'baseline' },
+    }),
+  ).not.toContain('project_intro_submit');
   await expect(() => f.submit({}, user)).rejects.toThrow(
     expect.objectContaining({ code: 'permission_denied' }),
   );
-  f.store.update('sessions', { ...baseline, baseline: undefined }, baseline.revision);
+  f.end();
+  const baseline = await f.call<Promise<ProjectBaseline>>('project.baseline.start', {
+    project_id: f.project.id,
+  });
+  const assessment = {
+    ...f.principal,
+    id: `session:${baseline.session_id}`,
+    session_id: baseline.session_id,
+  };
+  await expect(() => f.submit({}, assessment)).rejects.toThrow(
+    expect.objectContaining({ code: 'permission_denied' }),
+  );
+  const current = f.store.must<Session>('sessions', f.sessionId);
+  f.store.update('sessions', { ...current, intro: undefined }, current.revision);
   for (const role of ['planner', 'writer', 'reviewer'] as const)
     await expect(() => f.submit({}, { ...f.principal, role })).rejects.toThrow(
       expect.objectContaining({ code: 'permission_denied' }),
     );
+  expect((await f.read()).intro).toBeNull();
 });
 
-it.each(['assessment', 'introduction', 'discarded assessment'])(
-  'keeps the introduction when its %s session is deleted and removes it with the project',
-  async (purpose) => {
-    const f = await setup();
-    let sessionId = f.baseline.session_id!;
-    if (purpose === 'introduction') {
-      f.end();
-      sessionId = (
-        await f.call<Promise<{ session_id: string }>>('project.intro.start', {
-          project_id: f.project.id,
-        })
-      ).session_id;
-    }
-    await f.submit({}, { ...f.principal, id: `session:${sessionId}`, session_id: sessionId });
-    f.end();
-    const session = f.store.must<Session>('sessions', sessionId);
-    f.call(
-      purpose === 'discarded assessment' ? 'session.discard' : 'session.delete',
-      { session_id: sessionId },
-      session.revision,
-    );
-    expect((await f.read()).intro?.session_id).toBeNull();
-    expect((await f.read()).intro?.summary).toBe(f.input.summary);
-    f.call(
-      'project.remove',
-      { project_id: f.project.id },
-      f.store.must<Project>('projects', f.project.id).revision,
-    );
-    expect(f.store.projectIntro(f.project.id)).toBeUndefined();
-  },
-);
+it('keeps the introduction when its session is deleted and removes it with the project', async () => {
+  const f = await setup();
+  await f.submit();
+  f.end();
+  const session = f.store.must<Session>('sessions', f.sessionId);
+  f.call('session.delete', { session_id: f.sessionId }, session.revision);
+  expect((await f.read()).intro?.session_id).toBeNull();
+  expect((await f.read()).intro?.summary).toBe(f.input.summary);
+  f.call(
+    'project.remove',
+    { project_id: f.project.id },
+    f.store.must<Project>('projects', f.project.id).revision,
+  );
+  expect(f.store.projectIntro(f.project.id)).toBeUndefined();
+});
 
 it('sums git roots and uses baseline-scanned files for non-git roots, with at most eight language rows', async () => {
   const f = await setup();

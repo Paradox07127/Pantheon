@@ -30,6 +30,7 @@ import { listText } from '../../lib/list-text';
 import { ageParts } from '../../lib/time-text';
 import { scrimFlag } from '../../lib/root-flag';
 import { useShell } from '../../store';
+import { FindGate } from '../projects/BaselineBlocks';
 import { GateTracker } from './GateTracker';
 import { GATE_STATES, gateState } from '../../lib/gate-model';
 import {
@@ -166,6 +167,7 @@ export function ChecksTab(props: {
   /** The session's recorded gate runs, newest first. */
   history?: Read<SessionGatesHistory>;
   readOnly: boolean;
+  projectId: string | null;
   merging: boolean;
   busy: boolean;
   /** Ids of the items the next message carries. */
@@ -229,6 +231,7 @@ export function ChecksTab(props: {
               {t({ id: 'sessions.panel.checks.openSettings', defaultMessage: 'Open settings' })}
             </button>
           )}
+          {!props.readOnly && props.projectId && <FindGate project_id={props.projectId} />}
         </div>
         {reviewRow}
       </>

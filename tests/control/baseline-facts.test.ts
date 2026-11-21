@@ -159,7 +159,7 @@ describe('baseline facts', () => {
   beforeAll(async () => {
     facts = await collectFacts(
       [
-        { path: repository, git: true, task_lists: ['.notes/tasks/x.md'] },
+        { path: repository, git: true },
         { path: plain, git: false },
       ],
       now,
@@ -198,39 +198,38 @@ describe('baseline facts', () => {
     expect(repo.hotspots.map((spot) => spot.path)).not.toContain('package.json');
   });
 
-  it.each<[string, string[], string[]]>([
-    ['skips', [], []],
-    ['reads', ['.notes/tasks/x.md'], ['.notes/tasks/x.md']],
-  ])(
-    '%s a checklist in an ignored folder by the task lists and counts only tracked files',
-    async (_, taskLists, paths) => {
-      const [listed] = (
-        await collectFacts([{ path: repository, git: true, task_lists: taskLists }], now)
-      ).folders as [FolderFacts];
-      expect(listed.checklists.map((list) => list.path)).toEqual(paths);
-      expect(listed.directories).toEqual([
-        { path: '.github', files: 1 },
-        { path: '.github/workflows', files: 1 },
-        { path: 'docs', files: 1 },
-        { path: 'src', files: 2 },
-      ]);
-      expect(listed.file_types).toContainEqual({ ext: '.md', count: 3 });
-      expect(listed.file_types).toContainEqual({ ext: '.ts', count: 3 });
-      expect(listed.file_types.find((type) => type.ext === '.js')).toBeUndefined();
-    },
-  );
-
-  it('parses checklists with sections, line numbers and stable hashes', () => {
-    const list = repo.checklists[0]!;
-    expect(list.modified_at).toBe(daysAgo(1));
-    expect(list.items.map(({ hash, ...item }) => item)).toEqual<Omit<ChecklistItem, 'hash'>[]>([
-      { line: 4, done: true, text: 'Create the schema', section: 'Storage' },
-      { line: 5, done: false, text: 'Migrate old rows', section: 'Storage' },
-      { line: 8, done: true, text: 'Draw the board', section: 'Interface' },
-      { line: 9, done: false, text: 'Wire the filter control', section: 'Interface' },
+  it('skips a checklist in an ignored folder and counts only tracked files', () => {
+    expect(repo.checklists).toEqual([]);
+    expect(repo.directories).toEqual([
+      { path: '.github', files: 1 },
+      { path: '.github/workflows', files: 1 },
+      { path: 'docs', files: 1 },
+      { path: 'src', files: 2 },
     ]);
-    expect(list.items[1]!.hash).toMatch(/^[0-9a-f]{12}$/);
-    expect(new Set(list.items.map((item) => item.hash)).size).toBe(4);
+    expect(repo.file_types).toContainEqual({ ext: '.md', count: 3 });
+    expect(repo.file_types).toContainEqual({ ext: '.ts', count: 3 });
+    expect(repo.file_types.find((type) => type.ext === '.js')).toBeUndefined();
+  });
+
+  it('parses checklists with sections, line numbers and stable hashes', async () => {
+    const base = mkdtempSync(path.join(os.tmpdir(), 'baseline-facts-'));
+    try {
+      write(base, 'plan.md', tasks);
+      utimesSync(path.join(base, 'plan.md'), daysAgo(1) / 1000, daysAgo(1) / 1000);
+      const [folder] = (await collectFacts([{ path: base, git: false }], now)).folders;
+      const list = folder!.checklists[0]!;
+      expect(list.modified_at).toBe(daysAgo(1));
+      expect(list.items.map(({ hash, ...item }) => item)).toEqual<Omit<ChecklistItem, 'hash'>[]>([
+        { line: 4, done: true, text: 'Create the schema', section: 'Storage' },
+        { line: 5, done: false, text: 'Migrate old rows', section: 'Storage' },
+        { line: 8, done: true, text: 'Draw the board', section: 'Interface' },
+        { line: 9, done: false, text: 'Wire the filter control', section: 'Interface' },
+      ]);
+      expect(list.items[1]!.hash).toMatch(/^[0-9a-f]{12}$/);
+      expect(new Set(list.items.map((item) => item.hash)).size).toBe(4);
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
   });
 
   it('collects manifests, agent instructions, docs, tests and CI', () => {

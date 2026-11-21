@@ -21,12 +21,6 @@ vi.mock('../../packages/control/dist/validation-executor.js', async (original) =
     stdout_sha256: '',
     stderr_sha256: '',
     output_truncated: false,
-    boundary: {
-      kind: 'macos-seatbelt',
-      network: 'loopback',
-      supported: true,
-      stop_scope: 'process-group',
-    },
   })),
 }));
 

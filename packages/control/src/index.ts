@@ -67,12 +67,7 @@ import { projectRead } from './project-facts.js';
 import { projectUsageRead } from './usage-report.js';
 import { inheritedPolicy, workflowPolicy } from './workflow-policy.js';
 import { projectReviewMetrics, reviewExecutionReader, reviewTimeReader } from './review.js';
-import {
-  baselineSessionOf,
-  inventoryRuntimes,
-  projectBaselineRead,
-  projectFactsRead,
-} from './baseline.js';
+import { projectBaselineRead, projectFactsRead } from './baseline.js';
 import { environmentChecks } from './environment-check.js';
 import { landingRead } from './branch-landing.js';
 import {
@@ -845,7 +840,6 @@ export class Control extends EventEmitter {
       review_id: session.review_id,
       baseline_id: session.baseline?.baseline_id,
       story_id: session.change_story?.story_id,
-      ...(session.baseline ? { extension_runtimes: inventoryRuntimes(this.ctx) } : {}),
       allowed_tool_names: purposeSessionTools(session),
     };
   }
@@ -882,8 +876,7 @@ export class Control extends EventEmitter {
     projectId: string,
     runtime: string,
   ): Promise<ExtensionInventory> {
-    if (!baselineSessionOf(this.ctx, principal, projectId))
-      projectAccess(this.ctx, principal, projectId, 'project.read');
+    projectAccess(this.ctx, principal, projectId, 'project.read');
     const project = this.store.must<Project>('projects', projectId),
       adapter = this.adapters.get(runtime);
     requireThat(
@@ -901,8 +894,7 @@ export class Control extends EventEmitter {
     projectId: string,
     runtime: string,
   ): Promise<RuntimeModel[]> {
-    if (!baselineSessionOf(this.ctx, principal, projectId))
-      projectAccess(this.ctx, principal, projectId, 'project.read');
+    projectAccess(this.ctx, principal, projectId, 'project.read');
     const project = this.store.must<Project>('projects', projectId),
       adapter = this.adapters.get(runtime);
     requireThat(adapter?.models, 'unsupported_capability', 'Runtime does not list its models');

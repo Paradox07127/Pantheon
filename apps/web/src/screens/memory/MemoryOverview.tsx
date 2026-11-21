@@ -31,10 +31,7 @@ export function MemoryOverview({
     drawn || (!held && !introRead.loading && !assessedRead.loading && !headRead.loading);
   if (ready && !drawn) setDrawn(true);
   const intro = introRead.read?.intro ?? null;
-  const assessed = assessedRead.read;
   const head = headRead.read;
-  const folders = assessed?.state === 'confirmed' ? (assessed.result?.folders ?? []) : [];
-  const stack = [...new Set(folders.flatMap((folder) => folder.stack ?? []))];
   return (
     <>
       {!ready && (
@@ -54,7 +51,6 @@ export function MemoryOverview({
             branch={head?.branch ?? null}
             committedAt={head?.committed_at ?? null}
             now={now}
-            stack={stack}
             languages={intro?.languages ?? []}
           />
         )}

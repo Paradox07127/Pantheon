@@ -62,7 +62,6 @@ import { agentEvent, saveSessionHandle, stopSession, turnDelivery } from './agen
 import { loseSessionApprovals } from './approvals.js';
 import { REVIEW_WALL_TIME_MS, reviewerDirectory, settleReview } from './review.js';
 import { BASELINE_WALL_TIME_MS } from './baseline.js';
-import { readAppSettings } from './app-settings.js';
 import { STORY_WALL_TIME_MS } from './change-story.js';
 import { confirmTermination } from './process.js';
 import { captureCheckpoint } from './checkpoint.js';
@@ -1416,10 +1415,7 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
           ...(session.permission_mode === 'plan' ? { permission_mode: 'plan' as const } : {}),
           control_instructions: session.runtime_review
             ? RUNTIME_REVIEW_CONTRACT
-            : purposeSessionInstructions(session, {
-                rounds: readAppSettings(ctx).baseline_rounds,
-                visuals: readAppSettings(ctx).baseline_visuals,
-              }),
+            : purposeSessionInstructions(session),
           account_ref: session.account_ref,
           role: session.review_id || session.runtime_review ? 'reviewer' : 'planner',
           cwd: analysisPath ?? reviewerPath ?? project.roots[0]!,

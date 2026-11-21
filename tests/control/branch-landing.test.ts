@@ -268,7 +268,7 @@ it.each<[string, (f: Fixture) => Promise<unknown>, string]>([
       await setGate(f, []);
       return land(f);
     },
-    'invalid_state',
+    'no_gate_commands',
   ],
   [
     'a root with a detached HEAD',
@@ -295,6 +295,8 @@ it.each<[string, (f: Fixture) => Promise<unknown>, string]>([
     (thrown: unknown) => thrown,
   );
   expect(error).toMatchObject({ code });
+  if (code === 'no_gate_commands')
+    expect(error).toMatchObject({ details: { project_id: f.project.id } });
   expect(f.store.list<Landing>('landings')).toHaveLength(code === 'resource_busy' ? 1 : 0);
   expect(f.store.list<Workspace>('workspaces')).toHaveLength(code === 'resource_busy' ? 1 : 0);
 });
@@ -312,12 +314,6 @@ function passedGate(): validation.ValidationResult {
     stdout_sha256: '',
     stderr_sha256: '',
     output_truncated: false,
-    boundary: {
-      kind: 'macos-seatbelt',
-      network: 'loopback',
-      supported: true,
-      stop_scope: 'process-group',
-    },
   };
 }
 

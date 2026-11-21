@@ -24,7 +24,6 @@ export function ProjectProfile({
   branch,
   committedAt,
   now,
-  stack,
   languages,
 }: {
   id: string;
@@ -39,7 +38,6 @@ export function ProjectProfile({
   /** When the head was committed; null before the head is read. */
   committedAt: number | null;
   now: number;
-  stack: readonly string[];
   languages: ProjectIntro['languages'];
 }) {
   const parts = languageParts(languages);
@@ -82,14 +80,6 @@ export function ProjectProfile({
               </span>
             </Tip>
           )}
-          {(branch !== null || committedAt !== null) && stack.length > 0 && (
-            <span className="mo-pf-sep" />
-          )}
-          {stack.map((item) => (
-            <span key={item} className="chip">
-              {item}
-            </span>
-          ))}
         </div>
       </section>
       {parts.length > 0 && (

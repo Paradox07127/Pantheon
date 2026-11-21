@@ -110,7 +110,7 @@ function stillRunning(identity) {
   return Math.abs(Date.parse(started) - identity.start_time_us / 1000) < 2000;
 }
 
-/** Installs the clone, runs the baseline gate in the gate sandbox and checks the Codex login; throws on the first failure. */
+/** Installs the clone, runs the baseline gate as a gate command and checks the Codex login; throws on the first failure. */
 export async function checkClone({
   workspace,
   clone,
@@ -136,7 +136,7 @@ export async function checkClone({
     if (online.exit_code !== 0) throw new Error('Preflight: pnpm install failed in the clone');
   });
   await flush();
-  // The baseline runs in the gate sandbox, so sandbox-only failures show before any paid session.
+  // The baseline runs as a gate command does, so its failures show before any paid session.
   const baselineState = path.join(workspace, 'baseline-state');
   const baselineStore = new Store(path.join(baselineState, 'control.sqlite'));
   const baselineControl = new Control(
@@ -144,17 +144,15 @@ export async function checkClone({
     new ArtifactFiles(path.join(baselineState, 'artifacts')),
     [],
   );
-  const sandboxed = async (argv, timeoutMs) => {
+  const gated = async (argv, timeoutMs) => {
     const result = await runValidationCommand({
       ctx: baselineControl.ctx,
       key: `baseline:${argv.join(' ')}`,
       argv,
       cwd: clone,
-      root: clone,
-      // The same variables a gate gets (packages/control/src/landing.ts runGateCommand).
+      // PATH, HOME and the other variables every session gets, which a gate gets too (landing.ts runGateCommand).
       env: {
-        PATH: process.env.PATH ?? '/usr/bin:/bin',
-        LANG: 'en_US.UTF-8',
+        ...nativeEnvironment(),
         pnpm_config_verify_deps_before_run: 'false',
         NO_COLOR: '1',
         FORCE_COLOR: '0',
@@ -173,10 +171,10 @@ export async function checkClone({
   };
   let build, test;
   try {
-    build = await timed('preflight.build', () => sandboxed(['pnpm', 'build'], budget(BUILD_MS)));
+    build = await timed('preflight.build', () => gated(['pnpm', 'build'], budget(BUILD_MS)));
     test =
       build.exit_code === 0
-        ? await timed('preflight.test', () => sandboxed(['pnpm', 'test'], budget(TEST_MS)))
+        ? await timed('preflight.test', () => gated(['pnpm', 'test'], budget(TEST_MS)))
         : null;
   } finally {
     await baselineControl.shutdown();

@@ -74,20 +74,13 @@ const confirmed = {
     folders: [
       {
         root: '/work/refunds',
-        stage: 'active',
-        stack: ['Fastify'],
-        gate: [],
-        commands: {
-          setup: { argv: ['pnpm', 'install'], sources: ['file:package.json:5'] },
-          test: { argv: ['pnpm', 'test'], sources: ['file:package.json:11'] },
-          lint: { argv: ['pnpm', 'lint'], sources: [] },
-        },
+        setup: { argv: ['pnpm', 'install'], sources: ['file:package.json:5'] },
+        gate: [
+          { name: 'test', argv: ['pnpm', 'test'], sources: ['file:package.json:11'] },
+          { name: 'lint', argv: ['pnpm', 'lint'], sources: [] },
+        ],
       },
     ],
-    workstreams: [],
-    contradictions: [],
-    findings: [],
-    questions: [],
   },
 } as ProjectBaseline;
 
@@ -271,8 +264,8 @@ describe('project introduction body', () => {
     const rows = nodes(h.value).filter((n) => typeName(n) === 'CommandRow');
     expect(rows.map((row) => [row.props.label, row.props.command, row.props.source])).toEqual([
       [zh('board.intro.command.setup'), 'pnpm install', 'package.json:5'],
-      [zh('board.intro.command.test'), 'pnpm test', 'package.json:11'],
-      [zh('board.intro.command.lint'), 'pnpm lint', undefined],
+      ['test', 'pnpm test', 'package.json:11'],
+      ['lint', 'pnpm lint', undefined],
     ]);
   });
 
@@ -284,14 +277,15 @@ describe('project introduction body', () => {
         ...confirmed.result,
         folders: [
           {
-            ...folder,
-            commands: {
-              build: { argv: ['sh', '-c', 'pnpm build && pnpm test'], sources: [] },
-              test: {
+            root: folder.root,
+            gate: [
+              { name: 'build', argv: ['sh', '-c', 'pnpm build && pnpm test'], sources: [] },
+              {
+                name: 'test',
                 argv: ['node', 'scripts/run all.mjs', "it's", '&&', '$HOME', ''],
                 sources: [],
               },
-            },
+            ],
           },
         ],
       },

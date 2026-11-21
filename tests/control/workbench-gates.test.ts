@@ -181,12 +181,6 @@ function validationResult(): validation.ValidationResult {
     stderr_sha256: '',
     output_truncated: false,
     tests: { passed: 41, failed: 0, skipped: 2 },
-    boundary: {
-      kind: 'macos-seatbelt',
-      network: 'loopback',
-      supported: true,
-      stop_scope: 'process-group',
-    },
   };
 }
 

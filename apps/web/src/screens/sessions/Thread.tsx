@@ -450,7 +450,7 @@ export function Thread(props: {
           usage={kept?.findLast((t) => t.usage != null)?.usage ?? null}
           running={runningTurn ?? null}
           waiting={waitingFor}
-          asks={<PendingQuestions session={session} pending={pending} scroller={flow} />}
+          asks={<PendingQuestions pending={pending} scroller={flow} />}
           {...(active ? {} : { active })}
           {...(props.sessions ? { sessions: props.sessions } : {})}
         />

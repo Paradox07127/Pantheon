@@ -52,14 +52,6 @@ const putSave = (key: string, save: GateSave | null) =>
     return save ? { ...rest, [key]: save } : rest;
   }, true);
 
-/** Whether the board is still behind a gate of the project just saved, so a write now sends a stale revision. */
-export const useGateSaving = (project: Pick<Project, 'id' | 'revision'>): boolean =>
-  useGateSaves((saves) =>
-    Object.entries(saves).some(
-      ([key, save]) => key.startsWith(saveKey(project.id, '')) && project.revision < save.revision,
-    ),
-  );
-
 const runParams = (project_id: string) => ({ project_id, limit: '30' });
 const acceptRuns = (value: unknown): GateRun[] | null => {
   const runs = (value as { runs?: unknown } | null)?.runs;
@@ -90,60 +82,8 @@ export function ProjectGate({ project }: { project: Project }) {
           runs={runs}
         />
       ))}
-      <GateGpu project={project} />
       <GatePolicy project={project} />
     </>
-  );
-}
-
-/** Whether the project's gate commands may use the GPU; a project that stores no choice is off. */
-export function GateGpu({ project }: { project: Project }) {
-  // The value sent from the switch, shown until the board reaches its revision; null while sending.
-  const [sent, setSent] = useState<{ enabled: boolean; revision: number | null } | null>(null);
-  const [failure, setFailure] = useState<Failure | null>(null);
-  const gateSaving = useGateSaving(project);
-
-  useEffect(() => {
-    if (sent?.revision != null && project.revision >= sent.revision) setSent(null);
-  }, [project.revision, sent]);
-
-  const save = async (enabled: boolean) => {
-    setSent({ enabled, revision: null });
-    const result = await runCommand(
-      'project.gateGpu.set',
-      { project_id: project.id, enabled },
-      project.revision,
-    );
-    setFailure(result.ok ? null : result.error);
-    setSent(
-      result.ok
-        ? { enabled, revision: (result.value as Project).revision ?? project.revision + 1 }
-        : null,
-    );
-  };
-  const label = t({ id: 'settings.gate.gpu', defaultMessage: 'Let gate commands use the GPU' });
-  return (
-    <div className="ps-grp">
-      <div className="ps-rows">
-        <div className="ps-row wf-pr">
-          <span className="wf-nm">{label}</span>
-          <input
-            type="checkbox"
-            className="ps-sw"
-            aria-label={label}
-            checked={sent?.enabled ?? project.gate_gpu === true}
-            disabled={sent !== null || gateSaving}
-            onChange={(e) => void save(e.target.checked)}
-          />
-          <span />
-        </div>
-      </div>
-      {failure && (
-        <div className="ps-err gt-err" role="alert">
-          {failureText(failure)}
-        </div>
-      )}
-    </div>
   );
 }
 

@@ -31,11 +31,7 @@ import { renderIntroBrief } from './project-intro-brief.js';
 const DAY = 86400000;
 type Input<K extends keyof typeof inputSchemas> = ReturnType<(typeof inputSchemas)[K]['parse']>;
 
-function writingSession(
-  ctx: ControlContext,
-  projectId: string,
-  introOnly = false,
-): Session | undefined {
+function writingSession(ctx: ControlContext, projectId: string): Session | undefined {
   const active = new Set(
     ctx.store
       .list<SessionTurn>('session_turns')
@@ -44,12 +40,7 @@ function writingSession(
   );
   return ctx.store
     .list<Session>('sessions')
-    .find(
-      (session) =>
-        session.project_id === projectId &&
-        (session.intro || (!introOnly && session.baseline)) &&
-        active.has(session.id),
-    );
+    .find((session) => session.project_id === projectId && session.intro && active.has(session.id));
 }
 
 export async function projectIntroRead(
@@ -79,7 +70,7 @@ function startTarget(ctx: ControlContext, p: Principal, c: Command) {
   projectAccess(ctx, p, input.project_id, c.type);
   const project = ctx.store.must<Project>('projects', input.project_id);
   requireThat(
-    !writingSession(ctx, project.id, true),
+    !writingSession(ctx, project.id),
     'invalid_input',
     'An introduction session turn is already running for this project',
   );
@@ -92,11 +83,7 @@ function submitTarget(ctx: ControlContext, p: Principal, c: Command) {
   const input = c.input as Input<'project.intro.submit'>;
   revision(ctx, c);
   const session = sessionPrincipal(ctx, p);
-  requireThat(
-    session.baseline || session.intro,
-    'permission_denied',
-    'Assessment or introduction session required',
-  );
+  requireThat(session.intro, 'permission_denied', 'Introduction session required');
   projectAccess(ctx, p, session.project_id, c.type);
   const project = ctx.store.must<Project>('projects', session.project_id);
   return { input, session, project, roots: project.roots.map((root) => realpathSync(root)) };

@@ -386,6 +386,7 @@ describe('checks column', () => {
         gates: { data: gatesData(), error: null, reload: () => {} },
         history: { data: { runs: [run] }, error: null, reload: () => {} } as any,
         readOnly: true,
+        projectId: null,
         merging: false,
         busy: false,
         attached: new Set<string>(),

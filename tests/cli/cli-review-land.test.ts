@@ -525,6 +525,48 @@ describe('pnpm cli land', () => {
     expect(result.code).toBe(code);
   });
 
+  it('prints the command that finds gate commands when the root has none', async () => {
+    const result = await cli(
+      repo,
+      ['land'],
+      [
+        {
+          status: 400,
+          body: {
+            error: 'no_gate_commands',
+            message: `${repo} has no gate commands; a branch lands only through the gate of its root`,
+            details: { project_id: 'project-1' },
+          },
+        },
+      ],
+    );
+    expect(result.code).toBe(1);
+    const line = /Find gate commands: pantheon command --json '(.*)'\n/.exec(result.stderr);
+    expect(line, result.stderr).not.toBeNull();
+    const envelope = JSON.parse(line![1]!) as { type: string; actor: string; input: unknown };
+    expect(envelope).toMatchObject({ type: 'project.baseline.start', actor: 'local-user' });
+    expect(envelope.input).toEqual({ project_id: 'project-1' });
+  });
+
+  it('prints the command that finds gate commands when a landing is blocked for want of them', async () => {
+    const result = await cli(
+      repo,
+      ['land', 'feature'],
+      [
+        { body: { receipt: landingOf({ state: 'queued' }) } },
+        { body: landingOf({ state: 'blocked', reason: 'no_gate_commands' }) },
+      ],
+    );
+    expect(result.code).toBe(1);
+    const lines = result.stdout.split('\n');
+    expect(lines[0]).toBe('blocked: no_gate_commands');
+    const line = /^Find gate commands: pantheon command --json '(.*)'$/.exec(lines[1]!);
+    expect(line, result.stdout).not.toBeNull();
+    const envelope = JSON.parse(line![1]!) as { type: string; actor: string; input: unknown };
+    expect(envelope).toMatchObject({ type: 'project.baseline.start', actor: 'local-user' });
+    expect(envelope.input).toEqual({ project_id: 'project-1' });
+  });
+
   it('refuses a detached HEAD without a branch with exit 64', async () => {
     const result = await cli(detached, ['land'], []);
     expect(result.stderr).toContain('detached');

@@ -13,8 +13,7 @@ import { failureText, reasonText, type NeedsYouState } from '../../data/needs-yo
 import { isTruncated, toolLabel } from '../../data/tool-calls';
 import type { RequestItem, Session } from '../../data/transcript';
 import { t } from '../../i18n';
-import { baselineAnswers, baselineDraft } from '../projects/baseline';
-import { AnsweredRound, interviewDraft, ReviewBaseline } from '../projects/BaselineBlocks';
+import { ReviewBaseline } from '../projects/BaselineBlocks';
 import type { PendingPermission } from './model';
 import { AnsweredRequest, json } from './parts';
 import { fail } from './shared';
@@ -30,31 +29,12 @@ const WaitMark = () => (
   />
 );
 
-/**
- * The session's baseline awaiting confirmation, reviewed at the end of its thread, and once
- * confirmed its answered rounds; nothing once a newer one starts.
- */
+/** The session's baseline awaiting confirmation, reviewed at the end of its thread. */
 export function BaselineReview({ session }: { session: Session }) {
   const { read: baseline } = useBaselineRead(session.baseline ? session.project_id : null);
-  // After Ask me more the baseline runs again and the review waits for the next round.
-  const asking = baseline?.state === 'running' && !!baseline.rounds?.length;
   if (!baseline || baseline.id !== session.baseline?.baseline_id) return null;
-  if (baseline.state === 'confirmed' && baseline.rounds?.length)
-    return (
-      <div
-        className="iv-rds"
-        role="group"
-        aria-label={t({ id: 'projects.baseline.interview', defaultMessage: 'Baseline interview' })}
-      >
-        {baseline.rounds.map((r, i) => (
-          <AnsweredRound key={i} n={i + 1} round={r} />
-        ))}
-      </div>
-    );
-  if (baseline.state !== 'submitted' && !asking) return null;
-  return (
-    <ReviewBaseline key={`${baseline.id}:${baseline.rounds?.length ?? 0}`} baseline={baseline} />
-  );
+  if (baseline.state !== 'submitted') return null;
+  return <ReviewBaseline key={baseline.id} baseline={baseline} />;
 }
 
 /** Brings the first question still unanswered in the thread into view and focuses its first control. */
@@ -65,46 +45,28 @@ export function jumpToQuestion(scroller: HTMLElement | null) {
   question.querySelector<HTMLElement>('button, input, textarea')?.focus();
 }
 
-/** How many questions of the baseline review and the pending requests have no answer yet. */
-function useOpenQuestions(session: Session, pending: readonly PendingPermission[]): number {
-  const { read: baseline } = useBaselineRead(session.baseline ? session.project_id : null);
-  const reviewed =
-    baseline && baseline.id === session.baseline?.baseline_id && baseline.state === 'submitted'
-      ? baseline
-      : null;
-  const questions = reviewed?.result?.questions ?? [];
+/** How many questions of the pending requests have no answer yet. */
+function useOpenQuestions(pending: readonly PendingPermission[]): number {
   const drafts = useDrafts((s) => s.answers);
-  const asked = reviewed
-    ? questions.length -
-      baselineAnswers(
-        questions,
-        drafts[interviewDraft(reviewed)] ?? baselineDraft(reviewed).answers,
-      ).length
-    : 0;
   return pending.reduce((sum, p) => {
     if (p.tool !== 'AskUserQuestion' || !p.questions) return sum;
     const answers = drafts[p.id];
     return (
       sum +
-      p.questions.filter(
-        (_, i) =>
-          !answers?.decided?.[i] && !answers?.typed[i]?.trim() && !answers?.picked[i]?.length,
-      ).length
+      p.questions.filter((_, i) => !answers?.typed[i]?.trim() && !answers?.picked[i]?.length).length
     );
-  }, asked);
+  }, 0);
 }
 
 /** Above the composer while the thread holds questions to answer: jumps to the first of them. */
 export function PendingQuestions({
-  session,
   pending,
   scroller,
 }: {
-  session: Session;
   pending: readonly PendingPermission[];
   scroller: RefObject<HTMLElement | null>;
 }) {
-  const count = useOpenQuestions(session, pending);
+  const count = useOpenQuestions(pending);
   if (count === 0) return null;
   return (
     <button type="button" className="btn rq-jump" onClick={() => jumpToQuestion(scroller.current)}>

@@ -645,19 +645,6 @@ export const projectHandlers: Handlers = {
     ctx.store.event('project.usage_targets_set', next, project.id, { targets }, c.command_id);
     return next;
   },
-  'project.gateGpu.set': (ctx, p, c) => {
-    requireThat(
-      p.role === 'user',
-      'permission_denied',
-      'Only user can let gate commands use the GPU',
-    );
-    const { project_id, enabled } = inputSchemas['project.gateGpu.set'].parse(c.input),
-      project = ctx.store.must<Project>('projects', project_id);
-    revision(ctx, c, project);
-    const next = ctx.store.update('projects', { ...project, gate_gpu: enabled }, project.revision);
-    ctx.store.event('project.gate_gpu_set', next, project.id, { enabled }, c.command_id);
-    return next;
-  },
   'project.externalEvents.set': (ctx, p, c) => {
     requireThat(
       p.role === 'user',

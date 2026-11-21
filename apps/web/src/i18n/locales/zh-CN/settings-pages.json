@@ -142,6 +142,5 @@
   "settings.harness.backends": "后端",
   "settings.harness.backendKeychain": "钥匙串",
   "settings.pages.projects": "项目",
-  "settings.nav.projects": "所有项目",
-  "settings.gate.gpu": "门禁命令可使用 GPU"
+  "settings.nav.projects": "所有项目"
 }

@@ -25,8 +25,5 @@
   "board.gateHistory.notRun": "未跑",
   "board.gateHistory.exitCode": "退出码 {code}",
   "board.gateHistory.label": "门禁历史，最近 {count, plural, other {#}} 次运行",
-  "board.baseline.start": "建立基线",
-  "board.baseline.restart": "重新建立基线",
-  "board.panel.renderFailed": "渲染失败",
-  "board.setup.running": "正在建立基线"
+  "board.panel.renderFailed": "渲染失败"
 }

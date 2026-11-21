@@ -242,11 +242,3 @@
   white-space: nowrap;
   user-select: text;
 }
-.ap-took {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: var(--sp-1);
-  color: var(--mu);
-  font-variant-numeric: tabular-nums;
-}

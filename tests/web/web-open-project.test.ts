@@ -288,9 +288,7 @@ it('opens on ⌘O and from the menu with no projects screen mounted', () => {
 
 async function goalStep(onEnter = () => {}) {
   vi.useRealTimers();
-  const h = mount(() =>
-    Setup({ project_id: 'opened', path: '~/work/app', step: 3, onNext() {}, onBack() {}, onEnter }),
-  );
+  const h = mount(() => Setup({ project_id: 'opened', path: '~/work/app', onEnter }));
   await h.flush();
   return h;
 }
@@ -299,18 +297,6 @@ const textButton = (tree: any, label: string) =>
   find(tree, (n) => n.type === 'button' && text(n) === label);
 const button = (h: HookHost<any>, label: string) =>
   find(h.value, (n) => n.props.label === label).props;
-
-it('names the way past the scan step with the same word as the button that starts it', async () => {
-  vi.useRealTimers();
-  const onNext = vi.fn();
-  const h = mount(() =>
-    Setup({ project_id: 'opened', path: '~/work/app', step: 2, onNext, onBack() {}, onEnter() {} }),
-  );
-  await h.flush();
-  const skip = find(h.value, (n) => n.props.onPress === onNext);
-  expect(skip.props.label).toContain('基线');
-  expect(skip.props.label).not.toContain('扫描');
-});
 
 it('starts the goal step from the saved brief and sets it at its revision', async () => {
   mock.board.board.project_briefs = [savedBrief];

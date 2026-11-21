@@ -747,21 +747,6 @@ svg.lucide.ic-sm{width:14px;height:14px}
 /* tasks screen; cards and panels layer by border only */
 .tk-err{font-size:var(--fs-xs);color:var(--bad);overflow-wrap:anywhere;overflow:hidden;text-overflow:ellipsis}
 /* sprint screen */
-.ws-list{display:grid;grid-template-columns:auto minmax(0,1fr) minmax(60px,1.2fr) auto;column-gap:10px;min-width:0}
-.ws-row{grid-column:1/-1;display:grid;grid-template-columns:subgrid;align-items:center;height:var(--row);padding:0;border-bottom:var(--hair) solid var(--bd2);font-size:var(--fs-sm)}
-.ws-row:last-child{border-bottom:0}
-.ws-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ws-bar{display:flex;height:8px;border-radius:var(--r-sm);background:var(--sf2);overflow:hidden;min-width:0}
-.ws-bar:empty{background:none}
-.ws-bar i{height:100%;background:var(--ink)}
-.ws-bar i.op{background:color-mix(in srgb,var(--ink) 22%,var(--sf2))}
-.ws-n{display:inline-flex;align-items:baseline;gap:6px;justify-content:flex-end;font-variant-numeric:tabular-nums;white-space:nowrap}
-.ws-n small{font-size:var(--fs-xs);color:var(--mu)}
-.ws-dts{display:flex;flex-direction:column;gap:var(--sp-4);min-width:0;font-size:var(--fs-sm)}
-.ws-dt{display:flex;flex-direction:column;gap:4px;min-width:0}
-.ws-dt b{font-weight:600;overflow-wrap:anywhere}
-.ws-dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 10px;margin:0;min-width:0}
-.ws-dl>dd{display:flex;flex-direction:column;margin:0;min-width:0;overflow-wrap:anywhere;user-select:text}
 
 /* Project home */
 .hm-card{display:flex;flex-direction:column;gap:6px;flex:0 0 auto;padding:10px 12px;border-radius:var(--r-md);border:var(--hair) solid var(--bd);background:var(--sf);font-size:var(--fs-sm);min-width:0}
@@ -1048,7 +1033,7 @@ button.ss-gh:hover{background:var(--st-hov)}
 
 @supports (corner-shape: superellipse(1.25)) {
   .pt,.pt *,.pt::before,.pt::after,.pt *::before,.pt *::after{corner-shape:superellipse(1.25)}
-  .pt :is(.sb-conn,.g,.ps-sw,.ws-bar,.gs-no,.ss-badge,.ss-dot,.bd-rt,.bp-rtd,.bp-trk,.bp-trk-bar,.ql-mk,.ql-dot,.bd-tpb,.trc-rt,.trc-st,.ps-acc-sw,[type=radio]),
+  .pt :is(.sb-conn,.g,.ps-sw,.gs-no,.ss-badge,.ss-dot,.bd-rt,.bp-rtd,.bp-trk,.bp-trk-bar,.ql-mk,.ql-dot,.bd-tpb,.trc-rt,.trc-st,.ps-acc-sw,[type=radio]),
   .pt :is(.tr-st,.sb-wait,.nch,.tr-cut)::before,.pt .ps-sw::after,.pt :is(.sb-rail,.wc) .ib b,.pt .bp-crit .mk,.pt .bd-pbar i,.pt .bp-pbar i{corner-shape:round}
 }
 

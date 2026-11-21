@@ -35,8 +35,7 @@ export function renderIntroBrief(
     for (const [directory, count] of directories) lines.push(`- ${directory}: ${count}`);
     const confirmed = baseline?.result?.folders.find((entry) => entry.root === folder.root);
     if (confirmed) {
-      lines.push(`Confirmed stack: ${(confirmed.stack ?? []).join(', ')}`);
-      lines.push(`Confirmed commands: ${JSON.stringify(confirmed.commands ?? {})}`);
+      if (confirmed.setup) lines.push(`Confirmed setup: ${JSON.stringify(confirmed.setup)}`);
       lines.push(`Confirmed gate: ${JSON.stringify(confirmed.gate)}`);
     }
     const measured = renderCodeDeps(deps[index]);

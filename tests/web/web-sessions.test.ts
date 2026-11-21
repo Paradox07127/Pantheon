@@ -775,6 +775,7 @@ describe('changes panel tabs', () => {
       createElement(ChecksTab, {
         gates: read(gates),
         readOnly,
+        projectId: null,
         merging: false,
         busy: false,
         attached: new Set<string>(),

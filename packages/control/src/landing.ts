@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { nativeEnvironment } from '@pantheon/adapters';
 import {
   DomainError,
   hash,
@@ -16,6 +17,7 @@ import {
   type Workspace,
 } from '@pantheon/domain';
 import { rootOf, type ControlContext } from './context.js';
+import { inheritedEnvAllowlist } from './native-session.js';
 import {
   copyCandidateDependencies,
   runValidationCommand,
@@ -91,24 +93,15 @@ export function gateCommands(
   return folder ? projectGateCommands(project, folder) : undefined;
 }
 
-/**
- * A run that timed out, could not start, was killed by a signal or was refused by the gate sandbox
- * failed because of the machine.
- */
+/** A run that timed out, could not start or was killed by a signal failed because of the machine. */
 function failureClass(result: ValidationResult): GateFailureClass | undefined {
   if (result.timedOut || (result.exit_code === null && result.error) || result.signal)
     return 'environment';
-  if (result.exit_code === 0) return;
-  // Only the sandbox prints these; a bare "Operation not permitted" also comes from ordinary failures.
-  const output = result.log.toString();
-  return output.includes('(file system sandbox blocked') ||
-    output.includes('sandbox_apply: Operation not permitted')
-    ? 'environment'
-    : 'code';
+  return result.exit_code === 0 ? undefined : 'code';
 }
 
-/** Who runs a gate command; allGates marks every command as a gate candidate, as an environment check's are. */
-type GateRunner = Pick<LandingOwner, 'projectId' | 'cancelled'> & { allGates?: boolean };
+/** Who runs a gate command. */
+type GateRunner = Pick<LandingOwner, 'projectId' | 'cancelled'>;
 
 // The most gate commands one daemon runs at once, across all sources and kinds of check.
 const GATE_SLOTS = 2;
@@ -158,7 +151,6 @@ async function runGateCommand(
   key: string,
   command: GateCommands[number],
   candidate: string,
-  disposable: boolean,
 ): Promise<NonNullable<LandingItem['gate_results']>[number] | undefined> {
   const result = await inGateSlot(ctx, owner.cancelled, () => {
     // Read once the slot is held: the user can change the project while the command waits.
@@ -168,24 +160,13 @@ async function runGateCommand(
       key,
       argv: command.argv,
       cwd: candidate,
-      root: candidate,
-      ...(disposable ? { disposable } : {}),
-      // Gates inherit no daemon credentials. PATH locates installed executables only;
-      // the sandbox still controls which files and child processes they can access.
+      // The environment a session the user opened gets, outside any Pantheon sandbox.
       env: {
         ...project.env,
-        PATH: process.env.PATH ?? '/usr/bin:/bin',
-        LANG: 'en_US.UTF-8',
-        // Gates verify a candidate without installing; pnpm's pre-run install writes the store outside the sandbox.
+        ...nativeEnvironment(inheritedEnvAllowlist(project)),
+        // Gates verify a candidate without installing.
         pnpm_config_verify_deps_before_run: 'false',
       },
-      // The user opened the GPU to the project's gate commands, not to acceptance or hidden checks.
-      gpu:
-        project.gate_gpu === true &&
-        (owner.allGates === true ||
-          Object.values(project.gates ?? {}).some((commands) =>
-            commands.some((gate) => JSON.stringify(gate.argv) === JSON.stringify(command.argv)),
-          )),
       timeoutMs: command.timeout_ms ?? 1200000,
       cancelled: owner.cancelled,
     });
@@ -213,7 +194,7 @@ async function runGateCommand(
       ...(result.tests ? { tests: result.tests } : {}),
       ...(failure ? { failure_class: failure } : {}),
     },
-    { boundary: result.boundary, stopped: result.stopped },
+    { stopped: result.stopped },
   );
 }
 
@@ -397,9 +378,8 @@ async function runChecked(
   candidate: string,
   commit: string,
   temporary: string,
-  disposable: boolean,
 ) {
-  const result = await runGateCommand(ctx, owner, key, command, candidate, disposable);
+  const result = await runGateCommand(ctx, owner, key, command, candidate);
   if (!result || ctx.closing || owner.cancelled()) return;
   // Later commands would check another tree than the commit that lands.
   const changed = await changedTracked(candidate, commit, path.join(temporary, 'index'));
@@ -451,7 +431,7 @@ export async function checkCandidate(
     if (!candidate) return;
     for (const command of input.commands.filter((command) => command.enabled !== false)) {
       if (ctx.closing || input.cancelled()) return;
-      const run = () => runChecked(ctx, input, key, command, candidate, commit, temporary, true);
+      const run = () => runChecked(ctx, input, key, command, candidate, commit, temporary);
       let result = await run();
       // A failure of the machine may not repeat, so the same candidate runs the command once more.
       if (result?.failure_class === 'environment') result = await run();
@@ -503,7 +483,7 @@ export async function checkGates(
       commands,
     });
     const run = (command: GateCommands[number]) =>
-      runChecked(ctx, owner, key, command, candidate, commit, temporary, !inSession);
+      runChecked(ctx, owner, key, command, candidate, commit, temporary);
     for (const [index, command] of commands.entries()) {
       if (ctx.closing || owner.cancelled()) return;
       // A fresh clone lacks the ignored outputs of earlier steps, so only the worktree carries them.

@@ -1,4 +1,5 @@
 import type { Landing } from '@pantheon/domain';
+import { command, USER_PRINCIPAL_ID } from '@pantheon/protocol';
 import {
   currentBranch,
   poll,
@@ -13,6 +14,12 @@ export const landUsage = 'land [BRANCH] [--message TEXT]';
 
 const gateState = (gate: NonNullable<Landing['gate_results']>[number]) =>
   gate.state ?? (gate.exit_code === 0 ? 'passed' : 'failed');
+
+/** The line that starts a gate search of the project, ready to run. */
+const findGate = (projectId: string) =>
+  `Find gate commands: pantheon command --json '${JSON.stringify(
+    command(USER_PRINCIPAL_ID, 'project.baseline.start', { project_id: projectId }),
+  )}'`;
 
 export const land = async (
   connect: () => Daemon,
@@ -33,6 +40,8 @@ export const land = async (
   );
   if (!sent.ok) {
     console.error(JSON.stringify(sent.body, null, 2));
+    const refusal = sent.body as { error?: string; details?: { project_id: string } };
+    if (refusal.error === 'no_gate_commands') console.error(findGate(refusal.details!.project_id));
     return 1;
   }
   const started = sent.body.receipt as Landing;
@@ -67,6 +76,7 @@ export const land = async (
     return 0;
   }
   console.log(`blocked: ${result.reason}`);
+  if (result.reason === 'no_gate_commands') console.log(findGate(result.project_id));
   for (const gate of result.gate_results ?? [])
     if (gateState(gate) === 'failed') console.log(`gate ${gate.name} failed:\n${gate.output}`);
   if (result.conflicts?.length) console.log(`conflicts:\n${result.conflicts.join('\n')}`);

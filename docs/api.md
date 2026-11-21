@@ -332,11 +332,9 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
-| `project.baseline.confirm` | `baseline_id`: string<br>`brief?`: object<br>`gates?`: object[]<br>`answers`: object[]<br>`extensions?`: object[] |  |
-| `project.baseline.continue` | `baseline_id`: string<br>`answers`: object[] |  |
+| `project.baseline.confirm` | `baseline_id`: string<br>`gates?`: object[] |  |
 | `project.baseline.start` | `project_id`: string<br>`runtime?`: string<br>`model?`: string<br>`effort?`: "none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max" \| "ultra" |  |
-| `project.baseline.submit` | `baseline_id`: string<br>`workstreams`: object[]<br>`contradictions`: object[]<br>`findings`: object[]<br>`brief?`: object<br>`questions`: object[]<br>`extensions?`: object[]<br>`tasks?`: object[] | project_baseline_submit (project session) |
-| `project.baseline.submit_folder` | `root`: string<br>`stage`: "empty" \| "early" \| "active" \| "maintenance"<br>`stack?`: string[]<br>`context?`: object<br>`gate`: object[]<br>`commands?`: object<br>`baseline_id`: string | project_baseline_submit_folder (project session) |
+| `project.baseline.submit` | `baseline_id`: string<br>`folders`: object[] | project_baseline_submit (project session) |
 
 ### project.brief
 
@@ -382,12 +380,6 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | type | input | MCP 工具 |
 |---|---|---|
 | `project.gate.set` | `project_id`: string<br>`root`: string<br>`commands`: object[] |  |
-
-### project.gateGpu
-
-| type | input | MCP 工具 |
-|---|---|---|
-| `project.gateGpu.set` | `project_id`: string<br>`enabled`: boolean |  |
 
 ### project.intro
 

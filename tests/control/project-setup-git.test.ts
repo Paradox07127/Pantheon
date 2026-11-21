@@ -66,6 +66,12 @@ async function setup() {
     f.call<ProjectBaseline | Promise<ProjectBaseline>>('project.baseline.start', {
       project_id: f.project.id,
     });
+  const startIntro = async () =>
+    (
+      await f.call<Promise<{ session_id: string }>>('project.intro.start', {
+        project_id: f.project.id,
+      })
+    ).session_id;
   /** Counts the 50 ms ticks the event loop runs until the run settles. */
   const ticksDuring = async (run: () => unknown) => {
     let ticks = 0;
@@ -77,7 +83,7 @@ async function setup() {
     }
     return ticks;
   };
-  return { ...f, runs, write, git, commit, populate, as, startBaseline, ticksDuring };
+  return { ...f, runs, write, git, commit, populate, as, startBaseline, startIntro, ticksDuring };
 }
 
 it('collects the baseline facts without blocking and reads HEAD only with them', async () => {
@@ -113,20 +119,20 @@ it('checks every commit a submitted folder cites with one git run', async () => 
   const baseline = await f.startBaseline();
   f.runs.reset();
   const submitted = await f.call<ProjectBaseline | Promise<ProjectBaseline>>(
-    'project.baseline.submit_folder',
+    'project.baseline.submit',
     {
       baseline_id: baseline.id,
-      root: f.project.roots[0]!,
-      stage: 'active',
-      stack: ['TypeScript'],
-      gate: [
-        { name: 'build', argv: ['pnpm', 'build'], sources: [`commit:${head}`] },
-        { name: 'lint', argv: ['pnpm', 'lint'], sources: ['commit:deadbee'] },
+      folders: [
+        {
+          root: f.project.roots[0]!,
+          gate: [
+            { name: 'build', argv: ['pnpm', 'build'], sources: [`commit:${head}`] },
+            { name: 'lint', argv: ['pnpm', 'lint'], sources: ['commit:deadbee'] },
+            { name: 'test', argv: ['pnpm', 'test'], sources: [`commit:${head.slice(0, 7)}`] },
+          ],
+          setup: { argv: ['pnpm', 'install'], sources: ['commit:abcdef1'] },
+        },
       ],
-      commands: {
-        build: { argv: ['pnpm', 'build'], sources: [`commit:${head.slice(0, 7)}`] },
-        test: { argv: ['pnpm', 'test'], sources: ['commit:abcdef1'] },
-      },
     },
     null,
     f.as(baseline.session_id!),
@@ -150,7 +156,7 @@ it('measures the introduction with one history read per folder, counting modules
   });
   f.git(['merge', '--quiet', '--no-ff', '-m', 'Merge side', 'side'], 5);
   f.git(['commit', '--quiet', '--allow-empty', '-m', 'Empty'], 2);
-  const baseline = await f.startBaseline();
+  const sessionId = await f.startIntro();
   const modules = ['src/a', 'src/b', 'docs', '.'];
   f.runs.reset();
   await f.call(
@@ -162,7 +168,7 @@ it('measures the introduction with one history read per folder, counting modules
       modules: modules.map((module) => ({ path: module, role: 'Code' })),
     },
     null,
-    f.as(baseline.session_id!),
+    f.as(sessionId),
   );
   const runs = f.runs.runs();
   expect(gitRunsOf(runs, 'rev-list')).toEqual([]);
@@ -198,12 +204,12 @@ it('measures the introduction with one history read per folder, counting modules
 it('reads how far the introduction is behind without blocking', async () => {
   const f = await setup();
   f.populate();
-  const baseline = await f.startBaseline();
+  const sessionId = await f.startIntro();
   await f.call(
     'project.intro.submit',
     { summary: 'Notes.', sources: ['file:README.md'], features: [], modules: [] },
     null,
-    f.as(baseline.session_id!),
+    f.as(sessionId),
   );
   f.commit('Later change', 0, { 'README.md': '# Notes\n\nLater.\n' });
   f.runs.slowOn('rev-list --count');

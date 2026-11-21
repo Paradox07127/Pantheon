@@ -56,6 +56,7 @@ function checks(patch: {
       }),
       history: patch.runs && read({ runs: patch.runs }),
       readOnly: false,
+      projectId: null,
       merging: false,
       busy: false,
       attached: new Set<string>(),

@@ -8,12 +8,10 @@ import {
   statSync,
   lstatSync,
   readFileSync,
-  realpathSync,
 } from 'node:fs';
 import path from 'node:path';
 import type { ChecklistItem, FolderFacts, ProjectFacts } from '@pantheon/domain';
 import { runGit } from './git.js';
-import { inside } from './context.js';
 import { measureCodeDeps } from './code-deps.js';
 
 export type { ChecklistItem, FolderFacts, ProjectFacts };
@@ -255,17 +253,6 @@ export function collectTextCounts(roots: { path: string; git: boolean }[]) {
   );
 }
 
-/** A regular file whose real path stays inside the root. */
-function rootFile(root: string, relative: string): boolean {
-  if (path.isAbsolute(relative)) return false;
-  try {
-    const file = realpathSync(path.resolve(root, relative));
-    return inside(realpathSync(root), file) && statSync(file).isFile();
-  } catch {
-    return false;
-  }
-}
-
 function outline(text: string) {
   const headings: string[] = [],
     items: ChecklistItem[] = [],
@@ -301,12 +288,7 @@ function outline(text: string) {
   return { headings, items };
 }
 
-async function collectFolder(
-  root: string,
-  git: boolean,
-  now: number,
-  taskLists: string[] = [],
-): Promise<FolderFacts> {
+async function collectFolder(root: string, git: boolean, now: number): Promise<FolderFacts> {
   const output = async (args: string[]) => {
     const result = await runGit(root, args, undefined, true);
     return result.exit_code === 0 ? result.stdout.toString('utf8') : '';
@@ -501,14 +483,6 @@ async function collectFolder(
     if (ext === '.md' && items.length)
       facts.checklists.push({ path: relative, modified_at, items });
   }
-  // A listed task file may sit in an ignored folder; it adds its checklist and nothing else.
-  for (const relative of new Set(taskLists)) {
-    if (facts.checklists.some((list) => list.path === relative) || !rootFile(root, relative))
-      continue;
-    const { text, mtime } = read(relative);
-    const { items } = outline(text);
-    if (items.length) facts.checklists.push({ path: relative, modified_at: mtime, items });
-  }
   facts.code_deps = measureCodeDeps(
     root,
     files.filter((relative) => !tracked || tracked.has(relative)),
@@ -522,13 +496,11 @@ async function collectFolder(
 }
 
 export async function collectFacts(
-  roots: { path: string; git: boolean; task_lists?: string[] }[],
+  roots: { path: string; git: boolean }[],
   now = Date.now(),
 ): Promise<ProjectFacts> {
   return {
     collected_at: now,
-    folders: await Promise.all(
-      roots.map((root) => collectFolder(root.path, root.git, now, root.task_lists)),
-    ),
+    folders: await Promise.all(roots.map((root) => collectFolder(root.path, root.git, now))),
   };
 }
