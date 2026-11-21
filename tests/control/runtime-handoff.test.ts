@@ -3,11 +3,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { FixtureAdapter } from '@pantheon/adapters';
-import type { BoardPlan, LeadNote, Principal, Session, SessionTurn } from '@pantheon/domain';
+import type { BoardPlan, Principal, Session, SessionTurn } from '@pantheon/domain';
 import { Store } from '@pantheon/store';
 import { buildHandoff } from '../../packages/control/dist/handoff.js';
 import type { ControlContext } from '../../packages/control/dist/context.js';
-import { eventually, settle, user } from '../helpers.js';
+import { eventually, settle } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
 const HANDOFF_LINE =
@@ -772,100 +772,6 @@ it('moves a task session to the default runtime when its lead removes the runtim
   const told = f.turns(worker.id).filter((turn) => turn.origin === 'lead');
   expect(told).toHaveLength(1);
   expect(told[0]!.input).not.toContain('is not available');
-});
-
-it('leaves a task session on its runtime when the runtime its task names is not available', async () => {
-  const { f, lead, worker } = await idleTaskSession();
-
-  // A lead's own write of an unavailable runtime is refused, so the user's edit names it and the lead applies it.
-  const planNow = () => f.store.must<BoardPlan>('board_plans', lead.id);
-  f.call(
-    'board.plan.edit',
-    {
-      project_id: f.project.id,
-      lead_session_id: lead.id,
-      base_version: planNow().plan_version,
-      ops: [{ type: 'set_task', task_id: 'a', patch: { model: 'fixture', runtime: 'missing' } }],
-    },
-    null,
-    user,
-  );
-  f.call(
-    'board.plan.edit',
-    {
-      project_id: f.project.id,
-      base_version: planNow().plan_version,
-      ops: [
-        { type: 'resolve_edit', edit_id: planNow().pending_edits[0]!.edit_id, decision: 'apply' },
-      ],
-    },
-    null,
-    leadOf(f, lead.id),
-  );
-  await f.control.tick();
-  const told = f.turns(worker.id).filter((turn) => turn.origin === 'lead');
-  expect(told).toHaveLength(1);
-  expect(told[0]!.input.startsWith('[Pantheon] The lead changed this task.')).toBe(true);
-  expect(told[0]!.input).toContain('missing');
-  expect(current(f, worker.id).runtime).toBe('fixture');
-  expect(runtimeEvents(f)).toEqual([]);
-});
-
-it('tells the lead in its inbox when the runtime its plan names is not available', async () => {
-  const { f, lead, worker } = await idleTaskSession();
-  const planNow = () => f.store.must<BoardPlan>('board_plans', lead.id);
-  // A lead's own write of an unavailable runtime is refused, so the user's edit names it and the lead applies it.
-  const editTask = async (patch: Partial<PlanTask>) => {
-    f.call(
-      'board.plan.edit',
-      {
-        project_id: f.project.id,
-        lead_session_id: lead.id,
-        base_version: planNow().plan_version,
-        ops: [{ type: 'set_task', task_id: 'a', patch }],
-      },
-      null,
-      user,
-    );
-    // An edit of the runtime waits for the lead; one of the title is in effect at once.
-    const edit = planNow().pending_edits.find((pending) => pending.status === 'pending');
-    if (edit)
-      f.call(
-        'board.plan.edit',
-        {
-          project_id: f.project.id,
-          base_version: planNow().plan_version,
-          ops: [{ type: 'resolve_edit', edit_id: edit.edit_id, decision: 'apply' }],
-        },
-        null,
-        leadOf(f, lead.id),
-      );
-    await eventually(
-      () => !planNow().contract_changed?.includes(worker.id),
-      () => f.control.tick(),
-    );
-    await settle(f, worker);
-  };
-  const runtimeNotes = () =>
-    f.store
-      .kindEvents(f.project.id, ['lead.note_added'])
-      .filter((event) => event.aggregate_id === lead.id)
-      .map((event) => event.payload as LeadNote)
-      .filter((note) => note.kind !== 'user_edit');
-
-  await editTask({ model: 'fixture', runtime: 'missing' });
-  expect(current(f, worker.id).runtime).toBe('fixture');
-  const notes = runtimeNotes();
-  expect(notes).toEqual([
-    expect.objectContaining({ session_id: worker.id, task_id: 'a', kind: 'runtime_unavailable' }),
-  ]);
-  expect(notes[0]!.text).toContain('Runtime missing, which task a names, is not available');
-  expect(notes[0]!.text).toContain('stays on fixture');
-  expect(planNow().inbox.map((note) => note.id)).toContain(notes[0]!.id);
-
-  await editTask({ title: 'Serve CSV exports over HTTP' });
-  expect(f.turns(worker.id).filter((turn) => turn.origin === 'lead')).toHaveLength(2);
-  expect(runtimeNotes()).toHaveLength(1);
 });
 
 const compact = (f: Fixture, sessionId: string) =>

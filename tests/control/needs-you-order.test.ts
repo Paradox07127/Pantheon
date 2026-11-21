@@ -1,13 +1,5 @@
 import { expect, it } from 'vitest';
-import {
-  hash,
-  type Approval,
-  type BoardPlan,
-  type LeadQuestion,
-  type Principal,
-  type Project,
-  type Session,
-} from '@pantheon/domain';
+import { hash, type BoardPlan, type Principal, type Project, type Session } from '@pantheon/domain';
 import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
@@ -69,55 +61,6 @@ function planTasks(f: Fixture, leadId: string, tasks: { id: string; depends_on: 
   );
 }
 
-const question = (blocks: string[], at: number): LeadQuestion => ({
-  id: 'export-format',
-  at,
-  question: 'Which export format?',
-  options: ['CSV', 'JSON'],
-  recommended: 'CSV',
-  assumption: 'CSV',
-  blocks,
-});
-
-function pendingApproval(f: Fixture, sessionId: string, tool: string, createdAt: number) {
-  return f.store.insert<Approval>('approvals', {
-    id: `approval-${sessionId}-${tool}`,
-    revision: 1,
-    project_id: f.project.id,
-    kind: 'permission',
-    session_id: sessionId,
-    request_id: `request-${tool}`,
-    tool,
-    input_hash: 'hash',
-    decider: 'user',
-    state: 'pending',
-    created_at: createdAt,
-  });
-}
-
-it('lists a lead question that blocks three tasks before an older permission request that blocks none', async () => {
-  const f = await workbenchFixture();
-  const lead = await idleSession(f, 'Plan the export feature');
-  planTasks(f, lead.id, [
-    { id: 'a', depends_on: [] },
-    { id: 'b', depends_on: [] },
-    { id: 'c', depends_on: [] },
-    { id: 'd', depends_on: [] },
-  ]);
-  const now = f.store.now();
-  patchPlan(f, lead.id, { questions: [question(['a', 'b', 'c'], now)] });
-  pendingApproval(f, lead.id, 'Bash', now - 60_000);
-
-  const items = f.control
-    .needsYou(user, f.project.id)
-    .items.filter((item) => ['lead_question', 'permission_requested'].includes(item.reason));
-  expect(items.map((item) => item.reason)).toEqual(['lead_question', 'permission_requested']);
-  expect(items).toMatchObject([
-    { decision: 'question', blocks: 3, primary: 'lead.question.answer' },
-    { decision: 'permission', blocks: 0, primary: 'approval.respond' },
-  ]);
-});
-
 it.each([
   [1, 'other'],
   [2, 'repeated_failure'],
@@ -158,33 +101,4 @@ it.each([
       .items.filter((item) => item.source.id === worker.id)
       .map((item) => [item.kind, item.decision]),
   ).toEqual([['session.gate_failed', decision]]);
-});
-
-it('orders the board needs as needs_you.list orders the same project', async () => {
-  const f = await workbenchFixture();
-  const lead = await idleSession(f, 'Plan the export feature'),
-    a = await idleSession(f),
-    d = await idleSession(f);
-  planTasks(f, lead.id, [
-    { id: 'a', depends_on: [] },
-    { id: 'b', depends_on: ['a'] },
-    { id: 'c', depends_on: ['a'] },
-    { id: 'd', depends_on: [] },
-  ]);
-  patch(f, a.id, { task: { lead_session_id: lead.id, id: 'a', generation: 1 } });
-  patch(f, d.id, { task: { lead_session_id: lead.id, id: 'd', generation: 1 } });
-  const now = f.store.now();
-  const older = pendingApproval(f, d.id, 'Edit', now - 2000),
-    newer = pendingApproval(f, a.id, 'Bash', now);
-  patchPlan(f, lead.id, { questions: [question(['b', 'c', 'd'], now - 1000)] });
-
-  const listed = (items: { source: { id: string }; reason: string }[]) =>
-    items.map((item) => `${item.source.id}:${item.reason}`);
-  const board = listed(f.control.boardView(user, f.project.id, 1).needs!);
-  expect(board).toEqual(listed(f.control.needsYou(user, f.project.id).items));
-  expect(board).toEqual([
-    `${lead.id}:lead_question`,
-    `${newer.id}:permission_requested`,
-    `${older.id}:permission_requested`,
-  ]);
 });

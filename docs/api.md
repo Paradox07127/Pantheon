@@ -275,11 +275,6 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
-| `board.plan.edit` | `project_id`: string<br>`lead_session_id?`: string<br>`base_version`: integer<br>`trigger_event?`: string<br>`ops`: (object \| object \| object \| object \| object \| object \| object \| object \| object \| object \| object)[] | edit_board (lead) |
-| `board.plan.edit.withdraw` | `project_id`: string<br>`lead_session_id`: string<br>`edit_id`: string |  |
-| `board.plan.proposal.resolve` | `project_id`: string<br>`lead_session_id`: string<br>`proposal_id`: string<br>`decision`: "accept" \| "reject"<br>`reason?`: string<br>`ops?`: (object \| object \| object \| object \| object \| object \| object \| object)[] |  |
-| `board.plan.proposal.withdraw` | `project_id`: string<br>`proposal_id`: string | withdraw_board_proposal (lead) |
-| `board.plan.propose` | `project_id`: string<br>`base_version`: integer<br>`trigger_event?`: string<br>`reason`: string<br>`ops`: (object \| object \| object \| object \| object \| object \| object \| object)[] | propose_board (lead) |
 | `board.plan.update` | `project_id`: string<br>`base_version`: integer<br>`trigger_event?`: string<br>`headline`: string<br>`lanes`: object[]<br>`iterations?`: object[]<br>`tasks`: object[]<br>`milestones`: object[]<br>`risks`: object[]<br>`assumptions`: object[] | update_board (lead) |
 | `board.sync` | `project_id`: string | sync_board (lead) |
 
@@ -643,7 +638,6 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `agent.wakes` | `agent_id`: string<br>`limit?`: integer<br>`routine_id?`: string |
 | `app.settings` | — |
 | `backend.list` | — |
-| `board.view` | `project_id`: string<br>`days`: "1" \| "3" \| "7" \| "14" \| "30" \| "all"<br>`until?`: string |
 | `change_story.diff` | `story_id`: string |
 | `change_story.list` | `project_id`: string |
 | `connections.status` | `refresh?`: string |

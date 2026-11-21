@@ -1310,28 +1310,6 @@ it('keeps a second task queued for a place while the workflow policy allows one 
   expect(sessionsOf('b')).toHaveLength(1);
 });
 
-it('wakes the lead once for an effective user contract edit', async () => {
-  const f = await workbenchFixture();
-  const lead = await f.create('Plan the export feature');
-  await settle(f, lead);
-  writePlan(f, lead.id);
-  f.call(
-    'board.plan.edit',
-    {
-      project_id: f.project.id,
-      lead_session_id: lead.id,
-      base_version: planOf(f, lead.id).plan_version,
-      ops: [{ type: 'set_task', task_id: 'a', patch: { model: 'new-model' } }],
-    },
-    null,
-    user,
-  );
-  await f.control.tick();
-  expect(told(f, lead.id)).toHaveLength(1);
-  await f.control.tick();
-  expect(told(f, lead.id)).toHaveLength(1);
-});
-
 it('hands an unfinished task back to the lead at the user request and holds automatic repairs', async () => {
   const f = await workbenchFixture(),
     lead = await f.create('Plan the export feature');
@@ -1350,10 +1328,6 @@ it('hands an unfinished task back to the lead at the user request and holds auto
   await f.control.tick();
   expect(f.turns(worker.id)).toHaveLength(before);
   expect(planOf(f, lead.id).handed_back?.[worker.id] ?? []).toEqual([]);
-  expect(
-    f.control.boardView(user, f.project.id, 1).leads?.find((row) => row.session_id === lead.id)
-      ?.messages_today,
-  ).toContainEqual({ session_id: worker.id, lead: 0, tracker: 0, handbacks: 1 });
   expect(() =>
     f.call(
       'task.handback',

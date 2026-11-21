@@ -96,9 +96,6 @@ const KIND_ICONS: Record<NonNullable<NeedsYouItem['decision']>, LucideIcon> = {
 // The rows shown before the switch to show all.
 const FOLDED_ROWS = 12;
 
-const SPARK_W = 120;
-const SPARK_H = 24;
-
 interface ProjectsScreenProps {
   onOpenSettings: (projectId: string) => void;
   /** Makes the project current and shows its sessions. */
@@ -287,7 +284,6 @@ export function SummaryPanel({
   const read = summaries ?? [];
   const total = (pick: (s: ProjectSummary) => number) => read.reduce((n, s) => n + pick(s), 0);
   const asking = read.filter((s) => s.needs_you > 0).length;
-  const queued = total((s) => s.counts.queued);
   const [asks, runs, ready, merged] = [
     {
       label: t({ id: 'projects.summary.needsYou', defaultMessage: 'Needs you' }),
@@ -306,13 +302,7 @@ export function SummaryPanel({
     {
       label: t({ id: 'projects.summary.running', defaultMessage: 'Running' }),
       value: total((s) => s.counts.running),
-      note:
-        queued > 0
-          ? t(
-              { id: 'projects.summary.queued', defaultMessage: '{count} queued' },
-              { count: queued },
-            )
-          : null,
+      note: null,
     },
     {
       label: t({ id: 'projects.summary.ready', defaultMessage: 'Ready to merge' }),
@@ -345,7 +335,7 @@ export function SummaryPanel({
       <NeedsPopover items={needs} trigger={cell(asks)} />
       <SessionsPopover
         show="running"
-        projectIds={counting((s) => s.counts.running + s.counts.queued)}
+        projectIds={counting((s) => s.counts.running)}
         trigger={cell(runs)}
       />
       <SessionsPopover
@@ -405,19 +395,6 @@ async function openCount(projectId: string, key: CountKey, group: SessionGroupKe
   );
 }
 
-/** Polyline points of the daily done totals, oldest at the left, scaled to their own range. */
-function sparkPoints(days: readonly { done: number }[]): string {
-  const values = days.map((d) => d.done);
-  const low = Math.min(...values),
-    span = Math.max(...values) - low || 1;
-  const step = values.length > 1 ? SPARK_W / (values.length - 1) : 0;
-  return values
-    .map(
-      (v, i) => `${+(i * step).toFixed(1)},${+(SPARK_H - ((v - low) / span) * SPARK_H).toFixed(1)}`,
-    )
-    .join(' ');
-}
-
 export function ProjectRow(props: {
   project: Project;
   summary: ProjectSummary | undefined;
@@ -428,7 +405,6 @@ export function ProjectRow(props: {
   onRemove: (project: Project) => void;
 }) {
   const { project, summary } = props;
-  const days = summary?.done_daily ?? [];
   const last = summary?.last_activity_at ? Date.parse(summary.last_activity_at) : null;
   const active = summary ? COUNTS.filter(({ key }) => summary.counts[key] > 0) : [];
   const idle = projectIdle(summary);
@@ -474,23 +450,6 @@ export function ProjectRow(props: {
                 )
               : '—'}
           </span>
-        )}
-        {days.length > 0 && (
-          <svg
-            className="pr-spark"
-            viewBox={`0 0 ${SPARK_W} ${SPARK_H}`}
-            preserveAspectRatio="none"
-            role="img"
-            aria-label={t(
-              {
-                id: 'projects.row.doneTrend',
-                defaultMessage: 'Done over the last 14 days, now {count}',
-              },
-              { count: days.at(-1)!.done },
-            )}
-          >
-            <polyline points={sparkPoints(days)} />
-          </svg>
         )}
       </span>
       <span className="pr-ses">

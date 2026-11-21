@@ -188,16 +188,7 @@ export function planViews(ctx: ControlContext, projectId: string): BoardPlanView
       lead_title: ctx.store.get<Session>('sessions', plan.id)?.title ?? '',
       headline: plan.headline,
       plan_version: plan.plan_version,
-      pending_edits: plan.pending_edits
-        .filter((edit) => edit.status === 'pending')
-        .map((edit) => ({ id: edit.edit_id, ops: edit.ops, created_at: edit.created_at })),
-      pending_proposals: pendingProposals(plan),
-      recent_proposals: (plan.pending_proposals ?? [])
-        .filter((proposal) => proposal.status !== 'pending')
-        .reverse()
-        .sort((a, b) => b.resolved_at! - a.resolved_at!)
-        .slice(0, 20)
-        .map(({ proposal_id, ...proposal }) => ({ id: proposal_id, ...proposal })),
+      pending_edits: [],
       lanes: plan.lanes,
       iterations: plan.iterations ?? [],
       tasks: plan.tasks.map((task) => {

@@ -3,14 +3,15 @@ import type { ControlContext } from './context.js';
 import { externalEvents } from './user-config.js';
 import { DEFAULT_WORKFLOW_POLICY, workflowPolicy } from './workflow-policy.js';
 
+type Power = Exclude<CharterPower, 'plan_change'>;
+
 export const CHARTER_POWERS = [
   'approve_worker_prompts',
   'answer_worker_questions',
-  'plan_change',
   'create_agent',
   'merge_out_of_scope',
   'start_external',
-] as const satisfies readonly CharterPower[];
+] as const satisfies readonly Power[];
 
 const EXTERNAL_START: Record<ReturnType<typeof externalEvents>, CharterMode> = {
   off: 'off',
@@ -19,26 +20,18 @@ const EXTERNAL_START: Record<ReturnType<typeof externalEvents>, CharterMode> = {
 };
 
 /** What a lead of the project may do without asking, for every power. */
-export function charterModes(
-  ctx: ControlContext,
-  projectId: string,
-): Record<CharterPower, CharterMode> {
+export function charterModes(ctx: ControlContext, projectId: string): Record<Power, CharterMode> {
   const policy = workflowPolicy(ctx, projectId);
   const project = ctx.store.must<Project>('projects', projectId);
   return {
     ...DEFAULT_WORKFLOW_POLICY.charter,
     ...policy.charter,
-    plan_change: policy.plan_changes === 'auto' ? 'on' : 'ask',
     start_external: EXTERNAL_START[externalEvents(ctx, project)],
   };
 }
 
 /** Whether a lead of the project uses the power on its own, asks the user first, or may not use it. */
-export function charterMode(
-  ctx: ControlContext,
-  projectId: string,
-  power: CharterPower,
-): CharterMode {
+export function charterMode(ctx: ControlContext, projectId: string, power: Power): CharterMode {
   return charterModes(ctx, projectId)[power];
 }
 
@@ -46,7 +39,7 @@ export function charterMode(
 export function chartered(
   ctx: ControlContext,
   p: Principal,
-  power: CharterPower,
+  power: Power,
   subject: Entity,
   reason?: string,
 ): CharterMode {

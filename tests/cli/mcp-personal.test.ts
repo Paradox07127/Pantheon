@@ -93,7 +93,7 @@ it('still serves the session tools to a session token', async () => {
     },
   }));
   const client = await connect(await createMcpServer('http://127.0.0.1:4321', 'session-token'));
-  expect((await client.listTools()).tools.map((tool) => tool.name)).toContain('propose_board');
+  expect((await client.listTools()).tools.map((tool) => tool.name)).toContain('update_board');
 });
 
 it('refuses mcp --personal without a personal token file', () => {

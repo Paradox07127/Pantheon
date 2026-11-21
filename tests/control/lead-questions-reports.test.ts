@@ -10,7 +10,7 @@ import type {
 import { inputSchemas } from '@pantheon/protocol';
 import { autoMergeAfterTurn } from '../../packages/control/dist/workbench-session.js';
 import type { ControlContext } from '../../packages/control/src/context.js';
-import { eventually, settle, user } from '../helpers.js';
+import { eventually, settle } from '../helpers.js';
 import { boundTaskSession, workbenchFixture } from './workbench-fixture.js';
 
 type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
@@ -100,14 +100,8 @@ it('posts a question without ending the lead turn, waits only on named tasks, an
     null,
     owner,
   );
-  expect(f.control.needsYou(user, f.project.id).items).toContainEqual(
-    expect.objectContaining({
-      kind: 'lead.question',
-      reason: 'lead_question',
-      session_id: lead.id,
-      question: expect.objectContaining({ id: card.id, ...question }),
-      actions: [{ command: 'lead.question.answer', allowed: true }],
-    }),
+  expect(planOf(f, lead.id).questions).toContainEqual(
+    expect.objectContaining({ id: card.id, ...question }),
   );
   f.call('task.start', { project_id: f.project.id, task_ids: ['format', 'button'] }, null, owner);
   await f.control.tick();
@@ -136,11 +130,9 @@ it('posts a question without ending the lead turn, waits only on named tasks, an
     question_id: card.id,
     answer: 'JSON',
   });
-  expect(
-    f.control
-      .needsYou(user, f.project.id)
-      .items.some((item) => String(item.kind) === 'lead.question'),
-  ).toBe(false);
+  expect(planOf(f, lead.id).questions!.find((entry) => entry.id === card.id)).toMatchObject({
+    answer: { text: 'JSON' },
+  });
   const wake = f.turns(lead.id).find((turn) => turn.origin === 'tracker')!;
   expect(wake.input).toContain('Which export format?');
   expect(wake.input).toContain('JSON');
@@ -271,7 +263,7 @@ it.each([
   },
 );
 
-it('keeps a blocked report in needs-you when its lead has closed', async () => {
+it('keeps a blocked report in the inbox of its closed lead', async () => {
   const f = await workbenchFixture();
   const { lead } = await planned(f);
   const worker = await boundTaskSession(f, lead.id, 'format');
@@ -288,16 +280,6 @@ it('keeps a blocked report in needs-you when its lead has closed', async () => {
     },
     null,
     principal(f, worker, 'worker'),
-  );
-  expect(f.control.needsYou(user, f.project.id).items).toContainEqual(
-    expect.objectContaining({
-      reason: 'task_blocked',
-      task_id: `${lead.id}:format`,
-      blocked: expect.objectContaining({
-        reason: 'missing_permission',
-        text: 'Need repository access.',
-      }),
-    }),
   );
   expect(planOf(f, lead.id).inbox).toContainEqual(
     expect.objectContaining({ kind: 'blocked', reason: 'missing_permission' }),

@@ -1,6 +1,5 @@
 import { createElement, type ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { BoardModel } from '@pantheon/protocol';
 import type { NeedsYouItem } from '@/data/needs-you';
 import { find, mount, nodes, text, unmountAll } from './web-hook-host.js';
 

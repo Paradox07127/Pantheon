@@ -98,7 +98,6 @@ it('gives a lead the current workflow policy and the new value after the user ch
     charter: {
       approve_worker_prompts: 'on',
       answer_worker_questions: 'on',
-      plan_change: 'on',
       create_agent: 'ask',
       accept_milestone: 'on',
       merge_out_of_scope: 'on',

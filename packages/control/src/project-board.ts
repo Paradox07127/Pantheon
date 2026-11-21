@@ -3,13 +3,10 @@ import {
   canonical,
   credentialRole,
   hash,
-  id,
   requireThat,
   type BoardPlan,
   type ExternalEvent,
   type LeadNote,
-  type PendingPlanEdit,
-  type PlanProposal,
   type Principal,
   type Project,
   type Session,
@@ -19,32 +16,19 @@ import {
 import { inputSchemas } from '@pantheon/protocol';
 import {
   ownEntry,
-  actsAsUser,
   projectAccess,
   sessionWorkspaceKind,
-  userOnly,
   sessionAdapter,
   type ControlContext,
   type Handlers,
 } from './context.js';
-import { personalAnswer, personalCalled, personalKeyId } from './personal-scope.js';
 import { sessionDefaults } from './user-config.js';
 import { runtime } from './admission.js';
 import { planUnfinished, planViews, retiredBinding } from './board-plan.js';
-import { residentPlan } from './agent-always-on.js';
 import { deviceHasLabel, listDevices } from './devices.js';
-import { INBOX_HEADER, appendNote, noteOtherPlan, opText, refuteText } from './lead-inbox.js';
-import { recordPlanDecisions } from './plan-decisions.js';
-import { reviewPlan } from './review.js';
-import {
-  placedTaskSessions,
-  revokeLeadTurnWrites,
-  taskPath,
-  taskRuntime,
-} from './task-dispatch.js';
-import { wakeLead } from './task-tracking.js';
+import { INBOX_HEADER, noteOtherPlan } from './lead-inbox.js';
+import { revokeLeadTurnWrites, taskPath, taskRuntime } from './task-dispatch.js';
 import { kindOfPaths, risky, scopeTierReason } from './task-kind.js';
-import { chartered } from './charter.js';
 import { workflowPolicy } from './workflow-policy.js';
 
 /** The longest iteration in days, so a mistyped year cannot make the board count each day of centuries. */
@@ -55,37 +39,8 @@ type PlanInput = Omit<
   'base_version' | 'trigger_event'
 > & { order_lock?: string[] };
 type PlanTask = Omit<PlanInput['tasks'][number], 'workflow_id'>;
-type EditOp = ReturnType<(typeof inputSchemas)['board.plan.edit']['parse']>['ops'][number];
-type PatchOp = Exclude<EditOp, { type: 'resolve_edit' | 'refute_assumption' }>;
-type ProposedOp = ReturnType<(typeof inputSchemas)['board.plan.propose']['parse']>['ops'][number];
-type PlanOp = Exclude<ProposedOp, { type: 'add_lane' }>;
-type Lane = BoardPlan['lanes'][number];
 
-/** A proposal's ops apart: the lanes it adds and the ops that apply after them. */
-function splitLanes(ops: ProposedOp[]): { lanes: Lane[]; ops: PlanOp[] } {
-  return {
-    lanes: ops.flatMap((op) => (op.type === 'add_lane' ? [op.lane] : [])),
-    ops: ops.filter((op): op is PlanOp => op.type !== 'add_lane'),
-  };
-}
 type TaskTier = TaskKind['tier'];
-
-/** Task fields a user edit changes at once even while the task has an unfinished session. */
-const RECORD_FIELDS = [
-  'title',
-  'lane',
-  'kind',
-  'task_type',
-  'token_budget',
-  'priority',
-  'milestone',
-  'route_reason',
-  'iteration',
-  'estimate',
-];
-
-/** The flow_reason a user's path edit gets when it gives none. */
-export const USER_FLOW_REASON = 'Chosen by the user';
 
 const repeated = (ids: string[]) => ids.find((value, index) => ids.indexOf(value) !== index);
 
@@ -124,12 +79,8 @@ function planProblem(input: PlanInput): string | null {
   return null;
 }
 
-/** A source quote that no user turn of a lead in the project, user plan edit or quoted text contains, or null. */
-export function sourceProblem(
-  ctx: ControlContext,
-  input: PlanInput,
-  quoted: string[] = [],
-): string | null {
+/** A source quote that no user turn of a lead in the project or user plan edit contains, or null. */
+export function sourceProblem(ctx: ControlContext, input: PlanInput): string | null {
   // Any lead counts, since board.sync hands an ended lead's plan to a new one.
   const leads = new Set(
     ctx.store
@@ -154,7 +105,6 @@ export function sourceProblem(
       // A decision the personal agent made for the user is not the user's words.
       .filter((note) => note.kind === 'user_edit' && !note.via)
       .map((note) => note.text),
-    ...quoted,
   ];
   // What the user wrote in an external event counts as the user's words; other people's text does not.
   const external = ctx.store
@@ -197,7 +147,7 @@ function dependencyCycle(tasks: PlanInput['tasks']): string[] | null {
   return null;
 }
 
-function refuseInvalid(ctx: ControlContext, input: PlanInput, quoted: string[] = []): void {
+function refuseInvalid(ctx: ControlContext, input: PlanInput): void {
   // An edited plan must stay one the lead can send whole again.
   const { order_lock: _, ...whole } = input;
   const parsed = inputSchemas['board.plan.update'].safeParse({ ...whole, base_version: 0 });
@@ -209,7 +159,7 @@ function refuseInvalid(ctx: ControlContext, input: PlanInput, quoted: string[] =
   );
   const problem = planProblem(input);
   requireThat(!problem, 'invalid_input', problem ?? '');
-  const unquoted = sourceProblem(ctx, input, quoted);
+  const unquoted = sourceProblem(ctx, input);
   requireThat(!unquoted, 'invalid_input', unquoted ?? '');
   for (const iteration of input.iterations ?? [])
     requireThat(
@@ -230,7 +180,7 @@ function refuseInvalid(ctx: ControlContext, input: PlanInput, quoted: string[] =
 /** The task with the kind its scope gives; a kind it names keeps its domain and takes the higher tier. */
 function withScopeKind(task: PlanTask): PlanTask {
   const found = kindOfPaths(task.scope);
-  // A task whose goal names a risk gets plan review.
+  // A task whose goal names a risk takes tier t3.
   const scoped = found && risky(task.goal) ? { ...found, tier: 't3' as const } : found;
   if (!scoped) return task;
   if (!task.kind) return { ...task, kind: scoped };
@@ -363,13 +313,13 @@ function refuseUnexplained(
 }
 
 /** The lead's plan as a whole plan input; a plan's milestones are not kept. */
-function planContent(ctx: ControlContext, plan: BoardPlan, lanes: Lane[] = []): PlanInput {
+function planContent(ctx: ControlContext, plan: BoardPlan): PlanInput {
   return {
     project_id: plan.project_id,
     // A resident's plan starts without a headline; its first change names it after the session.
     headline:
       plan.headline || (ctx.store.get<Session>('sessions', plan.id)?.title ?? plan.id).slice(0, 80),
-    lanes: [...plan.lanes, ...lanes],
+    lanes: plan.lanes,
     iterations: plan.iterations ?? [],
     order_lock: plan.order_lock,
     tasks: plan.tasks,
@@ -410,18 +360,15 @@ function storePlan(
   input: PlanInput,
   commandId: string,
   options: {
-    quoted?: string[];
-    pendingEdits?: PendingPlanEdit[];
     leadTasks?: Set<string>;
     writtenTiers?: Map<string, TaskTier | undefined>;
-    userEdits?: { edit_id: string; task_ids: string[] }[];
     /** The board.replan_triggered event the change answers; history reads it off the plan_updated event. */
     triggerEvent?: string;
   } = {},
 ): BoardPlan {
   // A retired workflow_id on a task is accepted and not stored.
   input = { ...input, tasks: input.tasks.map(({ workflow_id: _, ...task }) => task) };
-  refuseInvalid(ctx, input, options.quoted);
+  refuseInvalid(ctx, input);
   const current = ctx.store.get<BoardPlan>('board_plans', leadId);
   const orderLock = Object.hasOwn(input, 'order_lock') ? input.order_lock : current?.order_lock;
   if (orderLock) {
@@ -540,8 +487,6 @@ function storePlan(
     order_lock: orderLock,
     tasks: input.tasks,
     plan_version: planVersion,
-    pending_edits: options.pendingEdits ?? current?.pending_edits ?? [],
-    pending_proposals: current?.pending_proposals ?? [],
     ...(current?.questions ? { questions: current.questions } : {}),
     risks: input.risks,
     assumptions: input.assumptions,
@@ -606,21 +551,7 @@ function storePlan(
     options.triggerEvent ? { ...next, trigger_event: options.triggerEvent } : next,
     commandId,
   );
-  if (current) recordPlanDecisions(ctx, current, next, commandId);
   noteOtherPlan(ctx, next, commandId);
-  for (const edit of options.userEdits ?? [])
-    ctx.store.event(
-      'board.user_edit_applied',
-      next,
-      input.project_id,
-      {
-        edit_id: edit.edit_id,
-        session_ids: told.filter((sessionId) =>
-          edit.task_ids.includes(ctx.store.must<Session>('sessions', sessionId).task!.id),
-        ),
-      },
-      commandId,
-    );
   const lead = ctx.store.must<Session>('sessions', leadId),
     claimed = lead.direct_task?.id;
   // A running merge checks the generation itself, so its claim stays until that check.
@@ -655,515 +586,6 @@ function storePlan(
   return next;
 }
 
-/** The plan with the ops applied in order; a task removed leaves the milestones and the dependencies that list it. */
-function applyOps(plan: PlanInput, ops: PatchOp[]): PlanInput {
-  let { tasks, milestones, iterations, order_lock } = plan;
-  for (const op of ops) {
-    if (op.type === 'lock_order') {
-      requireThat(
-        op.task_ids.every((id) => tasks.some((task) => task.id === id)),
-        'invalid_input',
-        'Order lock must name tasks in the plan',
-      );
-      order_lock = tasks.filter((task) => op.task_ids.includes(task.id)).map((task) => task.id);
-      continue;
-    }
-    if (op.type === 'unlock_order') {
-      order_lock = undefined;
-      continue;
-    }
-    if (op.type === 'set_iterations') {
-      iterations = op.iterations;
-      tasks = tasks.map((task) =>
-        task.iteration !== undefined &&
-        !iterations.some((iteration) => iteration.id === task.iteration)
-          ? { ...task, iteration: undefined }
-          : task,
-      );
-      continue;
-    }
-    if (op.type === 'add_task') {
-      tasks = [...tasks, withScopeKind(op.task)];
-      milestones = milestones.map((milestone) =>
-        milestone.id === op.task.milestone
-          ? { ...milestone, tasks: [...milestone.tasks, op.task.id] }
-          : milestone,
-      );
-      continue;
-    }
-    if (op.type === 'set_milestone') {
-      requireThat(
-        milestones.some((milestone) => milestone.id === op.milestone_id),
-        'invalid_input',
-        `Milestone ${op.milestone_id} is not in the plan`,
-      );
-      milestones = milestones.map((milestone) =>
-        milestone.id !== op.milestone_id
-          ? milestone
-          : {
-              ...milestone,
-              title: op.patch.title ?? milestone.title,
-              due_on: op.patch.due_on === null ? undefined : (op.patch.due_on ?? milestone.due_on),
-              ...(Object.hasOwn(op.patch, 'goal') ? { goal: op.patch.goal } : {}),
-            },
-      );
-      continue;
-    }
-    requireThat(
-      tasks.some((task) => task.id === op.task_id),
-      'not_found',
-      `Not found: task ${op.task_id} in the plan`,
-    );
-    if (op.type === 'remove_task') {
-      tasks = tasks
-        .filter((task) => task.id !== op.task_id)
-        .map((task) => ({
-          ...task,
-          depends_on: task.depends_on.filter((taskId) => taskId !== op.task_id),
-        }));
-      // A milestone left without tasks goes with its last one.
-      milestones = milestones
-        .map((milestone) => ({
-          ...milestone,
-          tasks: milestone.tasks.filter((taskId) => taskId !== op.task_id),
-        }))
-        .filter((milestone) => milestone.tasks.length);
-    } else if (op.type === 'move_task') {
-      if (op.before === op.task_id) continue;
-      requireThat(
-        op.before === null || tasks.some((task) => task.id === op.before),
-        'not_found',
-        `Not found: task ${op.before} in the plan`,
-      );
-      const moved = tasks.find((task) => task.id === op.task_id)!;
-      tasks = tasks.filter((task) => task.id !== op.task_id);
-      const index =
-        op.before === null ? tasks.length : tasks.findIndex((task) => task.id === op.before);
-      tasks.splice(index, 0, moved);
-    } else {
-      if (op.type === 'set_task' && op.patch.milestone !== undefined)
-        milestones = milestones
-          .map((milestone) => ({
-            ...milestone,
-            tasks:
-              milestone.id === op.patch.milestone
-                ? milestone.tasks.includes(op.task_id)
-                  ? milestone.tasks
-                  : [...milestone.tasks, op.task_id]
-                : milestone.tasks.filter((taskId) => taskId !== op.task_id),
-          }))
-          .filter((milestone) => milestone.tasks.length);
-      tasks = tasks.map((task) =>
-        task.id !== op.task_id
-          ? task
-          : op.type === 'set_task'
-            ? withScopeKind(
-                inputSchemas['board.plan.update'].shape.tasks.element.parse({
-                  ...task,
-                  ...op.patch,
-                  iteration:
-                    op.patch.iteration === null
-                      ? undefined
-                      : (op.patch.iteration ?? task.iteration),
-                  milestone:
-                    op.patch.milestone === null
-                      ? undefined
-                      : (op.patch.milestone ?? task.milestone),
-                  workflow_id: undefined,
-                  path: op.patch.path === null ? undefined : (op.patch.path ?? task.path),
-                  model: op.patch.model === null ? undefined : (op.patch.model ?? task.model),
-                  effort: op.patch.effort === null ? undefined : (op.patch.effort ?? task.effort),
-                  task_type:
-                    op.patch.task_type === null
-                      ? undefined
-                      : (op.patch.task_type ?? task.task_type),
-                  token_budget:
-                    op.patch.token_budget === null
-                      ? undefined
-                      : (op.patch.token_budget ?? task.token_budget),
-                  flow_reason:
-                    op.patch.path === null ? undefined : (op.patch.flow_reason ?? task.flow_reason),
-                }),
-              )
-            : { ...task, depends_on: op.depends_on },
-      );
-    }
-  }
-  requireThat(
-    tasks.every(
-      (task) =>
-        task.iteration === undefined ||
-        iterations.some((iteration) => iteration.id === task.iteration),
-    ),
-    'invalid_input',
-    'Task iteration must name an iteration in the plan',
-  );
-  // References to the tasks and milestones the ops removed go with them.
-  const taskIds = new Set(tasks.map((task) => task.id)),
-    milestoneIds = new Set(milestones.map((milestone) => milestone.id));
-  const lanes = plan.lanes.map(({ stops, ...lane }) => {
-    const kept = stops?.filter(
-      (stop) => !stop.startsWith('milestone:') || milestoneIds.has(stop.slice('milestone:'.length)),
-    );
-    return kept?.length ? { ...lane, stops: kept } : lane;
-  });
-  const assumptions = plan.assumptions.map(({ affects, milestone, ...assumption }) => {
-    const kept = affects?.filter((taskId) => taskIds.has(taskId));
-    return {
-      ...assumption,
-      ...(kept?.length ? { affects: kept } : {}),
-      ...(milestone && milestoneIds.has(milestone) ? { milestone } : {}),
-    };
-  });
-  const risks = plan.risks.map(({ milestone, ...risk }) =>
-    milestone && milestoneIds.has(milestone) ? { ...risk, milestone } : risk,
-  );
-  return { ...plan, lanes, tasks, milestones, iterations, order_lock, assumptions, risks };
-}
-
-const opTaskIds = (op: PatchOp): string[] =>
-  op.type === 'lock_order'
-    ? op.task_ids
-    : op.type === 'unlock_order' || op.type === 'set_iterations' || op.type === 'set_milestone'
-      ? []
-      : [op.type === 'add_task' ? op.task.id : op.task_id];
-
-/** The tier each op writes for the task it adds or gives a kind; undefined for a task added without one. */
-const opsTiers = (ops: PatchOp[]) =>
-  new Map(
-    ops.flatMap((op): [string, TaskTier | undefined][] =>
-      op.type === 'add_task'
-        ? [[op.task.id, op.task.kind?.tier]]
-        : op.type === 'set_task' && op.patch.kind
-          ? [[op.task_id, op.patch.kind.tier]]
-          : [],
-    ),
-  );
-
-/** Applies the lead's ops and the user edits it applies, and records the user edits it resolves. */
-function leadEdit(
-  ctx: ControlContext,
-  p: Principal,
-  plan: BoardPlan,
-  edits: EditOp[],
-  commandId: string,
-  lanes: Lane[] = [],
-  triggerEvent?: string,
-): BoardPlan {
-  const ops = edits.filter(
-    (op): op is Exclude<EditOp, { type: 'refute_assumption' }> => op.type !== 'refute_assumption',
-  );
-  requireThat(
-    ops.length === edits.length,
-    'permission_denied',
-    'Only the user refutes an assumption',
-  );
-  requireThat(
-    p.role === 'user' || ops.every((op) => op.type !== 'lock_order' && op.type !== 'unlock_order'),
-    'permission_denied',
-    'Only the user may lock or unlock task order',
-  );
-  const pending = [...plan.pending_edits],
-    patches: PatchOp[] = [],
-    refutes: NonNullable<PendingPlanEdit['refutes']> = [],
-    gone: LeadNote[] = [];
-  for (const op of ops) {
-    if (op.type !== 'resolve_edit') {
-      patches.push(op);
-      continue;
-    }
-    const index = pending.findIndex(
-      (edit) => edit.edit_id === op.edit_id && edit.status === 'pending',
-    );
-    requireThat(index >= 0, 'not_found', `Not found: pending user edit ${op.edit_id}`);
-    const edit = pending[index]!;
-    if (op.decision === 'apply') {
-      patches.push(...edit.ops);
-      const kept = (edit.refutes ?? []).filter((refute) =>
-        plan.assumptions.some((assumption) => assumption.id === refute.assumption_id),
-      );
-      refutes.push(...kept);
-      const removed = (edit.refutes ?? [])
-        .filter((refute) => !kept.includes(refute))
-        .map((refute) => refute.assumption_id);
-      if (removed.length)
-        gone.push({
-          at: ctx.store.now(),
-          session_id: '',
-          task_id: edit.task_ids[0] ?? '',
-          kind: 'user_edit',
-          edit_id: edit.edit_id,
-          text: `Assumption ${removed.join(', ')} is no longer in your plan, so edit ${edit.edit_id} did not change it; its other changes were applied.`,
-        });
-    }
-    pending[index] = {
-      ...edit,
-      status: op.decision === 'apply' ? 'applied' : 'rejected',
-      ...(op.reason ? { reason: op.reason } : {}),
-      resolved_at: ctx.store.now(),
-    };
-  }
-  // A user edit the lead applies stays unchecked, as it is when the user's edit applies at once.
-  const leadTasks = new Set(ops.flatMap((op) => (op.type === 'resolve_edit' ? [] : opTaskIds(op))));
-  const content = planContent(ctx, plan, lanes);
-  // An applied refute replaces the assumption's text before the edit's ops apply.
-  const assumptions = content.assumptions.map((assumption) => {
-    const refute = refutes.find((entry) => entry.assumption_id === assumption.id);
-    return refute ? { ...assumption, text: refute.instead } : assumption;
-  });
-  const next = storePlan(
-    ctx,
-    p,
-    plan.id,
-    applyOps({ ...content, assumptions }, patches),
-    commandId,
-    {
-      pendingEdits: pending,
-      leadTasks,
-      writtenTiers: opsTiers(ops.flatMap((op) => (op.type === 'resolve_edit' ? [] : [op]))),
-      userEdits: pending
-        .filter(
-          (edit) =>
-            edit.status === 'applied' &&
-            plan.pending_edits.some(
-              (old) => old.edit_id === edit.edit_id && old.status === 'pending',
-            ),
-        )
-        .map((edit) => ({ edit_id: edit.edit_id, task_ids: edit.task_ids })),
-      triggerEvent,
-    },
-  );
-  return gone.reduce((stored, note) => appendNote(ctx, stored, note, commandId), next);
-}
-
-/** Records the proposal's outcome on the plan its accepted ops reached, leaves the lead a note and reviews an accepted change. */
-function resolveProposal(
-  ctx: ControlContext,
-  plan: BoardPlan,
-  proposal: PlanProposal,
-  resolution: Pick<PlanProposal, 'status' | 'resolution_reason'>,
-  note: Pick<LeadNote, 'task_id' | 'text' | 'decision' | 'via'>,
-  commandId: string,
-): void {
-  const resolved: PlanProposal = { ...proposal, ...resolution, resolved_at: ctx.store.now() };
-  const next = appendNote(
-    ctx,
-    {
-      ...plan,
-      pending_proposals: (plan.pending_proposals ?? []).map((entry) =>
-        entry.proposal_id === proposal.proposal_id ? resolved : entry,
-      ),
-    },
-    {
-      at: ctx.store.now(),
-      session_id: '',
-      kind: 'user_edit',
-      edit_state: 'proposal',
-      proposal_id: proposal.proposal_id,
-      ...note,
-    },
-    commandId,
-  );
-  ctx.store.event('board.plan_proposal_resolved', next, plan.project_id, resolved, commandId);
-  if (resolved.status === 'accepted') reviewPlan(ctx, next, commandId);
-}
-
-/**
- * Applies a user edit that touches no unfinished task session, or only renames, moves or retypes
- * a task; holds any other edit whole for the lead. Either way the lead gets a note of it.
- */
-function userEdit(
-  ctx: ControlContext,
-  p: Principal,
-  plan: BoardPlan,
-  ops: EditOp[],
-  baseVersion: number,
-  commandId: string,
-): { edit_id: string; applied: boolean } {
-  // Without a reason, the lead's next write to the task is refused when the path is not its tier's.
-  const patches = ops
-    .filter((op): op is PatchOp => op.type !== 'resolve_edit' && op.type !== 'refute_assumption')
-    .map((op) =>
-      op.type === 'set_task' && op.patch.path && !op.patch.flow_reason
-        ? { ...op, patch: { ...op.patch, flow_reason: USER_FLOW_REASON } }
-        : op,
-    );
-  const refutes = ops.flatMap((op) => {
-    if (op.type !== 'refute_assumption') return [];
-    const assumption = plan.assumptions.find((entry) => entry.id === op.assumption_id);
-    requireThat(assumption, 'not_found', `Not found: assumption ${op.assumption_id} in the plan`);
-    return [{ assumption_id: op.assumption_id, text: assumption.text, instead: op.instead }];
-  });
-  const rested = refutes.flatMap(
-    (refute) => plan.assumptions.find((entry) => entry.id === refute.assumption_id)!.affects ?? [],
-  );
-  requireThat(
-    patches.length + refutes.length === ops.length,
-    'permission_denied',
-    'Only the lead resolves a pending edit',
-  );
-  // The user writes the source of a task the user adds.
-  const quoted = patches.flatMap((op) => (op.type === 'add_task' ? op.task.source : []));
-  const edited = applyOps(planContent(ctx, plan), patches);
-  refuseInvalid(ctx, edited, quoted);
-  const claimed = ctx.store.get<Session>('sessions', plan.id)?.direct_task?.id;
-  const unfinished = new Set([
-    ...placedTaskSessions(ctx, plan.project_id)
-      .filter((session) => session.task!.lead_session_id === plan.id)
-      .map((session) => session.task!.id),
-    // A session waiting for workflow approval holds no place, yet its task is not done.
-    ...ctx.store
-      .list<Session>('sessions')
-      .filter(
-        (session) =>
-          session.task?.lead_session_id === plan.id &&
-          !session.outcome &&
-          session.state !== 'closed' &&
-          session.merge?.reason === 'workflow_approval',
-      )
-      .map((session) => session.task!.id),
-    ...(claimed ? [claimed] : []),
-  ]);
-  // A refute always waits for the lead, which re-plans around the user's correction.
-  const applied =
-    !refutes.length &&
-    !patches.some(
-      (op) =>
-        op.type !== 'add_task' &&
-        op.type !== 'move_task' &&
-        op.type !== 'lock_order' &&
-        op.type !== 'unlock_order' &&
-        op.type !== 'set_iterations' &&
-        op.type !== 'set_milestone' &&
-        unfinished.has(op.task_id) &&
-        (op.type !== 'set_task' ||
-          Object.keys(op.patch).some((key) => !RECORD_FIELDS.includes(key))),
-    );
-  const editId = id(),
-    taskIds = [...new Set([...patches.flatMap(opTaskIds), ...rested])];
-  const lines = [
-    ...patches.map((op) => `- ${opText(op)}`),
-    ...refutes.map((refute) => `- ${refuteText(plan, refute)}`),
-  ].join('\n');
-  const note: LeadNote = {
-    at: ctx.store.now(),
-    session_id: '',
-    task_id: taskIds[0] ?? '',
-    kind: 'user_edit',
-    edit_state: applied ? 'applied' : 'pending',
-    text: applied
-      ? `The user changed your plan:\n${lines}`
-      : `${refutes.length ? 'The user says an assumption of your plan is wrong' : 'The user asks to change tasks that have unfinished sessions'}; apply or reject it with edit_board resolve_edit, edit_id ${editId}:\n${lines}`,
-    edit: {
-      edit_id: editId,
-      ops: patches,
-      base_version: baseVersion,
-      applied,
-      wake:
-        !applied ||
-        patches.some(
-          (op) =>
-            op.type === 'add_task' ||
-            op.type === 'remove_task' ||
-            op.type === 'set_dependencies' ||
-            (op.type === 'set_task' &&
-              (
-                [
-                  'goal',
-                  'brief',
-                  'scope',
-                  'acceptance',
-                  'done_when',
-                  'runtime',
-                  'model',
-                  'effort',
-                  'path',
-                  'parallel',
-                ] as const
-              ).some(
-                (field) =>
-                  Object.hasOwn(op.patch, field) &&
-                  canonical(plan.tasks.find((task) => task.id === op.task_id)?.[field]) !==
-                    canonical(edited.tasks.find((task) => task.id === op.task_id)?.[field]),
-              )),
-        ),
-      ...(refutes.length ? { refutes } : {}),
-    },
-  };
-  if (applied) {
-    appendNote(
-      ctx,
-      storePlan(ctx, p, plan.id, edited, commandId, {
-        quoted,
-        userEdits: [{ edit_id: editId, task_ids: taskIds }],
-      }),
-      note,
-      commandId,
-    );
-    return { edit_id: editId, applied };
-  }
-  requireThat(
-    ctx.store.get<Session>('sessions', plan.id)?.state !== 'closed',
-    'lead_unavailable',
-    `The lead session ${plan.id} has closed, so no one can apply an edit of tasks with unfinished sessions`,
-  );
-  if (patches.some((op) => op.type === 'lock_order' || op.type === 'unlock_order'))
-    plan = storePlan(
-      ctx,
-      p,
-      plan.id,
-      { ...planContent(ctx, plan), order_lock: edited.order_lock },
-      commandId,
-    );
-  const heldOps = patches.filter((op) => op.type !== 'lock_order' && op.type !== 'unlock_order');
-  const held: PendingPlanEdit = {
-    edit_id: editId,
-    ops: heldOps,
-    base_version: baseVersion,
-    task_ids: [...new Set([...heldOps.flatMap(opTaskIds), ...rested])],
-    ...(refutes.length ? { refutes } : {}),
-    created_at: ctx.store.now(),
-    status: 'pending',
-  };
-  appendNote(ctx, { ...plan, pending_edits: [...plan.pending_edits, held] }, note, commandId);
-  return { edit_id: editId, applied };
-}
-
-/** Marks a user edit that waits for the lead withdrawn and tells the lead, without waking it. */
-function withdrawEdit(
-  ctx: ControlContext,
-  plan: BoardPlan,
-  editId: string,
-  commandId: string,
-): void {
-  const index = plan.pending_edits.findIndex((edit) => edit.edit_id === editId);
-  // An edit that took effect at once is recorded only in the lead's notes.
-  const inEffect =
-    index < 0 &&
-    ctx.store
-      .kindEvents(plan.project_id, ['lead.note_added'])
-      .some((event) => (event.payload as LeadNote).edit?.edit_id === editId);
-  requireThat(index >= 0 || inEffect, 'not_found', `Not found: user edit ${editId}`);
-  const edit = plan.pending_edits[index];
-  requireThat(
-    edit?.status === 'pending',
-    'invalid_state',
-    `User edit ${editId} is ${edit?.status ?? 'applied'}, so it no longer waits for the lead`,
-  );
-  const pending = [...plan.pending_edits];
-  pending[index] = { ...edit, status: 'withdrawn', resolved_at: ctx.store.now() };
-  const note: LeadNote = {
-    at: ctx.store.now(),
-    session_id: '',
-    task_id: edit.task_ids[0] ?? '',
-    kind: 'user_edit',
-    edit_state: 'withdrawn',
-    edit_id: editId,
-    text: `The user withdrew edit ${editId}, so your plan stays as it is; it no longer waits for you, so do not call edit_board resolve_edit for it:\n${[...edit.ops.map((op) => `- ${opText(op)}`), ...(edit.refutes ?? []).map((refute) => `- ${refuteText(plan, refute)}`)].join('\n')}`,
-  };
-  appendNote(ctx, { ...plan, pending_edits: pending }, note, commandId);
-}
-
 const planView = (ctx: ControlContext, projectId: string, leadId: string) =>
   planViews(ctx, projectId).find((view) => view.lead_session_id === leadId)!;
 
@@ -1189,217 +611,6 @@ export const projectBoardHandlers: Handlers = {
         triggerEvent: trigger_event,
       },
     );
-    reviewPlan(ctx, ctx.store.must<BoardPlan>('board_plans', p.session_id!), c.command_id);
     return planView(ctx, input.project_id, p.session_id!);
-  },
-  'board.plan.edit': (ctx, p, c) => {
-    const input = inputSchemas['board.plan.edit'].parse(c.input);
-    projectAccess(ctx, p, input.project_id, c.type);
-    if (p.role !== 'lead') userOnly(p);
-    const leadId = p.role === 'lead' ? p.session_id! : input.lead_session_id;
-    requireThat(leadId, 'invalid_input', 'lead_session_id: name the lead whose plan you edit');
-    requireThat(
-      !input.lead_session_id || input.lead_session_id === leadId,
-      'permission_denied',
-      'A lead edits only its own plan',
-    );
-    const plan = ctx.store.get<BoardPlan>('board_plans', leadId);
-    requireThat(
-      plan?.project_id === input.project_id,
-      'not_found',
-      `Not found: board plan ${leadId}; write a plan with update_board first`,
-    );
-    requireVersion(plan, input.base_version);
-    if (p.role === 'lead') {
-      leadEdit(ctx, p, plan, input.ops, c.command_id, [], input.trigger_event);
-      reviewPlan(ctx, ctx.store.must<BoardPlan>('board_plans', leadId), c.command_id);
-      return planView(ctx, input.project_id, leadId);
-    }
-    const edit = userEdit(ctx, p, plan, input.ops, input.base_version, c.command_id);
-    reviewPlan(ctx, ctx.store.must<BoardPlan>('board_plans', leadId), c.command_id);
-    const { plan_version, ...view } = planView(ctx, input.project_id, leadId);
-    return { ...view, ...edit, ...(edit.applied ? { plan_version } : {}) };
-  },
-  'board.plan.propose': (ctx, p, c) => {
-    const input = inputSchemas['board.plan.propose'].parse(c.input);
-    projectAccess(ctx, p, input.project_id, c.type);
-    requireThat(p.role === 'lead', 'permission_denied', 'Lead session required');
-    const caller = ctx.store.get<Session>('sessions', p.session_id!);
-    // A resident proposes on its plan from the start, empty as it is.
-    const plan = caller?.resident
-      ? residentPlan(ctx, caller)
-      : ctx.store.get<BoardPlan>('board_plans', p.session_id!);
-    requireThat(
-      plan?.project_id === input.project_id,
-      'not_found',
-      `Not found: board plan ${p.session_id}; write a plan with update_board first`,
-    );
-    requireVersion(plan, input.base_version);
-    const mode = chartered(ctx, p, 'plan_change', plan, input.reason);
-    requireThat(
-      mode !== 'off',
-      'permission_denied',
-      "The project's charter does not let a lead change its plan; ask the user to change it",
-    );
-    const proposals = plan.pending_proposals ?? [];
-    requireThat(
-      proposals.filter((proposal) => proposal.status === 'pending').length < 8,
-      'invalid_input',
-      'A lead may have at most 8 pending proposals in one plan',
-    );
-    const { lanes, ops } = splitLanes(input.ops);
-    const edited = applyOps(planContent(ctx, plan, lanes), ops);
-    refuseInvalid(ctx, edited);
-    refuseUnexplained(ctx, plan.id, plan, edited, new Set(ops.flatMap(opTaskIds)), opsTiers(ops));
-    const proposal: PlanProposal = {
-      proposal_id: id(),
-      ops,
-      ...(lanes.length ? { lanes } : {}),
-      reason: input.reason,
-      base_version: input.base_version,
-      created_at: ctx.store.now(),
-      status: 'pending',
-      ...(input.trigger_event ? { trigger_event: input.trigger_event } : {}),
-    };
-    const next = ctx.store.update(
-      'board_plans',
-      { ...plan, pending_proposals: [...proposals, proposal] },
-      plan.revision,
-    );
-    ctx.store.event('board.plan_proposed', next, input.project_id, proposal, c.command_id);
-    const applied = mode === 'on';
-    if (applied)
-      resolveProposal(
-        ctx,
-        leadEdit(ctx, p, next, ops, c.command_id, lanes, input.trigger_event),
-        proposal,
-        { status: 'accepted' },
-        {
-          task_id: ops.flatMap(opTaskIds)[0] ?? '',
-          text: `Plan proposal ${proposal.proposal_id} applied at once, as plan changes are set to apply automatically`,
-        },
-        c.command_id,
-      );
-    return {
-      ...planView(ctx, input.project_id, plan.id),
-      proposal_id: proposal.proposal_id,
-      applied,
-    };
-  },
-  'board.plan.proposal.withdraw': (ctx, p, c) => {
-    const input = inputSchemas['board.plan.proposal.withdraw'].parse(c.input);
-    projectAccess(ctx, p, input.project_id, c.type);
-    requireThat(p.role === 'lead', 'permission_denied', 'Lead session required');
-    const plan = ctx.store.get<BoardPlan>('board_plans', p.session_id!);
-    requireThat(
-      plan?.project_id === input.project_id,
-      'not_found',
-      `Not found: board plan ${p.session_id}`,
-    );
-    const proposals = plan.pending_proposals ?? [];
-    const proposal = proposals.find(
-      (entry) => entry.proposal_id === input.proposal_id && entry.status === 'pending',
-    );
-    requireThat(proposal, 'not_found', `Not found: pending plan proposal ${input.proposal_id}`);
-    const resolved: PlanProposal = {
-      ...proposal,
-      status: 'withdrawn',
-      resolved_at: ctx.store.now(),
-    };
-    const next = ctx.store.update(
-      'board_plans',
-      {
-        ...plan,
-        pending_proposals: proposals.map((entry) => (entry === proposal ? resolved : entry)),
-      },
-      plan.revision,
-    );
-    ctx.store.event(
-      'board.plan_proposal_withdrawn',
-      next,
-      input.project_id,
-      resolved,
-      c.command_id,
-    );
-    return planView(ctx, input.project_id, plan.id);
-  },
-  'board.plan.proposal.resolve': (ctx, p, c) => {
-    const input = inputSchemas['board.plan.proposal.resolve'].parse(c.input);
-    actsAsUser(p);
-    projectAccess(ctx, p, input.project_id, c.type);
-    personalAnswer(ctx, p, 'board.plan.proposal.resolve', input.project_id);
-    requireThat(
-      p.role !== 'personal' || !input.ops,
-      'permission_denied',
-      'Only the user edits a plan change while accepting it',
-    );
-    personalCalled(ctx, p, c, input.project_id);
-    requireThat(
-      input.decision !== 'reject' || !input.ops,
-      'invalid_input',
-      'ops cannot accompany a rejection',
-    );
-    const plan = ctx.store.get<BoardPlan>('board_plans', input.lead_session_id);
-    requireThat(
-      plan?.project_id === input.project_id,
-      'not_found',
-      `Not found: board plan ${input.lead_session_id}`,
-    );
-    const proposals = plan.pending_proposals ?? [];
-    const proposal = proposals.find(
-      (entry) => entry.proposal_id === input.proposal_id && entry.status === 'pending',
-    );
-    requireThat(proposal, 'not_found', `Not found: pending plan proposal ${input.proposal_id}`);
-    const written = input.ops && splitLanes(input.ops),
-      ops = written?.ops ?? proposal.ops;
-    // Ops the user wrote at acceptance are checked as a user edit is.
-    const applied =
-      input.decision !== 'accept'
-        ? plan
-        : written
-          ? storePlan(
-              ctx,
-              p,
-              plan.id,
-              applyOps(planContent(ctx, plan, written.lanes), ops),
-              c.command_id,
-              {
-                quoted: ops.flatMap((op) => (op.type === 'add_task' ? op.task.source : [])),
-                triggerEvent: proposal.trigger_event,
-              },
-            )
-          : leadEdit(ctx, p, plan, ops, c.command_id, proposal.lanes, proposal.trigger_event);
-    resolveProposal(
-      ctx,
-      applied,
-      proposal,
-      {
-        status: input.decision === 'accept' ? 'accepted' : 'rejected',
-        ...(input.reason ? { resolution_reason: input.reason } : {}),
-      },
-      {
-        task_id: ops.flatMap(opTaskIds)[0] ?? '',
-        decision: input.decision,
-        text: `The user chose to ${input.decision} plan proposal ${proposal.proposal_id}${input.reason ? `: ${input.reason}` : ''}${input.decision === 'accept' && input.ops ? `\nThe user changed the ops that applied:\n${ops.map((op) => `- ${opText(op)}`).join('\n')}` : ''}`,
-        ...(p.role === 'personal' ? { via: { kind: 'personal', key_id: personalKeyId(p) } } : {}),
-      },
-      c.command_id,
-    );
-    // The lead waits on its proposal, and only the lead starts a task it adds.
-    wakeLead(ctx, ctx.store.must<BoardPlan>('board_plans', plan.id), c.command_id);
-    return planView(ctx, input.project_id, plan.id);
-  },
-  'board.plan.edit.withdraw': (ctx, p, c) => {
-    const input = inputSchemas['board.plan.edit.withdraw'].parse(c.input);
-    userOnly(p);
-    projectAccess(ctx, p, input.project_id, c.type);
-    const plan = ctx.store.get<BoardPlan>('board_plans', input.lead_session_id);
-    requireThat(
-      plan?.project_id === input.project_id,
-      'not_found',
-      `Not found: board plan ${input.lead_session_id}`,
-    );
-    withdrawEdit(ctx, plan, input.edit_id, c.command_id);
-    return planView(ctx, input.project_id, input.lead_session_id);
   },
 };

@@ -124,44 +124,6 @@ it('does not present a risk note Pantheon wrote as the report of the session', a
   expect(text).not.toContain("The report is the session's view");
 });
 
-it('names the state of a user edit in its note and its wake', async () => {
-  const { f, lead } = await leadWithTask();
-  const edit = (ops: unknown[]) =>
-    f.call<{ edit_id: string }>('board.plan.edit', {
-      project_id: f.project.id,
-      lead_session_id: lead.id,
-      base_version: planOf(f, lead.id).plan_version,
-      ops,
-    });
-  edit([{ type: 'set_task', task_id: 'a', patch: { title: 'Serve exports' } }]);
-  const held = edit([{ type: 'set_task', task_id: 'a', patch: { goal: 'Exports stream' } }]);
-  f.call('board.plan.edit.withdraw', {
-    project_id: f.project.id,
-    lead_session_id: lead.id,
-    edit_id: held.edit_id,
-  });
-  expect(
-    f.store
-      .kindEvents(f.project.id, ['lead.note_added'])
-      .map((event) => event.payload as LeadNote)
-      .filter((note) => note.kind === 'user_edit')
-      .map((note) => note.edit_state),
-  ).toEqual(['applied', 'pending', 'withdrawn']);
-  await settle(f, f.store.must<Session>('sessions', lead.id));
-  await nextDigest(f, lead.id);
-  const digest = f
-    .turns(lead.id)
-    .map((turn) => turn.input)
-    .join('\n');
-  expect(digest).toContain('What happened: the user changed your plan:\n- set title Serve exports');
-  expect(digest).toContain(
-    `What happened: the user asks to change tasks that have open sessions (edit ${held.edit_id}):\n- set goal Exports stream of task a`,
-  );
-  expect(digest).toContain(
-    `What happened: the user withdrew edit ${held.edit_id}; your plan stays as it is`,
-  );
-});
-
 it('renders each kind of note from its template', async () => {
   const { f, ctx, lead, worker } = await leadWithTask();
   const at = f.store.now();

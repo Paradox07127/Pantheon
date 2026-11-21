@@ -203,18 +203,6 @@ it('does not check again a task the write leaves as it was', async () => {
   expect(planOf(f, lead)?.headline).toBe('Export ships next week');
 });
 
-it('asks no route_reason of a user edit that changes the model', async () => {
-  const { f, lead } = await setup();
-  write(f, lead, [task()]);
-  f.call('board.plan.edit', {
-    project_id: f.project.id,
-    lead_session_id: lead.session_id,
-    base_version: planOf(f, lead)!.plan_version,
-    ops: [{ type: 'set_task', task_id: 'api', patch: { model: 'other-model' } }],
-  });
-  expect(taskOf(f, lead)?.model).toBe('other-model');
-});
-
 it('refuses a path other than the workflow policy gives without flow_reason and takes one with it', async () => {
   const { f, lead } = await setup();
   const error = failure(() =>

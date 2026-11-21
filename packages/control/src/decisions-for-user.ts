@@ -6,7 +6,6 @@ import type {
   LeadQuestion,
   Milestone,
   MilestoneVerification,
-  PlanProposal,
   Principal,
   Session,
 } from '@pantheon/domain';
@@ -15,12 +14,7 @@ import { projectAccess, type ControlContext } from './context.js';
 
 type ListedPower = Extract<DecisionForUser, { kind: 'power_used' }>['power'];
 // The two worker-prompt powers are covered by the approval and question events; an external start records no power use.
-const LISTED_POWERS: CharterPower[] = [
-  'plan_change',
-  'accept_milestone',
-  'merge_out_of_scope',
-  'create_agent',
-];
+const LISTED_POWERS: CharterPower[] = ['accept_milestone', 'merge_out_of_scope', 'create_agent'];
 
 type PersonalAnswer = Extract<DecisionForUser, { kind: 'personal_answer' }>;
 
@@ -39,7 +33,6 @@ export function decisionsForUser(
       'approval.approved',
       'lead.question_answered',
       'personal.called',
-      'board.plan_proposal_resolved',
       'milestone.accepted',
     ],
     since ?? 0,
@@ -76,19 +69,6 @@ export function decisionsForUser(
           },
         ];
       }
-      if (event.kind === 'board.plan_proposal_resolved' && type === 'board.plan.proposal.resolve') {
-        const proposal = event.payload as PlanProposal;
-        return [
-          {
-            ...row,
-            subject: proposal.proposal_id,
-            lead_session_id: event.aggregate_id,
-            text: proposal.reason,
-            decision: proposal.status,
-            ...(proposal.resolution_reason ? { reason: proposal.resolution_reason } : {}),
-          },
-        ];
-      }
       if (event.kind === 'milestone.accepted' && type === 'milestone.accept') {
         const milestone = event.payload as Milestone;
         return [
@@ -101,12 +81,7 @@ export function decisionsForUser(
         ];
       }
     }
-    if (
-      event.kind === 'personal.called' ||
-      event.kind === 'board.plan_proposal_resolved' ||
-      event.kind === 'milestone.accepted'
-    )
-      return [];
+    if (event.kind === 'personal.called' || event.kind === 'milestone.accepted') return [];
     if (event.kind === 'lead.question_answered') {
       const defaulted = (event.payload as LeadQuestion).answered_by === 'default';
       const question =

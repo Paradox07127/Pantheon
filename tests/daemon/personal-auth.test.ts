@@ -53,7 +53,6 @@ it.each([
   ['GET', '/v1/events', 403],
   ['GET', '/v1/events?project_id={project}', 403],
   ['GET', '/v1/session.list?project_id={project}', 403],
-  ['GET', '/v1/board.view?project_id={project}&days=14', 403],
   ['GET', '/v1/project.read?project_id={project}', 403],
   ['GET', '/v1/app.settings', 403],
   ['GET', '/v1/session-principal', 403],

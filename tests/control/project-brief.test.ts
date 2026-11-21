@@ -80,9 +80,14 @@ const merged = (f: Fixture, sessionId: string) =>
 /** Waits until the clock has moved past at, so the next event falls after it. */
 const after = (f: Fixture, at: number) => eventually(() => f.store.now() > at);
 
-it('lists a merge and a new lead question after the cursor with their refs, and neither once seen', async () => {
+it('lists a merge and a new permission request after the cursor with their refs, and neither once seen', async () => {
   const f = await workbenchFixture();
-  const { lead, owner, worker } = await planned(f);
+  const { lead, worker } = await planned(f);
+  const seen = f.call<{ project_id: string; at: number }>('project.seen', {
+    project_id: f.project.id,
+  });
+  await after(f, seen.at);
+  merged(f, worker.id);
   f.store.insert<Approval>('approvals', {
     id: 'approval-bash',
     revision: 1,
@@ -94,27 +99,18 @@ it('lists a merge and a new lead question after the cursor with their refs, and 
     input_hash: 'hash',
     decider: 'user',
     state: 'pending',
-    created_at: f.store.now() - 60_000,
+    created_at: f.store.now(),
   });
-  const seen = f.call<{ project_id: string; at: number }>('project.seen', {
-    project_id: f.project.id,
-  });
-  await after(f, seen.at);
-  merged(f, worker.id);
-  const question = ask(f, owner);
-  const asked = f.store
-    .kindEvents(f.project.id, ['lead.question_asked'])
-    .find((event) => (event.payload as LeadQuestion).id === question.id)!;
 
   const brief = f.control.projectBrief(user, f.project.id);
   const needs = f.control.needsYou(user, f.project.id).items;
   expect(brief.since).toBe(seen.at);
-  expect(needs.map((item) => item.reason)).toEqual(['lead_question', 'permission_requested']);
+  expect(needs.map((item) => item.reason)).toEqual(['permission_requested']);
   expect(brief.items).toEqual([
     {
       kind: 'decisions',
-      ref: { kind: 'event', id: asked.event_id },
-      count: needs.length,
+      ref: { kind: 'approval', id: 'approval-bash' },
+      count: 1,
       new: 1,
       top: needs[0],
     },

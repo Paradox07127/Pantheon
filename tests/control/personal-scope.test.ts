@@ -53,7 +53,6 @@ describe('a personal principal at the command entry and the project check', () =
 
   it.each([
     ['sessionList', () => f.control.sessionList(personal, f.project.id)],
-    ['boardView', () => f.control.boardView(personal, f.project.id, 14)],
     ['snapshot', () => f.control.snapshot(personal, f.project.id)],
     ['snapshotAccess', () => f.control.snapshotAccess(personal, f.project.id)],
     ['projectRead', () => f.control.projectRead(personal, f.project.id)],
@@ -110,9 +109,9 @@ async function twoProjects() {
       created_at: f.store.now(),
     });
     f.store.event('charter.power_used', session, session.project_id, {
-      power: 'plan_change',
+      power: 'merge_out_of_scope',
       mode: 'on',
-      subject: 'Reorder the tasks',
+      subject: 'Merge a change outside the task scope',
       session_id: session.id,
     });
   }

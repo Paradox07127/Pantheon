@@ -208,58 +208,6 @@ it('limits conflict and shared path lists while preserving their full counts', a
   expect(shared()?.files).toHaveLength(50);
 });
 
-it('summarizes repeated gate command failures in the board range and detects same-commit flakes', async () => {
-  const f = await workbenchFixture();
-  const { session } = await idleSession(f);
-  const now = new Date(2027, 2, 16, 12).getTime();
-  const clock = vi.spyOn(f.store, 'now').mockReturnValue(now);
-  const record = (commit: string, results: [string, number][]) =>
-    f.store.event('session.gate_checked', session, f.project.id, {
-      commit,
-      results: results.map(([name, exit_code]) => ({ name, exit_code, timed_out: false })),
-    });
-  record('first-head', [
-    ['Flaky', 1],
-    ['Stable failure', 1],
-    ['Once', 1],
-  ]);
-  record('first-head', [['Flaky', 0]]);
-  record('second-head', [
-    ['Flaky', 1],
-    ['Stable failure', 1],
-  ]);
-  record('third-head', [['Stable failure', 0]]);
-  f.store.event('session.gate_checked', session, f.project.id, {
-    commit: 'first-head',
-    results: [{ name: 'Stable failure', exit_code: 0, timed_out: false, carried: true }],
-  });
-  clock.mockReturnValue(now - 4 * 24 * 60 * 60 * 1000);
-  record('old-head', [['Old failure', 1]]);
-  record('old-head', [['Old failure', 1]]);
-  clock.mockReturnValue(now);
-  expect(f.control.boardView(user, f.project.id, 3).gate_failures).toEqual([
-    { name: 'Flaky', failed_runs: 2, runs: 3, flaky: true },
-    { name: 'Stable failure', failed_runs: 2, runs: 3, flaky: false },
-  ]);
-  expect(f.control.boardView(user, f.project.id, 1, '2027-03-12').gate_failures).toEqual([
-    { name: 'Old failure', failed_runs: 2, runs: 2, flaky: false },
-  ]);
-});
-
-it('leaves gate commands that were skipped after failing out of repeated gate failures', async () => {
-  const f = await workbenchFixture();
-  const { session } = await idleSession(f);
-  for (const head of ['first-head', 'second-head'])
-    f.store.event('session.gate_checked', session, f.project.id, {
-      commit: head,
-      results: [
-        { name: 'Unit', exit_code: 0, timed_out: false },
-        { name: 'E2E', state: 'skipped', reason: 'flaky', exit_code: 1, timed_out: false },
-      ],
-    });
-  expect(f.control.boardView(user, f.project.id, 3).gate_failures).toBeUndefined();
-});
-
 it('reads cached repository facts without starting git or walking directories', async () => {
   const f = await workbenchFixture();
   const { workspace } = await idleSession(f);
@@ -272,7 +220,6 @@ it('reads cached repository facts without starting git or walking directories', 
   walk.mockClear();
   stat.mockClear();
   const read = () => {
-    f.control.boardView(user, f.project.id, 7);
     f.list();
     return f.control.workspaceStale(user, f.project.id);
   };
@@ -393,27 +340,4 @@ it('keeps the predictions after a session event and reads only the worktree of t
   });
   await f.control.shutdown();
   expect(changes()).toBe(told + 1);
-});
-
-it('orders gate failures by failed runs then name and limits the summary to ten commands', async () => {
-  const f = await workbenchFixture();
-  const { session } = await idleSession(f);
-  const results = Array.from({ length: 12 }, (_, index) => ({
-    name: `Check ${String(index).padStart(2, '0')}`,
-    exit_code: 1,
-    timed_out: false,
-  }));
-  for (let run = 0; run < 2; run++)
-    f.store.event('session.gate_checked', session, f.project.id, { commit: 'head', results });
-  f.store.event('session.gate_checked', session, f.project.id, {
-    commit: 'head',
-    results: [results[11]!],
-  });
-  const summary = f.control.boardView(user, f.project.id, 1).gate_failures!;
-  expect(summary).toHaveLength(10);
-  expect(summary.map((command) => command.name)).toEqual([
-    'Check 11',
-    ...results.slice(0, 9).map((result) => result.name),
-  ]);
-  expect(summary[0]).toEqual({ name: 'Check 11', failed_runs: 3, runs: 3, flaky: false });
 });

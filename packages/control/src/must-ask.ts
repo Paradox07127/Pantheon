@@ -2,7 +2,7 @@ import type { Approval, CharterPower, Project, Session, Workspace } from '@panth
 import type { ControlContext } from './context.js';
 import { SHELL_TOOLS } from './handoff.js';
 import { outsideWorktree, writesFiles } from './non-writer-audit.js';
-import { projectOverBudget, workflowPolicy } from './workflow-policy.js';
+import { workflowPolicy } from './workflow-policy.js';
 
 /** The decisions that always reach the user, whatever the charter says; the user may add entries but not remove these. */
 export const MUST_ASK_KINDS = [
@@ -106,12 +106,7 @@ export function mustAsk(
   projectId: string,
   subject: Approval | CharterPower,
 ): boolean {
-  if (typeof subject === 'string')
-    return (
-      POWER_KINDS[subject] !== undefined ||
-      // Over budget, new work waits for the user; prompts of sessions already running do not.
-      (subject === 'plan_change' && projectOverBudget(ctx, projectId))
-    );
+  if (typeof subject === 'string') return POWER_KINDS[subject] !== undefined;
   return (
     shellCommands(subject).some(destructiveGit) ||
     leavesSandbox(ctx, projectId, subject) ||

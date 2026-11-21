@@ -78,7 +78,6 @@ it('answers the session list, board and summary before the worktree reads finish
     const unread = await row();
     expect(unread).toMatchObject({ state: 'idle', changes: null });
     expect(unread).not.toHaveProperty('branch');
-    await get('board.view', `?project_id=${project.id}&days=14`);
     await get('projects.summary', '');
     expect(syncCalls()).toBe(0);
     expect(changed()).toBe(0);

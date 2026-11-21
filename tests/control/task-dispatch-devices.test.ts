@@ -129,10 +129,6 @@ async function deviceBoard(config: Record<string, unknown>) {
       .filter(
         (session) => session.task?.lead_session_id === leadSession.id && session.task.id === taskId,
       );
-  const row = (taskId: string) =>
-    control
-      .boardView(user, project.id, 1)
-      .tasks.find((entry) => entry.id === `${leadSession.id}:${taskId}`)!;
   const end = (session: Session) =>
     store.update<Session>(
       'sessions',
@@ -150,7 +146,6 @@ async function deviceBoard(config: Record<string, unknown>) {
     plan,
     start,
     sessionsOf,
-    row,
     settle,
     end,
   };
@@ -175,7 +170,6 @@ const devices = { devices: { 'build-box': { ssh: 'builder@build-box', resources:
 it('opens the session of a task that names a device on that device', async () => {
   const f = await deviceBoard(devices);
   f.plan([reportTask('train', onBuildBox)]);
-  expect(f.row('train').planned).toMatchObject(onBuildBox);
   f.start(['train']);
   await f.control.tick();
   const [session] = f.sessionsOf('train');
@@ -205,10 +199,8 @@ it('keeps a task queued while its device is offline', async () => {
   f.plan([reportTask('train', onBuildBox)]);
   f.probed({ online: false, error: 'ssh: connect to host build-box' });
   f.start(['train']);
-  expect(f.row('train').dispatch_wait).toBe('device_offline');
   await f.control.tick();
   expect(f.sessionsOf('train')).toEqual([]);
-  expect(f.row('train').blockers).toContain('Queued: waiting for the device to come online');
 });
 
 it('keeps a task queued while its device has no free session', async () => {
@@ -220,7 +212,6 @@ it('keeps a task queued while its device has no free session', async () => {
   const [first] = f.sessionsOf('first');
   await f.settle(first!);
   f.start(['second']);
-  expect(f.row('second').dispatch_wait).toBe('device_capacity');
   await f.control.tick();
   expect(f.sessionsOf('second')).toEqual([]);
 });
@@ -230,8 +221,6 @@ it('holds a resource of the device for one task at a time', async () => {
   const gpu = { ...onBuildBox, uses: { gpu: 1 } };
   f.plan([reportTask('first', gpu), reportTask('second', gpu)]);
   f.start(['first', 'second']);
-  expect(f.row('first').dispatch_wait).toBeUndefined();
-  expect(f.row('second').dispatch_wait).toBe('device_resource');
   await f.control.tick();
   const [first] = f.sessionsOf('first');
   expect(f.sessionsOf('second')).toEqual([]);
@@ -260,7 +249,8 @@ it('keeps the resource of a task session that waits for an approval before its m
     f.current(first!.id).revision,
   );
   f.start(['second']);
-  expect(f.row('second').dispatch_wait).toBe('device_resource');
+  await f.control.tick();
+  expect(f.sessionsOf('second')).toEqual([]);
 });
 
 it('holds a resource configured for this machine for one task at a time', async () => {
@@ -268,7 +258,6 @@ it('holds a resource configured for this machine for one task at a time', async 
   const display = { uses: { display: 1 } };
   f.plan([reportTask('first', display), reportTask('second', display)]);
   f.start(['first', 'second']);
-  expect(f.row('second').dispatch_wait).toBe('device_resource');
   await f.control.tick();
   const [first] = f.sessionsOf('first');
   expect(first?.device_id).toBe('local');
@@ -294,7 +283,6 @@ it('does not open a task on a device that came online without a label it needs',
   f.probed({ online: false, error: 'ssh: connect to host build-box' });
   f.plan([reportTask('train', { ...onBuildBox, needs: ['cuda'] })]);
   f.start(['train']);
-  expect(f.row('train').dispatch_wait).toBe('device_offline');
   f.probed();
   await f.control.tick();
   expect(f.sessionsOf('train')).toEqual([]);
@@ -399,7 +387,8 @@ it('keeps the device place of a running session whose task left the plan', async
   await f.settle(first!);
   f.plan([reportTask('second', onBuildBox)]);
   f.start(['second']);
-  expect(f.row('second').dispatch_wait).toBe('device_capacity');
+  await f.control.tick();
+  expect(f.sessionsOf('second')).toEqual([]);
 });
 
 it('holds the resources a running session opened with after its task stops using them', async () => {
@@ -417,7 +406,8 @@ it('holds the resources a running session opened with after its task stops using
     reportTask('second', { ...onBuildBox, uses: { gpu: 1 } }),
   ]);
   f.start(['second']);
-  expect(f.row('second').dispatch_wait).toBe('device_resource');
+  await f.control.tick();
+  expect(f.sessionsOf('second')).toEqual([]);
 });
 
 const directTask = (id: string, fields: Partial<PlanTask> = {}) =>
@@ -445,7 +435,6 @@ it('holds a resource of this machine for the direct task its lead works on', asy
   f.plan([directTask('mine', display), reportTask('other', display)]);
   expect(leadClaims(f, 'mine')).toMatchObject({ claimed: 'mine' });
   f.start(['other']);
-  expect(f.row('other').dispatch_wait).toBe('device_resource');
 });
 
 it('refuses a lead claiming a direct task while a task session holds its resource', async () => {

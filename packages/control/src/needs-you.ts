@@ -21,7 +21,6 @@ import {
 import { usageLimitWaiting } from './continuation.js';
 import { pendingApprovalItems, settledApprovalItems } from './needs-you-approvals.js';
 import { sessionItems } from './needs-you-sessions.js';
-import { planItems } from './needs-you-plans.js';
 import { memoryBudgetItems, projectBudgetItems } from './needs-you-workflow.js';
 import { taskRung, taskRungFacts } from './task-rung.js';
 
@@ -49,16 +48,7 @@ export type SessionAttention =
   | 'session_turn_stalled'
   | 'background_task_long';
 
-export const NEXT_STEP: Record<
-  | SessionAttention
-  | 'lead_closed'
-  | 'lead_wake_limited'
-  | 'task_dispatch_failed'
-  | 'task_upstream_stuck'
-  | 'lead_permission'
-  | 'plan_proposal_awaiting_decision',
-  string
-> = {
+export const NEXT_STEP: Record<SessionAttention | 'lead_permission', string> = {
   merge_stuck: 'The user checks the stuck merge and cancels it if needed.',
   stop_unconfirmed:
     "The session's process has not confirmed it stopped; the user confirms the process stopped, or retries the stop.",
@@ -67,19 +57,11 @@ export const NEXT_STEP: Record<
   continuation_limit_reached:
     'The automatic continuations are used up; the user sends the session a message to go on.',
   lead_turn_failed: 'The user retries, or sends the lead a message to go on.',
-  lead_closed:
-    'The lead is closed; the user reopens it, or hands the plan to a new lead with a board sync.',
-  lead_wake_limited:
-    'Board updates woke the lead too often in a short time, so Pantheon stopped waking it; the updates stay in its inbox and waking resumes in a few minutes. The user checks whether the lead is spinning and, if needed, sends it a message to correct course.',
   usage_limit_waiting:
     'The session used up its subscription limit; Pantheon has it go on once the limit resets and opens no new turn until then. The user waits for the reset, or moves it to another runtime.',
   usage_limit_reached:
     'Continue the session after the limit resets, or fork it to another runtime.',
   session_turn_stalled: 'Open the session to see where it stopped.',
-  task_dispatch_failed:
-    "Pantheon retries with backoff; the lead can change the task's runtime, and the user can check why this runtime is unavailable.",
-  task_upstream_stuck:
-    'The queued task waits on a dependency nobody moves forward, and the lead was reminded; the user checks why the dependency stopped and has the lead restart or change it, or stops the queued task.',
   task_retired:
     "The lead removed the session's task from the plan (the same id may now be a new task), so its changes no longer merge; the user checks the changes, then discards this session.",
   task_turn_looping:
@@ -92,8 +74,6 @@ export const NEXT_STEP: Record<
     "The lead's turn has made no progress for a long time, or a tool call never ended; the user interrupts the turn, then sends the lead a message to go on.",
   lead_permission:
     "This is the lead's own permission request; its turn waits for the answer and gets no task session reports meanwhile. The lead goes on once the user allows or denies it.",
-  plan_proposal_awaiting_decision:
-    'The plan proposal awaits the user; the user accepts it, changes its ops before accepting, or rejects it.',
   background_task_long:
     'A background command or agent of the session has run for 30 minutes; the user stops it, or waits for it to end.',
 };
@@ -353,7 +333,6 @@ export function needsYou(
       );
     items.push(
       ...sessionItems(ctx, scope, sessions, plans, planOf),
-      ...planItems(ctx, scope, plans, sessions),
       ...projectBudgetItems(ctx, scope),
       ...memoryBudgetItems(ctx, scope),
     );

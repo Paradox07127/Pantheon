@@ -157,25 +157,6 @@ it('refuses a batch that holds an answered question and answers none of it', asy
   expect(answeredEvents(f)).toHaveLength(1);
 });
 
-it('lists the questions of one plan together, the plan that blocks most first', async () => {
-  const f = await workbenchFixture();
-  const busy = await plannedLead(f, ['a', 'b', 'c']),
-    other = await plannedLead(f, ['d', 'e']);
-  const most = ask(f, busy.id, 'Use CSV?', { blocks: ['a', 'b', 'c'] }),
-    none = ask(f, busy.id, 'Add a header row?'),
-    some = ask(f, other.id, 'Zip the files?', { blocks: ['d'] });
-
-  const items = f.control
-    .needsYou(user, f.project.id)
-    .items.filter((item) => item.reason === 'lead_question');
-
-  expect(items.map((item) => [item.request_id, item.blocks])).toEqual([
-    [most.id, 3],
-    [none.id, 0],
-    [some.id, 1],
-  ]);
-});
-
 it('gives a reversible question no default while question defaults are off', async () => {
   const f = await workbenchFixture();
   const lead = await plannedLead(f, ['a']);
@@ -254,8 +235,6 @@ it('applies no default once the user turned question defaults off before the dea
   expect(answeredEvents(f)).toEqual([]);
 });
 
-const questionItem = (f: Fixture, questionId: string) =>
-  f.control.needsYou(user, f.project.id).items.find((item) => item.request_id === questionId)!;
 const keepOpen = (f: Fixture, leadId: string, questionId: string, principal?: Principal) =>
   f.call(
     'lead.question.keep_open',
@@ -263,26 +242,6 @@ const keepOpen = (f: Fixture, leadId: string, questionId: string, principal?: Pr
     null,
     principal,
   );
-
-it('lists a question with its plan title, and a reversible one under a deadline with when its default applies', async () => {
-  const f = await workbenchFixture();
-  const lead = await plannedLead(f, ['a']);
-  setPolicy(f, { question_defaults: { after_hours: 8 } });
-  const reversible = ask(f, lead.id, 'Use CSV?', { reversible: true }),
-    fixed = ask(f, lead.id, 'Delete the old exports?');
-
-  expect(questionItem(f, reversible.id)).toMatchObject({
-    session_id: lead.id,
-    plan_title: 'Export files',
-    question: { reversible: true },
-    default_at: reversible.at + 8 * HOUR,
-  });
-  expect(questionItem(f, fixed.id)).toMatchObject({
-    session_id: lead.id,
-    plan_title: 'Export files',
-  });
-  expect(questionItem(f, fixed.id)).not.toHaveProperty('default_at');
-});
 
 it('keeps a reversible question waiting for the user past its deadline once the user keeps it open', async () => {
   const f = await workbenchFixture();
@@ -296,7 +255,6 @@ it('keeps a reversible question waiting for the user past its deadline once the 
   );
   keepOpen(f, lead.id, question.id);
   expect(planOf(f, lead.id).questions![0]).not.toHaveProperty('default_after_ms');
-  expect(questionItem(f, question.id)).not.toHaveProperty('default_at');
   advance(9 * HOUR);
   await f.control.tick();
 

@@ -64,9 +64,6 @@ it('preserves blocking grades on deleted code and shows major and report-only mi
     blocking: true,
     reproduction: 'Read the answer: base is absent',
   });
-  expect(f.control.boardView(user, f.project.id, 1).findings).toMatchObject([
-    { id: blocking!.id, severity: 'blocker' },
-  ]);
   expect(blocking).toMatchObject({ quote: '-base', status: 'open', blocking: true, round: 1 });
   const principal: Principal = {
     id: `session:${session.id}`,
@@ -76,10 +73,6 @@ it('preserves blocking grades on deleted code and shows major and report-only mi
     expires_at: f.store.now() + 60000,
   };
   f.call('review.finding', { ...finding, blocking: false }, null, principal);
-  expect(f.control.boardView(user, f.project.id, 1).findings.map((row) => row.severity)).toEqual([
-    'blocker',
-    'minor',
-  ]);
   agentEvent(ctx, session.id, {
     key: 'invalid-grade',
     provider_sequence: 1,

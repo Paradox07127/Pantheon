@@ -51,14 +51,9 @@ const MINUTE = 60_000;
 const summary = (project_id: string, extra: Partial<ProjectSummary> = {}): ProjectSummary => ({
   project_id,
   name: `name of ${project_id}`,
-  counts: { running: 0, waiting: 0, ready: 0, failed: 0, queued: 0 },
+  counts: { running: 0, waiting: 0, ready: 0, failed: 0 },
   merged_today: 0,
   needs_you: 0,
-  milestone: null,
-  done_daily: Array.from({ length: 14 }, (_, i) => ({
-    date: `2026-10-${String(i + 1).padStart(2, '0')}`,
-    done: i,
-  })),
   last_activity_at: null,
   ...extra,
 });
@@ -132,7 +127,7 @@ describe('all projects order', () => {
 
 describe('project table row', () => {
   const full = summary('project-b', {
-    counts: { running: 2, waiting: 1, ready: 0, failed: 3, queued: 0 },
+    counts: { running: 2, waiting: 1, ready: 0, failed: 3 },
     needs_you: 4,
     last_activity_at: '2026-11-03T11:00:00.000Z',
   });
@@ -188,12 +183,6 @@ describe('project table row', () => {
     expect(rule('.pr-open::after')).toContain('inset: 0');
     expect(rule('.pr-path')).toContain('position: relative');
     expect(rule('.pr-path')).toContain('z-index: 1');
-  });
-
-  it('keeps the trend of the last 14 days of done tasks', () => {
-    const line = find(row(full), (n) => n.type === 'polyline');
-    expect(line.props.points.trim().split(/\s+/)).toHaveLength(14);
-    expect(find(row(full), (n) => n.type === 'svg').props['aria-label']).toContain('13');
   });
 
   it('counts running, ready and failed sessions with a glyph each and leaves zero and waiting out', () => {
@@ -358,7 +347,7 @@ describe('project table row', () => {
   it('keeps a project with sessions undimmed, with a dash for the goal and for needs-you', () => {
     const busy = row(
       summary('project-b', {
-        counts: { running: 0, waiting: 0, ready: 1, failed: 0, queued: 0 },
+        counts: { running: 0, waiting: 0, ready: 1, failed: 0 },
         last_activity_at: '2026-10-28T12:00:00.000Z',
       }),
     );
@@ -452,20 +441,20 @@ describe('summary panel', () => {
     find(tree, (n) => n.type === 'div' && n !== tree),
   ];
 
-  it('adds up needs-you across projects, running with the queue, ready and merged today', () => {
+  it('adds up needs-you across projects, running, ready and merged today', () => {
     const tree = SummaryPanel({
       summaries: [
         summary('a', {
           needs_you: 3,
-          counts: { running: 2, waiting: 0, ready: 1, failed: 0, queued: 1 },
+          counts: { running: 2, waiting: 0, ready: 1, failed: 0 },
           merged_today: 4,
         }),
         summary('b', {
           needs_you: 1,
-          counts: { running: 1, waiting: 1, ready: 0, failed: 2, queued: 2 },
+          counts: { running: 1, waiting: 1, ready: 0, failed: 2 },
           merged_today: 5,
         }),
-        summary('c', { counts: { running: 0, waiting: 0, ready: 2, failed: 0, queued: 0 } }),
+        summary('c', { counts: { running: 0, waiting: 0, ready: 2, failed: 0 } }),
       ],
       needs: asks,
     });
@@ -473,7 +462,7 @@ describe('summary panel', () => {
       zh(`projects.summary.${k}`),
     );
     expect(shown(tree).map(text)).toEqual(
-      ['4跨 2 个项目', '3排队 3', '3', '9'].map((value, i) => labels[i] + value),
+      ['4跨 2 个项目', '3', '3', '9'].map((value, i) => labels[i] + value),
     );
     expect(shown(tree).map((c) => c.type)).toEqual(['button', 'button', 'button', 'div']);
   });
@@ -485,9 +474,9 @@ describe('summary panel', () => {
   ])('opens the list of what %s counts from its cell', (_name, list, props) => {
     const tree = SummaryPanel({
       summaries: [
-        summary('a', { counts: { running: 1, waiting: 0, ready: 1, failed: 0, queued: 0 } }),
-        summary('b', { counts: { running: 0, waiting: 0, ready: 0, failed: 0, queued: 2 } }),
-        summary('c', { counts: { running: 0, waiting: 0, ready: 3, failed: 0, queued: 0 } }),
+        summary('a', { counts: { running: 1, waiting: 0, ready: 1, failed: 0 } }),
+        summary('b', { counts: { running: 1, waiting: 0, ready: 0, failed: 0 } }),
+        summary('c', { counts: { running: 0, waiting: 0, ready: 3, failed: 0 } }),
       ],
       needs: asks,
     });

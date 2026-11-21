@@ -7,7 +7,6 @@ import {
   requireThat,
   type BoardPlan,
   type EffortLevel,
-  type LeadNote,
   type Principal,
   type Project,
   type Review,
@@ -42,17 +41,11 @@ import { confirmTermination } from './process.js';
 import type { WrittenState } from './non-writer-audit.js';
 import { closeReconciledSession } from './session.js';
 import { assertManagedLocation } from './protection.js';
-import {
-  currentBinding,
-  retiredBinding,
-  taskGeneration,
-  taskSessions,
-  taskState,
-} from './board-plan.js';
+import { currentBinding, retiredBinding } from './board-plan.js';
 import { appendNote, contractLines } from './lead-inbox.js';
 import { wakeLead } from './task-tracking.js';
 import { notifySession } from './session-wake.js';
-import { PLAN_REVIEW_TIERS, REVIEW_MAX_ROUNDS, reopenReviewStep } from './merge-review.js';
+import { REVIEW_MAX_ROUNDS, reopenReviewStep } from './merge-review.js';
 
 export const REVIEW_WALL_TIME_MS = 2 * 60 * 60 * 1000;
 export const reviewInstruction =
@@ -60,8 +53,6 @@ export const reviewInstruction =
 const rangeInstruction = `${reviewInstruction} Write each finding's location as path:line in the changed file. The checkout in your working directory may not be the reviewed head; changes.diff is the reviewed code.`;
 /** A finding location naming a file and a line or line range. */
 const FINDING_PLACE = /^(.+?):(\d+)(?:-\d+)?$/;
-const planInstruction = (listed: string) =>
-  `Review this board plan before its high-risk tasks start: ${listed}. Record each problem with review_finding, with the task id as location and a quote copied exactly from plan.json. End the review with one review_verdict call, pass or fail, with a summary of what you checked.`;
 
 /** The session, requester and goal of a review.request, once its permissions are checked. */
 function reviewTarget(ctx: ControlContext, principal: Principal, command: Command) {
@@ -616,7 +607,6 @@ export function startReview(
     notify_session_id?: string;
     range?: NonNullable<Review['range']>;
     refs?: Review['refs'];
-    plan?: Review['plan'];
     /** Overrides the session defaults' model and effort of every reviewer session. */
     choice?: { model?: string; effort?: EffortLevel };
   },
@@ -633,7 +623,6 @@ export function startReview(
       ...(options.refs ? { refs: options.refs } : {}),
       ...(options.requester ? { requester: options.requester } : {}),
       ...(options.notify_session_id ? { notify_session_id: options.notify_session_id } : {}),
-      ...(options.plan ? { plan: options.plan } : {}),
       round: options.round,
       runtimes,
       state: 'running',
@@ -703,103 +692,6 @@ export function startReview(
   }
   insert(ctx, 'reviews', review, 'review.requested', project.id, cause);
   return review;
-}
-
-const planReviewsOf = (ctx: ControlContext, leadId: string) =>
-  ctx.store
-    .list<Review>('reviews')
-    .filter((review) => review.plan && review.requester?.lead_session_id === leadId);
-
-const covers = (review: Review, taskId: string, generation: number) =>
-  review.plan!.tasks.some((task) => task.task_id === taskId && task.generation === generation);
-
-/**
- * The running plan review the task's current generation waits for: the one that covers it, or,
- * when no review covered it yet, the one whose end starts its review.
- */
-export function runningPlanReview(
-  ctx: ControlContext,
-  plan: BoardPlan,
-  taskId: string,
-): Review | undefined {
-  const generation = taskGeneration(plan, taskId),
-    reviews = planReviewsOf(ctx, plan.id),
-    running = reviews.find((review) => review.state === 'running');
-  if (
-    running &&
-    (covers(running, taskId, generation) ||
-      !reviews.some((review) => covers(review, taskId, generation)))
-  )
-    return running;
-}
-
-/**
- * Starts a review of the plan for its high-risk tasks whose generation no plan review covers yet,
- * on the runtime `reviewerRuntime` picks for the lead's; without one the lead hears that none ran.
- * The caller commits the database work.
- */
-export function reviewPlan(ctx: ControlContext, plan: BoardPlan, cause: string): void {
-  const reviews = planReviewsOf(ctx, plan.id),
-    lead = ctx.store.must<Session>('sessions', plan.id);
-  const tasks = plan.tasks
-    .filter(
-      (task) =>
-        task.kind &&
-        PLAN_REVIEW_TIERS.includes(task.kind.tier) &&
-        taskState(plan, task.id, taskSessions(ctx, plan.id, task.id), lead) !== 'done',
-    )
-    .map((task) => ({ task_id: task.id, generation: taskGeneration(plan, task.id) }))
-    .filter((task) => !reviews.some((review) => covers(review, task.task_id, task.generation)));
-  // One plan review runs at a time; the tasks it leaves out wait for the next plan write.
-  if (!tasks.length || reviews.some((review) => review.state === 'running')) return;
-  const reviewer = reviewerRuntime(ctx, plan.project_id, lead.runtime);
-  const listed = tasks.map((task) => `${task.task_id} (generation ${task.generation})`).join(', ');
-  if (!reviewer) {
-    const text = `Pantheon did not review the plan for its high-risk tasks ${listed}: no runtime can run a read-only review of it. These tasks open without a plan review.`;
-    const told = ctx.store
-      .kindEvents(plan.project_id, ['lead.note_added'])
-      .some((event) => event.aggregate_id === plan.id && (event.payload as LeadNote).text === text);
-    if (!told)
-      appendNote(
-        ctx,
-        plan,
-        {
-          at: ctx.store.now(),
-          session_id: '',
-          task_id: tasks[0]!.task_id,
-          kind: 'runtime_unavailable',
-          text,
-        },
-        cause,
-      );
-    return;
-  }
-  const content = Buffer.from(
-    JSON.stringify(
-      {
-        headline: plan.headline,
-        tasks: plan.tasks.map((task) => ({
-          id: task.id,
-          title: task.title,
-          goal: task.goal,
-          depends_on: task.depends_on,
-          scope: task.scope,
-          acceptance: task.acceptance,
-          kind: task.kind,
-        })),
-      },
-      null,
-      2,
-    ),
-  );
-  startReview(ctx, plan.project_id, [reviewer], {
-    round: reviews.length + 1,
-    cause,
-    prompt: `${planInstruction(listed)}\n\n${content.toString('utf8')}`,
-    artifact: { name: 'plan.json', content },
-    requester: { lead_session_id: plan.id },
-    plan: { tasks },
-  });
 }
 
 /** The caller owns the transaction and command or native event deduplication. */
@@ -1106,23 +998,6 @@ function notifyRequestingLead(ctx: ControlContext, review: Review, turns: Sessio
   const plan = ctx.store.get<BoardPlan>('board_plans', lead);
   if (!plan || plan.project_id !== review.project_id) return;
   const results = reviewResults(ctx, review, turns);
-  if (review.plan) {
-    const next = appendNote(ctx, plan, {
-      at: ctx.store.now(),
-      session_id: '',
-      task_id: review.plan.tasks[0]!.task_id,
-      kind: review.state === 'completed' ? 'plan_review_completed' : 'plan_review_failed',
-      text: [
-        `Plan review ${review.id}: ${review.state}. High-risk tasks reviewed: ${review.plan.tasks.map((task) => `${task.task_id} (generation ${task.generation})`).join(', ')}.`,
-        ...results,
-        'Pantheon does not change the plan. Decide which findings to act on and change the plan with update_board or edit_board; the reviewed tasks may open now.',
-      ].join('\n'),
-    });
-    wakeLead(ctx, next, '');
-    // High-risk tasks written while this review ran get their own review now.
-    reviewPlan(ctx, ctx.store.must<BoardPlan>('board_plans', lead), '');
-    return;
-  }
   const lines = [
     `Review ${review.id}: ${review.state}. Worker ${review.session_id}; task generation ${requester.generation}.`,
     ...(review.range

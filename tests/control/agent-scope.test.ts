@@ -44,7 +44,7 @@ describe('the commands the scope table keeps from a personal principal', () => {
   );
 });
 
-it.each(['board.view', 'agent.list'])('refuses the %s query to a personal principal', (method) => {
+it.each(['agent.list'])('refuses the %s query to a personal principal', (method) => {
   expect(() => personalQuery(personal, method)).toThrow(outside);
 });
 

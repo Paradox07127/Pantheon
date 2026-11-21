@@ -1,12 +1,5 @@
 import { afterEach, expect, it } from 'vitest';
-import { id } from '@pantheon/domain';
-import type {
-  Approval,
-  ApprovalQuestion,
-  BoardPlan,
-  Principal,
-  Retrospective,
-} from '@pantheon/domain';
+import type { Approval, ApprovalQuestion, Retrospective } from '@pantheon/domain';
 import { fixture, insertSession, user } from '../helpers.js';
 
 type Fixture = Awaited<ReturnType<typeof fixture>>;
@@ -15,68 +8,13 @@ afterEach(async () => {
   for (const f of fixtures.splice(0)) await f.close();
 });
 
-const REQUEST = 'Ship the export API this week.';
-
 async function opened() {
   const f = await fixture({ managedWorkspaces: true });
   fixtures.push(f);
   return f;
 }
 
-const principalOf = (f: Fixture, sessionId: string): Principal => ({
-  id: `session:${sessionId}`,
-  role: 'lead',
-  project_id: f.project.id,
-  session_id: sessionId,
-  expires_at: f.store.now() + 60000,
-});
-
 const items = (f: Fixture) => f.control.needsYou(user, f.project.id).items;
-
-/** A lead whose plan has task api under milestone release. */
-function leadWithMilestone(f: Fixture) {
-  insertSession(f, { id: 'lead', turn_count: 1 });
-  f.store.insert('session_turns', {
-    id: id(),
-    revision: 1,
-    project_id: f.project.id,
-    session_id: 'lead',
-    input: REQUEST,
-    kind: 'send',
-    delivery: 'delivered',
-    state: 'completed',
-  });
-  f.call(
-    'board.plan.update',
-    {
-      project_id: f.project.id,
-      base_version: 0,
-      headline: 'Export ships this week',
-      lanes: [{ id: 'core', title: 'Core' }],
-      tasks: [
-        {
-          id: 'api',
-          title: 'API',
-          goal: 'Serve exports',
-          lane: 'core',
-          depends_on: [],
-          source: ['Ship the export API'],
-          scope: [],
-          acceptance: [],
-          done_when: 'report',
-          milestone: 'release',
-        },
-      ],
-      milestones: [
-        { id: 'release', title: 'Release', criteria: ['Exports download'], tasks: ['api'] },
-      ],
-      risks: [],
-      assumptions: [],
-    },
-    null,
-    principalOf(f, 'lead'),
-  );
-}
 
 it('gives a question item its questions and options', async () => {
   const f = await opened();
@@ -116,63 +54,6 @@ it('gives a question item its questions and options', async () => {
     questions,
   });
   expect(items(f).find((item) => item.source.id === 'ask')?.questions).toEqual(questions);
-});
-
-it('lists a task session question relayed to its lead board once, as the board question', async () => {
-  const f = await opened();
-  leadWithMilestone(f);
-  insertSession(f, { id: 'asker', turn_count: 1 });
-  const questions: ApprovalQuestion[] = [
-    {
-      question: 'Which format?',
-      header: 'Format',
-      options: [
-        { label: 'CSV', description: 'Opens in spreadsheets' },
-        { label: 'JSON', description: 'Keeps nested fields' },
-      ],
-      multiSelect: false,
-    },
-  ];
-  f.store.insert<Approval>('approvals', {
-    id: 'ask',
-    revision: 1,
-    project_id: f.project.id,
-    kind: 'permission',
-    session_id: 'asker',
-    request_id: 'request',
-    tool: 'AskUserQuestion',
-    input_hash: 'hash',
-    decider: 'user',
-    state: 'pending',
-    created_at: f.store.now(),
-    questions,
-  });
-  const plan = f.store.must<BoardPlan>('board_plans', 'lead');
-  f.store.update<BoardPlan>(
-    'board_plans',
-    {
-      ...plan,
-      questions: [
-        {
-          id: 'relayed',
-          at: f.store.now(),
-          question: 'Which format?',
-          options: ['CSV', 'JSON'],
-          recommended: '',
-          assumption: '',
-          blocks: ['api'],
-          source: { session_id: 'asker', approval_id: 'ask' },
-          questions,
-        },
-      ],
-    },
-    plan.revision,
-  );
-  expect(
-    items(f)
-      .filter((item) => item.source.id === 'ask' || String(item.kind) === 'lead.question')
-      .map((item) => [item.kind, item.request_id]),
-  ).toEqual([['lead.question', 'relayed']]);
 });
 
 function withRetrospectives(f: Fixture) {

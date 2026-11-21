@@ -639,18 +639,6 @@ export async function startDaemon(options: DaemonOptions) {
       'project.heatmap': (p, i) => control.projectHeatmap(p, i.project_id, i.days),
       'session.preflight': (p, i) => control.sessionPreflight(p, i.session_id),
       'session.activity': (p, i) => control.sessionToolActivity(p, i.session_id),
-      'board.view': async (p, i) => {
-        await prefetch(p, i.project_id);
-        return timed('board.view', () =>
-          control.boardView(
-            p,
-            i.project_id,
-            i.days === 'all' ? 'all' : Number(i.days),
-            i.until,
-            'cached',
-          ),
-        );
-      },
       'session.reviews': (p, i) => control.sessionReviews(p, i.session_id),
       'review.read': (p, i) => control.reviewRead(p, i.review_id),
       'session.comments': (p, i) => control.sessionComments(p, i.session_id),

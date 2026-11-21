@@ -37,8 +37,6 @@ const sessionsOf = (f: Fixture, leadId: string, taskId: string) =>
   f.store
     .list<Session>('sessions')
     .filter((session) => session.task?.lead_session_id === leadId && session.task.id === taskId);
-const rowOf = (f: Fixture, leadId: string, taskId: string) =>
-  f.control.boardView(user, f.project.id, 1).tasks.find((row) => row.id === `${leadId}:${taskId}`)!;
 
 it('keeps a task waiting while a part of a parallel task holds a path outside the parent scope', async () => {
   const f = await workbenchFixture();
@@ -73,10 +71,8 @@ it('keeps a task waiting while a part of a parallel task holds a path outside th
     null,
     leadOf(f, lead.id),
   );
-  expect(rowOf(f, lead.id, 'b').dispatch_wait).toBe('scope');
   await f.control.tick();
   expect(sessionsOf(f, lead.id, 'a')).toHaveLength(2);
   expect(sessionsOf(f, lead.id, 'b')).toEqual([]);
-  expect(rowOf(f, lead.id, 'b').dispatch_wait).toBe('scope');
   for (const session of sessionsOf(f, lead.id, 'a')) await settle(f, session);
 });

@@ -55,7 +55,6 @@ it('lets the coordinator act on its own by default except for creating agents an
   expect(modes(f)).toEqual({
     approve_worker_prompts: 'on',
     answer_worker_questions: 'on',
-    plan_change: 'on',
     create_agent: 'ask',
     merge_out_of_scope: 'on',
     start_external: 'off',
@@ -79,12 +78,8 @@ it('reads a project override of one power and keeps the others', async () => {
   });
 });
 
-it('follows the plan changes setting for plan changes and the external events setting for external starts', async () => {
+it('follows the external events setting for external starts', async () => {
   const f = await opened();
-  setPolicy(f, { plan_changes: 'confirm' });
-  expect(charterMode(ctxOf(f), f.project.id, 'plan_change')).toBe('ask');
-  setPolicy(f, { plan_changes: 'auto' });
-  expect(charterMode(ctxOf(f), f.project.id, 'plan_change')).toBe('on');
   setExternalEvents(f, 'approve');
   expect(charterMode(ctxOf(f), f.project.id, 'start_external')).toBe('ask');
   setExternalEvents(f, 'auto');
@@ -127,7 +122,6 @@ it('shows the lead its charter and plan changes setting in project_read', async 
   expect(read.lead!.workflow.charter).toEqual({
     approve_worker_prompts: 'on',
     answer_worker_questions: 'on',
-    plan_change: 'ask',
     create_agent: 'ask',
     accept_milestone: 'off',
     merge_out_of_scope: 'on',

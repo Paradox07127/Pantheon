@@ -176,26 +176,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* Beside the trend, which spans both lines of the goal cell. */
+/* Spans both lines of the goal cell. */
 .pr-goal > .pr-none {
   grid-row: 1 / 3;
   align-self: center;
-}
-.pr-spark {
-  grid-column: 3;
-  grid-row: 1 / 3;
-  display: block;
-  width: 48px;
-  height: 20px;
-  overflow: visible;
-}
-.pr-spark polyline {
-  fill: none;
-  stroke: var(--ok);
-  stroke-width: 1.5;
-  stroke-linejoin: round;
-  stroke-linecap: round;
-  vector-effect: non-scaling-stroke;
 }
 .pr-ses,
 .pr-need {

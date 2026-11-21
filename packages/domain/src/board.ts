@@ -229,9 +229,9 @@ export interface BoardPlan extends Entity {
   }[];
   /** Rises only when the plan's content changes; an edit names the version it was based on. */
   plan_version: number;
-  /** Edits that touch a task with an unfinished session, waiting for the lead to apply or reject them. */
-  pending_edits: PendingPlanEdit[];
-  /** Lead proposals waiting for the user, with resolved records retained like user edits. */
+  /** User edits of older rows; nothing reads them. */
+  pending_edits?: PendingPlanEdit[];
+  /** Lead proposals of older rows; nothing reads them. */
   pending_proposals?: PlanProposal[];
   risks: PlanRisk[];
   assumptions: PlanAssumption[];

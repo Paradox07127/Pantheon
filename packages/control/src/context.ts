@@ -331,12 +331,7 @@ const RESIDENT_GROUPS: readonly AgentToolGroup[] = [
 ];
 
 /** The board tools that write the plan, which a resident of a read-only board template does not get. */
-const PLAN_WRITES = [
-  'board.plan.update',
-  'board.plan.edit',
-  'board.sync',
-  'project.baseline.start',
-];
+const PLAN_WRITES = ['board.plan.update', 'board.sync', 'project.baseline.start'];
 
 /**
  * The actions of a lead session's tools: a resident's are those of its agent profile's groups,

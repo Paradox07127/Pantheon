@@ -1,7 +1,7 @@
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, it, vi } from 'vitest';
-import type { Approval, BoardPlan, Principal, Project, Session, Workspace } from '@pantheon/domain';
+import type { Approval, Principal, Project, Session, Workspace } from '@pantheon/domain';
 import { briefItemsKey, type SeenCursor } from '../../packages/control/dist/project-brief.js';
 import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
@@ -38,16 +38,16 @@ it('counts a merging session and a reconciling session as running', async () => 
   patch(f, merging.id, { merge: { state: 'running' } });
   patch(f, reconciling.id, { state: 'reconciling' });
   expect(f.list().find((row) => row.id === merging.id)?.state).toBe('merging');
-  expect(countsOf(f)).toEqual({ running: 2, waiting: 0, ready: 0, failed: 0, queued: 0 });
+  expect(countsOf(f)).toEqual({ running: 2, waiting: 0, ready: 0, failed: 0 });
 });
 
 it('leaves archived sessions out of the counts and removed projects out of the summary', async () => {
   const f = await workbenchFixture();
   const session = await idleSession(f);
   patch(f, session.id, { state: 'closed' });
-  expect(countsOf(f)).toEqual({ running: 0, waiting: 0, ready: 0, failed: 1, queued: 0 });
+  expect(countsOf(f)).toEqual({ running: 0, waiting: 0, ready: 0, failed: 1 });
   patch(f, session.id, { archived_at: new Date(f.store.now()).toISOString() });
-  expect(countsOf(f)).toEqual({ running: 0, waiting: 0, ready: 0, failed: 0, queued: 0 });
+  expect(countsOf(f)).toEqual({ running: 0, waiting: 0, ready: 0, failed: 0 });
   const project = f.store.must<Project>('projects', f.project.id);
   f.store.update<Project>('projects', { ...project, removed_at: f.store.now() }, project.revision);
   expect(f.control.projectsSummary(user).projects).toEqual([]);
@@ -119,7 +119,6 @@ it('summarizes two projects and limits a planner to its own project', async () =
     name: f.project.name,
     counts: { running: 2, waiting: 1, ready: 1, failed: 1 },
     needs_you: 2,
-    milestone: null,
     last_activity_at: new Date(lastActivity).toISOString(),
   });
   expect(projects.find((project) => project.project_id === otherProject.id)).toMatchObject({
@@ -127,7 +126,6 @@ it('summarizes two projects and limits a planner to its own project', async () =
     name: otherProject.name,
     counts: { running: 0, waiting: 1, ready: 0, failed: 0 },
     needs_you: 1,
-    milestone: null,
   });
   expect(f.store.cursor()).toBe(cursor);
 
@@ -152,7 +150,7 @@ it('summarizes two projects and limits a planner to its own project', async () =
   expect(f.control.projectsSummary(planner).projects).toEqual([{ ...own, needs_you: 0 }]);
 });
 
-it("gives each project its waiting decisions by kind, the longest wait, the tasks they hold and its brief's first sentence", async () => {
+it("gives each project its waiting decisions by kind, the longest wait and its brief's first sentence", async () => {
   const f = await workbenchFixture();
   const lead = await idleSession(f, 'Ship exports');
   f.call(
@@ -187,25 +185,6 @@ it("gives each project its waiting decisions by kind, the longest wait, the task
   );
   const now = f.store.now();
   vi.spyOn(f.store, 'now').mockReturnValue(now);
-  const plan = f.store.must<BoardPlan>('board_plans', lead.id);
-  f.store.update<BoardPlan>(
-    'board_plans',
-    {
-      ...plan,
-      questions: [
-        {
-          id: 'format',
-          at: now - 2000,
-          question: 'Which format?',
-          options: ['CSV', 'JSON'],
-          recommended: 'CSV',
-          assumption: 'CSV',
-          blocks: ['api', 'docs'],
-        },
-      ],
-    },
-    plan.revision,
-  );
   f.store.insert<Approval>('approvals', {
     id: 'lead-permission',
     revision: 1,
@@ -232,8 +211,8 @@ it("gives each project its waiting decisions by kind, the longest wait, the task
       at: 0,
       prose: {
         sentences: [
-          { text: 'One question holds both export tasks.', refs: [] },
-          { text: 'A permission waits too.', refs: [] },
+          { text: 'A permission waits for the lead.', refs: [] },
+          { text: 'Nothing else waits.', refs: [] },
         ],
         at: now,
         since: 0,
@@ -246,12 +225,12 @@ it("gives each project its waiting decisions by kind, the longest wait, the task
 
   const { projects } = f.control.projectsSummary(user);
   expect(projects.find((project) => project.project_id === f.project.id)).toMatchObject({
-    needs_you: 2,
-    brief: 'One question holds both export tasks.',
+    needs_you: 1,
+    brief: 'A permission waits for the lead.',
     waiting: {
-      by_decision: { question: 1, permission: 1 },
+      by_decision: { permission: 1 },
       longest_wait_ms: 5000,
-      blocked_tasks: 2,
+      blocked_tasks: 0,
     },
   });
   const other = projects.find((project) => project.project_id === otherProject.id)!;
@@ -300,68 +279,4 @@ it('counts merged sessions since local midnight using the board clock', async ()
   }
   const summary = f.control.projectsSummary(user).projects[0]!;
   expect(summary.merged_today).toBe(2);
-  expect(summary.done_daily.at(-1)?.date).toBe('2027-03-16');
-});
-
-it('summarizes queued plan tasks', async () => {
-  const f = await workbenchFixture();
-  const lead = await idleSession(f, 'Ship exports');
-  const principal: Principal = {
-    id: `session:${lead.id}`,
-    role: 'lead',
-    project_id: f.project.id,
-    session_id: lead.id,
-    expires_at: f.store.now() + 60000,
-  };
-  const ids = ['completed-export', 'active-export', 'failed-export', 'queued-export'];
-  f.call(
-    'board.plan.update',
-    {
-      project_id: f.project.id,
-      base_version: 0,
-      headline: 'Ship exports',
-      lanes: [{ id: 'exports', title: 'Exports' }],
-      tasks: ids.map((id) => ({
-        id,
-        title: id,
-        goal: 'Build exports',
-        lane: 'exports',
-        milestone: 'export-release',
-        depends_on: [],
-        source: ['Ship exports'],
-        scope: [`src/${id}`],
-        acceptance: ['pnpm test'],
-      })),
-      milestones: [
-        {
-          id: 'export-release',
-          title: 'Export release',
-          criteria: ['Exports download'],
-          tasks: ids,
-        },
-      ],
-      risks: [],
-      assumptions: [],
-    },
-    null,
-    principal,
-  );
-  for (const [id, state, outcome] of [
-    ['completed-export', 'closed', 'merged'],
-    ['active-export', 'running', undefined],
-    ['failed-export', 'closed', undefined],
-  ] as const) {
-    const session = await idleSession(f);
-    patch(f, session.id, { state, outcome, task: { lead_session_id: lead.id, id, generation: 1 } });
-  }
-  f.call('workflow.policy.set', {
-    project_id: f.project.id,
-    dispatch_paused: true,
-    path: { t1: 'dispatch' },
-  });
-  f.call('task.start', { project_id: f.project.id, task_ids: ['queued-export'] }, null, principal);
-  const board = f.control.boardView(user, f.project.id, 14);
-  expect(board.slots?.queued).toBe(1);
-  const summary = f.control.projectsSummary(user).projects[0]!;
-  expect(summary.counts.queued).toBe(board.slots?.queued);
 });

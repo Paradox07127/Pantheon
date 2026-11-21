@@ -59,8 +59,6 @@ const payloads = (f: Fixture, aggregateId: string, kind: string) =>
   ).map((row) => JSON.parse(row.payload) as Record<string, unknown>);
 const trackerTurns = (f: Fixture, sessionId: string) =>
   f.turns(sessionId).filter((turn) => turn.origin === 'tracker');
-const boardTask = (f: Fixture, leadId: string, taskId: string) =>
-  f.control.boardView(user, f.project.id, 1).tasks.find((row) => row.id === `${leadId}:${taskId}`)!;
 
 const passing = [{ name: 'Passes', argv: [process.execPath, '-e', 'process.exit(0)'] }];
 // Each run prints another line, so a hand-back never repeats the one before it.
@@ -230,8 +228,6 @@ it.skipIf(insideSandbox)(
       to_sha: head,
       source: worktreeOf(f, lead).source,
     });
-    expect(boardTask(f, lead.id, 'a').status).toBe('done');
-    expect(boardTask(f, lead.id, 'a').state).toBe('merged');
     expect(payloads(f, lead.id, 'session.merged')).toEqual([
       expect.objectContaining({
         task_id: 'a',
@@ -542,14 +538,12 @@ it.skipIf(insideSandbox)(
     commit(worktree, 'src/a.ts', 'export const a = 1;\n');
     await report(f, lead.id);
     await endTurn(f, lead.id);
-    expect(boardTask(f, lead.id, 'a').status).toBe('done');
 
     f.call('task.start', { project_id: f.project.id, lead_session_id: lead.id, task_ids: ['a'] });
     await eventually(
       () => f.store.list<Session>('sessions').some((s) => s.task?.id === 'a' && !s.outcome),
       () => f.control.tick(),
     );
-    expect(boardTask(f, lead.id, 'a').status).not.toBe('done');
   },
 );
 

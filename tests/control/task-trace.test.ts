@@ -160,25 +160,3 @@ it("leaves out the other task's entries and cuts long texts", async () => {
   expect(long.session_id).toBe(a.id);
   expect(long.text).toBe(`[Lead] ${'x'.repeat(1993)}…`);
 });
-
-it('shows one user edit of two tasks in the trace of each', async () => {
-  const f = await workbenchFixture();
-  const { lead } = await startedTasks(f);
-  f.call(
-    'board.plan.edit',
-    {
-      project_id: f.project.id,
-      lead_session_id: lead.id,
-      base_version: f.store.must<BoardPlan>('board_plans', lead.id).plan_version,
-      ops: [
-        { type: 'set_task', task_id: 'a', patch: { title: 'Export file' } },
-        { type: 'set_task', task_id: 'b', patch: { title: 'Download button' } },
-      ],
-    },
-    null,
-    user,
-  );
-
-  for (const taskId of ['a', 'b'])
-    expect(trace(f, lead.id, taskId).map((entry) => entry.kind)).toContain('user_edit');
-});

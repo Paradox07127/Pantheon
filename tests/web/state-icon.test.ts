@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { BoardTaskState, BoardTaskStatus, WorkbenchSession } from '@pantheon/protocol';
+import type { WorkbenchSession } from '@pantheon/protocol';
 import {
   GateMark,
   LastTurnMark,

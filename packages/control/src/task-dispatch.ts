@@ -49,7 +49,6 @@ import { appendNote, recordNote } from './lead-inbox.js';
 import { interruptSession, stopBackground } from './session.js';
 import { continueInterruptedLead } from './task-tracking.js';
 import { backgroundTasks, nextDepth } from './progress.js';
-import { runningPlanReview } from './review.js';
 import { projectOverBudget, workflowPolicy } from './workflow-policy.js';
 import { PLAN_REVIEW_TIERS } from './merge-review.js';
 import { listDevices } from './devices.js';
@@ -410,9 +409,7 @@ export function dispatchQueue(
       (policy.dispatch_paused || plan.paused ? 'paused' : undefined) ??
       (externalHeld(plan, task) ? 'approval' : undefined) ??
       taskWaits(ctx, plan, task, held)?.wait ??
-      (task.kind &&
-      PLAN_REVIEW_TIERS.includes(task.kind.tier) &&
-      runningPlanReview(ctx, plan, task.id)
+      (task.kind && PLAN_REVIEW_TIERS.includes(task.kind.tier) && undefined
         ? 'plan_review'
         : undefined) ??
       (ctx.runtimeStatus
@@ -941,15 +938,6 @@ export function userTaskInput(
     'invalid_state',
     `The scope of task ${task.id} overlaps tasks ${waits?.task_ids.join(', ')}, which are under way; open it after they end`,
   );
-  const review =
-    task.kind && PLAN_REVIEW_TIERS.includes(task.kind.tier)
-      ? runningPlanReview(ctx, plan, task.id)
-      : undefined;
-  requireThat(
-    !review,
-    'invalid_state',
-    `Task ${task.id} waits for the plan review ${review?.id}; open it once the review ends`,
-  );
   const choice = userTaskChoice(ctx, input);
   const deviceId = input.device_id ?? task.device ?? 'local',
     load = deviceLoads(ctx).get(deviceId) ?? { sessions: 0, uses: {} },
@@ -1142,15 +1130,6 @@ function claimDirectTask(
     !currentDirectMerge(plan, task.id),
     'invalid_state',
     `Task ${task.id} is done: you merged it`,
-  );
-  const review =
-    task.kind && PLAN_REVIEW_TIERS.includes(task.kind.tier)
-      ? runningPlanReview(ctx, plan, task.id)
-      : undefined;
-  requireThat(
-    !review,
-    'invalid_state',
-    `Task ${task.id} waits for the plan review ${review?.id}; start it once the review ends`,
   );
   const upstream = task.depends_on.find(
     (id) => taskState(plan, id, taskSessions(ctx, plan.id, id)) !== 'done',

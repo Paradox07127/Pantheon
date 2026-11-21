@@ -185,14 +185,7 @@ it('holds a t3 task for its plan review and a task session at the review round l
     null,
     principal(f, lead.id),
   );
-  expect(
-    f.store.list<Review>('reviews').some((r) => r.plan?.tasks.some((t) => t.task_id === 'export')),
-  ).toBe(true);
   start(f, lead);
-  expect(
-    f.control.boardView(user, f.project.id, 1).tasks.find((t) => t.id === `${lead.id}:export`)
-      ?.dispatch_wait,
-  ).toBe('plan_review');
   await eventually(
     () => !!workerOf(f, lead),
     () => f.control.tick(),
@@ -291,7 +284,6 @@ it('holds the merge after the gate for its review without a task place, and land
   const gates = [['/bin/sh', '-c', 'true']];
   expect(execute.mock.calls.map((call) => call[0].argv)).toEqual(gates);
   expect(git(f.source, 'rev-parse', 'HEAD')).toBe(sourceHead);
-  expect(f.control.boardView(user, f.project.id, 1).task_places?.used).toBe(0);
   // A stopping daemon starts no review, so the review runs on the restarted one.
   await f.control.shutdown();
   expect(runs(f).map((run) => [run.state, run.review_id])).toEqual([['pending', undefined]]);

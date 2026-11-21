@@ -78,20 +78,15 @@ async function taskSession(input = longTurn) {
   const lead = await f.create('Plan the export feature');
   writePlan(f, lead);
   const worker = await boundTaskSession(f, lead.id, 'export', input);
-  const row = () =>
-    f.control
-      .boardView(user, f.project.id, 1)
-      .tasks.find((task) => task.id === `${lead.id}:export`)!;
-  return { f, lead, worker, row, advance: (ms: number) => (skew += ms) };
+  return { f, lead, worker, advance: (ms: number) => (skew += ms) };
 }
 
-it('shows the line a task session sets in its running turn on its board row with its time', async () => {
-  const { f, worker, row } = await taskSession();
+it('stores the line a task session sets in its running turn with its time', async () => {
+  const { f, worker } = await taskSession();
   const turn = await running(f, worker);
   const set = setLine(f, worker.id, 'worker', '  Running the migration tests ');
   expect(set).toMatchObject({ text: 'Running the migration tests', turn_id: turn.id });
   expect(current(f, worker.id).status_line).toEqual(set);
-  expect(row().status_line).toEqual({ text: 'Running the migration tests', at: set.at });
   expect(lineEvents(f).map((event) => event.payload)).toEqual([
     { text: 'Running the migration tests', turn_id: turn.id },
   ]);
@@ -106,17 +101,13 @@ it('refuses a line longer than 80 characters', async () => {
   expect(current(f, worker.id).status_line).toBeUndefined();
 });
 
-it('shows the line a lead sets on its row of the board leads', async () => {
+it('takes the line a lead sets in its running turn', async () => {
   const f = await workbenchFixture();
   const lead = await f.create(`Plan the export feature\n${longTurn}`);
   const turn = await running(f, lead);
   writePlan(f, lead);
   const set = setLine(f, lead.id, 'lead', 'Splitting the export plan');
   expect(set).toMatchObject({ text: 'Splitting the export plan', turn_id: turn.id });
-  expect(
-    f.control.boardView(user, f.project.id, 1).leads?.find((row) => row.session_id === lead.id)
-      ?.status_line,
-  ).toEqual({ text: 'Splitting the export plan', at: set.at });
 });
 
 it('refuses a session that is neither a plan task nor a lead', async () => {
@@ -154,7 +145,7 @@ it('writes the same text of one turn once', async () => {
 });
 
 it('refuses a new text within 15 s of the last one and stores it after', async () => {
-  const { f, worker, row, advance } = await taskSession();
+  const { f, worker, advance } = await taskSession();
   await running(f, worker);
   const first = setLine(f, worker.id, 'worker', 'Running the migration tests');
   advance(14_000);
@@ -168,28 +159,7 @@ it('refuses a new text within 15 s of the last one and stores it after', async (
   advance(1_000);
   const next = setLine(f, worker.id, 'worker', 'Reading the schema');
   expect(next.at).toBeGreaterThanOrEqual(first.at + 15_000);
-  expect(row().status_line).toEqual({ text: 'Reading the schema', at: next.at });
   expect(lineEvents(f)).toHaveLength(2);
-});
-
-it('drops the line from the board row once the next turn starts', async () => {
-  const { f, worker, row } = await taskSession(script({ wait: 1500 }));
-  await running(f, worker);
-  setLine(f, worker.id, 'worker', 'Running the migration tests');
-  await eventually(
-    () => f.turns(worker.id)[0]?.state === 'completed' && current(f, worker.id).state === 'open',
-    () => f.control.tick(),
-    10000,
-  );
-  expect(row().status_line).toMatchObject({ text: 'Running the migration tests' });
-  f.call(
-    'session.send',
-    { session_id: worker.id, input: longTurn },
-    current(f, worker.id).revision,
-  );
-  await running(f, worker);
-  expect(row()).not.toHaveProperty('status_line');
-  expect(current(f, worker.id).status_line?.text).toBe('Running the migration tests');
 });
 
 it('keeps the line on the session when a recap is written after it', async () => {

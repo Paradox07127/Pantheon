@@ -172,33 +172,6 @@ function leadWithPlan(f: Plain): Principal {
   return lead;
 }
 
-async function proposed(planChanges: 'auto' | 'confirm') {
-  const f = await plain();
-  setPolicy(f, { plan_changes: planChanges });
-  const lead = leadWithPlan(f);
-  const plan = f.store.must<BoardPlan>('board_plans', 'lead');
-  f.call(
-    'board.plan.propose',
-    {
-      project_id: f.project.id,
-      base_version: plan.plan_version,
-      reason: 'The export needs a narrower contract',
-      ops: [{ type: 'set_task', task_id: 'api', patch: { title: 'Export API' } }],
-    },
-    null,
-    lead,
-  );
-  return {
-    f,
-    match: {
-      power: 'plan_change',
-      subject: plan.id,
-      session_id: 'lead',
-      reason: 'The export needs a narrower contract',
-    },
-  };
-}
-
 const mergeReason = 'The README names the new module';
 
 function commit(repository: string, name: string, contents: string) {
@@ -326,7 +299,6 @@ type Act = () => Promise<{ f: Caller; match: Record<string, unknown> }>;
 
 const personal: Principal = { id: 'personal:k1', role: 'personal' };
 const leadQuestion = 'Which file format comes first?';
-const proposalReason = 'The export needs a narrower contract';
 
 /** What by did in a project whose lead has a plan, with the personal key let to answer every kind. */
 const answeredBy =
@@ -379,41 +351,6 @@ function answerLeadQuestion(f: Plain, by: Principal) {
   };
 }
 
-const resolveProposal = (decision: 'accept' | 'reject') => (f: Plain, by: Principal) => {
-  const proposal = f.call<{ proposal_id: string }>(
-    'board.plan.propose',
-    {
-      project_id: f.project.id,
-      base_version: f.store.must<BoardPlan>('board_plans', 'lead').plan_version,
-      reason: proposalReason,
-      ops: [{ type: 'set_task', task_id: 'api', patch: { title: 'Export API' } }],
-    },
-    null,
-    leadOf(f, 'lead'),
-  ).proposal_id;
-  f.call(
-    'board.plan.proposal.resolve',
-    {
-      project_id: f.project.id,
-      lead_session_id: 'lead',
-      proposal_id: proposal,
-      decision,
-      reason: 'Keeps the contract small',
-    },
-    null,
-    by,
-  );
-  return {
-    key_id: 'k1',
-    command: 'board.plan.proposal.resolve',
-    subject: proposal,
-    lead_session_id: 'lead',
-    text: proposalReason,
-    decision: decision === 'accept' ? 'accepted' : 'rejected',
-    reason: 'Keeps the contract small',
-  };
-};
-
 it.each<[string, Act, DecisionForUser['kind'] | undefined]>([
   [
     'a worker prompt approved for the lead',
@@ -450,9 +387,7 @@ it.each<[string, Act, DecisionForUser['kind'] | undefined]>([
     },
     'prompt_by_rule',
   ],
-  ['a plan proposal applied with plan changes on auto', () => proposed('auto'), 'power_used'],
   ['a merge of files outside the task scope', mergedOutOfScope, 'power_used'],
-  ['a plan proposal while plan changes need confirming', () => proposed('confirm'), undefined],
   [
     'a task session question the lead answered',
     async () => {
@@ -497,16 +432,6 @@ it.each<[string, Act, DecisionForUser['kind'] | undefined]>([
     'personal_answer',
   ],
   [
-    'a plan proposal the personal key accepted',
-    answeredBy(personal, resolveProposal('accept')),
-    'personal_answer',
-  ],
-  [
-    'a plan proposal the personal key rejected',
-    answeredBy(personal, resolveProposal('reject')),
-    'personal_answer',
-  ],
-  [
     'the personal key marking the project seen',
     answeredBy(personal, (f, by) => {
       f.call('project.seen', { project_id: f.project.id }, null, by);
@@ -515,7 +440,6 @@ it.each<[string, Act, DecisionForUser['kind'] | undefined]>([
     undefined,
   ],
   ["the lead's question the user answered", answeredBy(user, answerLeadQuestion), undefined],
-  ['a plan proposal the user accepted', answeredBy(user, resolveProposal('accept')), undefined],
 ])('lists what %s decided', async (_label, act, kind) => {
   const { f, match } = await act();
   const { items } = f.control.decisionsForUser(user, f.project.id);

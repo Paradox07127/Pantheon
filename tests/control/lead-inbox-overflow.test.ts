@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest';
 import type { BoardPlan, LeadNote, Principal, Session, SessionTurn } from '@pantheon/domain';
-import { eventually, settle, user } from '../helpers.js';
+import { eventually, settle } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
 type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
@@ -290,7 +290,7 @@ it('caps tracker notes in the inbox and keeps the overflow readable by id', asyn
     ).toEqual(note);
 });
 
-it('stops waking the lead and lists it in needs-you after too many wakes in a short window', async () => {
+it('stops waking the lead after too many wakes in a short window', async () => {
   const f = await workbenchFixture();
   const { lead, worker } = await leadWithTask(f);
   await wakeTenTimes(f, lead, worker);
@@ -307,19 +307,6 @@ it('stops waking the lead and lists it in needs-you after too many wakes in a sh
       .filter((event) => event.kind === 'board.lead_wake_failed')
       .map((event) => event.payload),
   ).toEqual([{ reason: 'wake_limit' }]);
-  expect(
-    f.control
-      .needsYou(user, f.project.id)
-      .items.filter((item) => item.reason === 'lead_wake_limited'),
-  ).toMatchObject([
-    {
-      source: { table: 'board_plans', id: lead.id },
-      kind: 'session.failed',
-      session_id: lead.id,
-      created_at: refused.at,
-      next_step: expect.any(String),
-    },
-  ]);
 });
 
 it('wakes the lead again once the wake window has passed', async () => {
@@ -342,11 +329,6 @@ it('wakes the lead again once the wake window has passed', async () => {
   expect(turns[10]!.input).toContain('One requirement too many');
   expect(planOf(f, lead.id).wake_failed).toBeUndefined();
   expect(planOf(f, lead.id).inbox).toEqual([]);
-  expect(
-    f.control
-      .needsYou(user, f.project.id)
-      .items.filter((item) => item.reason === 'lead_wake_limited'),
-  ).toEqual([]);
 });
 
 it('delivers the lead update without reading or injecting trace evidence', async () => {

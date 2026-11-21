@@ -1145,7 +1145,7 @@ export interface Review extends Entity {
   };
   /** The session told when this review ends. */
   notify_session_id?: string;
-  /** On a plan review, the high-risk task generations it reviews. */
+  /** On a plan review of older rows, the task generations it reviewed; nothing reads it. */
   plan?: { tasks: { task_id: string; generation: number }[] };
   /** Frozen committed range supplied to every reviewer. */
   range?: { source: string; from_sha: string; to_sha: string };
@@ -1968,7 +1968,7 @@ export interface LeadGuidance {
     | 'plan_changes'
   > & {
     /** What the lead may do on its own, must ask the user for, or may not do, by power. */
-    charter: Record<CharterPower, CharterMode>;
+    charter: Record<Exclude<CharterPower, 'plan_change'>, CharterMode>;
   };
   runtime: import('./trace.js').RuntimeDiagnostics;
   runtime_reviews?: { session_id: string; summary: string; change: string; outcome?: string }[];

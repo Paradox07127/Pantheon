@@ -37,28 +37,22 @@ const queryTools = {
   },
 } as const;
 
-// A personal key cannot upload attachments, edit a plan change or answer a relayed task question.
+// A personal key cannot upload attachments or answer a relayed task question.
 const answerInputs = {
   question: inputSchemas['lead.question.answer'].omit({ answers: true }),
-  plan_change: inputSchemas['board.plan.proposal.resolve'].omit({ ops: true }),
 } satisfies Partial<Record<PersonalAnswerKind, unknown>>;
 
 const answerCommands = {
   question: 'lead.question.answer',
-  plan_change: 'board.plan.proposal.resolve',
 } as const satisfies Partial<Record<PersonalAnswerKind, string>>;
 
 // The CLI does not depend on zod, so these build on the protocol's schemas: an empty strict object and the answer kinds.
 const answerDecision = querySchemas['projects.summary'].extend({
   kind: inputSchemas['app.settings.set'].shape.personal_answers
     .unwrap()
-    .element.extract(['question', 'plan_change'])
-    .describe("The needs_you item's decision: question or plan_change."),
-  input: answerInputs.question
-    .or(answerInputs.plan_change)
-    .describe(
-      'question: project_id, lead_session_id, question_id, answer. plan_change: project_id, lead_session_id, proposal_id, decision, reason.',
-    ),
+    .element.extract(['question'])
+    .describe("The needs_you item's decision: question."),
+  input: answerInputs.question.describe('project_id, lead_session_id, question_id, answer.'),
   expected_revision: commandSchema.shape.expected_revision.default(null).describe('Leave it out.'),
 });
 

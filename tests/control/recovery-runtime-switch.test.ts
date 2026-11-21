@@ -266,17 +266,3 @@ it('ends the switch when the lead names the old runtime for the task', async () 
     { from: 'second', to: 'first' },
   ]);
 });
-
-it('shows the switch Pantheon made on the board', async () => {
-  const { f, lead, worker } = await handBacksUsedUp({ recovery_switch: 'auto' });
-  await switched(f, worker);
-
-  const row = f.control
-    .boardView(user, f.project.id, 1)
-    .tasks.find((each) => each.id === `${lead.id}:a`)!;
-  expect(row.rung).toMatchObject({
-    rung: 'switch',
-    by: 'pantheon',
-    switches: [{ from: 'first', to: 'second', by: 'pantheon' }],
-  });
-});

@@ -494,7 +494,7 @@ it('lists a stop as soon as its discard failed', async () => {
   ]);
 });
 
-it('keeps a wake the closed lead refused on its plan and lists it until a later wake succeeds', async () => {
+it('keeps a wake the closed lead refused on its plan until a later wake succeeds', async () => {
   const f = await workbenchFixture();
   const lead = await leadWithPlan(f);
   patch(f, lead.id, { state: 'closed' });
@@ -518,32 +518,11 @@ it('keeps a wake the closed lead refused on its plan and lists it until a later 
   await f.control.tick();
   const refused = planOf(f, lead.id).wake_failed!;
   expect(refused).toEqual({ reason: 'lead_closed', at: expect.any(Number) });
-  expect(
-    f.control.needsYou(user, f.project.id).items.filter((item) => item.reason === 'lead_closed'),
-  ).toEqual([
-    {
-      source: { table: 'board_plans', id: lead.id, revision: planOf(f, lead.id).revision },
-      kind: 'session.failed',
-      project_id: f.project.id,
-      session_id: lead.id,
-      status: 'closed',
-      created_at: refused.at,
-      reason: 'lead_closed',
-      decision: 'other',
-      blocks: 0,
-      primary: 'board.sync',
-      actions: [{ command: 'board.sync', allowed: true }],
-      next_step: expect.any(String),
-    },
-  ]);
 
   patch(f, lead.id, { state: 'open' });
   await f.control.tick();
   expect(planOf(f, lead.id).wake_failed).toBeUndefined();
   expect(planOf(f, lead.id).inbox).toEqual([]);
-  expect(
-    f.control.needsYou(user, f.project.id).items.filter((item) => item.reason === 'lead_closed'),
-  ).toEqual([]);
 });
 
 it('leaves the blocked merges and failed gates of a task session to its lead, except a change to protected paths', async () => {

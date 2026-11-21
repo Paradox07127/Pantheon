@@ -43,7 +43,7 @@ export const AGENT_SCOPE: readonly AgentScopeRow[] = [
   {
     capability: '整份计划',
     project_level: '经 `project_read` 读自己项目的计划',
-    personal_level: '不能，`board.view` 被拒',
+    personal_level: '不能',
     personal_actions: [],
     never_personal: [],
   },
@@ -59,7 +59,7 @@ export const AGENT_SCOPE: readonly AgentScopeRow[] = [
     project_level: '对自己项目的计划和任务可以',
     personal_level: '不能',
     personal_actions: [],
-    never_personal: ['board.plan.edit', 'task.start'],
+    never_personal: ['board.plan.update', 'task.start'],
   },
   {
     capability: '给项目的助理发请求',
@@ -69,11 +69,10 @@ export const AGENT_SCOPE: readonly AgentScopeRow[] = [
     never_personal: [],
   },
   {
-    capability: '回答提问、计划变更',
+    capability: '回答提问',
     project_level: '按章程回答自己 worker 的提问',
-    personal_level:
-      '默认都不能，用户在设置里逐类打开；转述的 worker 提问和超预算时的计划变更始终留给用户',
-    personal_actions: ['lead.question.answer', 'board.plan.proposal.resolve'],
+    personal_level: '默认不能，用户在设置里打开；转述的 worker 提问始终留给用户',
+    personal_actions: ['lead.question.answer'],
     never_personal: [],
   },
   {

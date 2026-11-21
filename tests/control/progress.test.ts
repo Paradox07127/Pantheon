@@ -181,9 +181,6 @@ function deepen(f: Fixture, turnId: string, causal_depth: number) {
 const depths = (f: Fixture, sessionId: string) =>
   f.turns(sessionId).map((turn) => turn.causal_depth ?? 0);
 
-const activityOf = (f: Fixture, taskId: string) =>
-  f.control.boardView(user, f.project.id, 1).tasks.find((each) => each.id === taskId)?.activity;
-
 it('finds the verified progress of a task in a merge, a new commit passing its gate and an accepted done report', async () => {
   const f = await workbenchFixture();
   const { lead, worker } = await leadAndWorker(f, [
@@ -235,7 +232,6 @@ it('counts ten round trips between a lead and a task session, and ends the chain
   expect(f.turns(worker.id).at(-1)!.causal_depth).toBe(10);
   expect(depths(f, worker.id)).toEqual([0, 2, 4, 6, 8, 10]);
   expect(depths(f, lead.id)).toEqual([0, 1, 3, 5, 7, 9]);
-  expect(activityOf(f, `${lead.id}:a`)?.causal_depth).toBe(10);
 
   await report(f, worker, 'done', 'The delimiter is a comma');
   await settle(f, lead);
@@ -286,7 +282,6 @@ it('leaves the causal depth off the turns a person sends', async () => {
   );
   expect(sent.causal_depth).toBeUndefined();
   await settle(f, worker);
-  expect(activityOf(f, `${lead.id}:a`)).not.toHaveProperty('causal_depth');
   expect(f.turns(lead.id)[0]!.causal_depth).toBeUndefined();
 });
 

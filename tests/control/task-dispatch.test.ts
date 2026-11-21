@@ -75,9 +75,6 @@ const sessionsOf = (f: Fixture, leadId: string, taskId: string) =>
   f.store
     .list<Session>('sessions')
     .filter((session) => session.task?.lead_session_id === leadId && session.task.id === taskId);
-const blockersOf = (f: Fixture, leadId: string, taskId: string) =>
-  f.control.boardView(user, f.project.id, 1).tasks.find((row) => row.id === `${leadId}:${taskId}`)!
-    .blockers;
 
 function patch(f: Fixture, sessionId: string, fields: Partial<Session>) {
   const session = current(f, sessionId);
@@ -115,10 +112,6 @@ async function acceptReport(f: Fixture, leadId: string, taskId: string) {
     sessionOf(f, leadId, 'lead'),
   );
 }
-
-const statusOf = (f: Fixture, leadId: string, taskId: string) =>
-  f.control.boardView(user, f.project.id, 1).tasks.find((row) => row.id === `${leadId}:${taskId}`)!
-    .status;
 
 /** Points the task at another runtime without the plan update checks, as when an adapter goes away. */
 function setTaskRuntime(f: Fixture, leadId: string, taskId: string, runtime: string) {
@@ -180,7 +173,7 @@ const dispatchNotes = (f: Fixture, leadId: string) =>
   planOf(f, leadId).inbox.filter((note) => note.kind === 'dispatch_failed').length +
   f.turns(leadId).filter((turn) => turn.input.includes('<note kind="dispatch_failed"')).length;
 
-it('tells the lead and the user once when the session of a started task cannot open', async () => {
+it('tells the lead once when the session of a started task cannot open', async () => {
   const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   startTasks(f, lead.id, ['a']);
@@ -205,24 +198,6 @@ it('tells the lead and the user once when the session of a started task cannot o
       causal_depth: expect.any(Number),
     },
   ]);
-  expect(f.control.needsYou(user, f.project.id).items).toEqual([
-    {
-      source: { table: 'board_plans', id: lead.id, revision: planOf(f, lead.id).revision },
-      kind: 'session.failed',
-      project_id: f.project.id,
-      session_id: lead.id,
-      task_id: `${lead.id}:a`,
-      status: 'queued',
-      created_at: error.at,
-      reason: 'task_dispatch_failed',
-      rung: 'retry',
-      decision: 'other',
-      blocks: 0,
-      actions: [],
-      next_step: expect.any(String),
-    },
-  ]);
-  expect(blockersOf(f, lead.id, 'a')[0]).toContain(error.message);
 });
 
 it('retries a task whose session cannot open only after its backoff, and clears the failure once it opens', async () => {
@@ -269,7 +244,6 @@ it('opens a session for a started task with the runtime, model and effort the pl
   expect(planOf(f, lead.id).dispatch).toEqual({
     a: { requested_at: expect.any(Number), causal_depth: expect.any(Number) },
   });
-  expect(blockersOf(f, lead.id, 'a')).toContain('Queued');
 
   await f.control.tick();
   const [opened] = sessionsOf(f, lead.id, 'a');
@@ -304,7 +278,6 @@ it('queues a task until its upstream task merges', async () => {
   const [upstream] = sessionsOf(f, lead.id, 'a');
   expect(upstream).toBeDefined();
   expect(sessionsOf(f, lead.id, 'b')).toEqual([]);
-  expect(blockersOf(f, lead.id, 'b')).toContain('Queued: waiting for dependencies');
 
   await settle(f, upstream!);
   await f.control.tick();
@@ -328,7 +301,6 @@ it('opens only one of two tasks whose scopes overlap by path segment', async () 
   expect(sessionsOf(f, lead.id, 'folder')).toHaveLength(1);
   expect(sessionsOf(f, lead.id, 'file')).toEqual([]);
   expect(sessionsOf(f, lead.id, 'sibling')).toHaveLength(1);
-  expect(blockersOf(f, lead.id, 'file')).toContain('Queued: waiting for the scope to free up');
 });
 
 it('runs at most three task sessions in a project and queues the rest', async () => {
@@ -337,7 +309,6 @@ it('runs at most three task sessions in a project and queues the rest', async ()
   startTasks(f, lead.id, ['a', 'b', 'c', 'd']);
   await f.control.tick();
   expect(['a', 'b', 'c', 'd'].map((id) => sessionsOf(f, lead.id, id).length)).toEqual([1, 1, 1, 0]);
-  expect(blockersOf(f, lead.id, 'd')).toContain('Queued: waiting for a free slot');
 
   await f.control.tick();
   expect(sessionsOf(f, lead.id, 'd')).toEqual([]);
@@ -404,11 +375,9 @@ it('keeps a task named like an object prototype property apart from the accepted
     .find((view) => view.lead_session_id === lead.id)!
     .tasks.find((view) => view.id === 'constructor')!;
   expect(planned.state).toBe('todo');
-  expect(statusOf(f, lead.id, 'constructor')).toBe('todo');
 
   expect(startTasks(f, lead.id, ['constructor'])).toEqual({ requested: ['constructor'] });
   expect(Object.hasOwn(planOf(f, lead.id).dispatch!, 'constructor')).toBe(true);
-  expect(blockersOf(f, lead.id, 'constructor')).toContain('Queued');
   await f.control.tick();
   expect(sessionsOf(f, lead.id, 'constructor')).toHaveLength(1);
 });
@@ -436,7 +405,6 @@ it('gives a task that reuses a removed task id none of its merged sessions', asy
   await f.control.tick();
   const [old] = sessionsOf(f, lead.id, 'a');
   patch(f, old!.id, { state: 'closed', outcome: 'merged' });
-  expect(statusOf(f, lead.id, 'a')).toBe('done');
 
   writePlan(f, lead.id, [task('other')]);
   writePlan(f, lead.id, [task('a'), task('b', { depends_on: ['a'] })]);
@@ -444,11 +412,9 @@ it('gives a task that reuses a removed task id none of its merged sessions', asy
     .find((view) => view.lead_session_id === lead.id)!
     .tasks.find((view) => view.id === 'a')!;
   expect(planned).toMatchObject({ state: 'todo', session_ids: [] });
-  expect(statusOf(f, lead.id, 'a')).toBe('todo');
   startTasks(f, lead.id, ['b']);
   await f.control.tick();
   expect(sessionsOf(f, lead.id, 'b')).toEqual([]);
-  expect(blockersOf(f, lead.id, 'b')).toContain('Queued: waiting for dependencies');
   expect(startTasks(f, lead.id, ['a'])).toEqual({ requested: ['b', 'a'] });
 });
 
@@ -484,35 +450,6 @@ it('refuses a done report from before the goal of the report task changed', asyn
   await report();
   await settle(f, current(f, lead.id));
   accept();
-  expect(statusOf(f, lead.id, 'r')).toBe('done');
-});
-
-it('reopens an accepted task when the task contract changes', async () => {
-  const f = await workbenchFixture();
-  const lead = await leadWithPlan(f, [reportTask('r')]);
-  await acceptReport(f, lead.id, 'r');
-
-  writePlan(f, lead.id, [reportTask('r', { acceptance: ['Names the chosen format'] })]);
-  expect(statusOf(f, lead.id, 'r')).not.toBe('done');
-
-  const [worker] = sessionsOf(f, lead.id, 'r');
-  // The next tick tells the idle session of the change.
-  await f.control.tick();
-  await settle(f, current(f, worker!.id));
-  await f.call(
-    'task.report',
-    { project_id: f.project.id, kind: 'done', text: 'Task r names the format' },
-    null,
-    sessionOf(f, worker!.id, 'worker'),
-  );
-  await settle(f, current(f, lead.id));
-  f.call(
-    'task.accept',
-    { project_id: f.project.id, task_id: 'r', evidence: 'The report names the format' },
-    null,
-    sessionOf(f, lead.id, 'lead'),
-  );
-  expect(statusOf(f, lead.id, 'r')).toBe('done');
 });
 
 it('keeps the generation of a task whose title or lane is all that changed', async () => {
@@ -542,7 +479,6 @@ it('keeps the generation of a task whose title or lane is all that changed', asy
     sessionOf(f, lead.id, 'lead'),
   );
   expect(planOf(f, lead.id).generations).toEqual({ r: { generation: 1, contract } });
-  expect(statusOf(f, lead.id, 'r')).toBe('done');
 });
 
 it('stops a queued task by dropping its start request, which leaves it todo', async () => {
@@ -556,8 +492,6 @@ it('stops a queued task by dropping its start request, which leaves it todo', as
     task_state: 'todo',
   });
   expect(planOf(f, lead.id).dispatch).toEqual({});
-  expect(statusOf(f, lead.id, 'b')).toBe('todo');
-  expect(blockersOf(f, lead.id, 'b')).not.toContain('Queued: waiting for dependencies');
   await f.control.tick();
   expect(sessionsOf(f, lead.id, 'b')).toEqual([]);
 });
@@ -603,7 +537,6 @@ it('discards a stopped task session only once its process stopped, then frees it
   expect(current(f, first!.id).state).toBe('closed');
   await f.control.tick();
   expect(sessionsOf(f, lead.id, 'd')).toHaveLength(1);
-  expect(statusOf(f, lead.id, 'a')).toBe('todo');
 
   expect(startTasks(f, lead.id, ['a'])).toEqual({ requested: ['a'] });
   const [other] = sessionsOf(f, lead.id, 'b');
@@ -643,7 +576,6 @@ it('finishes a lead stop that a daemon restart interrupted before the process co
   await f.control.tick();
   expect(current(f, stopped!.id)).toMatchObject({ state: 'closed', outcome: 'discarded' });
   expect(f.turns(stopped!.id).map((turn: SessionTurn) => turn.state)).toEqual(['failed']);
-  expect(statusOf(f, lead.id, 'a')).toBe('todo');
   expect(discardNotes(f, lead.id)).toBe(0);
   expect(startTasks(f, lead.id, ['a'])).toEqual({ requested: ['a'] });
   release();
@@ -704,7 +636,6 @@ it('tells the lead that a task it accepted stays done when the user discards its
     }),
   ]);
   expect(notes[0]!.text).toContain('stays done');
-  expect(statusOf(f, lead.id, 'a')).toBe('done');
 });
 
 it('refuses task.stop from other roles, for tasks outside the plan and for tasks with nothing to stop', async () => {
@@ -864,7 +795,6 @@ it('takes back the acceptance of a report task the lead stops', async () => {
   const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('r')]);
   await acceptReport(f, lead.id, 'r');
-  expect(statusOf(f, lead.id, 'r')).toBe('done');
   const [worker] = sessionsOf(f, lead.id, 'r');
   stopTask(f, lead.id, 'r');
   expect(Object.hasOwn(planOf(f, lead.id).accepted ?? {}, 'r')).toBe(false);
@@ -872,7 +802,6 @@ it('takes back the acceptance of a report task the lead stops', async () => {
     () => current(f, worker!.id).outcome === 'discarded',
     () => f.control.tick(),
   );
-  expect(statusOf(f, lead.id, 'r')).toBe('todo');
 });
 
 it('refuses to accept a report task on the done report of a session the lead stopped', async () => {
@@ -935,7 +864,6 @@ it('refuses a done report sent before the changed contract reached the session, 
   expect(() => startTasks(f, lead.id, ['r'])).toThrow(
     expect.objectContaining({ code: 'invalid_state' }),
   );
-  expect(statusOf(f, lead.id, 'r')).not.toBe('done');
   await settle(f, current(f, lead.id));
   expect(accept).toThrow(expect.objectContaining({ code: 'invalid_state' }));
 
@@ -944,7 +872,6 @@ it('refuses a done report sent before the changed contract reached the session, 
   await report();
   await settle(f, current(f, lead.id));
   accept();
-  expect(statusOf(f, lead.id, 'r')).toBe('done');
 });
 
 it('does not hold the scope of a task id the lead removed and reused against other tasks', async () => {
@@ -998,7 +925,6 @@ it('holds the place and scope of an accepted report task while its session has a
     current(f, worker!.id).revision,
   );
   startTasks(f, lead.id, ['d']);
-  expect(blockersOf(f, lead.id, 'd')).toContain('Queued: waiting for the scope to free up');
 
   await settle(f, current(f, worker!.id));
   await f.control.tick();
@@ -1084,7 +1010,6 @@ it('holds every path for a running task session until its changed contract reach
   startTasks(f, lead.id, ['b']);
   await f.control.tick();
   expect(sessionsOf(f, lead.id, 'b')).toEqual([]);
-  expect(blockersOf(f, lead.id, 'b')).toContain('Queued: waiting for the scope to free up');
 
   await eventually(
     () => sessionsOf(f, lead.id, 'b').length === 1,
@@ -1140,7 +1065,6 @@ it('opens a high priority task first when one place is left', async () => {
   startTasks(f, lead.id, ['c', 'd']);
   await f.control.tick();
   expect(['a', 'b', 'c', 'd'].map((id) => sessionsOf(f, lead.id, id).length)).toEqual([1, 1, 0, 1]);
-  expect(blockersOf(f, lead.id, 'c')).toContain('Queued: waiting for a free slot');
 });
 
 const userOn = (f: Fixture, leadId: string, command: 'task.start' | 'task.stop', input: object) =>
@@ -1201,7 +1125,6 @@ it('lets the user start a task with no unfinished session, through the same queu
     expect.objectContaining({ task_id: 'b' }),
   ]);
   await f.control.tick();
-  expect(blockersOf(f, lead.id, 'b')).toContain('Queued: waiting for dependencies');
 });
 
 it('tells a task session that opens again how the earlier session of the task ended', async () => {
@@ -1243,11 +1166,6 @@ it('reserves runtime capacity across the queue and admits a different runtime', 
     f.store.must('workflow_policies', f.project.id).revision,
   );
   startTasks(f, lead.id, ['first', 'second', 'other']);
-  const board = f.control.boardView(user, f.project.id, 1);
-  expect(board.tasks.find((row) => row.id === `${lead.id}:second`)?.dispatch_wait).toBe(
-    'runtime_capacity',
-  );
-  expect(board.tasks.find((row) => row.id === `${lead.id}:other`)?.dispatch_wait).toBeUndefined();
   await f.control.tick();
   expect(sessionsOf(f, lead.id, 'first')).toHaveLength(1);
   expect(sessionsOf(f, lead.id, 'second')).toHaveLength(0);
@@ -1273,10 +1191,6 @@ it('pauses dispatch and direct claims while running task sessions continue', asy
     f.store.must('workflow_policies', f.project.id).revision,
   );
   startTasks(f, lead.id, ['queued']);
-  expect(
-    f.control.boardView(user, f.project.id, 1).tasks.find((row) => row.id === `${lead.id}:queued`)
-      ?.dispatch_wait,
-  ).toBe('paused');
   expect(() => startTasks(f, lead.id, ['direct'])).toThrow(/paused/i);
   await f.control.tick();
   expect(sessionsOf(f, lead.id, 'queued')).toHaveLength(0);
@@ -1436,11 +1350,6 @@ it.each(['runtime_capacity', 'runtime_limited'] as const)(
     startTasks(f, lead.id, ['first', 'second']);
     f.control.adapters.delete('fixture');
     const waiting = wait === 'runtime_capacity' ? 'second' : 'first';
-    expect(
-      f.control
-        .boardView(user, f.project.id, 1)
-        .tasks.find((row) => row.id === `${lead.id}:${waiting}`)?.dispatch_wait,
-    ).toBe(wait);
     await f.control.tick();
     expect(sessionsOf(f, lead.id, waiting)).toHaveLength(0);
   },

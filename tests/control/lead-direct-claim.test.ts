@@ -48,9 +48,6 @@ const sessionsOf = (f: Fixture, leadId: string, taskId: string) =>
   f.store
     .list<Session>('sessions')
     .filter((session) => session.task?.lead_session_id === leadId && session.task.id === taskId);
-const blockersOf = (f: Fixture, leadId: string, taskId: string) =>
-  f.control.boardView(user, f.project.id, 1).tasks.find((row) => row.id === `${leadId}:${taskId}`)!
-    .blockers;
 const eventsOf = (f: Fixture, aggregateId: string, kind: string) =>
   (
     f.store.db
@@ -315,7 +312,6 @@ it('keeps the scope of a direct task and of running task sessions apart', async 
   start(f, lead.id, ['later']);
   await f.control.tick();
   expect(sessionsOf(f, lead.id, 'later')).toEqual([]);
-  expect(blockersOf(f, lead.id, 'later')).toContain('Queued: waiting for the scope to free up');
 });
 
 it('records the worktree head when the lead reports its direct task done', async () => {

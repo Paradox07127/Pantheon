@@ -163,11 +163,6 @@ const boardQuestion = (f: Fixture, leadId: string, approvalId: string) =>
     .must<BoardPlan>('board_plans', leadId)
     .questions!.find((entry) => entry.source?.approval_id === approvalId)!;
 
-const questionItems = (f: Fixture) =>
-  f.control
-    .needsYou(user, f.project.id)
-    .items.filter((item) => String(item.kind) === 'lead.question');
-
 const powerUses = (f: Fixture) =>
   f.store
     .kindEvents(f.project.id, ['charter.power_used'])
@@ -251,34 +246,6 @@ const userWords: Cite = () => [
   { kind: 'user_words', ref: 'finance opens the files in spreadsheets' },
 ];
 
-/** The lead proposes a plan change and `by` rejects it giving the task's user words as the reason. */
-function rejectWithUserWords(f: Fixture, leadId: string, by: Principal): Citation[] {
-  const { proposal_id } = f.call<{ proposal_id: string }>(
-    'board.plan.propose',
-    {
-      project_id: f.project.id,
-      base_version: f.store.must<BoardPlan>('board_plans', leadId).plan_version,
-      reason: 'Task a reads better as the export task',
-      ops: [{ type: 'set_task', task_id: 'a', patch: { title: 'Export task' } }],
-    },
-    null,
-    leadOf(f, leadId),
-  );
-  f.call(
-    'board.plan.proposal.resolve',
-    {
-      project_id: f.project.id,
-      lead_session_id: leadId,
-      proposal_id,
-      decision: 'reject',
-      reason: 'finance opens the files in spreadsheets',
-    },
-    null,
-    by,
-  );
-  return userWords(f, leadId);
-}
-
 /** A turn of the user's personal agent on the lead with `words` and a board updates digest after them. */
 function keyTurnWithDigest(f: Fixture, leadId: string, words: string) {
   f.store.insert<SessionTurn>('session_turns', {
@@ -315,21 +282,6 @@ it.each<[string, Record<string, unknown> | undefined, Cite, string]>([
     (f, leadId) => {
       allowPersonal(f, ['question']);
       return [{ kind: 'earlier_answer', ref: earlierAnswer(f, leadId, personal) }];
-    },
-    'invalid_input',
-  ],
-  [
-    'the user words the user also gave as the reason to reject a plan change',
-    { plan_changes: 'confirm' },
-    (f, leadId) => rejectWithUserWords(f, leadId, user),
-    'answered',
-  ],
-  [
-    "the user words the user's personal agent gave as the reason to reject a plan change",
-    { plan_changes: 'confirm' },
-    (f, leadId) => {
-      allowPersonal(f, ['plan_change']);
-      return rejectWithUserWords(f, leadId, personal);
     },
     'invalid_input',
   ],
@@ -399,14 +351,12 @@ it.each<[string, Record<string, unknown> | undefined, Cite, string]>([
     });
     expect(powerUses(f)).toHaveLength(1);
     expect(powerUses(f)[0]!.payload).toMatchObject({ mode: 'on', session_id: lead.id });
-    expect(questionItems(f)).toEqual([]);
     return;
   }
   expect(row).toMatchObject({ state: 'pending', decider: 'user' });
   expect(answer).not.toHaveBeenCalled();
   expect(boardQuestion(f, lead.id, approval.id)).not.toHaveProperty('answer');
   expect(powerUses(f)).toHaveLength(0);
-  expect(questionItems(f).map((item) => item.request_id)).toEqual([card.id]);
 });
 
 it.each<[string, Principal, boolean]>([['the user', user, true]])(
@@ -427,7 +377,7 @@ it.each<[string, Principal, boolean]>([['the user', user, true]])(
   },
 );
 
-it("tells the lead of a task session's question at once and keeps it listed for the user", async () => {
+it("tells the lead of a task session's question at once and leaves it open", async () => {
   const { f, lead, worker, prompt } = await workerFixture();
   const approval = prompt('AskUserQuestion', question);
   const card = boardQuestion(f, lead.id, approval.id);
@@ -441,7 +391,7 @@ it("tells the lead of a task session's question at once and keeps it listed for 
     wake: { causes: expect.arrayContaining(['worker_question']) },
   });
   expect(wake!.input).toContain(`Task a "Task a" asks: ${formatQuestion}`);
-  expect(questionItems(f).map((item) => item.request_id)).toEqual([card.id]);
+  expect(boardQuestion(f, lead.id, approval.id)).not.toHaveProperty('answer');
 });
 
 it('leaves the lead untold while the charter asks the user first', async () => {
@@ -452,9 +402,7 @@ it('leaves the lead untold while the charter asks the user first', async () => {
   const approval = prompt('AskUserQuestion', question);
   expect(notes(f, lead.id, 'worker_question')).toEqual([]);
   expect(trackerTurns(f, lead.id)).toBe(before);
-  expect(questionItems(f).map((item) => item.request_id)).toEqual([
-    boardQuestion(f, lead.id, approval.id).id,
-  ]);
+  expect(boardQuestion(f, lead.id, approval.id)).not.toHaveProperty('answer');
 });
 
 it('refuses the lead once the user answered the question first', async () => {

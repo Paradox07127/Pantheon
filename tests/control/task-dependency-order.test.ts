@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import type { BoardPlan, LeadNote, Principal, Session } from '@pantheon/domain';
-import { countingGit, eventually, gitRunsOf, settle, user } from '../helpers.js';
+import { countingGit, eventually, gitRunsOf, settle } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
 type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
@@ -82,9 +82,6 @@ it('tells the lead when a downstream task waits on an upstream task that was nev
   ]);
   expect(notes[0]!.text).toContain('upstream task a');
   expect(notes[0]!.text).toContain('never started');
-  expect(waitingOnUpstream(f)).toMatchObject([
-    { task_id: `${lead.id}:b`, upstream: { task_id: `${lead.id}:a`, stuck: 'never_started' } },
-  ]);
 });
 
 it('reads no start point while the only started task waits on its upstream task', async () => {
@@ -128,7 +125,7 @@ it('tells the lead again when a task started anew waits on an upstream task that
   ).toHaveLength(2);
 });
 
-it('tells the lead and lists needs-you when the upstream session closed without an outcome', async () => {
+it('tells the lead when the upstream session closed without an outcome', async () => {
   const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('a'), reportTask('b', { depends_on: ['a'] })]);
   startTasks(f, lead.id, ['a', 'b']);
@@ -139,9 +136,6 @@ it('tells the lead and lists needs-you when the upstream session closed without 
   f.store.update<Session>('sessions', { ...session, state: 'closed' }, session.revision);
   await f.control.tick();
   await f.control.tick();
-  expect(waitingOnUpstream(f)).toMatchObject([
-    { task_id: `${lead.id}:b`, upstream: { task_id: `${lead.id}:a`, stuck: 'stopped' } },
-  ]);
   expect(
     notesOn(f, lead.id, 'b').some((note) => note.text.includes(`${upstream!.id} is closed`)),
   ).toBe(true);
@@ -174,20 +168,14 @@ const mergedTask = reportTask('a', {
   acceptance: ['pnpm test'],
 });
 
-/** The needs-you items of queued tasks that wait for an upstream task nobody moves. */
-const waitingOnUpstream = (f: Fixture) =>
-  f.control
-    .needsYou(user, f.project.id)
-    .items.filter((item) => item.reason === 'task_upstream_stuck');
-
-it('tells the lead and lists needs-you while the merge of an upstream session stays blocked', async () => {
+it('tells the lead while the merge of an upstream session stays blocked', async () => {
   const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [mergedTask, reportTask('b', { depends_on: ['a'] })]);
   startTasks(f, lead.id, ['a', 'b']);
   await f.control.tick();
   const [upstream] = sessionsOf(f, lead.id, 'a');
   await settle(f, upstream!);
-  expect(waitingOnUpstream(f)).toEqual([]);
+  expect(notesOn(f, lead.id, 'b')).toEqual([]);
 
   const session = current(f, upstream!.id);
   f.store.update<Session>(
@@ -201,24 +189,10 @@ it('tells the lead and lists needs-you while the merge of an upstream session st
   expect(notes).toEqual([expect.objectContaining({ task_id: 'b', kind: 'blocked' })]);
   expect(notes[0]!.text).toContain('upstream task a');
   expect(notes[0]!.text).toContain(`${upstream!.id} is blocked: local_changes`);
-  expect(waitingOnUpstream(f)).toMatchObject([
-    {
-      source: { table: 'board_plans', id: lead.id },
-      kind: 'session.failed',
-      session_id: lead.id,
-      task_id: `${lead.id}:b`,
-      status: 'queued',
-      upstream: { task_id: `${lead.id}:a`, stuck: 'merge_blocked' },
-      next_step: expect.any(String),
-    },
-  ]);
   expect(sessionsOf(f, lead.id, 'b')).toEqual([]);
-
-  writePlan(f, lead.id, [mergedTask, reportTask('b')]);
-  expect(waitingOnUpstream(f)).toEqual([]);
 });
 
-it('tells the lead and lists needs-you when the lead stopped the upstream task of a queued task', async () => {
+it('tells the lead when the lead stopped the upstream task of a queued task', async () => {
   const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('a'), reportTask('b', { depends_on: ['a'] })]);
   startTasks(f, lead.id, ['a', 'b']);
@@ -243,15 +217,6 @@ it('tells the lead and lists needs-you when the lead stopped the upstream task o
   expect(notes[0]!.text).toContain('upstream task a');
   expect(notes[0]!.text).toContain('was stopped by the lead: The approach is wrong');
   expect(notes[0]!.text).toContain('it has no new start request');
-  expect(waitingOnUpstream(f)).toMatchObject([
-    {
-      task_id: `${lead.id}:b`,
-      upstream: { task_id: `${lead.id}:a`, stuck: 'stopped' },
-    },
-  ]);
-
-  startTasks(f, lead.id, ['a']);
-  expect(waitingOnUpstream(f)).toEqual([]);
 });
 
 it('stops the session of a task that left the plan and tells the lead', async () => {

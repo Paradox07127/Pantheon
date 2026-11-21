@@ -199,11 +199,6 @@ it.each(['reset', 'snapshot'] as const)(
       principal,
     );
     await f.control.tick();
-    const row = f.control
-      .boardView(user, f.project.id, 1)
-      .tasks.find((task) => task.id === `${f.lead.id}:answer`)!;
-    expect(row.dispatch_wait).toBe('runtime_limited');
-    expect(row.blockers).toContain('Queued: waiting for runtime quota');
     const leadView = f.control.projectRead(principal, f.project.id) as ProjectRead;
     expect(
       leadView.plans

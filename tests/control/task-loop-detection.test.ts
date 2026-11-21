@@ -220,10 +220,6 @@ async function turnsOfWorker(f: Fixture, leadId: string, turns: unknown[][]) {
   return worker;
 }
 
-const healthOf = (f: Fixture, leadId: string) =>
-  f.control.boardView(user, f.project.id, 1).tasks.find((each) => each.id === `${leadId}:a`)
-    ?.activity?.health;
-
 it('tells the lead once when a task session fails the same call in three turns in a row', async () => {
   const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a', { done_when: 'report' })]);
@@ -237,7 +233,6 @@ it('tells the lead once when a task session fails the same call in three turns i
       text: 'The session repeats a failing tool call across turns. In each of its last 3 turns, Bash failed with the input {"command":"pnpm test","description":"Run the tests"}.',
     }),
   ]);
-  expect(healthOf(f, lead.id)).toBe('looping');
 
   f.call(
     'session.send',
@@ -259,7 +254,6 @@ it('does not tell the lead when consecutive turns of a task session fail differe
     [failing({ command: 'pnpm lint' })],
   ]);
   expect(notes(f, lead.id, 'looping')).toEqual([]);
-  expect(healthOf(f, lead.id)).not.toBe('looping');
 });
 
 it('does not tell the lead when consecutive turns of a task session repeat a successful call', async () => {
@@ -269,5 +263,4 @@ it('does not tell the lead when consecutive turns of a task session repeat a suc
 
   await turnsOfWorker(f, lead.id, [[test], [test], [test]]);
   expect(notes(f, lead.id, 'looping')).toEqual([]);
-  expect(healthOf(f, lead.id)).not.toBe('looping');
 });

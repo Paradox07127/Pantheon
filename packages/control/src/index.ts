@@ -109,7 +109,6 @@ import {
   sessionToolActivity,
 } from './workbench-session.js';
 import { sessionTasks } from './session-tasks.js';
-import { boardView, prefetchRevertWalks } from './board-view.js';
 import {
   projectHeatmap,
   projectTrace,
@@ -800,7 +799,7 @@ export class Control extends EventEmitter {
   }
   /**
    * Reads ahead asynchronously the worktrees the session list and the needs-you merge actions read,
-   * and the board's revert walks, of the project or of every summary project.
+   * of the project or of every summary project.
    */
   async prefetchWorktreeReads(principal: Principal, projectId?: string) {
     const projects = projectId
@@ -810,7 +809,6 @@ export class Control extends EventEmitter {
       projects.flatMap((id) => [
         prefetchWorktreeReads(this.ctx, principal, id),
         prefetchMergeReads(this.ctx, principal, id),
-        prefetchRevertWalks(this.ctx, principal, id),
       ]),
     );
   }
@@ -872,16 +870,6 @@ export class Control extends EventEmitter {
   }
   sessionToolActivity(principal: Principal, sessionId: string) {
     return sessionToolActivity(this.ctx, principal, sessionId);
-  }
-  boardView(
-    principal: Principal,
-    projectId: string,
-    days: number | 'all',
-    until?: string,
-    readChanges: true | 'cached' = true,
-  ) {
-    const sessions = sessionList(this.ctx, principal, projectId, readChanges);
-    return boardView(this.ctx, principal, projectId, days, until, sessions);
   }
   sessionComments(principal: Principal, sessionId: string) {
     const session = this.store.must<Session>('sessions', sessionId);

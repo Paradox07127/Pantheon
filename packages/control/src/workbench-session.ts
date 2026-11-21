@@ -1149,34 +1149,6 @@ const listsReady = (
     ? worktree.head !== sessionBase(session, workspace)
     : commitsOnMerge(ctx, session));
 
-/**
- * Whether the session lists as ready by the newest cached Git reads of its workspace, as a list
- * from the cache shows them; runs no Git, and is undefined while no list read what its state needs.
- */
-export function cachedReady(
-  ctx: ControlContext,
-  session: Session,
-  workspace: Workspace,
-  waiting: boolean,
-): boolean | undefined {
-  if (
-    !workspaceReady(workspace) ||
-    (workspace.kind === 'in_place' && !sessionBase(session, workspace))
-  )
-    return false;
-  const cached = worktreeReads.get(workspace.id)?.get(session.id);
-  if (!cached) return undefined;
-  const { facts } = knownReads(cached);
-  // A failed read (null) says no more than a missing one.
-  if (facts == null) return undefined;
-  return listsReady(
-    ctx,
-    session,
-    workspace,
-    stateWorktree(session, workspace, listedState(ctx, session, waiting ? 1 : 0, undefined), facts),
-  );
-}
-
 /** What the list shows of the worktree from the cached reads, or the next read the cache lacks. */
 function listedGit(ctx: ControlContext, p: Principal, listed: ListedRead): ListedGit | GitStep {
   const { session, workspace, cached } = listed,

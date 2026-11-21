@@ -220,9 +220,6 @@ it('ignores a stored definition: runs no custom step, reviews only the review lo
     null,
     principal(f, lead.id, 'lead'),
   );
-  expect(
-    f.store.list<Review>('reviews').some((r) => r.plan?.tasks.some((t) => t.task_id === 'audit')),
-  ).toBe(true);
   start(f, lead, ['export', 'import']);
   await f.control.tick();
   const workers = ['export', 'import'].map((id) => workerOf(f, lead, id)!);

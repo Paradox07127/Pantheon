@@ -38,9 +38,6 @@ const sessionsOf = (f: Fixture, leadId: string, taskId: string) =>
   f.store
     .list<Session>('sessions')
     .filter((session) => session.task?.lead_session_id === leadId && session.task.id === taskId);
-const blockersOf = (f: Fixture, leadId: string, taskId: string) =>
-  f.control.boardView(user, f.project.id, 1).tasks.find((row) => row.id === `${leadId}:${taskId}`)!
-    .blockers;
 const overBudgetItems = (f: Fixture) =>
   f.control
     .needsYou(user, f.project.id)
@@ -155,7 +152,6 @@ it('opens no task session, keeps the lead asleep and lists the project once its 
   const f = await workbenchFixture();
   const { lead, worker } = await overspent(f);
   expect(sessionsOf(f, lead.id, 'b')).toEqual([]);
-  expect(blockersOf(f, lead.id, 'b')).toContain('Queued: project over budget');
 
   const wakes = trackerTurns(f, lead.id).length;
   f.call(

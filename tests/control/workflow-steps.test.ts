@@ -150,7 +150,7 @@ const merged = (f: Fixture, worker: Session) =>
     10000,
   );
 
-it("shows the step runs of the task's current generation on its board row", async () => {
+it("retires the step runs of the task's older generation", async () => {
   vi.spyOn(validation, 'runValidationCommand').mockResolvedValue(validationResult());
   const { f, lead } = await setup([], { path: 'review_loop' });
   const reviewer = new SilentReviewer(1);
@@ -162,24 +162,7 @@ it("shows the step runs of the task's current generation on its board row", asyn
     () => f.control.tick(),
     10000,
   );
-  const row = () =>
-    f.control.boardView(user, f.project.id, 1).tasks.find((t) => t.id === `${lead.id}:export`)!;
   const [old] = runs(f);
-  expect(row().step_runs).toEqual([
-    {
-      id: old!.id,
-      slot: 'before_merge',
-      step_id: REVIEW_LOOP_STEP_ID,
-      title: 'Code review',
-      kind: 'review',
-      state: 'failed',
-      reason: old!.reason,
-      session_id: worker.id,
-      created_at: old!.created_at,
-      finished_at: old!.finished_at,
-      reviewers: [{ runtime: 'reviewer' }],
-    },
-  ]);
 
   const plan = f.store.must<BoardPlan>('board_plans', lead.id);
   f.store.update(
@@ -187,7 +170,6 @@ it("shows the step runs of the task's current generation on its board row", asyn
     { ...plan, generations: { export: { generation: 2, contract: 'changed' } } },
     plan.revision,
   );
-  expect(row()).not.toHaveProperty('step_runs');
   await f.control.tick();
   expect(f.store.must<StepRun>('workflow_step_runs', old!.id).state).toBe('retired');
 });
@@ -915,13 +897,6 @@ it('dispatches parallel task parts into separate worktrees and merges them in se
     .filter((s) => s.task?.lead_session_id === lead.id);
   expect(workers).toHaveLength(2);
   expect(new Set(workers.map((s) => s.workspace_id)).size).toBe(2);
-  const parts = f.control
-    .boardView(user, f.project.id, 1)
-    .tasks.find((task) => task.id.endsWith(':export'))?.parallel;
-  expect(parts?.map(({ title, session_id }) => ({ title, session_id }))).toEqual([
-    { title: 'Write output', session_id: workers.find((s) => s.task?.parallel_index === 0)!.id },
-    { title: 'Write tests', session_id: workers.find((s) => s.task?.parallel_index === 1)!.id },
-  ]);
   for (const [index, worker] of workers.entries()) {
     await settle(f, worker);
     const workspace = f.store.must<Workspace>('workspaces', worker.workspace_id!);

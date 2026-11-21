@@ -342,9 +342,6 @@ it('inherits session settings and merge destination and projects fork provenance
   const provenance = { session_id: source.id };
   expect(f.list().find((s) => s.id === branch.id)).toMatchObject({ forked_from: provenance });
   expect(
-    f.control.boardView(user, f.project.id, 7).tasks.find((row) => row.id === branch.id),
-  ).toMatchObject({ forked_from: provenance });
-  expect(
     f.store
       .events(0, undefined, 10000)
       .filter((e) => e.kind === 'session.forked' && e.aggregate_id === branch.id)

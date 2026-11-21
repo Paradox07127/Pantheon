@@ -657,10 +657,8 @@ it.each([
         });
       const items = f.control
         .needsYou(user, f.project.id)
-        .items.filter(
-          (item) => item.source.id === approval.id || String(item.kind) === 'lead.question',
-        );
-      expect(items.map((item) => item.kind)).toEqual(cards ? ['lead.question'] : ['permission']);
+        .items.filter((item) => item.source.id === approval.id);
+      expect(items.map((item) => item.kind)).toEqual(cards ? [] : ['permission']);
     } finally {
       await f.close();
     }

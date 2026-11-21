@@ -643,30 +643,7 @@ it('serves needs-you queries with strict params and only the user deciding appro
   }
 });
 
-it('prefetches the worktree reads before it answers the board view', async () => {
-  const root = mkdtempSync(path.join(os.tmpdir(), 'pantheon-board-view-')),
-    clock = createVirtualClock(1700000000000);
-  mkdirSync(path.join(root, 'project'));
-  const f = await startFixtureDaemon(root, [new FixtureAdapter()], { now: clock.now });
-  try {
-    const project = await f.call('project.open', {
-      name: 'Board query project',
-      roots: [path.join(root, 'project')],
-    });
-    const prefetch = vi.spyOn(f.daemon.control, 'prefetchWorktreeReads');
-    const response = await fetch(`${f.daemon.url}/v1/board.view?project_id=${project.id}&days=14`, {
-      headers: { Authorization: `Bearer ${f.daemon.token}` },
-    });
-    expect(response.status).toBe(200);
-    expect(prefetch).toHaveBeenCalledWith(expect.objectContaining({ id: user.id }), project.id);
-    expect(await response.json()).toEqual(f.daemon.control.boardView(user, project.id, 14));
-  } finally {
-    await f.close();
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-it('routes longer and past board ranges and range-filtered project gates', async () => {
+it('routes range-filtered project gates', async () => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'pantheon-board-ranges-')),
     clock = createVirtualClock(new Date(2027, 2, 16, 12).getTime());
   mkdirSync(path.join(root, 'project'));
@@ -685,21 +662,6 @@ it('routes longer and past board ranges and range-filtered project gates', async
       );
       return { status: response.status, body: await response.json() };
     };
-    for (const [days, until] of [
-      [30, undefined],
-      ['all', undefined],
-      [7, '2027-03-13'],
-    ] as const) {
-      const response = await get('board.view', `days=${days}${until ? `&until=${until}` : ''}`);
-      expect(response.status).toBe(200);
-      expect(response.body).toEqual(f.daemon.control.boardView(user, project.id, days, until));
-    }
-    for (const params of [
-      'days=all&until=2027-03-13',
-      'days=7&until=2027-03-17',
-      'days=7&until=2027-02-30',
-    ])
-      expect((await get('board.view', params)).body.error).toBe('invalid_input');
     const history = vi.spyOn(f.daemon.control, 'projectGatesHistory');
     expect((await get('project.gates.history', 'since=123&limit=500')).body).toEqual({ runs: [] });
     expect(history).toHaveBeenCalledWith(

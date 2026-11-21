@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { BoardModel, ProjectGatesHistory } from '@pantheon/protocol';
+import type { ProjectGatesHistory } from '@pantheon/protocol';
 import { nodes, text } from './web-hook-host.js';
 import { gateTracker } from '@/lib/gate-model';
 import { zh } from './i18n-setup.js';
@@ -65,17 +65,4 @@ describe('gate tracker model', () => {
     expect(columns).toHaveLength(30);
     expect(columns.at(-1)!.run_id).toBe('n0');
   });
-});
-
-type Totals = BoardModel['task_progress']['totals'];
-const totals = (patch: Partial<Totals>): Totals => ({
-  done: 0,
-  running: 0,
-  waiting: 0,
-  idle: 0,
-  ready: 0,
-  failed: 0,
-  discarded: 0,
-  not_started: 0,
-  ...patch,
 });

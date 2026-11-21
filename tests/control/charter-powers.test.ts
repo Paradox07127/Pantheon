@@ -1,34 +1,20 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { afterEach, expect, it } from 'vitest';
+import { expect, it } from 'vitest';
 import {
-  id,
-  type BoardPlan,
   type CharterMode,
   type CharterPower,
   type Principal,
   type Session,
   type WorkflowPolicy,
 } from '@pantheon/domain';
-import { awaitWorkspaceReady, eventually, fixture, insertSession, user } from '../helpers.js';
+import { awaitWorkspaceReady, eventually, fixture, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
 type Plain = Awaited<ReturnType<typeof fixture>>;
 type Caller = Pick<Plain, 'call' | 'store' | 'project' | 'control'>;
 
-const plains: Plain[] = [];
-afterEach(async () => {
-  for (const f of plains.splice(0)) await f.close();
-});
-
-async function plain() {
-  const f = await fixture({ managedWorkspaces: true });
-  plains.push(f);
-  return f;
-}
-
-const REQUEST = 'Ship the export API this week.',
-  MERGE_REASON = 'The README names the new module';
+const MERGE_REASON = 'The README names the new module';
 
 /** What came of a lead's use of a power: applied at once, waiting for the user, or refused. */
 interface Outcome {
@@ -66,60 +52,10 @@ async function attempt(run: () => unknown): Promise<Pick<Outcome, 'refused' | 'r
   }
 }
 
-const waiting = (f: Caller, kind: string) =>
-  f.control.needsYou(user, f.project.id).items.some((item) => item.kind === kind);
-
 const recorded = (f: Caller, power: CharterPower) =>
   f.store
     .kindEvents(f.project.id, ['charter.power_used'])
     .some((event) => (event.payload as { power: string }).power === power);
-
-/** A lead named lead whose plan has task api under milestone release. */
-function leadWithPlan(f: Plain): Principal {
-  insertSession(f, { id: 'lead', turn_count: 1 });
-  f.store.insert('session_turns', {
-    id: id(),
-    revision: 1,
-    project_id: f.project.id,
-    session_id: 'lead',
-    input: REQUEST,
-    kind: 'send',
-    delivery: 'delivered',
-    state: 'completed',
-  });
-  const lead = leadOf(f, 'lead');
-  f.call(
-    'board.plan.update',
-    {
-      project_id: f.project.id,
-      base_version: 0,
-      headline: 'Export ships this week',
-      lanes: [{ id: 'core', title: 'Core' }],
-      tasks: [
-        {
-          id: 'api',
-          title: 'API',
-          goal: 'Serve exports',
-          lane: 'core',
-          depends_on: [],
-          source: ['Ship the export API'],
-          scope: [],
-          acceptance: [],
-          done_when: 'report',
-          milestone: 'release',
-        },
-      ],
-      milestones: [
-        { id: 'release', title: 'Release', criteria: ['Exports download'], tasks: ['api'] },
-      ],
-      risks: [],
-      assumptions: [],
-    },
-    null,
-    lead,
-  );
-  return lead;
-}
 
 function commit(repository: string, name: string, contents: string) {
   mkdirSync(path.dirname(path.join(repository, name)), { recursive: true });
@@ -128,39 +64,7 @@ function commit(repository: string, name: string, contents: string) {
   git(repository, 'commit', '--quiet', '-m', `Update ${name}`);
 }
 
-const scenarios: Record<
-  'plan_change' | 'merge_out_of_scope',
-  (mode: CharterMode) => Promise<Outcome>
-> = {
-  async plan_change(mode) {
-    const f = await plain();
-    f.call(
-      'workflow.policy.set',
-      { project_id: f.project.id, plan_changes: mode === 'on' ? 'auto' : 'confirm' },
-      null,
-    );
-    const lead = leadWithPlan(f);
-    const plan = () => f.store.must<BoardPlan>('board_plans', 'lead');
-    const refusal = await attempt(() =>
-      f.call(
-        'board.plan.propose',
-        {
-          project_id: f.project.id,
-          base_version: plan().plan_version,
-          reason: 'The export needs a narrower contract',
-          ops: [{ type: 'set_task', task_id: 'api', patch: { title: 'Export API' } }],
-        },
-        null,
-        lead,
-      ),
-    );
-    return {
-      applied: plan().tasks[0]!.title === 'Export API',
-      waiting: waiting(f, 'board.plan.proposal'),
-      recorded: recorded(f, 'plan_change'),
-      ...refusal,
-    };
-  },
+const scenarios: Record<'merge_out_of_scope', (mode: CharterMode) => Promise<Outcome>> = {
   async merge_out_of_scope(mode) {
     const f = await workbenchFixture();
     git(f.source, 'config', 'user.name', 'Source User');
@@ -255,9 +159,6 @@ const scenarios: Record<
 type Row = Outcome & { power: keyof typeof scenarios; mode: CharterMode };
 
 it.each<Row>([
-  { power: 'plan_change', mode: 'on', applied: true, waiting: false, recorded: true },
-  { power: 'plan_change', mode: 'ask', applied: false, waiting: true, recorded: true },
-
   { power: 'merge_out_of_scope', mode: 'on', applied: true, waiting: false, recorded: true },
   {
     power: 'merge_out_of_scope',

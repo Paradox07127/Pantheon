@@ -39,11 +39,9 @@ import { zh } from './i18n-setup.js';
 const summary = (project_id: string, needs_you: number, running: number): ProjectSummary => ({
   project_id,
   name: project_id,
-  counts: { running, waiting: 0, ready: 0, failed: 0, queued: 0 },
+  counts: { running, waiting: 0, ready: 0, failed: 0 },
   merged_today: 0,
   needs_you,
-  milestone: null,
-  done_daily: [],
   last_activity_at: null,
 });
 
@@ -181,11 +179,11 @@ describe('sidebar on the all projects screen', () => {
     mock.summaries = [
       {
         ...summary('alpha', 0, 0),
-        counts: { running: 0, waiting: 1, ready: 0, failed: 0, queued: 0 },
+        counts: { running: 0, waiting: 1, ready: 0, failed: 0 },
       },
       {
         ...summary('beta', 0, 0),
-        counts: { running: 0, waiting: 0, ready: 1, failed: 0, queued: 0 },
+        counts: { running: 0, waiting: 0, ready: 1, failed: 0 },
       },
       summary('gamma', 0, 0),
     ];

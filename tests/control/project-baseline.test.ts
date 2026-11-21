@@ -434,8 +434,6 @@ it('lists the baseline session for the user, waits on its newest review, and lea
     expect(listed()).toMatchObject({ state: 'waiting', waiting: 0 });
     await f.startBaseline();
     expect(listed()).toMatchObject({ state: 'done' });
-    const view = f.control.boardView(user, f.project.id, 14);
-    expect(JSON.stringify(view)).not.toContain(baseline.session_id);
     expect(listed()).not.toHaveProperty('lead');
   } finally {
     await f.close();

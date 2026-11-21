@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import type { BoardModel, WorkbenchSession } from '@pantheon/protocol';
+import type { WorkbenchSession } from '@pantheon/protocol';
 import { zh } from './i18n-setup.js';
 import { type HookHost, mount, named, nodes, unmountAll } from './web-hook-host.js';
 const mock = vi.hoisted(() => ({ board: {} as any, shell: {} as any, projects: {} as any }));

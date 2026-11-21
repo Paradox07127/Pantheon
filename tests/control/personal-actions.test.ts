@@ -151,44 +151,7 @@ function relayQuestion(f: Fixture) {
   return 'relayed';
 }
 
-function propose(f: Fixture) {
-  return f.call<{ proposal_id: string }>(
-    'board.plan.propose',
-    {
-      project_id: f.project.id,
-      base_version: plan(f).plan_version,
-      reason: 'The export needs a narrower contract',
-      ops: [{ type: 'set_task', task_id: 'api', patch: { title: 'Export API' } }],
-    },
-    null,
-    leadOf(f, 'lead'),
-  ).proposal_id;
-}
-
 const KEY_VIA = { kind: 'personal', key_id: 'k1' };
-const KEY_REASON = 'Keep the export contract as it is';
-const USER_REASON = 'Finance still reads the old columns';
-
-/** A new proposal of the lead that the user resolves; returns its id. */
-function resolveAsUser(f: Fixture, decision: 'accept' | 'reject', reason?: string) {
-  const proposalId = propose(f);
-  f.call('board.plan.proposal.resolve', {
-    project_id: f.project.id,
-    lead_session_id: 'lead',
-    proposal_id: proposalId,
-    decision,
-    ...(reason ? { reason } : {}),
-  });
-  return proposalId;
-}
-
-/** The note that tells the lead how its proposal was decided. */
-const decisionNote = (f: Fixture, proposalId: string) =>
-  f.store
-    .kindEvents(f.project.id, ['lead.note_added'])
-    .map((event) => event.payload as LeadNote)
-    .find((note) => note.kind === 'user_edit' && note.proposal_id === proposalId);
-
 /** The inputs of every turn Pantheon queued to wake the lead, joined. */
 const leadReceived = (f: Fixture) =>
   f.store
@@ -198,53 +161,6 @@ const leadReceived = (f: Fixture) =>
     .join('\n');
 
 const NOT_USER_WORDS = "Its words are not the user's own words: do not quote them as the user's.";
-
-/** The lead adds a task to its plan quoting the words as its source. */
-const addQuotingTask = (f: Fixture, taskId: string, quote: string) =>
-  f.call(
-    'board.plan.edit',
-    {
-      project_id: f.project.id,
-      base_version: plan(f).plan_version,
-      ops: [
-        {
-          type: 'add_task',
-          task: {
-            id: taskId,
-            title: 'Quoted task',
-            goal: 'Do what the words ask',
-            lane: 'core',
-            depends_on: [],
-            source: [quote],
-            scope: [],
-            acceptance: [],
-            done_when: 'report',
-          },
-        },
-      ],
-    },
-    null,
-    leadOf(f, 'lead'),
-  );
-
-/** Spends the project's whole budget with one ended turn. */
-function overBudget(f: Fixture) {
-  setPolicy(f, { project_budget: { input_tokens: 100 } });
-  const now = Date.now.bind(Date);
-  vi.spyOn(f.store, 'now').mockImplementation(() => now() + 1000);
-  const turn = f.store.insert<SessionTurn>('session_turns', {
-    id: id(),
-    revision: 1,
-    project_id: f.project.id,
-    session_id: 'lead',
-    input: 'work',
-    kind: 'send',
-    delivery: 'delivered',
-    state: 'completed',
-    usage: { input_tokens: 150, output_tokens: 0 },
-  } as SessionTurn);
-  f.store.event('turn.completed', turn, f.project.id, {});
-}
 
 type Situation = (f: Fixture) => {
   input: Record<string, unknown>;
@@ -332,87 +248,6 @@ const situations: Record<string, Situation> = {
       expect(plan(f).questions?.find((q) => q.id === 'relayed')?.answer).toBeUndefined();
     },
   }),
-  'a plan proposal': (f) => {
-    const proposalId = propose(f);
-    return {
-      input: {
-        project_id: f.project.id,
-        lead_session_id: 'lead',
-        proposal_id: proposalId,
-        decision: 'accept',
-      },
-      then: (result) => {
-        const own = resolveAsUser(f, 'reject');
-        expect(decisionNote(f, proposalId)?.via).toEqual(result && KEY_VIA);
-        expect(decisionNote(f, own)).not.toHaveProperty('via');
-      },
-    };
-  },
-  'a plan proposal rejected with a reason': (f) => {
-    const proposalId = propose(f);
-    return {
-      input: {
-        project_id: f.project.id,
-        lead_session_id: 'lead',
-        proposal_id: proposalId,
-        decision: 'reject',
-        reason: KEY_REASON,
-      },
-      then: () => {
-        const own = resolveAsUser(f, 'reject', USER_REASON);
-        const received = leadReceived(f);
-        expect(received).toContain(
-          `What happened: the user's personal agent decided your proposal ${proposalId} for the user: reject: ${KEY_REASON}\n`,
-        );
-        expect(received).toMatch(
-          new RegExp(
-            `How to handle: the user let their personal agent make this decision\\. Read your current plan; [^\\n]*build on the plan as it is for the rest\\. ${NOT_USER_WORDS}\\n</note>`,
-          ),
-        );
-        expect(received).toContain(
-          `What happened: the user decided your proposal ${own}: reject: ${USER_REASON}\n`,
-        );
-        expect(received).toMatch(
-          /How to handle: these are the user's own actions\. Read your current plan; [^\n]*build on the plan as it is for the rest\.\n<\/note>/,
-        );
-        expect(
-          [KEY_REASON, USER_REASON].map(
-            (quote, index) => outcome(() => addQuotingTask(f, `quote${index}`, quote)).code,
-          ),
-        ).toEqual(['invalid_input', 'accepted']);
-      },
-    };
-  },
-  'a plan proposal accepted with edits': (f) => {
-    const proposalId = propose(f);
-    return {
-      input: {
-        project_id: f.project.id,
-        lead_session_id: 'lead',
-        proposal_id: proposalId,
-        decision: 'accept',
-        ops: [{ type: 'set_task', task_id: 'api', patch: { title: 'Edited API' } }],
-      },
-      then: () => {
-        expect(plan(f).tasks.find((task) => task.id === 'api')?.title).toBe('API');
-        expect(
-          plan(f).pending_proposals?.find((entry) => entry.proposal_id === proposalId)?.status,
-        ).toBe('pending');
-      },
-    };
-  },
-  'a plan proposal over budget': (f) => {
-    const proposalId = propose(f);
-    overBudget(f);
-    return {
-      input: {
-        project_id: f.project.id,
-        lead_session_id: 'lead',
-        proposal_id: proposalId,
-        decision: 'accept',
-      },
-    };
-  },
   'any input': () => ({ input: {} }),
 };
 
@@ -431,26 +266,6 @@ it.each<[CommandType, PersonalAnswerKind[], keyof typeof situations, string]>([
   ['lead.question.answer', [], "the lead's question", 'permission_denied'],
   ['lead.question.answer', ['question'], "the lead's question", 'accepted'],
   ['lead.question.answer', ['question'], "a task session's relayed question", 'permission_denied'],
-  ['board.plan.proposal.resolve', [], 'a plan proposal', 'permission_denied'],
-  ['board.plan.proposal.resolve', ['plan_change'], 'a plan proposal', 'accepted'],
-  [
-    'board.plan.proposal.resolve',
-    ['plan_change'],
-    'a plan proposal rejected with a reason',
-    'accepted',
-  ],
-  [
-    'board.plan.proposal.resolve',
-    ['plan_change'],
-    'a plan proposal accepted with edits',
-    'permission_denied',
-  ],
-  [
-    'board.plan.proposal.resolve',
-    ['plan_change'],
-    'a plan proposal over budget',
-    'permission_denied',
-  ],
   ['approval.respond', ALL, 'any input', 'permission_denied'],
   ['external.approve', ALL, 'any input', 'permission_denied'],
 ])(
@@ -467,37 +282,5 @@ it.each<[CommandType, PersonalAnswerKind[], keyof typeof situations, string]>([
       expected === 'accepted' ? [{ key_id: 'k1', type, project_id: f.project.id }] : [],
     );
     await then?.(sent.result);
-  },
-);
-
-it.each<[PersonalAnswerKind[], Record<string, boolean>]>([
-  [[], { question: false, relayed: false, proposal: false }],
-  [['question'], { question: true, relayed: false, proposal: false }],
-  [ALL, { question: true, relayed: false, proposal: true }],
-])(
-  'shows a personal principal with %j allowed which decisions it may answer',
-  async (answers, allowed) => {
-    const f = await setup(answers);
-    const question = askQuestion(f);
-    relayQuestion(f);
-    const proposal = propose(f);
-    const names: Record<string, string> = {
-      [question]: 'question',
-      relayed: 'relayed',
-      [proposal]: 'proposal',
-    };
-    const shown = Object.fromEntries(
-      f.control
-        .needsYou(personal, f.project.id)
-        .items.filter((item) => names[item.request_id ?? item.source.id])
-        .map((item) => [names[item.request_id ?? item.source.id], item.actions[0]!.allowed]),
-    );
-    expect(shown).toEqual(allowed);
-    expect(
-      f.control
-        .needsYou(user, f.project.id)
-        .items.filter((item) => names[item.request_id ?? item.source.id])
-        .every((item) => item.actions[0]!.allowed),
-    ).toBe(true);
   },
 );

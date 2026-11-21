@@ -27,7 +27,6 @@ it('defines a strict input schema for each unimplemented command and the queries
     'agent.wakes',
     'app.settings',
     'backend.list',
-    'board.view',
     'change_story.diff',
     'change_story.list',
     'connections.status',

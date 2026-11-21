@@ -245,10 +245,6 @@ it('marks an open finding stale once a new commit of the reviewed session no lon
   expect(staleEvents().map((event) => [event.aggregate_id, event.payload])).toEqual([
     [review.id, { finding_id: gone, to_sha: head }],
   ]);
-  const listed = f.control.boardView(user, f.project.id, 1).findings.map((row) => row.id);
-  expect(listed).toContain(stays);
-  expect(listed).not.toContain(gone);
-  expect(listed).not.toContain(rejected);
 
   await f.writerTurn(
     `// Turns a title into a URL slug.\n${content.replace('title.', 'title.trim().')}`,

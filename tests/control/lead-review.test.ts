@@ -390,31 +390,6 @@ it('projects partial reviewer failure and its evidence to session and board read
   ]);
   expect(projected.findings).toHaveLength(1);
   expect(f.store.must<Review>('reviews', review.id).executions).toBeUndefined();
-  const task = f.control
-    .boardView(user, f.project.id, 7)
-    .tasks.find((task) => task.id === `${lead.id}:answer`)!;
-  expect(task.evidence).toMatchObject({
-    session_id: worker.id,
-    review: { id: review.id, executions: projected.executions },
-  });
-  // The board opens another session for the task once its session ended.
-  const ended = f.store.must<Session>('sessions', worker.id);
-  f.store.update<Session>(
-    'sessions',
-    { ...ended, state: 'closed', outcome: 'discarded' },
-    ended.revision,
-  );
-  const retry = await f.call<Session>('session.create', {
-    project_id: f.project.id,
-    runtime: f.adapter.name,
-    input: 'Retry the answer',
-    task_id: `${lead.id}:answer`,
-  });
-  const latest = f.control
-    .boardView(user, f.project.id, 7)
-    .tasks.find((task) => task.id === `${lead.id}:answer`)!;
-  expect(latest.evidence?.session_id).toBe(retry.id);
-  expect(latest.evidence?.review).toBeUndefined();
 });
 
 it('projects missing reviewer records as unknown coverage rather than successful execution', async () => {
