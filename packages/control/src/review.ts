@@ -303,6 +303,11 @@ export function prepareRangeReview(
         'git_failed',
         result.stderr.toString().trim() || result.error || 'Git failed',
       );
+    requireThat(
+      !input.paths || diff.stdout.length > 0,
+      'invalid_input',
+      'No changes under the given paths',
+    );
     const goal = log.stdout.toString('utf8').slice(0, 2000);
     const pathSet = (named?: string[]) => [...new Set(named)].sort().join('\0');
     return (ctx: ControlContext, principal: Principal, command: Command) => {

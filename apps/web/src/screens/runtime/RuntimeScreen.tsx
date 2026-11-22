@@ -278,30 +278,49 @@ export function RunsView({
   const showHistory = () => useShell.setState({ runsView: 'history' });
 
   const [respondFailure, setRespondFailure] = useState<string | null>(null);
-  // The requests whose answer is out or was accepted.
-  const [responding, setResponding] = useState<ReadonlySet<string>>(() => new Set());
-  const answering = useRef(new Set<string>());
+  // The requests whose answer is out or was accepted, with the revision answered.
+  const [answered, setAnswered] = useState<ReadonlyMap<string, number | null>>(() => new Map());
+  const answering = useRef(new Map<string, number | null>());
+  const requested = useMemo(
+    () =>
+      new Map(
+        [...facts.values()].flatMap((f) =>
+          f.waiting?.approval_id ? [[f.waiting.approval_id, f.waiting.revision] as const] : [],
+        ),
+      ),
+    [facts],
+  );
+  const revisionOf = (approvalId: string) => requested.get(approvalId) ?? null;
   const respond = async (
     approvalId: string,
     decision: 'approve' | 'reject',
     answers?: Record<string, string>,
   ) => {
-    if (answering.current.has(approvalId)) return;
-    answering.current.add(approvalId);
-    setResponding(new Set(answering.current));
+    const revision = revisionOf(approvalId);
+    if (answering.current.has(approvalId) && answering.current.get(approvalId) === revision) return;
+    answering.current.set(approvalId, revision);
+    setAnswered(new Map(answering.current));
     setRespondFailure(null);
-    const asked = [...facts.values()].find((f) => f.waiting?.approval_id === approvalId)?.waiting;
     const result = await runCommand(
       'approval.respond',
       { approval_id: approvalId, decision, ...(answers && { answers }) },
-      asked?.revision ?? null,
+      revision,
     );
-    // An accepted answer keeps the row's buttons off until the session stops waiting.
+    // An accepted answer keeps the row's buttons off until the request reopens at a new revision.
     if (result.ok) return;
     answering.current.delete(approvalId);
-    setResponding(new Set(answering.current));
+    setAnswered(new Map(answering.current));
     setRespondFailure(failureText(result.error));
   };
+  const responding: ReadonlySet<string> = useMemo(
+    () =>
+      new Set(
+        [...answered].flatMap(([id, revision]) =>
+          (requested.get(id) ?? null) === revision ? [id] : [],
+        ),
+      ),
+    [answered, requested],
+  );
 
   const needs = useNeedsYou(projectId);
   // Items kept after a failed read are no authority for an answer.
@@ -422,6 +441,14 @@ export function RunsView({
           readAt={readTimes.length ? Math.min(...readTimes) : null}
           reload={spans.reload}
         />
+        {!history && (
+          <ReadStatus
+            label={t({ id: 'runs.page.questionsRead', defaultMessage: 'Questions waiting on you' })}
+            loading={needs.loading}
+            error={needs.error}
+            reload={needs.reload}
+          />
+        )}
         {empty ? (
           <EmptyState
             graphic={<Activity aria-hidden="true" />}

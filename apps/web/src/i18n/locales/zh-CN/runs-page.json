@@ -23,5 +23,6 @@
   "runs.page.follow": "跟随",
   "runs.page.historyEmpty": "这段时间没有调用",
   "runs.page.justEnded": "刚结束",
-  "runs.page.inHistory": "在历史里看"
+  "runs.page.inHistory": "在历史里看",
+  "runs.page.questionsRead": "等你回答的问题"
 }

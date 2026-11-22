@@ -446,6 +446,12 @@ it.each<
     /share no history/,
   ],
   [
+    'paths with no changes in the range',
+    (f) => f.request({ paths: ['answer.txt'] }),
+    'invalid_input',
+    /No changes under the given paths/,
+  ],
+  [
     'a root that is not a project root',
     (f) => f.request({ root: path.dirname(f.w.source) }),
     'not_found',

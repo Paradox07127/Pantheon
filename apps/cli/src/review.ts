@@ -53,32 +53,91 @@ export const sharedRef = (ref: string) => {
   return commit.status === 0 ? commit.stdout.trim() : ref;
 };
 
+// The settings the daemon's runGit runs git with, so planning runs none of the repository's programs.
+const hardened = [
+  '-c',
+  'core.fsmonitor=false',
+  '-c',
+  'core.hooksPath=/dev/null',
+  '-c',
+  'maintenance.auto=false',
+  '-c',
+  'gc.auto=0',
+  '-c',
+  'log.showSignature=false',
+  '-c',
+  'gpg.program=/usr/bin/false',
+  '-c',
+  'gpg.openpgp.program=/usr/bin/false',
+  '-c',
+  'gpg.x509.program=/usr/bin/false',
+  '-c',
+  'gpg.ssh.program=/usr/bin/false',
+  // Patch headers then name a non-ASCII path as the name status does.
+  '-c',
+  'core.quotePath=false',
+];
+const noDrivers = ['--no-ext-diff', '--no-textconv'];
+
+/** Git's output in the root; a failure prints the message given, or git's, and exits 2. */
+const inRoot = (root: string, args: string[], failure?: string) => {
+  const result = spawnSync('git', ['-C', root, ...hardened, ...args], {
+    encoding: 'utf8',
+    maxBuffer: 1 << 30,
+    env: {
+      ...process.env,
+      GIT_CONFIG_GLOBAL: '/dev/null',
+      GIT_CONFIG_NOSYSTEM: '1',
+      GIT_TERMINAL_PROMPT: '0',
+      GIT_OPTIONAL_LOCKS: '0',
+    },
+  });
+  if (result.status !== 0) {
+    console.error(failure ?? (result.stderr?.trim() || `git ${args[0]} failed`));
+    process.exit(2);
+  }
+  return result.stdout;
+};
+
 /**
- * The paths of each review part of a range whose diff is over PART_BYTES, packed in diff order,
- * and the deleted files no part carries; undefined when the range goes as one review.
+ * The paths of each review part of a range, packed in diff order, and the deleted files no part
+ * carries; a range with no deleted file within PART_BYTES goes as one part without paths.
  */
-const rangeParts = (root: string, base: string, head: string) => {
-  const inRoot = (...args: string[]) =>
-    spawnSync('git', ['-C', root, ...args], { encoding: 'utf8', maxBuffer: 1 << 30 });
-  const from = inRoot('merge-base', '--end-of-options', base, head);
-  if (from.status !== 0) return undefined;
-  const range = [from.stdout.trim(), head];
-  const patch = inRoot('diff', '--no-color', '--no-ext-diff', ...range).stdout;
-  if (Buffer.byteLength(patch) <= PART_BYTES) return undefined;
-  // The patch has one section per entry of the name status, in the same order.
-  const sizes = patch.split(/^(?=diff --git )/m).map((section) => Buffer.byteLength(section));
-  const fields = inRoot('diff', '--name-status', '-z', ...range).stdout.split('\0');
+const rangeParts = (
+  root: string,
+  from: string,
+  to: string,
+): { parts: (string[] | undefined)[]; deleted: string[] } => {
+  const range = [from, to, '--'];
+  const fields = inRoot(root, ['diff', '--name-status', '-z', ...noDrivers, ...range]).split('\0');
   const deleted: string[] = [];
-  const parts: { paths: string[]; bytes: number }[] = [];
-  for (let index = 0, entry = 0; fields[index]; index++, entry++) {
+  const entries: { header: string; paths: string[] }[] = [];
+  for (let index = 0; fields[index]; index++) {
     const status = fields[index]!;
     const paths = fields.slice(index + 1, index + (/^[RC]/.test(status) ? 3 : 2));
     index += paths.length;
-    const bytes = sizes[entry]!;
-    if (status === 'D') {
-      deleted.push(...paths);
-      continue;
-    }
+    if (status === 'D') deleted.push(...paths);
+    else entries.push({ header: `diff --git a/${paths[0]} b/${paths.at(-1)}`, paths });
+  }
+  const patch = inRoot(root, [
+    'diff',
+    '--no-color',
+    ...noDrivers,
+    '--src-prefix=a/',
+    '--dst-prefix=b/',
+    ...range,
+  ]);
+  if (!deleted.length && Buffer.byteLength(patch) <= PART_BYTES)
+    return { parts: [undefined], deleted };
+  // A type change has two sections under one header.
+  const sizes = new Map<string, number>();
+  for (const section of patch.split(/^(?=diff --git )/m)) {
+    const header = section.slice(0, section.indexOf('\n'));
+    sizes.set(header, (sizes.get(header) ?? 0) + Buffer.byteLength(section));
+  }
+  const parts: { paths: string[]; bytes: number }[] = [];
+  for (const { header, paths } of entries) {
+    const bytes = sizes.get(header) ?? 0;
     const last = parts.at(-1);
     if (
       last &&
@@ -216,21 +275,37 @@ export const review = async (
   if (!base) return usageError(`Usage: pantheon ${reviewUsage}`);
   const root = projectRoot();
   const defaulted = !head;
-  base = sharedRef(base);
-  head = sharedRef(head ?? 'HEAD');
+  head ??= 'HEAD';
   if (defaulted && git('status', '--porcelain').stdout.trim())
     console.error('Uncommitted changes are not reviewed; only committed content is.');
-  const split = values.paths === undefined ? rangeParts(root, base, head) : undefined;
-  if (split?.deleted.length) console.log(`LEFT OUT (deleted): ${split.deleted.join(', ')}`);
-  const parts = split?.parts ?? [values.paths?.split(',').filter(Boolean)];
+  // Every part reviews the same commits, whatever the refs point at meanwhile.
+  const commitOf = (ref: string) =>
+    inRoot(
+      root,
+      ['rev-parse', '--verify', '-q', '--end-of-options', `${sharedRef(ref)}^{commit}`],
+      `Not a commit: ${ref}`,
+    ).trim();
+  const to = commitOf(head);
+  const from = inRoot(
+    root,
+    ['merge-base', '--end-of-options', commitOf(base), to],
+    `${base} and ${head} share no history`,
+  ).trim();
+  const split =
+    values.paths === undefined
+      ? rangeParts(root, from, to)
+      : { parts: [values.paths.split(',').filter(Boolean)], deleted: [] };
+  if (split.deleted.length) console.log(`LEFT OUT (deleted): ${split.deleted.join(', ')}`);
+  const parts = split.parts;
   if (!parts.length) {
     console.error('Only deleted files changed; no part is left to review.');
     return 2;
   }
-  const settled: { label: string; id: string; code: number; blocking: number }[] = [];
+  // A part without a blocking count ended in an error.
+  const settled: { label: string; id?: string; code: number; blocking?: number }[] = [];
   for (const [index, paths] of parts.entries()) {
     const label = `PART ${index + 1}/${parts.length}`;
-    let result: Review;
+    let result: Review, id: string | undefined;
     try {
       const daemon = connect();
       const sent = await sendCommand(
@@ -238,8 +313,8 @@ export const review = async (
         'review.range',
         {
           root,
-          base,
-          head,
+          base: from,
+          head: to,
           ...(values.focus === undefined ? {} : { focus: values.focus }),
           ...(paths ? { paths } : {}),
           ...(values.runtime?.length ? { runtimes: values.runtime } : {}),
@@ -249,9 +324,11 @@ export const review = async (
       );
       if (!sent.ok) {
         console.error(JSON.stringify(sent.body, null, 2));
-        return 2;
+        settled.push({ label, code: 2 });
+        continue;
       }
       const started = sent.body.receipt as Review;
+      id = started.id;
       if (parts.length > 1) console.log(`${label} ${started.id}`);
       console.error(`Review ${started.id} started: ${started.runtimes.join(', ')}`);
       result = await poll<Review>(
@@ -264,21 +341,25 @@ export const review = async (
     } catch (error) {
       // Exit 1 means the review blocks; a review that never finished is exit 2.
       console.error(String(error));
-      return 2;
+      settled.push({ label, id, code: 2 });
+      continue;
     }
-    const blocking = result.findings.filter(
-      (finding) => finding.status === 'open' && finding.blocking,
-    ).length;
+    const blocking = result.findings.filter(unresolvedBlocking).length;
     settled.push({ label, id: result.id, code: printReview(result), blocking });
   }
   if (settled.length === 1) return settled[0]!.code;
   for (const part of settled)
     console.log(
-      `${part.label} ${part.id}: ${['pass', 'fail', 'incomplete'][part.code]}, ${part.blocking} blocking`,
+      part.blocking === undefined
+        ? `${part.label}${part.id ? ` ${part.id}` : ''}: error`
+        : `${part.label} ${part.id}: ${['pass', 'fail', 'incomplete'][part.code]}, ${part.blocking} blocking`,
     );
   const codes = settled.map((part) => part.code);
   return codes.includes(1) ? 1 : codes.includes(2) ? 2 : 0;
 };
+
+const unresolvedBlocking = (finding: ReviewFinding) =>
+  finding.status === 'open' && finding.blocking && !finding.resolution;
 
 /** Prints a settled review's open findings and verdicts; returns its exit code. */
 const printReview = (result: Review) => {
@@ -304,10 +385,7 @@ const printReview = (result: Review) => {
     for (const verdict of mine) console.log(`${runtime}: ${verdict.verdict} — ${verdict.summary}`);
   }
   if (result.incomplete) console.log(`incomplete: ${result.incomplete}`);
-  if (
-    open.some((finding) => finding.blocking) ||
-    verdicts.some((verdict) => verdict.verdict === 'fail')
-  )
+  if (open.some(unresolvedBlocking) || verdicts.some((verdict) => verdict.verdict === 'fail'))
     return 1;
   const passed = reviewers.every((runtime) =>
     verdicts.some((verdict) => verdict.runtime === runtime && verdict.verdict === 'pass'),

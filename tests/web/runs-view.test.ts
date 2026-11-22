@@ -16,6 +16,8 @@ const mock = vi.hoisted(() => ({
   // The approval answers wait on this while it is set.
   answered: null as Promise<void> | null,
   needs: [] as unknown[],
+  needsError: null as string | null,
+  needsReloads: 0,
   // The command result is a success while this is set.
   accepted: false,
   setState: vi.fn(),
@@ -82,7 +84,12 @@ vi.mock('@/data/commands', () => ({
 }));
 vi.mock('@/data/needs-you', async (actual) => ({
   ...(await actual<object>()),
-  useNeedsYou: () => ({ items: mock.needs, loading: false, error: null, reload() {} }),
+  useNeedsYou: () => ({
+    items: mock.needs,
+    loading: false,
+    error: mock.needsError,
+    reload: () => mock.needsReloads++,
+  }),
 }));
 vi.mock('@/data/logs', async (actual) => ({
   ...(await actual<object>()),
@@ -382,6 +389,8 @@ beforeEach(() => {
   mock.commands = [];
   mock.answered = null;
   mock.needs = [];
+  mock.needsError = null;
+  mock.needsReloads = 0;
   mock.accepted = false;
   mock.setState = vi.fn();
 });
@@ -622,6 +631,50 @@ describe('runs now', () => {
     expect(nodes(h.value).some((n) => n.props.role === 'alert')).toBe(false);
     table(h.value).props.onAnswer('question-1', { 'Which db?': 'sqlite' });
     expect(mock.commands).toHaveLength(1);
+  });
+
+  it('lets a request reopened at a newer revision be answered again', async () => {
+    mock.accepted = true;
+    const asking = (revision: number) => [
+      listed('asker', {
+        state: 'waiting',
+        waiting: 1,
+        waiting_kind: 'question',
+        waiting_request: { id: 'question-1', revision, tool: 'AskUserQuestion' },
+      }),
+    ];
+    mock.snapshot = [];
+    mock.sessions = asking(3);
+    const h = now();
+    table(h.value).props.onAnswer('question-1', { 'Which db?': 'sqlite' });
+    await h.flush();
+    expect([...table(h.value).props.responding]).toEqual(['question-1']);
+    mock.sessions = asking(4);
+    h.render();
+    expect([...table(h.value).props.responding]).toEqual([]);
+    table(h.value).props.onRespond('question-1', 'reject');
+    await h.flush();
+    expect(mock.commands.map((sent) => (sent.input as { decision: string }).decision)).toEqual([
+      'approve',
+      'reject',
+    ]);
+  });
+
+  it('offers no answer and shows the read error with a retry when the questions cannot be read', () => {
+    mock.needsError = 'Needs you could not be read';
+    mock.needs = [
+      {
+        source: { table: 'approvals', id: 'question-1', revision: 3 },
+        questions: [{ question: 'Which db?', header: 'Database', options: [], multiSelect: false }],
+        actions: [{ command: 'approval.respond', allowed: true }],
+      },
+    ];
+    const h = now();
+    expect([...table(h.value).props.asked]).toEqual([]);
+    const status = find(h.value, (n) => n.props.error === 'Needs you could not be read');
+    expect(status.props.label).toBe(zh('runs.page.questionsRead'));
+    status.props.reload();
+    expect(mock.needsReloads).toBe(1);
   });
 
   it('holds an approval while its answer is out, so a second click sends nothing', async () => {

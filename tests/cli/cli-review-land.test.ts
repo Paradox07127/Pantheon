@@ -1,5 +1,5 @@
 import { execFile, execFileSync } from 'node:child_process';
-import { mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import os from 'node:os';
@@ -82,6 +82,26 @@ beforeAll(async () => {
     writeFileSync(path.join(repo, `h${index}.txt`), lines(160));
   git(repo, 'add', '.');
   git(repo, 'commit', '-q', '-m', 'huge');
+  git(repo, 'checkout', '-q', '-b', 'small', 'main');
+  writeFileSync(path.join(repo, 'c.txt'), 'small\n');
+  git(repo, 'rm', '-q', 'a.txt');
+  git(repo, 'add', '.');
+  git(repo, 'commit', '-q', '-m', 'small');
+  git(repo, 'checkout', '-q', '-b', 'gone', 'main');
+  git(repo, 'rm', '-q', 'a.txt');
+  git(repo, 'commit', '-q', '-m', 'gone');
+  // a.txt turns into a symlink: one name-status entry, two patch sections.
+  git(repo, 'checkout', '-q', '-b', 'typed', 'main');
+  git(repo, 'rm', '-q', 'a.txt');
+  symlinkSync('target', path.join(repo, 'a.txt'));
+  writeFileSync(path.join(repo, 'b.txt'), lines(100));
+  writeFileSync(path.join(repo, 'c.txt'), lines(100));
+  git(repo, 'add', '.');
+  git(repo, 'commit', '-q', '-m', 'typed');
+  // A branch named like a file of the checkout.
+  git(repo, 'branch', 'a.txt', 'large');
+  const tree = git(repo, 'rev-parse', 'main^{tree}').trim();
+  git(repo, 'branch', 'lonely', git(repo, 'commit-tree', tree, '-m', 'lonely').trim());
   git(repo, 'checkout', '-q', '-b', 'feature', 'main');
   linked = path.join(parent, 'linked');
   git(repo, 'worktree', 'add', '-q', '-b', 'linked-branch', linked);
@@ -116,6 +136,8 @@ const reviewOf = (patch: Record<string, unknown>) => ({
   ...patch,
 });
 const running = reviewOf({ state: 'running', verdicts: [] });
+const commit = (ref: string, cwd = repo) => git(cwd, 'rev-parse', `${ref}^{commit}`).trim();
+const resolved = { outcome: 'intentional', resolved_at: 1, resolved_by: 'local-user' };
 const started: { status?: number; body: unknown } = { body: { receipt: running } };
 
 describe('pnpm cli review', () => {
@@ -151,7 +173,7 @@ describe('pnpm cli review', () => {
     expect(body).toMatchObject({
       type: 'review.range',
       actor: 'local-user',
-      input: { root: repo, base: 'main', head: 'feature' },
+      input: { root: repo, base: commit('main'), head: commit('feature') },
     });
     expect(requests.map((request) => `${request.method} ${request.url}`)).toEqual([
       'POST /v1/commands',
@@ -189,6 +211,17 @@ describe('pnpm cli review', () => {
       code: 1,
       stream: 'stdout',
       line: 'src/a.ts:2 [blocking] codex: Hangs',
+    },
+    {
+      name: 'a blocking finding already resolved',
+      args: ['--base', 'main'],
+      answers: [
+        started,
+        { body: reviewOf({ findings: [finding({ blocking: true, resolution: resolved })] }) },
+      ],
+      code: 0,
+      stream: 'stdout',
+      line: 'codex: pass — looks fine',
     },
     {
       name: 'a fail verdict',
@@ -262,6 +295,22 @@ describe('pnpm cli review', () => {
       line: 'not both',
     },
     {
+      name: 'refs with no common history',
+      args: ['main..lonely'],
+      answers: [],
+      code: 2,
+      stream: 'stderr',
+      line: 'share no history',
+    },
+    {
+      name: 'a range of deleted files only',
+      args: ['main..gone'],
+      answers: [],
+      code: 2,
+      stream: 'stderr',
+      line: 'Only deleted files changed',
+    },
+    {
       name: 'a range that needs more than eight parts',
       args: ['main..huge'],
       answers: [],
@@ -273,15 +322,16 @@ describe('pnpm cli review', () => {
     const result = await cli(repo, ['review', ...args], answers);
     expect(result[stream as 'stdout' | 'stderr']).toContain(line);
     expect(result.code).toBe(code);
+    expect(requests).toHaveLength(answers.length);
   });
 
   it.each([
     { range: ['main..feature'], base: 'main', head: 'feature' },
     { range: ['main...feature'], base: 'main', head: 'feature' },
     { range: ['feature', '--base', 'main'], base: 'main', head: 'feature' },
-  ])('sends base $base and head $head for $range', async ({ range, base, head }) => {
+  ])('sends the commits of base $base and head $head for $range', async ({ range, base, head }) => {
     await cli(repo, ['review', ...range], [{ body: { receipt: running } }, { body: reviewOf({}) }]);
-    expect(sentInput().input).toMatchObject({ base, head });
+    expect(sentInput().input).toMatchObject({ base: commit(base), head: commit(head) });
   });
 
   it.each([
@@ -296,14 +346,18 @@ describe('pnpm cli review', () => {
         ['review', ...range],
         [{ body: { receipt: running } }, { body: reviewOf({}) }],
       );
-      expect(sentInput().input).toEqual({ root: repo, base: 'main', head: 'linked-branch' });
+      expect(sentInput().input).toEqual({
+        root: repo,
+        base: commit('main'),
+        head: commit('linked-branch'),
+      });
     },
   );
 
   it.each([
-    { range: 'main..linked-branch', head: () => 'linked-branch' },
-    { range: 'main..shared-tag', head: () => 'shared-tag' },
-    { range: 'main..ORIG_HEAD', head: () => git(linked, 'rev-parse', 'ORIG_HEAD').trim() },
+    { range: 'main..linked-branch', head: () => commit('linked-branch') },
+    { range: 'main..shared-tag', head: () => commit('shared-tag') },
+    { range: 'main..ORIG_HEAD', head: () => commit('ORIG_HEAD', linked) },
   ])(
     'sends from a linked worktree the head of $range as the main checkout reads it',
     async ({ range, head }) => {
@@ -314,7 +368,7 @@ describe('pnpm cli review', () => {
         ['review', range],
         [{ body: { receipt: running } }, { body: reviewOf({}) }],
       );
-      expect(sentInput().input).toEqual({ root: repo, base: 'main', head: head() });
+      expect(sentInput().input).toEqual({ root: repo, base: commit('main'), head: head() });
     },
   );
 
@@ -326,8 +380,8 @@ describe('pnpm cli review', () => {
     );
     expect(sentInput().input).toEqual({
       root: repo,
-      base: 'main',
-      head: git(detached, 'rev-parse', 'HEAD').trim(),
+      base: commit('main'),
+      head: commit('HEAD', detached),
     });
   });
 
@@ -349,8 +403,8 @@ describe('pnpm cli review', () => {
     expect(requests.filter((request) => request.method === 'POST')).toHaveLength(1);
     expect(sentInput().input).toEqual({
       root: repo,
-      base: 'main',
-      head: 'large',
+      base: commit('main'),
+      head: commit('large'),
       focus: 'Error handling',
       paths: ['big.txt', 'a.txt'],
     });
@@ -367,7 +421,7 @@ describe('pnpm cli review', () => {
       [
         ...part('part-1'),
         ...part('part-2', { findings: [finding({ blocking: true })] }),
-        ...part('part-3'),
+        ...part('part-3', { findings: [finding({ blocking: true, resolution: resolved })] }),
       ],
     );
     const sent = requests
@@ -376,8 +430,8 @@ describe('pnpm cli review', () => {
     expect(sent).toEqual(
       [['b1.txt', 'b2.txt'], ['b3.txt'], ['big.txt']].map((paths) => ({
         root: repo,
-        base: 'main',
-        head: 'large',
+        base: commit('main'),
+        head: commit('large'),
         focus: 'Error handling',
         paths,
       })),
@@ -401,6 +455,79 @@ describe('pnpm cli review', () => {
       out.indexOf('PART 1/3 part-1: pass, 0 blocking'),
     );
     expect(result.code).toBe(1);
+  }, 20_000);
+
+  const posted = () =>
+    requests
+      .filter((request) => request.method === 'POST')
+      .map((request) => JSON.parse(request.body).input as { paths?: string[] });
+  const settledParts = (count: number) =>
+    Array.from({ length: count }, (_, index) => `part-${index + 1}`).flatMap((id) => [
+      { body: { receipt: reviewOf({ id, state: 'running', verdicts: [] }) } },
+      { body: reviewOf({ id }) },
+    ]);
+
+  it('leaves the deleted files of a small range out of its one review', async () => {
+    const result = await cli(repo, ['review', 'main..small'], settledParts(1));
+    expect(posted()).toEqual([
+      { root: repo, base: commit('main'), head: commit('small'), paths: ['c.txt'] },
+    ]);
+    expect(result.stdout.split('\n')[0]).toBe('LEFT OUT (deleted): a.txt');
+    expect(result.code).toBe(0);
+  });
+
+  it('sizes a file changed into a symlink by both of its patch sections', async () => {
+    await cli(repo, ['review', 'main..typed'], settledParts(2));
+    expect(posted().map((input) => input.paths)).toEqual([['a.txt', 'b.txt'], ['c.txt']]);
+  }, 20_000);
+
+  it('splits a range whose head is named like a file of the checkout', async () => {
+    const result = await cli(repo, ['review', 'main..a.txt'], settledParts(3));
+    expect(posted().map((input) => input.paths)).toEqual([
+      ['b1.txt', 'b2.txt'],
+      ['b3.txt'],
+      ['big.txt'],
+    ]);
+    expect(result.code).toBe(0);
+  }, 20_000);
+
+  it('plans the parts without running a text conversion the repository configures', async () => {
+    const marker = path.join(path.dirname(repo), 'converted');
+    const attributes = path.join(repo, '.git/info/attributes');
+    git(repo, 'config', 'diff.marker.textconv', `touch ${marker} && cat`);
+    writeFileSync(attributes, '*.txt diff=marker\n');
+    try {
+      await cli(repo, ['review', 'main..large'], settledParts(3));
+      expect(posted()).toHaveLength(3);
+      expect(existsSync(marker)).toBe(false);
+    } finally {
+      git(repo, 'config', '--unset', 'diff.marker.textconv');
+      rmSync(attributes);
+    }
+  }, 20_000);
+
+  it('goes on with the other parts after one is refused or cannot be read, then sums up', async () => {
+    const result = await cli(
+      repo,
+      ['review', 'main..large'],
+      [
+        ...settledParts(1),
+        { status: 409, body: { code: 'resource_busy', message: 'busy' } },
+        { body: { receipt: reviewOf({ id: 'part-3', state: 'running', verdicts: [] }) } },
+        { status: 404, body: { code: 'not_found', message: 'no review' } },
+      ],
+    );
+    expect(posted()).toHaveLength(3);
+    const out = result.stdout.split('\n');
+    for (const line of [
+      'PART 1/3 part-1: pass, 0 blocking',
+      'PART 2/3: error',
+      'PART 3/3 part-3: error',
+    ])
+      expect(out).toContain(line);
+    expect(result.stderr).toContain('resource_busy');
+    expect(result.stderr).toContain('not_found');
+    expect(result.code).toBe(2);
   }, 20_000);
 
   it('prints each replacement and judges the review by the reviewer that took over', async () => {
