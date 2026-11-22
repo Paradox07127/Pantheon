@@ -38,7 +38,7 @@ apps/daemon ──> packages/control ─> packages/adapters, packages/store, pac
 - `report_ready`(`conductor.ready`):把它自己或它起的会话交给门禁并落地；这份工作最近一次审查还有未解决的阻塞发现时拒绝(`review_blocking_open`)。对自己调用时，门禁和落地在这个回合结束后开始。用户自己点合并不受这条限制。
 - `spawn_session`(`conductor.spawn`):从调用者当前提交切一个新工作树，起一个不带工具的普通会话，记 `spawned_by`;权限模式只收 `ask`(默认)和 `auto_edit`;项目超预算时拒绝(`budget_exceeded`);每个带工具会话同时最多 4 个在跑回合(有排队或在跑的回合)的被起会话。被起会话的回合完成或失败时,`afterSpawnedTurn` 告诉起它的会话。`acceptance` 和 `owns` 记在被起会话的 `contract` 上：完成标准接在第一条消息后面(`Done when:`),`request_review` 审这个会话时作为审查重点(`review.range` 用的同一段 `Review focus`)要求逐条给结论;`read_state` 按 `landing.ts` 的 `inScope`(门禁文件保护用的匹配)列出工作树相对基线提交改到 `owns` 之外的文件(`outside_owns`,最多 50 个)。`runtimes`(两到三个不同的运行时)代替 `runtime` 时每个运行时起一个会话，同一个 `contract.group`,回执按顺序给 `session_ids`;要么全部放得下 4 个名额，要么一个都不起。挑结果不另设命令：审，`report_ready` 落一个,`stop_session` 带 `close` 关其余。
 - `message_session`(`conductor.message`):给 `spawned_by` 是自己的会话发 `send` 或 `steer`,按用户的发送排回合;每个被起会话 60 秒内最多 2 条(数 `session.conductor_messaged` 事件),超了 `rate_limited`。
-- `stop_session`(`conductor.stop`):对自己起的会话，不带 `close` 是打断当前回合(`interruptSession`),带 `close` 是关闭并丢弃工作树(`stopWorktreeSession`,`by: 'lead'`)。
+- `stop_session`(`conductor.stop`):对自己起的会话，不带 `close` 是打断当前回合(`interruptSession`),带 `close` 是关闭并丢弃工作树(`stopWorktreeSession`,`by: 'agent'`)。
 - `read_state`(`conductor.state`):项目的改动(`changes.ts`,最多 30 条,24 小时前合并的不列)和等用户的事(最多 20 条);`spawned` 列出自己起的每个会话(一天前丢弃的不列)和它的 `usage`(会话累计的输入、输出、缓存读 token,跑过的回合数和这些回合从 `turn.running` 到结束的毫秒数;运行时没报的数不写，带 `tokens_unreported`)。
 - `read_needs_you`(`conductor.needs_you`):`needsYou` 的本项目条目，只留种类、原因、会话和时间，不带作答动作和请求输入。
 
