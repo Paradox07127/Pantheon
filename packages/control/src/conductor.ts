@@ -8,6 +8,7 @@ import {
   type Project,
   type Session,
   type SessionTurn,
+  type SettingProposal,
   type Workspace,
 } from '@pantheon/domain';
 import { inputSchemas, type Command } from '@pantheon/protocol';
@@ -26,6 +27,7 @@ import { runtime as admittedRuntime } from './admission.js';
 import { gateCommands, inScope } from './landing.js';
 import { sessionGoal } from './landing-diff.js';
 import { executed, latestEvent, needsYou } from './needs-you.js';
+import { SETTING_PROPOSALS } from './needs-you-settings.js';
 import {
   requireCrossReview,
   requireNoBlockingReview,
@@ -755,6 +757,32 @@ export function afterSpawnedRequest(ctx: ControlContext, sessionId: string): voi
   if (callerId) tellCaller(ctx, callerId);
 }
 
+const untoldAnswer = (row: SettingProposal) => row.state !== 'pending' && !row.notified_at;
+
+/**
+ * Tells the main agent, at once, the user's answers to its settings proposals it has not heard of;
+ * inside a transaction. One it cannot take yet waits for it as its news does.
+ */
+export function tellAnswers(ctx: ControlContext, sessionId: string, cause?: string): void {
+  const session = ctx.store.get<Session>('sessions', sessionId);
+  if (!session || session.state === 'closed') return;
+  const untold = ctx.store
+    .list<SettingProposal>(SETTING_PROPOSALS)
+    .filter((row) => row.session_id === sessionId && untoldAnswer(row));
+  if (!untold.length) return;
+  const lines = untold.map(
+    (row) => `[setting] [Pantheon] ${row.state}: ${row.command} — ${row.error ?? row.reason}`,
+  );
+  if (!notifySession(ctx, sessionId, lines.join('\n\n'), cause ?? untold[0]!.id))
+    return unreachedCaller(ctx, sessionId);
+  for (const row of untold)
+    ctx.store.update<SettingProposal>(
+      SETTING_PROPOSALS,
+      { ...row, notified_at: ctx.store.now() },
+      row.revision,
+    );
+}
+
 /** Sends the waiting notices of the callers that take input again or whose hold ended. */
 export function retrySpawnerNotices(ctx: ControlContext): void {
   const callers = unreached.get(ctx);
@@ -763,7 +791,9 @@ export function retrySpawnerNotices(ctx: ControlContext): void {
     const caller = ctx.store.get<Session>('sessions', callerId);
     if (caller && caller.state !== 'closed' && !takesNotice(ctx, caller)) continue;
     callers!.delete(callerId);
-    if (caller && caller.state !== 'closed') tellCaller(ctx, callerId);
+    if (!caller || caller.state === 'closed') continue;
+    ctx.store.transaction(() => tellAnswers(ctx, callerId));
+    tellCaller(ctx, callerId);
   }
 }
 
@@ -773,6 +803,12 @@ export function tellSpawners(ctx: ControlContext): void {
     ctx.store.list<Session>('sessions').flatMap((session) => session.spawned_by?.session_id ?? []),
   );
   for (const callerId of callers) tellCaller(ctx, callerId);
+  const answered = new Set(
+    ctx.store
+      .list<SettingProposal>(SETTING_PROPOSALS)
+      .flatMap((row) => (untoldAnswer(row) ? row.session_id : [])),
+  );
+  for (const sessionId of answered) ctx.store.transaction(() => tellAnswers(ctx, sessionId));
 }
 
 /** Whether the session's HEAD is the commit it last landed and its index and files are clean. */

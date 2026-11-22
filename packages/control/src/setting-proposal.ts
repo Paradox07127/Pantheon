@@ -9,6 +9,7 @@ import {
   type WorkflowPolicy,
 } from '@pantheon/domain';
 import { inputSchemas, prettifyError, type Command } from '@pantheon/protocol';
+import { tellAnswers } from './conductor.js';
 import {
   insert,
   projectAccess,
@@ -24,7 +25,7 @@ import {
   type ProposedSetting as Proposed,
 } from './needs-you-settings.js';
 import { projectHandlers, projectPreparers } from './project.js';
-import { notifySession } from './session-wake.js';
+import { sessionDefaults } from './user-config.js';
 import { workflowPolicy, workflowPolicyHandlers } from './workflow-policy.js';
 
 /** The most proposals of one project that wait for the user at a time. */
@@ -60,6 +61,21 @@ function settingNow(ctx: ControlContext, proposed: Proposed): Record<string, unk
   return { overrides: project.extension_overrides?.[input.runtime as string] ?? null };
 }
 
+/** A value of the input that only the user picks, named for the refusal. */
+function userOnlyValue({ command, input }: Proposed): string | undefined {
+  if (
+    command === 'project.sessionDefaults.set' &&
+    ['auto', 'full_access'].includes(input.permission_mode as string)
+  )
+    return `the permission mode ${input.permission_mode as string}`;
+  // The model writes no numbers, so a gate timeout comes only from the user.
+  if (
+    command === 'project.gate.set' &&
+    (input.commands as { timeout_ms?: number }[]).some((each) => each.timeout_ms !== undefined)
+  )
+    return 'the timeout_ms of a gate command';
+}
+
 /** conductor.propose_setting */
 const proposeSetting: Handler = (ctx, p, command) => {
   requireThat(p.role === 'conductor', 'permission_denied', 'A conductor session only');
@@ -72,8 +88,25 @@ const proposeSetting: Handler = (ctx, p, command) => {
     project_id: projectId,
   });
   if (!parsed.success) throw new DomainError('invalid_input', prettifyError(parsed.error));
-  const proposed: Proposed = { command: proposal.command, input: parsed.data };
+  let proposed: Proposed = { command: proposal.command, input: parsed.data };
+  const userValue = userOnlyValue(proposed);
+  requireThat(!userValue, 'invalid_input', `Only the user sets ${userValue}`);
+  const project = ctx.store.must<Project>('projects', projectId);
   const root = gateRoot(proposed);
+  requireThat(
+    root === undefined || project.roots.includes(root),
+    'invalid_input',
+    'Gate root is not a project root',
+  );
+  if (root !== undefined) {
+    // A command the user gave a timeout keeps it.
+    const now = project.gates?.[root] ?? [];
+    const commands = (proposed.input.commands as { argv: string[] }[]).map((each) => {
+      const timeout = now.find((c) => canonical(c.argv) === canonical(each.argv))?.timeout_ms;
+      return timeout === undefined ? each : { ...each, timeout_ms: timeout };
+    });
+    proposed = { ...proposed, input: { ...proposed.input, commands } };
+  }
   const pending = ctx.store
     .list<SettingProposal>(TABLE)
     .filter((row) => row.project_id === projectId && row.state === 'pending');
@@ -101,7 +134,13 @@ const proposeSetting: Handler = (ctx, p, command) => {
       ...proposed,
       reason: proposal.reason,
       state: 'pending',
-      before: settingNow(ctx, proposed),
+      before: {
+        ...settingNow(ctx, proposed),
+        // What applies while the project has no session defaults of its own; approval does not compare it.
+        ...(proposed.command === 'project.sessionDefaults.set' && {
+          inherited: project.session_defaults ? null : (sessionDefaults(ctx, project) ?? null),
+        }),
+      },
       created_at: ctx.store.now(),
     },
     'setting.proposed',
@@ -156,12 +195,7 @@ function decide(
     { state, ...(error ? { error } : {}) },
     command.command_id,
   );
-  notifySession(
-    ctx,
-    proposal.session_id,
-    `[setting] [Pantheon] ${state}: ${proposal.command} — ${error ?? proposal.reason}`,
-    command.command_id,
-  );
+  tellAnswers(ctx, proposal.session_id, command.command_id);
   return { proposal_id: next.id, state };
 }
 
@@ -186,7 +220,8 @@ function prepareRespond(
     (run: Handler): Handler =>
     (ctx, p, command) => {
       const { proposal } = answered(ctx, p, command);
-      if (canonical(settingNow(ctx, proposal)) !== canonical(proposal.before))
+      const { inherited: _inherited, ...before } = proposal.before;
+      if (canonical(settingNow(ctx, proposal)) !== canonical(before))
         return fail(
           ctx,
           proposal,

@@ -170,6 +170,10 @@ export function needsYou(
   const shown =
     principal.role === 'personal'
       ? items.map(({ binding, background, ...item }) => {
+          if (item.setting?.command === 'project.gate.set') {
+            const { before: _before, after: _after, ...setting } = item.setting;
+            return { ...item, setting };
+          }
           if (!binding) return item;
           const { input_summary, rule, ...kept } = binding;
           return { ...item, binding: kept };
