@@ -787,6 +787,54 @@ it('tells the main agent once that a session it spawned waits for the user, howe
   expect(waits[0]).toContain('waits for the user to allow Bash');
 });
 
+it('tells a running main agent in one line how many requests a session it spawned asked of the user one after another', async () => {
+  const f = await workbenchFixture();
+  const conductor = await openConductor(f);
+  const { session_id } = await spawn(
+    f,
+    conductor.id,
+    script({ ask: { tool: 'Bash', input: { command: 'pnpm test' } } }),
+  );
+  const pending = () =>
+    f.store
+      .list<Approval>('approvals')
+      .filter((approval) => approval.session_id === session_id && approval.state === 'pending');
+  await eventually(
+    () => pending().length === 1,
+    () => f.control.tick(),
+  );
+  f.call(
+    'session.send',
+    { session_id: conductor.id, input: script({ wait: 5000 }, { say: 'Done' }) },
+    row(f, conductor.id).revision,
+  );
+  await eventually(
+    () => f.turns(conductor.id).some((turn) => turn.state === 'running'),
+    () => f.control.tick(),
+  );
+  await tellAgain(f, session_id);
+  for (let request = 0; request < 3; request++) {
+    const [answered] = pending();
+    f.store.update<Approval>('approvals', { ...answered!, state: 'approved' }, answered!.revision);
+    f.store.insert<Approval>('approvals', {
+      ...answered!,
+      id: id(),
+      revision: 1,
+      request_id: `request-${request}`,
+      state: 'pending',
+      created_at: f.store.now(),
+    });
+    await tellAgain(f, session_id);
+  }
+
+  const waits = trackerTurns(f, conductor.id)
+    .flatMap((turn) => turn.input.split('\n\n'))
+    .filter((item) => item.startsWith('[input_required] [Pantheon] '));
+  expect(waits).toHaveLength(1);
+  expect(waits[0]).toContain(session_id);
+  expect(waits[0]).toContain('waits for the user on 4 requests');
+});
+
 it.each([
   {
     who: 'a main agent at once, its text as written',

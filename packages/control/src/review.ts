@@ -45,8 +45,7 @@ import { notifySession } from './session-wake.js';
 export const REVIEW_WALL_TIME_MS = 2 * 60 * 60 * 1000;
 /** The most code review rounds a reviewed session gets. */
 const REVIEW_MAX_ROUNDS = 3;
-export const reviewInstruction =
-  'Review these changes against the task goal. Record each problem with review_finding; quote the diff exactly. End the review with one review_verdict call, pass or fail, with a summary of what you checked.';
+export const reviewInstruction = `Review these changes against the task goal. Record each problem with review_finding; quote the diff exactly; record one only for a problem in the change. The project's gate runs the commands the goal lists under "Done when" once the change lands, so judge from the code and tests whether the change meets each item; do not fail or block for lack of run results. End the review with one review_verdict call, pass or fail, with a summary of what you checked.`;
 const rangeInstruction = `${reviewInstruction} Write each finding's location as path:line in the changed file. The checkout in your working directory may not be the reviewed head; changes.diff is the reviewed code.`;
 /** The reviewer's input part naming what to look at closely, after the goal; empty without a focus. */
 const focusPart = (focus: string | undefined) =>

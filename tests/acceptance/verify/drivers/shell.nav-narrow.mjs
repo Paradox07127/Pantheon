@@ -48,7 +48,7 @@ check('后端对照：项目切换按钮显示 board 里 boot 项目的名字', 
   daemon: project?.name,
 });
 
-// The rail: new session, all projects, settings.
+// The rail: changes, new session, all projects, settings.
 await page.click({ role: 'button', name: COLLAPSE, exact: true });
 const rail = await poll(async () => {
   const r = await railButtons();
@@ -56,14 +56,14 @@ const rail = await poll(async () => {
 });
 result.rail = rail;
 check(
-  '折叠后图标栏的按钮正好是 新会话、全部项目、设置',
-  JSON.stringify(rail) === JSON.stringify(['新会话', '全部项目', '设置']),
+  '折叠后图标栏的按钮正好是 改动、新会话、全部项目、设置',
+  JSON.stringify(rail) === JSON.stringify(['改动', '新会话', '全部项目', '设置']),
   rail,
 );
 check('对照组：图标栏的 "设置" 按钮能找到', Array.isArray(rail) && rail.includes('设置'), rail);
 check(
   '对照组：图标栏按钮多一个 "轨迹" 时判 false',
-  JSON.stringify(rail) !== JSON.stringify(['轨迹', '新会话', '全部项目', '设置']),
+  JSON.stringify(rail) !== JSON.stringify(['轨迹', '改动', '新会话', '全部项目', '设置']),
 );
 
 // The command palette: no trace or memory page, all projects still there.

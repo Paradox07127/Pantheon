@@ -36,7 +36,7 @@ import {
   startSessionReview,
 } from './review.js';
 import { interruptSession, queueInput } from './session.js';
-import { notifySession, takesNotice } from './session-wake.js';
+import { notifySession, takesNotice, waitingNotice } from './session-wake.js';
 import {
   checkWorktreeSession,
   openWorktreeSession,
@@ -49,7 +49,7 @@ import { projectOverBudget } from './workflow-policy.js';
 
 /** The instructions Pantheon adds to a conductor session after the line on where it works. */
 export const CONDUCTOR_INSTRUCTIONS =
-  "Pantheon gives this session these tools. request_review: another vendor reviews your committed changes or those of a session you spawned; the result comes back to you as a message. report_ready: committed changes go through the project's gate and land. spawn_session: another vendor's session starts in a new worktree from your current commit, in permission mode ask or auto_edit; you hear when its turn ends. News of the sessions you spawned comes in batches while you are idle, at most 30 s after its first item; each item starts on a new line with its state in brackets: [completed], [failed], [input_required] when it waits for the user, [review], [landed] or [blocked]. Give it acceptance, what done means; its first message ends with the list, and request_review on it checks each item. Give it owns, the paths it may change; its first message names them, and read_state lists its changed files outside them. Give runtimes, two or three, to run the same task once on each. To keep the best result, review them, land one with report_ready and close the others with stop_session close. message_session: a message to a session you spawned, or a steer into its running turn; at most 2 a minute to one session. stop_session: interrupts the running turn of a session you spawned, or closes that session. read_state: this project's changes, checks, landing queue and items waiting for the user, and each session you spawned with its state and what it used. read_needs_you: the items waiting for the user; only the user answers them. propose_setting: a change to the project's gate commands, protected paths, budget, session defaults or extension switches, which waits for the user and runs only once the user approves it; the outcome comes back at once on a line that starts with [setting]. project_read: the project's settings, budget, session defaults, brief and memory. memory_context, memory_search, memory_related and memory_get: project memory, which Pantheon does not add to your turns. memory_propose: a memory entry; a decision stays a draft until the user confirms it. draw: a chart or diagram the user sees in this session. Plan, split work and run subagents with your own tools.";
+  "Pantheon gives this session these tools. request_review: another vendor reviews your committed changes or those of a session you spawned; the result comes back to you as a message. report_ready: committed changes go through the project's gate and land. spawn_session: another vendor's session starts in a new worktree from your current commit, in permission mode ask or auto_edit; you hear when its turn ends. News of the sessions you spawned comes in batches while you are idle, at most 30 s after its first item; each item starts on a new line with its state in brackets: [completed], [failed], [input_required] when it waits for the user, [review], [landed] or [blocked]. News of sessions, reviews and landings reaches you only after your turn ends: once you have spawned sessions or requested reviews and have nothing else to do now, end your turn and wait; do not sleep or poll read_state to wait. Give it acceptance, what done means; its first message ends with the list, and request_review on it checks each item. Give it owns, the paths it may change; its first message names them, and read_state lists its changed files outside them. Give runtimes, two or three, to run the same task once on each. To keep the best result, review them, land one with report_ready and close the others with stop_session close. message_session: a message to a session you spawned, or a steer into its running turn; at most 2 a minute to one session. stop_session: interrupts the running turn of a session you spawned, or closes that session. read_state: this project's changes, checks, landing queue and items waiting for the user, and each session you spawned with its state and what it used. read_needs_you: the items waiting for the user; only the user answers them. propose_setting: a change to the project's gate commands, protected paths, budget, session defaults or extension switches, which waits for the user and runs only once the user approves it; the outcome comes back at once on a line that starts with [setting]. project_read: the project's settings, budget, session defaults, brief and memory. memory_context, memory_search, memory_related and memory_get: project memory, which Pantheon does not add to your turns. memory_propose: a memory entry; a decision stays a draft until the user confirms it. draw: a chart or diagram the user sees in this session. Plan, split work and run subagents with your own tools.";
 
 /** conductor.review; the session's committed range and its diff are read before the transaction. */
 function prepareConductorReview(
@@ -685,7 +685,9 @@ function untoldNews(ctx: ControlContext, session: Session): News | undefined {
       ...turns.map(notice),
       ...(asked
         ? [
-            `[input_required] [Pantheon] ${named} waits for the user to ${asked.questions?.length ? 'answer a question' : `allow ${asked.tool ?? 'a tool call'}`}. Only the user answers it; read it with read_needs_you.`,
+            wait!.untold.length > 1
+              ? waitsOn(`[input_required] [Pantheon] ${named}`, wait!.untold.length)
+              : `[input_required] [Pantheon] ${named} waits for the user to ${asked.questions?.length ? 'answer a question' : `allow ${asked.tool ?? 'a tool call'}`}. Only the user answers it; read it with read_needs_you.`,
           ]
         : []),
     ],
@@ -699,6 +701,26 @@ function untoldNews(ctx: ControlContext, session: Session): News | undefined {
     ),
     cause: turns[0]?.id ?? wait!.untold[0]!.id,
   };
+}
+
+const waitsOn = (head: string, count: number) =>
+  `${head} waits for the user on ${count} requests. Only the user answers them; read them with read_needs_you.`;
+const WAIT_ITEM =
+  /^(\[input_required\] \[Pantheon\] .*, which you spawned,) waits for the user (?:on (\d+) requests|to )/;
+
+/** The items, with the waits of one spawned session told as one item that counts their requests. */
+function foldWaits(items: string[]): string[] {
+  const heads = items.map((item) => WAIT_ITEM.exec(item));
+  const counts = new Map<string, number>();
+  for (const head of heads)
+    if (head) counts.set(head[1]!, (counts.get(head[1]!) ?? 0) + Number(head[2] ?? 1));
+  return items.flatMap((item, index) => {
+    const head = heads[index]?.[1];
+    if (!head || heads.filter((each) => each?.[1] === head).length === 1) return [item];
+    return heads.findIndex((each) => each?.[1] === head) === index
+      ? [waitsOn(head, counts.get(head)!)]
+      : [];
+  });
 }
 
 /**
@@ -726,7 +748,22 @@ function tellCaller(ctx: ControlContext, callerId: string): void {
   )
     return unreachedCaller(ctx, callerId);
   ctx.store.transaction(() => {
-    if (lines.length && !notifySession(ctx, callerId, lines.join('\n\n'), news[0]!.cause))
+    // Notices for a running caller join the turn queued for them, where its waits fold into one.
+    const queued =
+      caller.state === 'running'
+        ? ctx.store
+            .list<SessionTurn>('session_turns')
+            .find((turn) => turn.session_id === callerId && waitingNotice(turn))
+        : undefined;
+    const items = queued ? [...queued.input.split('\n\n'), ...lines] : [];
+    const folded = foldWaits(items);
+    if (folded.length < items.length)
+      ctx.store.update(
+        'session_turns',
+        { ...queued!, input: folded.join('\n\n') },
+        queued!.revision,
+      );
+    else if (lines.length && !notifySession(ctx, callerId, lines.join('\n\n'), news[0]!.cause))
       return unreachedCaller(ctx, callerId);
     for (const each of news)
       for (const told of each.told)
