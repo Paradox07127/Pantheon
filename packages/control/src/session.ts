@@ -330,6 +330,8 @@ function endReconciledTurns(ctx: ControlContext, sessionId: string): void {
     );
     ctx.store.event('turn.failed', ended, ended.project_id, { error: reason });
   }
+  // The caller's transaction commits first.
+  queueMicrotask(() => afterSpawnedTurn(ctx, sessionId));
 }
 
 function closeToolRelay(ctx: ControlContext, sessionId: string): void {

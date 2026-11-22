@@ -297,6 +297,130 @@ it('tells the conductor of a turn that ended with the next turn of its session a
   expect(toldTurns(f, session_id)).toEqual([first!.id, next!.id]);
 });
 
+it('tells the conductor of a steer that ran as a turn of its own', async () => {
+  const f = await workbenchFixture();
+  const conductor = await openConductor(f);
+  const { session_id } = await spawn(f, conductor.id, script({ wait: 300 }, { say: 'First' }));
+  await awaitWorkspaceReady(f.control, row(f, session_id).workspace_id!);
+  await eventually(
+    () => f.turns(session_id)[0]!.state === 'running',
+    () => f.control.tick(),
+  );
+  f.call(
+    'session.steer',
+    { session_id, input: 'Cover the tests too' },
+    row(f, session_id).revision,
+  );
+
+  await settle(f, row(f, session_id));
+  const [first, steer] = f.turns(session_id);
+  expect(steer).toMatchObject({ kind: 'steer', state: 'completed' });
+  await tellAgain(f, session_id);
+
+  expect(toldTurns(f, session_id)).toEqual([first!.id, steer!.id]);
+});
+
+it('tells the conductor of the turns that ended before a stop, and not of the turn the stop ended', async () => {
+  const f = await workbenchFixture();
+  const conductor = await openConductor(f);
+  const { session_id } = await spawn(f, conductor.id, 'Port the parser');
+  const merging = mergesPreparing(ctxOf(f));
+  merging.add(conductor.id);
+  await settle(f, row(f, session_id));
+  f.call(
+    'session.send',
+    { session_id, input: script({ wait: 5000 }, { say: 'Done' }) },
+    row(f, session_id).revision,
+  );
+  await eventually(
+    () => f.turns(session_id)[1]?.state === 'running',
+    () => f.control.tick(),
+  );
+
+  f.call('session.discard', { session_id }, row(f, session_id).revision);
+  await eventually(
+    () => row(f, session_id).outcome === 'discarded',
+    () => f.control.tick(),
+  );
+  merging.delete(conductor.id);
+  await tellAgain(f, session_id);
+
+  const [first, stopped] = f.turns(session_id);
+  expect(stopped!.state).toBe('failed');
+  expect(toldTurns(f, session_id)).toEqual([first!.id]);
+});
+
+it('says how far ahead the session is only in the notice of its latest turn', async () => {
+  const f = await workbenchFixture();
+  const conductor = await openConductor(f);
+  const { session_id } = await spawn(
+    f,
+    conductor.id,
+    script({ write: { path: 'docs.txt', text: 'docs\n' } }, { commit: 'Write the docs' }),
+  );
+  const merging = mergesPreparing(ctxOf(f));
+  merging.add(conductor.id);
+  await settle(f, row(f, session_id));
+  f.call('session.send', { session_id, input: 'Look again' }, row(f, session_id).revision);
+  await settle(f, row(f, session_id));
+
+  merging.delete(conductor.id);
+  await eventually(
+    () => toldTurns(f, session_id).length === 2,
+    () => f.control.tick(),
+  );
+
+  // Notices that reach the conductor together share one of its turns.
+  const [earlier, latest] = trackerTurns(f, conductor.id).flatMap((turn) =>
+    turn.input.split('\n\n'),
+  );
+  expect(earlier).toContain(session_id);
+  expect(earlier).not.toContain('ahead of');
+  expect(latest).toContain('It is 1 commit ahead of main.');
+});
+
+it('tells the conductor of a turn the user failed by closing its reconciling session', async () => {
+  const f = await workbenchFixture();
+  const conductor = await openConductor(f);
+  const { session_id } = await spawn(f, conductor.id, 'Port the parser');
+  await settle(f, row(f, session_id));
+  await eventually(
+    () => toldTurns(f, session_id).length === 1,
+    () => f.control.tick(),
+  );
+  await settle(f, row(f, conductor.id));
+  // A conductor whose idle process is still closing takes no notice.
+  releaseIdleConversations(ctxOf(f), f.project.id);
+  await eventually(
+    () => ctxOf(f).handles.size === 0,
+    () => f.control.tick(),
+  );
+  const interrupted = f.store.insert<SessionTurn>('session_turns', {
+    ...f.turns(session_id)[0]!,
+    id: id(),
+    revision: 1,
+    state: 'running',
+  });
+  const spawned = row(f, session_id);
+  f.store.update<Session>(
+    'sessions',
+    {
+      ...spawned,
+      state: 'reconciling',
+      process_identity: { pid: 4000001, start_time_us: 1700000000123456 },
+    },
+    spawned.revision,
+  );
+
+  const before = new Set(ctxOf(f).completions);
+  await f.call('session.resolve', { session_id, choice: 'close' }, row(f, session_id).revision);
+  expect(f.store.must<SessionTurn>('session_turns', interrupted.id).state).toBe('failed');
+  await Promise.resolve();
+  await Promise.allSettled([...ctxOf(f).completions].filter((work) => !before.has(work)));
+
+  expect(toldTurns(f, session_id)).toEqual([f.turns(session_id)[0]!.id, interrupted.id]);
+});
+
 it('tells the conductor once it takes input again', async () => {
   const f = await workbenchFixture();
   const conductor = await openConductor(f);

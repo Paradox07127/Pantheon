@@ -20,7 +20,7 @@ import {
 import { runGit } from './git.js';
 import { gateCommands } from './landing.js';
 import { sessionGoal } from './landing-diff.js';
-import { latestEvent, needsYou } from './needs-you.js';
+import { executed, latestEvent, needsYou } from './needs-you.js';
 import {
   requireCrossReview,
   requireNoBlockingReview,
@@ -257,7 +257,11 @@ function unreachedCaller(ctx: ControlContext, callerId: string): void {
   callers.add(callerId);
 }
 
-/** The spawned session's completed and failed turns its caller has not heard of, in the order they ended. */
+/**
+ * The spawned session's completed and failed turns its caller has not heard of, in the order they
+ * ended; a steer delivered into a running turn and a turn that ended once the session was stopped
+ * are left out.
+ */
 function untoldTurns(ctx: ControlContext, sessionId: string): SessionTurn[] {
   const told = new Set(
     (
@@ -270,11 +274,17 @@ function untoldTurns(ctx: ControlContext, sessionId: string): SessionTurn[] {
   );
   const turns = ctx.store
     .list<SessionTurn>('session_turns')
-    .filter((each) => each.session_id === sessionId && each.kind !== 'steer');
+    .filter((each) => each.session_id === sessionId && executed(ctx, each));
+  const stop = ctx.store.must<Session>('sessions', sessionId).stop_requested;
   // Notices go out in order, so a turn before the last one told was passed over before that held.
   return turns
     .slice(turns.findLastIndex((each) => told.has(each.id)) + 1)
-    .filter((each) => each.state === 'completed' || each.state === 'failed');
+    .filter(
+      (each) =>
+        (each.state === 'completed' || each.state === 'failed') &&
+        (!stop ||
+          (latestEvent(ctx, each.id, `turn.${each.state}`)?.created_at ?? Infinity) < stop.at),
+    );
 }
 
 /**
@@ -284,7 +294,7 @@ function untoldTurns(ctx: ControlContext, sessionId: string): SessionTurn[] {
  */
 function tellSpawner(ctx: ControlContext, session: Session): void {
   const callerId = session.spawned_by?.session_id;
-  if (!callerId || session.stop_requested || ctx.closing) return;
+  if (!callerId || ctx.closing) return;
   const caller = ctx.store.get<Session>('sessions', callerId);
   if (!caller || caller.state === 'closed' || !untoldTurns(ctx, session.id).length) return;
   if (!takesNotice(ctx, caller)) return unreachedCaller(ctx, callerId);
@@ -328,10 +338,12 @@ function tellSpawner(ctx: ControlContext, session: Session): void {
     ctx.store.transaction(() => {
       // While the count is read the daemon can start closing, the caller close, or another notice go out.
       if (ctx.closing || ctx.store.must<Session>('sessions', caller.id).state === 'closed') return;
-      if (ctx.store.must<Session>('sessions', session.id).stop_requested) return;
-      for (const turn of untoldTurns(ctx, session.id)) {
-        if (!notifySession(ctx, caller.id, notice(turn, ahead, branch), turn.id))
-          return unreachedCaller(ctx, caller.id);
+      const turns = untoldTurns(ctx, session.id);
+      for (const turn of turns) {
+        // The count and branch describe the session now, so only the latest turn's notice carries them.
+        const latest = turn === turns.at(-1);
+        const text = latest ? notice(turn, ahead, branch) : notice(turn, undefined);
+        if (!notifySession(ctx, caller.id, text, turn.id)) return unreachedCaller(ctx, caller.id);
         ctx.store.event(
           'session.spawner_notified',
           ctx.store.must<Session>('sessions', session.id),
