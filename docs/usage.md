@@ -157,13 +157,21 @@ If a process outside Pantheon holds the native session, Pantheon refuses to cont
 
 ## Sessions with Pantheon tools
 
-A session that you create with `"purpose": "conductor"` in its `session.create` command gets five Pantheon tools. In the app, turn on the "Main agent" toggle (the crown) in the row under the new session's message box before you start it. The session list and the session bar mark the session with the crown, and the list's type filter has a "Main agent" type. The session plans, splits the work and runs subagents with the tools of its own runtime.
+A session that you create with `"purpose": "conductor"` in its `session.create` command gets these Pantheon tools. In the app, turn on the "Main agent" toggle (the crown) in the row under the new session's message box before you start it. The session list and the session bar mark the session with the crown, and the list's type filter has a "Main agent" type. The session plans, splits the work and runs subagents with the tools of its own runtime.
 
 - `request_review`: a runtime of another vendor reviews the committed changes of the session, or of a session that it started. The result comes back to the session as a message.
 - `report_ready`: the committed changes go through the project gate and land. Pantheon refuses this while the latest review of the work has open blocking findings. When you click "Merge into <target>" yourself, this rule does not apply.
-- `spawn_session`: starts a session of another runtime in a new worktree from the current commit. The new session has no Pantheon tools. When its turn ends or fails, the session that started it gets a message. A session can have at most 4 unfinished sessions that it started.
-- `read_state`: the changes of the project, their checks, the landing queue and the items that wait for you.
+- `spawn_session`: starts a session of another runtime in a new worktree from the current commit. The new session has no Pantheon tools. Its permission mode is "Manual" (`ask`), or "Auto edit" (`auto_edit`) when the tool asks for it; other modes are refused. When its turn ends or fails, the session that started it gets a message. At most 4 sessions that a session started can run a turn at the same time. When the project spent its budget, Pantheon refuses this.
+- `message_session`: sends a message to a session that it started, as a new turn (`send`) or into the running turn (`steer`). At most 2 messages a minute go to one session.
+- `stop_session`: interrupts the running turn of a session that it started. With `close` it closes that session and discards its worktree.
+- `read_state`: the changes of the project, their checks, the landing queue and the items that wait for you. The row of each session that it started shows the input, output and cache-read tokens, the turns and the time of the turns.
+- `read_needs_you`: the items that wait for you, without the actions that answer them. Only you answer them.
+- `project_read`: the settings, the brief and the memory of the project.
+- `memory_context`, `memory_search`, `memory_related`, `memory_get`: read the project memory. Pantheon does not add the memory to the turns of this session.
+- `memory_propose`: writes a memory entry. A decision stays a draft until you confirm it.
 - `draw`: a chart or diagram that you see in the conversation.
+
+The session can only message, interrupt and close the sessions that it started.
 
 ## Trace
 

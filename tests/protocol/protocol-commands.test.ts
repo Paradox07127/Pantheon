@@ -125,12 +125,21 @@ it('rejects a defined but unimplemented command with unsupported_command and kee
   }
 });
 
-it('gives a conductor session exactly five tools with strict inputs', () => {
+it('gives a conductor session exactly its tools with strict inputs', () => {
   expect(sessionTools.conductor).toEqual({
     request_review: 'conductor.review',
     report_ready: 'conductor.ready',
     spawn_session: 'conductor.spawn',
     read_state: 'conductor.state',
+    message_session: 'conductor.message',
+    stop_session: 'conductor.stop',
+    read_needs_you: 'conductor.needs_you',
+    project_read: 'project.read',
+    memory_context: 'memory.context',
+    memory_search: 'memory.search',
+    memory_related: 'memory.related',
+    memory_get: 'memory.get',
+    memory_propose: 'memory.propose',
     draw: 'visual.draw',
   });
   const cases: [CommandType, Record<string, unknown>, Record<string, unknown>[]][] = [
@@ -147,9 +156,32 @@ it('gives a conductor session exactly five tools with strict inputs', () => {
         { runtime: 'codex', input: '' },
         { runtime: 'codex', input: 'Write the docs', effort: 'huge' },
         { input: 'Write the docs' },
+        { runtime: 'codex', input: 'Write the docs', permission_mode: 'full_access' },
+        { runtime: 'codex', input: 'Write the docs', permission_mode: 'auto' },
+        { runtime: 'codex', input: 'Write the docs', permission_mode: 'plan' },
       ],
     ],
+    [
+      'conductor.spawn' as CommandType,
+      { runtime: 'codex', input: 'Write the docs', permission_mode: 'auto_edit' },
+      [],
+    ],
     ['conductor.state' as CommandType, {}, [{ session_id: 'session' }]],
+    [
+      'conductor.message' as CommandType,
+      { session_id: 'spawned', text: 'Add the tests', mode: 'steer' },
+      [
+        { session_id: 'spawned', text: '' },
+        { session_id: 'spawned', text: 'Add the tests', mode: 'queue' },
+        { text: 'Add the tests' },
+      ],
+    ],
+    [
+      'conductor.stop' as CommandType,
+      { session_id: 'spawned', close: true },
+      [{}, { session_id: 'spawned', close: 'yes' }],
+    ],
+    ['conductor.needs_you' as CommandType, {}, [{ project_id: 'project' }]],
   ];
   for (const [type, valid, invalid] of cases) {
     expect(Object.hasOwn(inputSchemas, type), type).toBe(true);

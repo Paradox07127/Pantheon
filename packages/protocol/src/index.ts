@@ -200,6 +200,11 @@ export const sessionTools = {
     report_ready: 'conductor.ready',
     spawn_session: 'conductor.spawn',
     read_state: 'conductor.state',
+    message_session: 'conductor.message',
+    stop_session: 'conductor.stop',
+    read_needs_you: 'conductor.needs_you',
+    project_read: 'project.read',
+    ...memoryTools,
     draw: 'visual.draw',
   },
 } as const;
@@ -1431,7 +1436,7 @@ export const inputSchemas = {
       device_id: str.optional(),
       /**
        * project_setup: the first message starts with the guide for a project built from nothing.
-       * conductor: the native session with only the five conductor tools.
+       * conductor: the native session with only the conductor tools.
        * Without a purpose the session runs as the bare runtime.
        */
       purpose: z.enum(['project_setup', 'conductor']).optional(),
@@ -1689,8 +1694,32 @@ export const inputSchemas = {
       .enum(EFFORT_LEVELS)
       .optional()
       .describe("The reasoning effort of the new session; absent uses the runtime's default."),
+    permission_mode: z
+      .enum(['ask', 'auto_edit'])
+      .optional()
+      .describe(
+        'ask (default): the user approves the requests of the new session; auto_edit: its file edits need no approval.',
+      ),
   }),
   'conductor.state': z.strictObject({}),
+  'conductor.message': z.strictObject({
+    session_id: str.describe('A session you spawned.'),
+    text: str.describe('The message.'),
+    mode: z
+      .enum(['send', 'steer'])
+      .default('send')
+      .describe('send (default): a new turn of an idle session; steer: into its running turn.'),
+  }),
+  'conductor.stop': z.strictObject({
+    session_id: str.describe('A session you spawned.'),
+    close: z
+      .boolean()
+      .optional()
+      .describe(
+        'Absent or false: interrupt its running turn and keep the session; true: close the session and discard its worktree.',
+      ),
+  }),
+  'conductor.needs_you': z.strictObject({}),
   /** The user only. */
   'runtime.reconnect': z.strictObject({ runtime: str }),
   /** Reconnects a server of a live native session; the user only. */

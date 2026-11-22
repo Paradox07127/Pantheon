@@ -206,6 +206,7 @@ export async function run({ workspace, evidenceDir }) {
         workspace: 'worktree',
         input: script(
           tool('read_state'),
+          tool('project_read'),
           { write: { path: 'plan.txt', text: 'Write the feature\n' } },
           { commit: 'Add the plan' },
           tool('spawn_session', {
@@ -242,6 +243,19 @@ export async function run({ workspace, evidenceDir }) {
         state?.changes?.some((row) => row.self === true && row.id === `session:${ids.conductor}`),
       ),
     };
+    let read;
+    try {
+      read = JSON.parse(calls('project_read')[0].output).receipt;
+    } catch {
+      read = null;
+    }
+    observations.project_read = {
+      ok: calls('project_read')[0].ok,
+      project: read?.project?.id === projectId,
+      role: read?.you?.role ?? null,
+    };
+    if (!observations.project_read.ok || !observations.project_read.project)
+      throw new Error(`project_read: ${JSON.stringify(calls('project_read')[0])}`);
     observations.spawn = {
       spawned_by_conductor: sessionRow(board, ids.spawned).spawned_by?.session_id === ids.conductor,
       runtime: sessionRow(board, ids.spawned).runtime,
@@ -275,19 +289,36 @@ export async function run({ workspace, evidenceDir }) {
       spawned_outcome: sessionRow(board, ids.spawned).outcome ?? null,
     };
 
-    // The user has the writer fix it; its turn end wakes the conductor, which reviews and lands.
+    // The user asks the conductor to have the writer fix it; the writer's turn end wakes the
+    // conductor, which reviews and lands.
+    const fix = script(
+      { write: { path: FEATURE, text: 'answer = 42\n' } },
+      { commit: 'Fix the answer' },
+    );
     await call(
       'fix',
       'session.send',
       {
-        session_id: ids.spawned,
-        input: script(
-          { write: { path: FEATURE, text: 'answer = 42\n' } },
-          { commit: 'Fix the answer' },
-        ),
+        session_id: ids.conductor,
+        input: script(tool('message_session', { session_id: ids.spawned, text: fix })),
       },
-      sessionRow(board, ids.spawned).revision,
+      sessionRow(board, ids.conductor).revision,
     );
+    await finished('message_session', 1);
+    const messaged = calls('message_session')[0];
+    let sent;
+    try {
+      sent = JSON.parse(messaged.output).receipt;
+    } catch {
+      sent = null;
+    }
+    observations.message = {
+      ok: messaged.ok,
+      session: sent?.session_id === ids.spawned,
+      turn: Boolean(sent?.turn_id),
+    };
+    if (!observations.message.ok || !observations.message.session)
+      throw new Error(`message_session: ${JSON.stringify(messaged)}`);
     const reviews = await reviewDone(2);
     await finished('report_ready', 2);
     await waitFor(

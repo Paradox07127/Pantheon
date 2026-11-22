@@ -22,6 +22,14 @@ export interface ChangeRow {
   status: 'running' | 'needs_you' | 'ready' | 'merged' | 'failed';
   /** The caller's running row at the commit it last landed, nothing changed; conductor.state sets it. */
   landed?: true;
+  /** What a session the caller spawned spent, wall_ms over the turns it ran; conductor.state sets it. */
+  usage?: {
+    input_tokens: number;
+    output_tokens: number;
+    cached_input_tokens: number;
+    turns: number;
+    wall_ms: number;
+  };
   ahead?: number;
   behind?: number;
   gate: { state: 'passed' | 'failed' | 'stale' | 'none'; failed?: string[] };

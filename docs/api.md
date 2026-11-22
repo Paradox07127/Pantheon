@@ -255,10 +255,13 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
+| `conductor.message` | `session_id`: string<br>`text`: string<br>`mode?`: "send" \| "steer" | message_session (conductor) |
+| `conductor.needs_you` | — | read_needs_you (conductor) |
 | `conductor.ready` | `session_id?`: string | report_ready (conductor) |
 | `conductor.review` | `runtimes`: string[]<br>`session_id?`: string | request_review (conductor) |
-| `conductor.spawn` | `runtime`: string<br>`input`: string<br>`model?`: string<br>`effort?`: "none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max" \| "ultra" | spawn_session (conductor) |
+| `conductor.spawn` | `runtime`: string<br>`input`: string<br>`model?`: string<br>`effort?`: "none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max" \| "ultra"<br>`permission_mode?`: "ask" \| "auto_edit" | spawn_session (conductor) |
 | `conductor.state` | — | read_state (conductor) |
+| `conductor.stop` | `session_id`: string<br>`close?`: boolean | stop_session (conductor) |
 
 ### device
 
@@ -286,14 +289,14 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 |---|---|---|
 | `memory.archive` | `memory_id`: string |  |
 | `memory.commit` | `memory_id`: string |  |
-| `memory.context` | `project_id`: string<br>`max_bytes?`: integer | memory_context (reviewer), memory_context (planner) |
-| `memory.get` | `memory_id`: string | memory_get (reviewer), memory_get (planner) |
+| `memory.context` | `project_id`: string<br>`max_bytes?`: integer | memory_context (reviewer), memory_context (planner), memory_context (conductor) |
+| `memory.get` | `memory_id`: string | memory_get (reviewer), memory_get (planner), memory_get (conductor) |
 | `memory.history` | `project_id`: string<br>`key?`: string<br>`limit?`: integer<br>`ids?`: string[] |  |
 | `memory.maintain` | `project_id`: string |  |
-| `memory.propose` | `project_id`: string<br>`key`: string<br>`kind`: "decision" \| "report" \| "note"<br>`title?`: string<br>`summary?`: string<br>`tags?`: string[]<br>`references?`: object[]<br>`text`: string<br>`dependencies?`: string[]<br>`expires_at?`: integer<br>`based_on?`: string | memory_propose (reviewer), memory_propose (planner) |
-| `memory.related` | `project_id`: string<br>`memory_id`: string<br>`state?`: "active" \| "draft" \| "archived" \| "all"<br>`kind?`: "decision" \| "report" \| "note"<br>`tag?`: string \| string[]<br>`q?`: string<br>`relation?`: "all" \| "dependency" \| "dependent" \| "version" \| "tag"<br>`depth?`: integer<br>`limit?`: integer | memory_related (reviewer), memory_related (planner) |
+| `memory.propose` | `project_id`: string<br>`key`: string<br>`kind`: "decision" \| "report" \| "note"<br>`title?`: string<br>`summary?`: string<br>`tags?`: string[]<br>`references?`: object[]<br>`text`: string<br>`dependencies?`: string[]<br>`expires_at?`: integer<br>`based_on?`: string | memory_propose (reviewer), memory_propose (planner), memory_propose (conductor) |
+| `memory.related` | `project_id`: string<br>`memory_id`: string<br>`state?`: "active" \| "draft" \| "archived" \| "all"<br>`kind?`: "decision" \| "report" \| "note"<br>`tag?`: string \| string[]<br>`q?`: string<br>`relation?`: "all" \| "dependency" \| "dependent" \| "version" \| "tag"<br>`depth?`: integer<br>`limit?`: integer | memory_related (reviewer), memory_related (planner), memory_related (conductor) |
 | `memory.restore` | `memory_id`: string |  |
-| `memory.search` | `project_id`: string<br>`state?`: "active" \| "draft" \| "archived" \| "all"<br>`kind?`: "decision" \| "report" \| "note"<br>`tag?`: string \| string[]<br>`q?`: string<br>`limit?`: integer | memory_search (reviewer), memory_search (planner) |
+| `memory.search` | `project_id`: string<br>`state?`: "active" \| "draft" \| "archived" \| "all"<br>`kind?`: "decision" \| "report" \| "note"<br>`tag?`: string \| string[]<br>`q?`: string<br>`limit?`: integer | memory_search (reviewer), memory_search (planner), memory_search (conductor) |
 | `memory.undo_retraction` | `memory_id`: string |  |
 
 ### permission
@@ -388,7 +391,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
-| `project.read` | `project_id`: string | project_read (planner) |
+| `project.read` | `project_id`: string | project_read (planner), project_read (conductor) |
 
 ### project.remove
 

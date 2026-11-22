@@ -171,14 +171,27 @@ const receipt = (result: Awaited<ReturnType<Client['callTool']>>) => {
 };
 
 const CONDUCTOR_TEXT =
-  "Pantheon gives this session five tools. request_review: another vendor reviews your committed changes; the result comes back to you as a message. report_ready: your committed changes go through the project's gate and land. spawn_session: another vendor's session starts in a new worktree from your current commit; you hear when its turn ends. read_state: this project's changes, checks, landing queue and items waiting for the user. draw: a chart or diagram the user sees in this session. Plan, split work and run subagents with your own tools.";
+  "Pantheon gives this session these tools. request_review: another vendor reviews your committed changes or those of a session you spawned; the result comes back to you as a message. report_ready: committed changes go through the project's gate and land. spawn_session: another vendor's session starts in a new worktree from your current commit, in permission mode ask or auto_edit; you hear when its turn ends. message_session: a message to a session you spawned, or a steer into its running turn; at most 2 a minute to one session. stop_session: interrupts the running turn of a session you spawned, or closes that session. read_state: this project's changes, checks, landing queue, items waiting for the user, and what each session you spawned used. read_needs_you: the items waiting for the user; only the user answers them. project_read: the project's settings, brief and memory. memory_context, memory_search, memory_related and memory_get: project memory, which Pantheon does not add to your turns. memory_propose: a memory entry; a decision stays a draft until the user confirms it. draw: a chart or diagram the user sees in this session. Plan, split work and run subagents with your own tools.";
 /** Each conductor tool with a valid input, and the command it sends. */
 const conductorCalls = [
   ['request_review', 'conductor.review', { runtimes: ['codex'] }],
   ['report_ready', 'conductor.ready', {}],
   ['spawn_session', 'conductor.spawn', { runtime: 'codex', input: 'Write the docs' }],
   ['read_state', 'conductor.state', {}],
+  ['message_session', 'conductor.message', { session_id: 'spawned', text: 'Add the tests' }],
+  ['stop_session', 'conductor.stop', { session_id: 'spawned' }],
+  ['read_needs_you', 'conductor.needs_you', {}],
 ] as const;
+/** The conductor's tools after its own commands. */
+const conductorReadTools = [
+  'project_read',
+  'memory_context',
+  'memory_search',
+  'memory_related',
+  'memory_get',
+  'memory_propose',
+  'draw',
+];
 const refusalCode = (run: () => unknown) => {
   try {
     run();
@@ -507,7 +520,7 @@ it('refuses a credential role that does not match the session', async () => {
   expect(() => f.auth.issueSession(planner, 'writer')).toThrow('Active session required');
 });
 
-it('mounts only the five conductor tools and their instructions on a conductor worktree session', async () => {
+it('mounts only the conductor tools and their instructions on a conductor worktree session', async () => {
   const f = await sessionFixture('planner');
   const draft = f.call<{ id: string; revision: number }>('memory.propose', {
     project_id: f.project.id,
@@ -548,12 +561,33 @@ it('mounts only the five conductor tools and their instructions on a conductor w
   expect(f.control.sessionPrincipal(principal).allowed_tool_names).toBeUndefined();
   const client = await connect(spec);
   const tools = (await client.listTools()).tools;
-  expect(tools.map((tool) => [tool.name, Object.keys(tool.inputSchema.properties ?? {})])).toEqual([
-    ['request_review', ['runtimes', 'session_id']],
-    ['report_ready', ['session_id']],
-    ['spawn_session', ['runtime', 'input', 'model', 'effort']],
-    ['read_state', []],
-    ['draw', ['title', 'kind', 'spec', 'source', 'size', 'replaces', 'pin']],
+  const fields = (tool: (typeof tools)[number]) => Object.keys(tool.inputSchema.properties ?? {});
+  expect(tools.map((tool) => tool.name)).toEqual([
+    ...conductorCalls.map(([name]) => name),
+    ...conductorReadTools,
+  ]);
+  expect(
+    tools.filter((tool) => tool.name !== 'draw').map((tool) => [tool.name, fields(tool)]),
+  ).toEqual(
+    expect.arrayContaining([
+      ['request_review', ['runtimes', 'session_id']],
+      ['report_ready', ['session_id']],
+      ['spawn_session', ['runtime', 'input', 'model', 'effort', 'permission_mode']],
+      ['read_state', []],
+      ['message_session', ['session_id', 'text', 'mode']],
+      ['stop_session', ['session_id', 'close']],
+      ['read_needs_you', []],
+      ['project_read', ['expected_revision']],
+    ]),
+  );
+  expect(fields(tools.find((tool) => tool.name === 'draw')!)).toEqual([
+    'title',
+    'kind',
+    'spec',
+    'source',
+    'size',
+    'replaces',
+    'pin',
   ]);
   for (const [, type, input] of conductorCalls)
     expect(
@@ -612,11 +646,20 @@ it('mounts the conductor tools on a conductor session in the project folder', as
   const client = await connect(spec);
   expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual([
     ...conductorCalls.map(([name]) => name),
-    'draw',
+    ...conductorReadTools,
   ]);
   expect(
     receipt(await client.callTool({ name: 'read_state', arguments: {} })).receipt,
   ).toMatchObject({ changes: expect.any(Array), todo: expect.any(Array) });
+  expect(
+    receipt(await client.callTool({ name: 'project_read', arguments: {} })).receipt,
+  ).toMatchObject({
+    project: { id: f.project.id },
+    you: { session_id: session.id, role: 'conductor' },
+  });
+  expect(
+    receipt(await client.callTool({ name: 'read_needs_you', arguments: {} })).receipt,
+  ).toMatchObject({ items: expect.any(Array) });
 });
 
 /** The spec without the Pantheon server and instructions, with each value that names a session or its workspace replaced. */

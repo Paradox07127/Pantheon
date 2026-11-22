@@ -32,12 +32,17 @@ apps/daemon ──> packages/control ─> packages/adapters, packages/store, pac
 
 ## 带工具的会话
 
-`session.create` 带 `purpose: 'conductor'` 开的会话，凭证角色是 `conductor`,可以是工作树会话，也可以是就地会话。Pantheon 只给它多五个工具和一段说明(`conductor.ts` 的 `CONDUCTOR_INSTRUCTIONS`),计划、拆活和子 agent 用运行时自己的。前四个工具对应 `conductor.ts` 的四个命令，第五个 `draw` 和项目搭建会话的画图是同一个命令(`visual.draw`):
+`session.create` 带 `purpose: 'conductor'` 开的会话，凭证角色是 `conductor`,可以是工作树会话，也可以是就地会话。Pantheon 只给它多 `sessionTools.conductor` 里的工具和一段说明(`conductor.ts` 的 `CONDUCTOR_INSTRUCTIONS`),计划、拆活和子 agent 用运行时自己的。`conductor.*` 工具对应 `conductor.ts` 的命令;`project_read` 和 `memory_*` 是规划会话也用的同一组命令(`project.read`、`memory.*`),记忆只经工具读，不自动注入回合;`draw` 和项目搭建会话的画图是同一个命令(`visual.draw`):
 
 - `request_review`(`conductor.review`):别家运行时审它自己或它起的会话已提交的改动，结果作为一条消息回到它。
 - `report_ready`(`conductor.ready`):把它自己或它起的会话交给门禁并落地；这份工作最近一次审查还有未解决的阻塞发现时拒绝(`review_blocking_open`)。对自己调用时，门禁和落地在这个回合结束后开始。用户自己点合并不受这条限制。
-- `spawn_session`(`conductor.spawn`):从调用者当前提交切一个新工作树，起一个不带工具的普通会话，记 `spawned_by`;每个带工具会话同时最多 4 个未结束的被起会话。被起会话的回合完成或失败时,`afterSpawnedTurn` 告诉起它的会话。
-- `read_state`(`conductor.state`):项目的改动(`changes.ts`,最多 30 条,24 小时前合并的不列)和等用户的事(最多 20 条)。
+- `spawn_session`(`conductor.spawn`):从调用者当前提交切一个新工作树，起一个不带工具的普通会话，记 `spawned_by`;权限模式只收 `ask`(默认)和 `auto_edit`;项目超预算时拒绝(`budget_exceeded`);每个带工具会话同时最多 4 个在跑回合(有排队或在跑的回合)的被起会话。被起会话的回合完成或失败时,`afterSpawnedTurn` 告诉起它的会话。
+- `message_session`(`conductor.message`):给 `spawned_by` 是自己的会话发 `send` 或 `steer`,按用户的发送排回合;每个被起会话 60 秒内最多 2 条(数 `session.conductor_messaged` 事件),超了 `rate_limited`。
+- `stop_session`(`conductor.stop`):对自己起的会话，不带 `close` 是打断当前回合(`interruptSession`),带 `close` 是关闭并丢弃工作树(`stopWorktreeSession`,`by: 'lead'`)。
+- `read_state`(`conductor.state`):项目的改动(`changes.ts`,最多 30 条,24 小时前合并的不列)和等用户的事(最多 20 条);自己起的会话那一行带 `usage`(会话累计的输入、输出、缓存读 token,跑过的回合数和这些回合从 `turn.running` 到结束的毫秒数)。
+- `read_needs_you`(`conductor.needs_you`):`needsYou` 的本项目条目，只留种类、原因、会话和时间，不带作答动作和请求输入。
+
+放行 `project.read` 也放行了按它检查的本项目只读查询(会话列表、文件、轨迹等),和规划会话一样。替用户批工具审批、设备、发现结论不在表里，主 agent 做不了。
 
 通知不经收件箱:`session-wake.ts` 的 `notifySession` 给目标会话排一个回合，目标在跑时并进已排队的那个通知回合；项目超出预算或会话不收输入时丢弃。
 

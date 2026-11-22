@@ -35,7 +35,7 @@ You can also import a session that you started outside Pantheon. An imported ses
 - **Project gate.** Pantheon rebases the session, runs the gate commands of the project and merges with `git merge --ff-only`.
 - **Import.** Continue an external Claude Code or Codex session in its own folder.
 - **Review and land.** Other runtimes review any range of commits (`pnpm cli review`). Any branch lands through the project gate (`pnpm cli land`).
-- **Sessions with Pantheon tools.** A session can get five tools: request a review, land its work, start a session of another runtime, read the state of the project, and draw a chart.
+- **Sessions with Pantheon tools.** A main-agent session gets Pantheon tools: request a review, land its work, start sessions of other runtimes and message, steer or stop them, read the project, its memory and what waits for you, and draw a chart.
 - **Trace.** Timelines, tool calls and step replay for each session.
 - **Memory.** Project decisions, reports and notes that agents propose and you confirm.
 - **Devices.** Run sessions on other machines over SSH.

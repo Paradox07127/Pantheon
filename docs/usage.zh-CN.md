@@ -157,13 +157,21 @@ Pantheon 读取 Claude Code 和 Codex 的原生历史。
 
 ## 带 Pantheon 工具的会话
 
-`session.create` 命令里写 `"purpose": "conductor"` 开的会话，多五个 Pantheon 工具。在 app 里，开始新会话前打开消息框下面那一排的「主 agent」开关(皇冠图标)。会话列表和会话栏用皇冠标出这个会话，列表的类型筛选里有「主 agent」一类。会话用它自己运行时的工具做计划、拆活和跑子 agent。
+`session.create` 命令里写 `"purpose": "conductor"` 开的会话，多下面这些 Pantheon 工具。在 app 里，开始新会话前打开消息框下面那一排的「主 agent」开关(皇冠图标)。会话列表和会话栏用皇冠标出这个会话，列表的类型筛选里有「主 agent」一类。会话用它自己运行时的工具做计划、拆活和跑子 agent。
 
 - `request_review`:另一家厂商的运行时审这个会话或它起的会话已提交的改动。结果作为一条消息回到会话。
 - `report_ready`:已提交的改动过项目门禁并落地。这份工作最近一次审查还有未解决的阻塞发现时,Pantheon 拒绝。你自己点「合并到 <目标分支>」不受这条限制。
-- `spawn_session`:从当前提交切一个新 worktree,起另一个运行时的会话。新会话不带 Pantheon 工具。它的回合结束或失败时，起它的会话收到一条消息。一个会话同时最多有 4 个它起的、还没结束的会话。
-- `read_state`:项目的改动、它们的检查、落地队列和等你处理的事。
+- `spawn_session`:从当前提交切一个新 worktree,起另一个运行时的会话。新会话不带 Pantheon 工具。它的权限模式是「逐条审批」(`ask`),工具要求时是「自动编辑」(`auto_edit`);别的模式会被拒绝。它的回合结束或失败时，起它的会话收到一条消息。一个会话起的会话里，同时最多 4 个在跑回合。项目用完预算时,Pantheon 拒绝。
+- `message_session`:给它起的会话发一条消息，作为新回合(`send`)或插进正在跑的回合(`steer`)。每个会话每分钟最多收 2 条。
+- `stop_session`:打断它起的会话正在跑的回合。带 `close` 时关闭那个会话并丢弃它的 worktree。
+- `read_state`:项目的改动、它们的检查、落地队列和等你处理的事。它起的每个会话那一行写着输入、输出和缓存读取 token、回合数和回合用时。
+- `read_needs_you`:等你处理的事，不带处理它们的操作。只有你能处理。
+- `project_read`:项目的设置、简介和记忆。
+- `memory_context`、`memory_search`、`memory_related`、`memory_get`:读项目记忆。Pantheon 不把记忆加进这个会话的回合。
+- `memory_propose`:写一条记忆。决定在你确认前一直是草稿。
 - `draw`:在对话里画一张你能看到的图表或示意图。
+
+这个会话只能给它自己起的会话发消息、打断和关闭。
 
 ## 轨迹
 

@@ -89,3 +89,24 @@ it.each(['reviewer', 'planner', 'conductor'] as const)(
       }
   },
 );
+
+it('lists the tools that read the project and manage spawned sessions to a conductor', async () => {
+  const tools = Object.fromEntries((await listTools('conductor')).map((tool) => [tool.name, tool]));
+  for (const name of [
+    'project_read',
+    'memory_context',
+    'memory_search',
+    'memory_related',
+    'memory_get',
+    'memory_propose',
+    'read_needs_you',
+    'message_session',
+    'stop_session',
+  ])
+    expect(tools[name]?.description, name).toBeTruthy();
+  expect(tools.message_session!.description).toContain('2 messages a minute');
+  expect(
+    (tools.spawn_session!.inputSchema.properties as Record<string, { enum?: string[] }>)
+      .permission_mode?.enum,
+  ).toEqual(['ask', 'auto_edit']);
+});

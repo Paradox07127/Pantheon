@@ -1,6 +1,7 @@
 import {
   DomainError,
   requireThat,
+  type NeedsYouItem,
   type Principal,
   type Project,
   type Session,
@@ -8,7 +9,7 @@ import {
   type Workspace,
 } from '@pantheon/domain';
 import { inputSchemas, type Command } from '@pantheon/protocol';
-import { projectChanges } from './changes.js';
+import { projectChanges, type ChangeRow } from './changes.js';
 import {
   projectAccess,
   revision,
@@ -28,18 +29,21 @@ import {
   sessionChanges,
   startSessionReview,
 } from './review.js';
+import { interruptSession, sessionHandlers } from './session.js';
 import { notifySession, takesNotice } from './session-wake.js';
 import {
   checkWorktreeSession,
   openWorktreeSession,
   prepareReadyMerge,
   readSessionOpening,
+  stopWorktreeSession,
   worktreeStatusArgs,
 } from './workbench-session.js';
+import { projectOverBudget } from './workflow-policy.js';
 
 /** The instructions Pantheon adds to a conductor session after the line on where it works. */
 export const CONDUCTOR_INSTRUCTIONS =
-  "Pantheon gives this session five tools. request_review: another vendor reviews your committed changes; the result comes back to you as a message. report_ready: your committed changes go through the project's gate and land. spawn_session: another vendor's session starts in a new worktree from your current commit; you hear when its turn ends. read_state: this project's changes, checks, landing queue and items waiting for the user. draw: a chart or diagram the user sees in this session. Plan, split work and run subagents with your own tools.";
+  "Pantheon gives this session these tools. request_review: another vendor reviews your committed changes or those of a session you spawned; the result comes back to you as a message. report_ready: committed changes go through the project's gate and land. spawn_session: another vendor's session starts in a new worktree from your current commit, in permission mode ask or auto_edit; you hear when its turn ends. message_session: a message to a session you spawned, or a steer into its running turn; at most 2 a minute to one session. stop_session: interrupts the running turn of a session you spawned, or closes that session. read_state: this project's changes, checks, landing queue, items waiting for the user, and what each session you spawned used. read_needs_you: the items waiting for the user; only the user answers them. project_read: the project's settings, brief and memory. memory_context, memory_search, memory_related and memory_get: project memory, which Pantheon does not add to your turns. memory_propose: a memory entry; a decision stays a draft until the user confirms it. draw: a chart or diagram the user sees in this session. Plan, split work and run subagents with your own tools.";
 
 /** conductor.review; the session's committed range and its diff are read before the transaction. */
 function prepareConductorReview(
@@ -185,8 +189,15 @@ const SPAWNED_SESSION_LIMIT = 4;
 function spawnInput(ctx: ControlContext, p: Principal, command: Command) {
   requireThat(p.role === 'conductor', 'permission_denied', 'A conductor session only');
   projectAccess(ctx, p, p.project_id!, command.type);
-  const { runtime, input, model, effort } = inputSchemas['conductor.spawn'].parse(command.input);
+  const { runtime, input, model, effort, permission_mode } = inputSchemas['conductor.spawn'].parse(
+    command.input,
+  );
   const caller = ctx.store.must<Session>('sessions', p.session_id!);
+  requireThat(
+    !projectOverBudget(ctx, caller.project_id),
+    'budget_exceeded',
+    'Project runtime budget is exhausted',
+  );
   const busy = new Set(
     ctx.store
       .list<SessionTurn>('session_turns')
@@ -209,6 +220,7 @@ function spawnInput(ctx: ControlContext, p: Principal, command: Command) {
     runtime,
     model,
     effort,
+    ...(permission_mode ? { permission_mode } : {}),
     input,
     // An in-place caller's HEAD is the project folder's, which a start without `from` reads.
     ...(sessionWorkspaceKind(ctx, caller) === 'linked_worktree'
@@ -243,6 +255,139 @@ function prepareConductorSpawn(
       return { session_id: opened.id };
     },
   );
+}
+
+/** The session the conductor spawned that the command names. */
+function spawnedTarget(
+  ctx: ControlContext,
+  p: Principal,
+  command: Command,
+  sessionId: string,
+): Session {
+  requireThat(p.role === 'conductor', 'permission_denied', 'A conductor session only');
+  projectAccess(ctx, p, p.project_id!, command.type);
+  const target = ctx.store.get<Session>('sessions', sessionId);
+  requireThat(
+    target && p.session_id && target.spawned_by?.session_id === p.session_id,
+    'permission_denied',
+    'Name a session you spawned',
+  );
+  return target;
+}
+
+/** How many messages a conductor sends to one spawned session within a minute. */
+const MESSAGES_PER_MINUTE = 2;
+
+/** conductor.message; the turn is queued as the user's send or steer would be. */
+const conductorMessage: Handler = (ctx, p, command) => {
+  const input = inputSchemas['conductor.message'].parse(command.input);
+  const target = spawnedTarget(ctx, p, command, input.session_id);
+  const now = ctx.store.now();
+  const recent = ctx.store
+    .statement(
+      "SELECT created_at FROM events WHERE aggregate_id=? AND kind='session.conductor_messaged' AND created_at>? ORDER BY created_at",
+    )
+    .all(target.id, now - 60_000) as { created_at: number }[];
+  if (recent.length >= MESSAGES_PER_MINUTE)
+    throw new DomainError(
+      'rate_limited',
+      `At most ${MESSAGES_PER_MINUTE} messages a minute go to one session; send again in ${Math.ceil((recent[0]!.created_at + 60_000 - now) / 1000)} seconds`,
+    );
+  const type = input.mode === 'steer' ? 'session.steer' : 'session.send';
+  // The conductor's access is checked above; the send then runs as the user's.
+  const turn = sessionHandlers[type]!(
+    ctx,
+    { id: p.id, role: 'user' },
+    {
+      ...command,
+      type,
+      input: { session_id: target.id, input: input.text },
+      expected_revision: target.revision,
+    },
+  ) as SessionTurn;
+  ctx.store.event(
+    'session.conductor_messaged',
+    ctx.store.must<Session>('sessions', target.id),
+    target.project_id,
+    { turn_id: turn.id, session_id: p.session_id },
+    command.command_id,
+  );
+  return { session_id: target.id, turn_id: turn.id };
+};
+
+/** conductor.stop */
+const conductorStop: Handler = (ctx, p, command) => {
+  const input = inputSchemas['conductor.stop'].parse(command.input);
+  const target = spawnedTarget(ctx, p, command, input.session_id);
+  if (!input.close) {
+    interruptSession(ctx, target, command.command_id);
+    return { session_id: target.id, next: 'Its running turn stops; the session stays open.' };
+  }
+  requireThat(
+    target.workspace_id && !target.outcome && !target.stop_requested,
+    'invalid_state',
+    'That session has already ended',
+  );
+  stopWorktreeSession(
+    ctx,
+    target,
+    { reason: 'Closed by the session that started it', by: 'lead' },
+    command.command_id,
+  );
+  return { session_id: target.id, next: 'The session closes and its worktree is discarded.' };
+};
+
+/** What a conductor reads of an item waiting for the user: no actions that answer it, no request input. */
+function waitingItem(item: NeedsYouItem) {
+  const sessionId = item.source.table === 'sessions' ? item.source.id : item.session_id;
+  return {
+    kind: item.kind,
+    reason: item.reason,
+    decision: item.decision,
+    status: item.status,
+    ...(sessionId ? { session_id: sessionId } : {}),
+    ...(item.task_title ? { task_title: item.task_title } : {}),
+    ...(item.binding?.action ? { request: item.binding.action } : {}),
+    ...(item.next_step ? { next_step: item.next_step } : {}),
+    created_at: item.created_at,
+  };
+}
+
+/** conductor.needs_you */
+function prepareConductorNeedsYou(ctx: ControlContext, p: Principal, command: Command): Handler {
+  requireThat(p.role === 'conductor', 'permission_denied', 'A conductor session only');
+  const projectId = p.project_id ?? '';
+  projectAccess(ctx, p, projectId, command.type);
+  // The conductor's access is checked above; the shared read then runs as for the user.
+  return (ctx) => ({
+    items: needsYou(ctx, { id: p.id, role: 'user' }, projectId).items.map(waitingItem),
+  });
+}
+
+/** What a spawned session spent: its tokens, the turns it ran and their wall time. */
+function spawnedUsage(ctx: ControlContext, session: Session): NonNullable<ChangeRow['usage']> {
+  const times = ctx.store.statement(
+    "SELECT min(CASE WHEN kind='turn.running' THEN created_at END) AS started, min(CASE WHEN kind IN ('turn.completed','turn.failed','turn.cancelled') THEN created_at END) AS ended FROM events WHERE aggregate_id=?",
+  );
+  let turns = 0,
+    wallMs = 0;
+  for (const turn of ctx.store.list<SessionTurn>('session_turns')) {
+    if (turn.session_id !== session.id) continue;
+    const { started, ended } = times.get(turn.id) as {
+      started: number | null;
+      ended: number | null;
+    };
+    if (started === null) continue;
+    turns++;
+    wallMs += (ended ?? ctx.store.now()) - started;
+  }
+  return {
+    input_tokens: session.usage?.input_tokens ?? 0,
+    output_tokens: session.usage?.output_tokens ?? 0,
+    cached_input_tokens: session.usage?.cached_input_tokens ?? 0,
+    turns,
+    wall_ms: wallMs,
+  };
 }
 
 /** Per control, the callers a notice did not reach because they took no input then. */
@@ -415,7 +560,15 @@ function prepareConductorState(
               self: true,
               ...(row.status === 'running' && landed ? { landed: true as const } : {}),
             }
-          : row,
+          : row.kind === 'session' && row.spawned_by === p.session_id
+            ? {
+                ...row,
+                usage: spawnedUsage(
+                  ctx,
+                  ctx.store.must<Session>('sessions', row.id.slice('session:'.length)),
+                ),
+              }
+            : row,
       );
     const todo = items.slice(0, 20).map((item) => {
       const sessionId = item.source.table === 'sessions' ? item.source.id : item.session_id;
@@ -434,4 +587,7 @@ export const conductorPreparers: Preparers = {
   'conductor.ready': prepareConductorReady,
   'conductor.spawn': prepareConductorSpawn,
   'conductor.state': prepareConductorState,
+  'conductor.message': () => conductorMessage,
+  'conductor.stop': () => conductorStop,
+  'conductor.needs_you': prepareConductorNeedsYou,
 };

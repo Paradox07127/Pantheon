@@ -636,7 +636,7 @@ export interface Session extends Entity {
   forked_from?: { session_id: string; before_turn_id?: string; before_span_id?: string };
   /** A session starting a project from an empty folder with the setup guide. */
   project_setup?: true;
-  /** A native session with only the four conductor tools. */
+  /** A native session with only the conductor tools (sessionTools.conductor in protocol). */
   conductor?: true;
   /** The conductor's turn that declared its work ready, by command command_id; it merges once that turn completes. */
   ready?: { turn_id: string; command_id: string };
