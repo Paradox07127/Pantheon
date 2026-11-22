@@ -234,6 +234,24 @@ describe('initial state', () => {
     expect(canSave(NONE, shut)).toBe(false);
   });
 
+  it('loads a user-level MCP server and skill until the closing list turns them off', () => {
+    const own: ExtensionInventory = {
+      ...inventory,
+      mcp_servers: [{ name: 'personal', enabled: true, user: true }],
+      skills: [{ id: '/home/skills/notes/SKILL.md', name: 'notes', enabled: true, user: true }],
+    };
+    const state = loadState(own, NONE);
+    expect([state.mcp_servers[0]!.loaded, state.skills[0]!.loaded]).toEqual([true, true]);
+    const off = setClosed(
+      setClosed(NONE, 'disabled_mcp_servers', 'personal', true),
+      'disabled_skills',
+      '/home/skills/notes/SKILL.md',
+      true,
+    );
+    const closed = loadState(own, off);
+    expect([closed.mcp_servers[0]!.loaded, closed.skills[0]!.loaded]).toEqual([false, false]);
+  });
+
   it('drops the retired connector switch from a saved row', () => {
     const old = { ...NONE, enabled_user_apps: true } as ExtensionOverrides;
     expect(savedOverrides({ extension_overrides: { codex: old } }, 'codex')).toEqual(NONE);

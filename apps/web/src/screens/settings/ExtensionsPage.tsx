@@ -482,11 +482,7 @@ function Groups(props: {
                 key={s.name}
                 loaded={s.loaded}
                 lock={s.lock}
-                onChange={
-                  s.user
-                    ? open('enabled_user_mcp_servers', s.name)
-                    : toggle('disabled_mcp_servers', s.name)
-                }
+                onChange={toggle('disabled_mcp_servers', s.name)}
                 onRemove={
                   draft.disabled_mcp_servers.includes(s.name)
                     ? () => onEdit(setClosed(draft, 'disabled_mcp_servers', s.name, false))
@@ -554,9 +550,7 @@ function Groups(props: {
                 key={s.id}
                 loaded={s.loaded}
                 lock={s.lock}
-                onChange={
-                  s.user ? open('enabled_user_skills', s.id) : toggle('disabled_skills', s.id)
-                }
+                onChange={toggle('disabled_skills', s.id)}
                 onRemove={
                   draft.disabled_skills.includes(s.id)
                     ? () => onEdit(setClosed(draft, 'disabled_skills', s.id, false))

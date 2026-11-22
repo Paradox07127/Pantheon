@@ -343,7 +343,7 @@ it('lets a saved override be removed while its inventory item is machine-disable
   expect(named(h.value, 'Groups').props.draft.disabled_mcp_servers).toEqual([]);
 });
 
-it('shows a user-level MCP server and skill off until the project opens them, then saves the opening', async () => {
+it('shows a user-level MCP server and skill on, and saves turning them off in the closing list', async () => {
   window.pantheon!.query = vi.fn(async () => ({
     ok: true as const,
     value: {
@@ -365,19 +365,19 @@ it('shows a user-level MCP server and skill off until the project opens them, th
     );
   const [personal, repository, notes] = entries();
   expect([personal, repository, notes].map((entry) => entry!.props.loaded)).toEqual([
-    false,
     true,
-    false,
+    true,
+    true,
   ]);
-  personal!.props.onChange(true);
+  personal!.props.onChange(false);
   h.render();
-  entries()[2]!.props.onChange(true);
+  entries()[2]!.props.onChange(false);
   h.render();
   expect(
     entries()
       .slice(0, 3)
       .map((entry) => entry.props.loaded),
-  ).toEqual([true, true, true]);
+  ).toEqual([false, true, false]);
   button(h.value, zh('settings.common.save')).props.onClick();
   await h.flush();
   expect(mock.command).toHaveBeenCalledWith(
@@ -387,13 +387,11 @@ it('shows a user-level MCP server and skill off until the project opens them, th
         project_id: project.id,
         runtime: 'codex',
         overrides: {
-          disabled_mcp_servers: [],
+          disabled_mcp_servers: ['personal'],
           disabled_plugins: [],
-          disabled_skills: [],
+          disabled_skills: ['/home/skills/notes/SKILL.md'],
           disable_apps: false,
           disable_hooks: false,
-          enabled_user_mcp_servers: ['personal'],
-          enabled_user_skills: ['/home/skills/notes/SKILL.md'],
         },
       },
     }),

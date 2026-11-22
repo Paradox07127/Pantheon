@@ -41,12 +41,9 @@ const LIST_FIELDS: readonly ListField[] = [
 ];
 const FLAG_FIELDS: readonly FlagField[] = ['disable_apps', 'disable_hooks'];
 /** Override fields that list the user-level items the project opens; unset opens none. */
-export type OpenField =
-  'enabled_user_mcp_servers' | 'enabled_user_skills' | 'enabled_user_connectors';
+export type OpenField = 'enabled_user_connectors';
 // Claude denies a connector by its server name, so an opened one leaves the server closing list too.
 const OPEN_FIELDS: Record<OpenField, ListField> = {
-  enabled_user_mcp_servers: 'disabled_mcp_servers',
-  enabled_user_skills: 'disabled_skills',
   enabled_user_connectors: 'disabled_mcp_servers',
 };
 const opened = (overrides: ExtensionOverrides, field: OpenField): string[] =>
@@ -120,9 +117,6 @@ const MACHINE_OFF: Lock = { reason: 'machine_off' };
 /** The machine's setup minus the project's closing list, in inventory order. */
 export function loadState(inventory: ExtensionInventory, overrides: ExtensionOverrides): LoadState {
   const closed = (field: ListField, id: string) => overrides[field].includes(id);
-  // A user-level item stays off until the project opens it.
-  const shut = (field: OpenField, item: { user?: boolean }, id: string) =>
-    !!item.user && !opened(overrides, field).includes(id);
   return {
     mcp_servers: inventory.mcp_servers.map((s) => ({
       ...s,
@@ -130,7 +124,6 @@ export function loadState(inventory: ExtensionInventory, overrides: ExtensionOve
       loaded:
         s.enabled &&
         !closed('disabled_mcp_servers', s.name) &&
-        !shut('enabled_user_mcp_servers', s, s.name) &&
         !(
           s.plugin !== undefined &&
           (closed('disabled_plugins', s.plugin) ||
@@ -152,7 +145,6 @@ export function loadState(inventory: ExtensionInventory, overrides: ExtensionOve
       loaded:
         s.enabled &&
         !closed('disabled_skills', s.id) &&
-        !shut('enabled_user_skills', s, s.id) &&
         !(
           s.plugin !== undefined &&
           (closed('disabled_plugins', s.plugin) ||
@@ -304,7 +296,7 @@ export function changeLine(
     const listed = inventory.connectors.find((c) => c.name === change.entry);
     return { action, what: `${appsLabel(runtime)} ${listed?.title ?? change.entry}` };
   }
-  const field = OPEN_FIELDS[change.field as OpenField] ?? (change.field as ListField);
+  const field = change.field as ListField;
   const name =
     field === 'disabled_skills'
       ? (inventory.skills.find((s) => s.id === change.entry)?.name ?? change.entry)
