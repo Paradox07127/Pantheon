@@ -17,6 +17,7 @@ import {
   type Handler,
   type Preparers,
 } from './context.js';
+import { runGit } from './git.js';
 import { sessionGoal } from './landing-diff.js';
 import { latestEvent, needsYou } from './needs-you.js';
 import {
@@ -32,6 +33,7 @@ import {
   prepareReadyMerge,
   readSessionOpening,
   sessionList,
+  worktreeStatusArgs,
 } from './workbench-session.js';
 
 /** The instructions Pantheon adds to a conductor session after the line on where it works. */
@@ -206,6 +208,8 @@ function prepareConductorSpawn(
   );
 }
 
+const commits = (count: number) => `${count} ${count === 1 ? 'commit' : 'commits'}`;
+
 /**
  * Once a spawned session has no turn left, tells the session that started it how its last turn
  * ended; a turn the user cancelled or stopped tells nothing, and each turn tells once.
@@ -221,75 +225,133 @@ export function afterSpawnedTurn(ctx: ControlContext, sessionId: string): void {
     .filter((each) => each.session_id === session.id)
     .at(-1);
   if (!turn || (turn.state !== 'completed' && turn.state !== 'failed')) return;
-  const reported = latestEvent(ctx, session.id, 'session.spawner_notified');
-  if (reported && JSON.parse(reported.payload).turn_id === turn.id) return;
+  const told = () =>
+    ctx.store
+      .statement(
+        "SELECT 1 FROM events WHERE aggregate_id=? AND kind='session.spawner_notified' AND json_extract(payload,'$.turn_id')=? LIMIT 1",
+      )
+      .get(session.id, turn.id) !== undefined;
+  if (told()) return;
   const listed = sessionList(
     ctx,
     { id: USER_PRINCIPAL_ID, role: 'user' },
     session.project_id,
     'cached',
   ).find((each) => each.id === session.id);
-  const target = session.workspace_id
-    ? ctx.store.get<Workspace>('workspaces', session.workspace_id)?.source_branch
+  const workspace = session.workspace_id
+    ? ctx.store.get<Workspace>('workspaces', session.workspace_id)
     : undefined;
+  const target = workspace?.source_branch;
   const failure = latestEvent(ctx, turn.id, 'turn.failed');
   const { error, error_code } = failure
     ? (JSON.parse(failure.payload) as { error?: string; error_code?: string })
     : {};
   const reason = error_code ?? error?.split('\n')[0];
-  const text = [
-    `[Pantheon] Session "${session.title ?? ''}" (${session.id}, ${session.runtime}), which you spawned, ${
-      turn.state === 'completed'
-        ? 'completed its turn.'
-        : `failed its turn${reason ? `: ${reason}` : ''}.`
-    }`,
-    ...(listed?.branch
-      ? [
-          `It is on branch ${listed.branch}${
-            listed.ahead !== undefined && target
-              ? `, ${listed.ahead} commits ahead of ${target}`
-              : ''
-          }.`,
-        ]
-      : listed?.ahead !== undefined && target
-        ? [`It is ${listed.ahead} commits ahead of ${target}.`]
+  const tell = (ahead: number | undefined) => {
+    const text = [
+      `[Pantheon] Session "${session.title ?? ''}" (${session.id}, ${session.runtime}), which you spawned, ${
+        turn.state === 'completed'
+          ? 'completed its turn.'
+          : `failed its turn${reason ? `: ${reason}` : ''}.`
+      }`,
+      ...(listed?.branch
+        ? [
+            `It is on branch ${listed.branch}${
+              ahead !== undefined && target ? `, ${commits(ahead)} ahead of ${target}` : ''
+            }.`,
+          ]
+        : ahead !== undefined && target
+          ? [`It is ${commits(ahead)} ahead of ${target}.`]
+          : []),
+      ...(turn.state === 'completed'
+        ? ['Review it with request_review, land it with report_ready, or read it in its worktree.']
         : []),
-    ...(turn.state === 'completed'
-      ? ['Review it with request_review, land it with report_ready, or read it in its worktree.']
-      : []),
-  ].join(' ');
-  ctx.store.transaction(() => {
-    notifySession(ctx, caller.id, text, turn.id);
-    ctx.store.event('session.spawner_notified', session, session.project_id, {
-      turn_id: turn.id,
-      session_id: caller.id,
+    ].join(' ');
+    ctx.store.transaction(() => {
+      // The turn can end again, or the caller close, while the count is read.
+      if (told()) return;
+      if (ctx.store.must<Session>('sessions', caller.id).state === 'closed') return;
+      notifySession(ctx, caller.id, text, turn.id);
+      ctx.store.event(
+        'session.spawner_notified',
+        ctx.store.must<Session>('sessions', session.id),
+        session.project_id,
+        { turn_id: turn.id, session_id: caller.id },
+      );
     });
-  });
+  };
+  if (listed?.ahead !== undefined || !target || !workspace) return tell(listed?.ahead);
+  // The list counts only a worktree something has read since it last moved.
+  const counting: Promise<void> = runGit(
+    workspace.path,
+    ['rev-list', '--count', `refs/heads/${target}..HEAD`, '--'],
+    undefined,
+    true,
+  )
+    // Shutdown waits for this before storage closes, and a restart does not tell the turn again.
+    .then((counted) =>
+      tell(counted.exit_code === 0 ? Number(counted.stdout.toString().trim()) : undefined),
+    )
+    .catch((error: unknown) => ctx.diagnostic(error))
+    .finally(() => ctx.completions.delete(counting));
+  ctx.completions.add(counting);
 }
 
-/** conductor.state */
-function prepareConductorState(ctx: ControlContext, p: Principal, command: Command): Handler {
+/** Whether the session's HEAD is the commit it last landed and its index and files are clean. */
+async function atLandedCommit(ctx: ControlContext, sessionId: string): Promise<boolean> {
+  const session = ctx.store.get<Session>('sessions', sessionId);
+  const workspace = session?.workspace_id
+    ? ctx.store.get<Workspace>('workspaces', session.workspace_id)
+    : undefined;
+  const merged = latestEvent(ctx, sessionId, 'session.merged');
+  if (!workspace || !merged) return false;
+  const status = await runGit(workspace.path, await worktreeStatusArgs(), undefined, true);
+  if (status.exit_code !== 0) return false;
+  // Porcelain v2 with --branch: header records start with "# ", every other record is a change.
+  const records = status.stdout.toString().split('\0').filter(Boolean);
+  return (
+    records.every((record) => record.startsWith('# ')) &&
+    records.includes(`# branch.oid ${(JSON.parse(merged.payload) as { to_sha?: string }).to_sha}`)
+  );
+}
+
+/** conductor.state; the caller's worktree is read before the transaction. */
+function prepareConductorState(
+  ctx: ControlContext,
+  p: Principal,
+  command: Command,
+): Promise<Handler> {
   requireThat(p.role === 'conductor', 'permission_denied', 'A conductor session only');
   const projectId = p.project_id ?? '';
   projectAccess(ctx, p, projectId, command.type);
-  // The conductor's access is checked above; the shared reads then run as for the user.
-  const reader: Principal = { id: p.id, role: 'user' };
-  const items = needsYou(ctx, reader, projectId).items;
-  const mergedSince = new Date(ctx.store.now() - 24 * 60 * 60_000).toISOString();
-  const changes = projectChanges(ctx, reader, projectId, items)
-    .filter((row) => row.status !== 'merged' || row.updated_at >= mergedSince)
-    .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
-    .slice(0, 30)
-    .map((row) => (row.id === `session:${p.session_id}` ? { ...row, self: true } : row));
-  const todo = items.slice(0, 20).map((item) => {
-    const sessionId = item.source.table === 'sessions' ? item.source.id : item.session_id;
-    return {
-      reason: item.reason,
-      ...(sessionId ? { session_id: sessionId } : {}),
-      created_at: item.created_at,
-    };
+  return atLandedCommit(ctx, p.session_id!).then((landed) => (ctx: ControlContext) => {
+    // The conductor's access is checked above; the shared reads then run as for the user.
+    const reader: Principal = { id: p.id, role: 'user' };
+    const items = needsYou(ctx, reader, projectId).items;
+    const mergedSince = new Date(ctx.store.now() - 24 * 60 * 60_000).toISOString();
+    const changes = projectChanges(ctx, reader, projectId, items)
+      .filter((row) => row.status !== 'merged' || row.updated_at >= mergedSince)
+      .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+      .slice(0, 30)
+      .map((row) =>
+        row.id === `session:${p.session_id}`
+          ? {
+              ...row,
+              self: true,
+              ...(row.status === 'running' && landed ? { landed: true as const } : {}),
+            }
+          : row,
+      );
+    const todo = items.slice(0, 20).map((item) => {
+      const sessionId = item.source.table === 'sessions' ? item.source.id : item.session_id;
+      return {
+        reason: item.reason,
+        ...(sessionId ? { session_id: sessionId } : {}),
+        created_at: item.created_at,
+      };
+    });
+    return { changes, todo };
   });
-  return () => ({ changes, todo });
 }
 
 export const conductorPreparers: Preparers = {

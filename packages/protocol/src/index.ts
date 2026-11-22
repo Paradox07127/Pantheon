@@ -2623,8 +2623,8 @@ export interface WorkbenchSession {
    * baseline_review: the project's newest baseline awaits review; approval otherwise.
    */
   waiting_kind?: 'approval' | 'question' | 'baseline_review';
-  /** The oldest unanswered permission request; absent when waiting is zero. */
-  waiting_request?: { tool: string; detail?: string };
+  /** The oldest unanswered permission request, id its approval; absent when waiting is zero. */
+  waiting_request?: { id: string; tool: string; detail?: string };
   /** The newest turn reporting context tokens, only when it also reports the window. */
   context?: { used_tokens: number; window_tokens: number };
   /** The session is reconciling its native process after a restart; state shows its listed state. */

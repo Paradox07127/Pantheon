@@ -449,7 +449,7 @@ const BRANCH_STATUS = ['status', '--porcelain=v2', '--branch', '-z'];
  * A session worktree's status arguments: the user's global excludes apply, as they do to the add
  * that commits its files, and no repository setting hides untracked files.
  */
-const worktreeStatusArgs = async () => [
+export const worktreeStatusArgs = async () => [
   ...(await globalExcludes()),
   ...BRANCH_STATUS,
   '--untracked-files=normal',
@@ -1346,6 +1346,7 @@ export function sessionList(
       ...(request
         ? {
             waiting_request: {
+              id: request.id,
               tool: request.tool ?? '',
               ...(request.input_summary ? { detail: request.input_summary } : {}),
             },

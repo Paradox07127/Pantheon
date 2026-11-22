@@ -184,7 +184,6 @@ export function RunsView({
   // Completed work ages out even when the daemon has no new events to publish.
   const windowNow = useNow(15_000);
   const snapshot = useBoard((s) => s.board?.sessions);
-  const events = useBoard((s) => s.events);
   const parents = useMemo(
     () =>
       snapshot
@@ -229,10 +228,7 @@ export function RunsView({
   const { live, ended } = useMemo(() => splitEnded(whole, shown), [whole, shown]);
   const forest = history ? past.forest : live;
   const now = useNow(!history && isLive(forest) ? 1000 : 15_000);
-  const facts = useMemo(
-    () => (shown.length ? sessionFacts(shown, events) : NO_FACTS),
-    [shown, events],
-  );
+  const facts = useMemo(() => (shown.length ? sessionFacts(shown) : NO_FACTS), [shown]);
   const recorded = useMemo(() => new Set(sessions?.map((s) => s.id)), [sessions]);
 
   const [only, setOnly] = useState<Only>('all');

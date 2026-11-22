@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import type { WorkbenchSession } from '@pantheon/protocol';
-import type { DaemonEvent } from '@/data/sync';
 import { RECENT_MS, runtimeSessions, sessionFacts } from '@/screens/runtime/runtime-model';
 
 const NOW = 10 * 60 * 60_000;
@@ -24,18 +23,6 @@ const listed = (id: string, extra: Partial<WorkbenchSession> = {}): WorkbenchSes
   changes: null,
   merge: null,
   ...extra,
-});
-
-const approval = (sequence: number, id: string, session: string, state: string): DaemonEvent => ({
-  sequence,
-  event_id: `event-${sequence}`,
-  kind: state === 'pending' ? 'approval.requested' : 'approval.resolved',
-  aggregate_id: id,
-  aggregate_revision: sequence,
-  project_id: 'project-a',
-  causation_id: '',
-  created_at: sequence,
-  payload: { session_id: session, kind: 'permission', state, tool: 'Bash' },
 });
 
 describe('runtimeSessions', () => {
@@ -83,25 +70,17 @@ describe('runtimeSessions', () => {
 });
 
 describe('sessionFacts', () => {
-  it('takes the context and fork from the list and the oldest open permission from the events', () => {
-    const facts = sessionFacts(
-      [
-        listed('asking', {
-          waiting_kind: 'approval',
-          waiting_request: { tool: 'Bash', detail: 'pnpm test' },
-          run: { phase: 'waiting_approval', since: 5, wait: { reason: 'approval', since: 7 } },
-          context: { used_tokens: 10, window_tokens: 100 },
-          forked_from: { session_id: 'origin' },
-        }),
-        listed('quiet'),
-      ],
-      [
-        approval(1, 'approval-done', 'asking', 'pending'),
-        approval(2, 'approval-old', 'asking', 'pending'),
-        approval(3, 'approval-new', 'asking', 'pending'),
-        approval(4, 'approval-done', 'asking', 'approved'),
-      ],
-    );
+  it('takes the context, the fork and the oldest open request from the list', () => {
+    const facts = sessionFacts([
+      listed('asking', {
+        waiting_kind: 'approval',
+        waiting_request: { id: 'approval-old', tool: 'Bash', detail: 'pnpm test' },
+        run: { phase: 'waiting_approval', since: 5, wait: { reason: 'approval', since: 7 } },
+        context: { used_tokens: 10, window_tokens: 100 },
+        forked_from: { session_id: 'origin' },
+      }),
+      listed('quiet'),
+    ]);
     expect(facts.get('asking')).toEqual({
       context: { used_tokens: 10, window_tokens: 100 },
       forked: true,
@@ -110,17 +89,26 @@ describe('sessionFacts', () => {
     expect(facts.get('quiet')).toEqual({ context: undefined, forked: false, waiting: undefined });
   });
 
-  it('asks for input when every open request is a question, and waits on nothing without its event', () => {
-    const question = listed('question', {
-      waiting_kind: 'question',
-      waiting_request: { tool: 'AskUserQuestion' },
+  it.each([
+    ['every open request is a question', 'question'],
+    ['a permission request waits after the question', 'approval'],
+  ] as const)('asks for input on a question listed first, when %s', (_, waiting_kind) => {
+    const asking = listed('asking', {
+      waiting: 2,
+      waiting_kind,
+      waiting_request: { id: 'ask', tool: 'AskUserQuestion' },
       last_activity_at: iso(NOW),
     });
-    expect(
-      sessionFacts([question], [approval(1, 'ask', 'question', 'pending')]).get('question'),
-    ).toMatchObject({
-      waiting: { kind: 'input', summary: 'AskUserQuestion', approval_id: 'ask', since: NOW },
+    expect(sessionFacts([asking]).get('asking')?.waiting).toEqual({
+      kind: 'input',
+      summary: 'AskUserQuestion',
+      approval_id: 'ask',
+      since: NOW,
     });
-    expect(sessionFacts([question], []).get('question')?.waiting).toBeUndefined();
+  });
+
+  it('waits on nothing when the list names no request', () => {
+    const asking = listed('asking', { waiting_kind: 'approval', last_activity_at: iso(NOW) });
+    expect(sessionFacts([asking]).get('asking')?.waiting).toBeUndefined();
   });
 });

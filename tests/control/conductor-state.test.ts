@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, it } from 'vitest';
 import {
@@ -29,6 +29,7 @@ interface ChangeRow {
   title: string;
   status: string;
   self?: true;
+  landed?: true;
   review?: { id: string; blocking_open: number };
   gate?: { state: string; failed?: string[] };
 }
@@ -278,6 +279,135 @@ it('lists the work a conductor landed as merged while it stays open', async () =
     self: true,
   });
 });
+
+it('tells a conductor its work landed while it runs a turn, until it changes files again', async () => {
+  const f = await workbenchFixture();
+  const conductor = await idle(
+    f,
+    await f.call<Promise<Session>>('session.create', {
+      project_id: f.project.id,
+      runtime: f.adapter.name,
+      input: 'Ship the export',
+      purpose: 'conductor',
+    }),
+  );
+  commitIn(f, conductor, 'Conductor work');
+  await f.call(
+    'session.merge',
+    { session_id: conductor.id },
+    f.store.must<Session>('sessions', conductor.id).revision,
+  );
+  await eventually(
+    () =>
+      f.store
+        .kindEvents(f.project.id, ['session.merged'])
+        .some((event) => event.aggregate_id === conductor.id),
+    () => f.control.tick(),
+    10000,
+  );
+  await idle(f, conductor);
+  f.store.update(
+    'sessions',
+    { ...f.store.must<Session>('sessions', conductor.id), state: 'running' },
+    f.store.must<Session>('sessions', conductor.id).revision,
+  );
+  const ownRow = async () => {
+    waitOutStatusReuse();
+    await f.prefetch();
+    const state = (await f.control.execute(
+      credential(conductor, 'conductor'),
+      command(`session:${conductor.id}`, 'conductor.state', {}),
+    )) as ConductorState;
+    return state.changes.find((row) => row.id === `session:${conductor.id}`);
+  };
+
+  expect(await ownRow()).toMatchObject({ status: 'running', landed: true, self: true });
+
+  const workspace = f.store.must<Workspace>('workspaces', conductor.workspace_id!);
+  writeFileSync(path.join(workspace.path, 'next.txt'), 'next\n');
+  git(workspace.path, 'add', 'next.txt');
+  git(workspace.path, 'commit', '--quiet', '-m', 'Next conductor work');
+  const changed = await ownRow();
+  expect(changed).toMatchObject({ status: 'running', self: true });
+  expect(changed).not.toHaveProperty('landed');
+});
+
+it.each([
+  {
+    name: 'nothing changed since it landed',
+    edit: () => {},
+    listed: false,
+    landed: true,
+  },
+  {
+    name: 'a new commit and an uncommitted edit that undoes it',
+    edit: (folder: string) => {
+      writeFileSync(path.join(folder, 'next.txt'), 'next\n');
+      git(folder, 'add', 'next.txt');
+      git(folder, 'commit', '--quiet', '-m', 'Next conductor work');
+      git(folder, 'rm', '--quiet', 'next.txt');
+    },
+    listed: true,
+    landed: false,
+  },
+  {
+    name: 'a new file the repository hides from status',
+    edit: (folder: string) => {
+      git(folder, 'config', 'status.showUntrackedFiles', 'no');
+      writeFileSync(path.join(folder, 'next.txt'), 'next\n');
+    },
+    listed: false,
+    landed: false,
+  },
+])(
+  'reads from git whether a running conductor is at the commit it landed: $name',
+  async ({ edit, listed, landed }) => {
+    const f = await workbenchFixture();
+    const conductor = await idle(
+      f,
+      await f.call<Promise<Session>>('session.create', {
+        project_id: f.project.id,
+        runtime: f.adapter.name,
+        input: 'Ship the export',
+        purpose: 'conductor',
+      }),
+    );
+    commitIn(f, conductor, 'Conductor work');
+    await f.call(
+      'session.merge',
+      { session_id: conductor.id },
+      f.store.must<Session>('sessions', conductor.id).revision,
+    );
+    await eventually(
+      () =>
+        f.store
+          .kindEvents(f.project.id, ['session.merged'])
+          .some((event) => event.aggregate_id === conductor.id),
+      () => f.control.tick(),
+      10000,
+    );
+    await idle(f, conductor);
+    f.store.update(
+      'sessions',
+      { ...f.store.must<Session>('sessions', conductor.id), state: 'running' },
+      f.store.must<Session>('sessions', conductor.id).revision,
+    );
+    edit(f.store.must<Workspace>('workspaces', conductor.workspace_id!).path);
+    // The list reads files changed against the landed base, which hides a commit undone on disk.
+    if (listed) {
+      waitOutStatusReuse();
+      await f.prefetch();
+    }
+
+    const state = (await f.control.execute(
+      credential(conductor, 'conductor'),
+      command(`session:${conductor.id}`, 'conductor.state', {}),
+    )) as ConductorState;
+    const own = state.changes.find((row) => row.id === `session:${conductor.id}`);
+    expect(own).toMatchObject({ status: 'running', self: true });
+    expect(own?.landed).toBe(landed ? true : undefined);
+  },
+);
 
 it.skipIf(insideSandbox)(
   'shows a stale gate on the change row as the session list does',

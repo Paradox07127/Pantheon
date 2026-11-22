@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SessionTrace, WorkbenchSession } from '@pantheon/protocol';
-import type { DaemonEvent } from '@/data/sync';
 import { find, mount as host, nodes, text, unmountAll } from './web-hook-host.js';
 
 vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMock(actual));
@@ -105,7 +104,7 @@ const SESSIONS = [
     state: 'waiting',
     waiting: 1,
     waiting_kind: 'approval',
-    waiting_request: { tool: 'Bash', detail: waiting.summary },
+    waiting_request: { id: waiting.approval_id, tool: 'Bash', detail: waiting.summary },
     run: {
       phase: 'waiting_approval',
       since: waiting.since,
@@ -116,19 +115,6 @@ const SESSIONS = [
   }),
 ];
 const PARENTS = new Map([['worker-1', 'lead-1']]);
-const EVENTS: DaemonEvent[] = [
-  {
-    sequence: 1,
-    event_id: 'event-1',
-    kind: 'approval.requested',
-    aggregate_id: waiting.approval_id,
-    aggregate_revision: 1,
-    project_id: 'project-a',
-    causation_id: '',
-    created_at: waiting.since,
-    payload: { session_id: 'worker-1', kind: 'permission', state: 'pending', tool: 'Bash' },
-  },
-];
 
 const SPANS = new Map([
   ['worker-1', WORKER],
@@ -146,7 +132,7 @@ const rowsOf = (
   const spans = extra.spans ?? SPANS;
   return callRows({
     forest: runForest(SESSIONS, PARENTS, spans),
-    facts: sessionFacts(SESSIONS, EVENTS),
+    facts: sessionFacts(SESSIONS),
     spans,
     view,
     now: NOW,
@@ -315,7 +301,7 @@ describe('call table', () => {
   const mount = (props: Partial<Parameters<typeof CallTable>[0]> = {}) => {
     const all = {
       forest: runForest(SESSIONS, PARENTS, SPANS),
-      facts: sessionFacts(SESSIONS, EVENTS),
+      facts: sessionFacts(SESSIONS),
       spans: SPANS,
       view: 'now' as const,
       now: NOW,

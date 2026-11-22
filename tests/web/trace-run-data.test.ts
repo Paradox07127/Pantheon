@@ -263,7 +263,7 @@ describe('call row target and tokens', () => {
     const sessions = [listed()];
     const { rows } = callRows({
       forest: runForest(sessions, NO_PARENTS, spans),
-      facts: sessionFacts(sessions, []),
+      facts: sessionFacts(sessions),
       spans,
       view: 'now',
       now: NOW,
@@ -375,7 +375,7 @@ describe('session context', () => {
     const spans = new Map([['lead-1', CACHED]]);
     const { rows } = callRows({
       forest: runForest(sessions, NO_PARENTS, spans),
-      facts: sessionFacts(sessions, []),
+      facts: sessionFacts(sessions),
       spans,
       view: 'now',
       now: NOW,

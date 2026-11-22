@@ -1,6 +1,4 @@
 import type { WorkbenchSession } from '@pantheon/protocol';
-import type { DaemonEvent } from '../../data/sync';
-import { pendingPermissions } from '../sessions/thread-model';
 import type { SessionFacts } from './call-rows';
 import type { RunForest, RunNode } from './run-tree';
 
@@ -49,23 +47,26 @@ export function sessionFacts(
     | 'run'
     | 'last_activity_at'
   >[],
-  events: readonly DaemonEvent[],
 ): ReadonlyMap<string, SessionFacts> {
   const facts = new Map<string, SessionFacts>();
   for (const s of sessions) {
     const asked =
       s.waiting_kind === 'approval' || s.waiting_kind === 'question'
-        ? pendingPermissions(events, s.id)[0]
+        ? s.waiting_request?.id
         : undefined;
     facts.set(s.id, {
       context: s.context,
       forked: !!s.forked_from,
-      waiting: asked && {
-        kind: s.waiting_kind === 'question' ? 'input' : 'approval',
-        summary: (s.waiting_request?.detail ?? s.waiting_request?.tool ?? '').slice(0, 140),
-        approval_id: asked.id,
-        since: s.run?.wait?.since ?? Date.parse(s.last_activity_at),
-      },
+      waiting:
+        asked !== undefined
+          ? {
+              // As approval.respond, which takes answers for this tool's request only.
+              kind: s.waiting_request?.tool === 'AskUserQuestion' ? 'input' : 'approval',
+              summary: (s.waiting_request?.detail ?? s.waiting_request?.tool ?? '').slice(0, 140),
+              approval_id: asked,
+              since: s.run?.wait?.since ?? Date.parse(s.last_activity_at),
+            }
+          : undefined,
     });
   }
   return facts;

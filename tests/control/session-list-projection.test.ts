@@ -149,7 +149,11 @@ it('shows the oldest unanswered request with the same detail as needs-you', asyn
   });
   expect(listed(f, session.id)).toMatchObject({
     waiting: 2,
-    waiting_request: { tool: 'Bash', detail: 'command=run the migration on staging' },
+    waiting_request: {
+      id: 'oldest-request',
+      tool: 'Bash',
+      detail: 'command=run the migration on staging',
+    },
   });
   const item = f.control
     .needsYou(user, f.project.id)
@@ -157,7 +161,7 @@ it('shows the oldest unanswered request with the same detail as needs-you', asyn
   expect(listed(f, session.id).waiting_request?.detail).toBe(item.binding?.input_summary);
   const oldest = f.store.must<Approval>('approvals', 'oldest-request');
   f.store.update('approvals', { ...oldest, state: 'approved' }, oldest.revision);
-  expect(listed(f, session.id).waiting_request).toEqual({ tool: 'Edit' });
+  expect(listed(f, session.id).waiting_request).toEqual({ id: 'newer-request', tool: 'Edit' });
   const newer = f.store.must<Approval>('approvals', 'newer-request');
   f.store.update('approvals', { ...newer, state: 'approved' }, newer.revision);
   expect(listed(f, session.id)).not.toHaveProperty('waiting_request');

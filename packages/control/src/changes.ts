@@ -20,6 +20,8 @@ export interface ChangeRow {
   runtime?: string;
   spawned_by?: string;
   status: 'running' | 'needs_you' | 'ready' | 'merged' | 'failed';
+  /** The caller's running row at the commit it last landed, nothing changed; conductor.state sets it. */
+  landed?: true;
   ahead?: number;
   behind?: number;
   gate: { state: 'passed' | 'failed' | 'stale' | 'none'; failed?: string[] };
