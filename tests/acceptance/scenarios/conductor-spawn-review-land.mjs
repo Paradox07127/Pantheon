@@ -61,9 +61,11 @@ export async function run({ workspace, evidenceDir }) {
   const reviewerSessions = [];
   // What the conductor runtime does with each message Pantheon sends it.
   const conductorInput = async ({ input }) => {
-    if (!input.startsWith('[Pantheon]')) return input;
+    if (!input.includes('[Pantheon]')) return input;
     if (/\) landed on /.test(input)) return input;
-    const reviewed = input.match(/^\[Pantheon\] Review \S+: completed\. Reviewed session (\S+)\./m);
+    const reviewed = input.match(
+      /^\[review\] \[Pantheon\] Review \S+: completed\. Reviewed session (\S+)\./m,
+    );
     if (reviewed) return script(tool('report_ready', { session_id: reviewed[1] }));
     const spawned = input.match(
       new RegExp(`\\((\\S+), ${WRITER}\\), which you spawned, completed its turn`),
@@ -154,7 +156,7 @@ export async function run({ workspace, evidenceDir }) {
     );
   const notices = () =>
     conductor.sends
-      .filter((each) => each.session_id === ids.conductor && each.input.startsWith('[Pantheon]'))
+      .filter((each) => each.session_id === ids.conductor && each.input.includes('[Pantheon]'))
       .map((each) => each.input);
   const reviewsOf = (sessionId) => get('session.reviews', { session_id: sessionId });
   const reviewDone = (count) =>
@@ -275,7 +277,7 @@ export async function run({ workspace, evidenceDir }) {
       (turn) => turn.origin === 'tracker' && turn.input.includes(`(${ids.spawned}, ${WRITER})`),
     );
     observations.notified = {
-      tracker_turn: woke?.input.startsWith('[Pantheon]') ?? false,
+      tracker_turn: woke?.input.startsWith('[completed] [Pantheon]') ?? false,
       turn_state: woke?.state ?? null,
       requested_review: calls('request_review')[0]?.ok ?? false,
     };

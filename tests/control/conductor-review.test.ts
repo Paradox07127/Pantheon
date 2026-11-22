@@ -192,7 +192,7 @@ it('returns a blocking finding to the conductor once, as a message without a pla
   await f.control.tick();
   const sent = messages();
   expect(sent).toHaveLength(1);
-  expect(sent[0]!.startsWith('[Pantheon]')).toBe(true);
+  expect(sent[0]!.startsWith('[review] [Pantheon]')).toBe(true);
   expect(sent[0]).toContain(review_id);
   expect(sent[0]).toContain('answer.txt:1');
   expect(sent[0]!.trimEnd().endsWith(BLOCKING_TAIL)).toBe(true);

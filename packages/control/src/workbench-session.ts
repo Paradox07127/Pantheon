@@ -2867,7 +2867,7 @@ function notifyMergeWatcher(
     notifySession(
       ctx,
       watcher,
-      `[Pantheon] Session ${session.title ? `"${session.title}" ` : ''}(${session.id}) ${outcome}.`,
+      `[${outcome.startsWith('landed ') ? 'landed' : 'blocked'}] [Pantheon] Session ${session.title ? `"${session.title}" ` : ''}(${session.id}) ${outcome}.`,
       cause,
     );
 }

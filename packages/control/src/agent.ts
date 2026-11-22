@@ -15,6 +15,7 @@ import { markStaleFindings, recordFinding } from './review.js';
 import { unsnooze } from './session.js';
 import { isRuntimeHeld } from './runtime-status.js';
 import { recapSession } from './session-recap.js';
+import { afterSpawnedRequest } from './conductor.js';
 
 export function saveSessionHandle(ctx: ControlContext, handle: SessionHandle): void {
   ctx.store.transaction(() => {
@@ -299,6 +300,7 @@ export function agentEvent(ctx: ControlContext, sessionId: string, event: AgentE
         kind: 'waiting',
         request_id: event.request_id,
       });
+    if (event.kind === 'permission.requested') afterSpawnedRequest(ctx, sessionId);
   }
   return recorded;
 }

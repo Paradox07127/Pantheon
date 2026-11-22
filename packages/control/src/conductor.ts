@@ -2,6 +2,7 @@ import {
   DomainError,
   id,
   requireThat,
+  type Approval,
   type NeedsYouItem,
   type Principal,
   type Project,
@@ -46,7 +47,7 @@ import { projectOverBudget } from './workflow-policy.js';
 
 /** The instructions Pantheon adds to a conductor session after the line on where it works. */
 export const CONDUCTOR_INSTRUCTIONS =
-  "Pantheon gives this session these tools. request_review: another vendor reviews your committed changes or those of a session you spawned; the result comes back to you as a message. report_ready: committed changes go through the project's gate and land. spawn_session: another vendor's session starts in a new worktree from your current commit, in permission mode ask or auto_edit; you hear when its turn ends. Give it acceptance, what done means; its first message ends with the list, and request_review on it checks each item. Give it owns, the paths it may change; its first message names them, and read_state lists its changed files outside them. Give runtimes, two or three, to run the same task once on each. To keep the best result, review them, land one with report_ready and close the others with stop_session close. message_session: a message to a session you spawned, or a steer into its running turn; at most 2 a minute to one session. stop_session: interrupts the running turn of a session you spawned, or closes that session. read_state: this project's changes, checks, landing queue and items waiting for the user, and each session you spawned with its state and what it used. read_needs_you: the items waiting for the user; only the user answers them. project_read: the project's settings, brief and memory. memory_context, memory_search, memory_related and memory_get: project memory, which Pantheon does not add to your turns. memory_propose: a memory entry; a decision stays a draft until the user confirms it. draw: a chart or diagram the user sees in this session. Plan, split work and run subagents with your own tools.";
+  "Pantheon gives this session these tools. request_review: another vendor reviews your committed changes or those of a session you spawned; the result comes back to you as a message. report_ready: committed changes go through the project's gate and land. spawn_session: another vendor's session starts in a new worktree from your current commit, in permission mode ask or auto_edit; you hear when its turn ends. News of the sessions you spawned comes in batches while you are idle, at most 30 s after its first item; items are separated by a blank line and each starts with its state in brackets: [completed], [failed], [input_required] when it waits for the user, [review], [landed] or [blocked]. Give it acceptance, what done means; its first message ends with the list, and request_review on it checks each item. Give it owns, the paths it may change; its first message names them, and read_state lists its changed files outside them. Give runtimes, two or three, to run the same task once on each. To keep the best result, review them, land one with report_ready and close the others with stop_session close. message_session: a message to a session you spawned, or a steer into its running turn; at most 2 a minute to one session. stop_session: interrupts the running turn of a session you spawned, or closes that session. read_state: this project's changes, checks, landing queue and items waiting for the user, and each session you spawned with its state and what it used. read_needs_you: the items waiting for the user; only the user answers them. project_read: the project's settings, brief and memory. memory_context, memory_search, memory_related and memory_get: project memory, which Pantheon does not add to your turns. memory_propose: a memory entry; a decision stays a draft until the user confirms it. draw: a chart or diagram the user sees in this session. Plan, split work and run subagents with your own tools.";
 
 /** conductor.review; the session's committed range and its diff are read before the transaction. */
 function prepareConductorReview(
@@ -601,17 +602,51 @@ function untoldTurns(ctx: ControlContext, sessionId: string): SessionTurn[] {
     );
 }
 
+/** How long news for an idle main agent waits, from its oldest item, for more to join it. */
+export const NOTICE_HOLD_MS = 30_000;
+
 /**
- * Tells the session that started this one how each of its turns ended, once per turn and in
- * order; a turn the user cancelled or stopped tells nothing. A notice the caller cannot take yet
- * waits for it, and one the daemon's shutdown holds back goes out on the next start.
+ * The spawned session's requests waiting for the user that its caller has not heard of, and
+ * whether the caller heard of another request of the same wait; each wait is told once.
  */
-function tellSpawner(ctx: ControlContext, session: Session): void {
-  const callerId = session.spawned_by?.session_id;
-  if (!callerId || ctx.closing) return;
-  const caller = ctx.store.get<Session>('sessions', callerId);
-  if (!caller || caller.state === 'closed' || !untoldTurns(ctx, session.id).length) return;
-  if (!takesNotice(ctx, caller)) return unreachedCaller(ctx, callerId);
+function untoldWait(ctx: ControlContext, sessionId: string) {
+  const told = new Set(
+    (
+      ctx.store
+        .statement(
+          "SELECT json_extract(payload,'$.approval_id') AS approval_id FROM events WHERE aggregate_id=? AND kind='session.spawner_notified'",
+        )
+        .all(sessionId) as { approval_id: string | null }[]
+    ).map((row) => row.approval_id),
+  );
+  const waiting = ctx.store
+    .list<Approval>('approvals')
+    .filter(
+      (each) =>
+        each.session_id === sessionId && each.state === 'pending' && each.decider === 'user',
+    );
+  const untold = waiting.filter((each) => !told.has(each.id));
+  return untold.length ? { untold, told: untold.length < waiting.length } : undefined;
+}
+
+/** What a spawned session's caller has not heard of, the events that record it told, and when its oldest line happened. */
+interface News {
+  session: Session;
+  lines: string[];
+  told: ({ turn_id: string } | { approval_id: string })[];
+  since: number;
+  cause: string;
+}
+
+/**
+ * How each turn of the spawned session ended, once per turn and in order, and that it waits for
+ * the user, once per wait; a turn the user cancelled or stopped tells nothing.
+ */
+function untoldNews(ctx: ControlContext, session: Session): News | undefined {
+  const turns = untoldTurns(ctx, session.id);
+  const wait = untoldWait(ctx, session.id);
+  if (!turns.length && !wait) return;
+  const named = `Session "${session.title ?? ''}" (${session.id}, ${session.runtime}), which you spawned,`;
   const ended =
     session.outcome === 'discarded'
       ? 'discarded'
@@ -625,7 +660,7 @@ function tellSpawner(ctx: ControlContext, session: Session): void {
       : {};
     const reason = error_code ?? error?.split('\n')[0];
     return [
-      `[Pantheon] Session "${session.title ?? ''}" (${session.id}, ${session.runtime}), which you spawned, ${
+      `[${turn.state}] [Pantheon] ${named} ${
         turn.state === 'completed'
           ? 'completed its turn.'
           : `failed its turn${reason ? `: ${reason}` : ''}.`
@@ -642,24 +677,65 @@ function tellSpawner(ctx: ControlContext, session: Session): void {
           ]),
     ].join(' ');
   };
-  ctx.store.transaction(() => {
-    for (const turn of untoldTurns(ctx, session.id)) {
-      if (!notifySession(ctx, caller.id, notice(turn), turn.id))
-        return unreachedCaller(ctx, caller.id);
-      ctx.store.event(
-        'session.spawner_notified',
-        ctx.store.must<Session>('sessions', session.id),
-        session.project_id,
-        { turn_id: turn.id, session_id: caller.id },
-      );
-    }
-  });
+  const asked = wait && !wait.told ? wait.untold[0] : undefined;
+  return {
+    session,
+    lines: [
+      ...turns.map(notice),
+      ...(asked
+        ? [
+            `[input_required] [Pantheon] ${named} waits for the user to ${asked.questions?.length ? 'answer a question' : `allow ${asked.tool ?? 'a tool call'}`}. Only the user answers it; read it with read_needs_you.`,
+          ]
+        : []),
+    ],
+    told: [
+      ...turns.map((turn) => ({ turn_id: turn.id })),
+      ...(wait?.untold ?? []).map((approval) => ({ approval_id: approval.id })),
+    ],
+    since: Math.min(
+      ...turns.map((turn) => latestEvent(ctx, turn.id, `turn.${turn.state}`)?.created_at ?? 0),
+      ...(asked ? [asked.created_at] : []),
+    ),
+    cause: turns[0]?.id ?? wait!.untold[0]!.id,
+  };
 }
 
-/** Sends the notices of the sessions this one spawned that have not reached it. */
+/**
+ * Sends the caller, in one message, what the sessions it spawned did that it has not heard of. A
+ * notice the caller cannot take yet waits for it, one the daemon's shutdown holds back goes out on
+ * the next start, and an idle main agent's waits NOTICE_HOLD_MS from its oldest line for more.
+ */
 function tellCaller(ctx: ControlContext, callerId: string): void {
-  for (const session of ctx.store.list<Session>('sessions'))
-    if (session.spawned_by?.session_id === callerId) tellSpawner(ctx, session);
+  if (ctx.closing) return;
+  const caller = ctx.store.get<Session>('sessions', callerId);
+  if (!caller || caller.state === 'closed') return;
+  const news = ctx.store
+    .list<Session>('sessions')
+    .filter((session) => session.spawned_by?.session_id === callerId)
+    .flatMap((session) => untoldNews(ctx, session) ?? [])
+    .sort((a, b) => a.since - b.since);
+  if (!news.length) return;
+  if (!takesNotice(ctx, caller)) return unreachedCaller(ctx, callerId);
+  const lines = news.flatMap((each) => each.lines);
+  if (
+    lines.length &&
+    caller.conductor &&
+    caller.state !== 'running' &&
+    ctx.store.now() - news[0]!.since < NOTICE_HOLD_MS
+  )
+    return unreachedCaller(ctx, callerId);
+  ctx.store.transaction(() => {
+    if (lines.length && !notifySession(ctx, callerId, lines.join('\n\n'), news[0]!.cause))
+      return unreachedCaller(ctx, callerId);
+    for (const each of news)
+      for (const told of each.told)
+        ctx.store.event(
+          'session.spawner_notified',
+          ctx.store.must<Session>('sessions', each.session.id),
+          each.session.project_id,
+          { ...told, session_id: callerId },
+        );
+  });
 }
 
 /**
@@ -669,14 +745,21 @@ function tellCaller(ctx: ControlContext, callerId: string): void {
 export function afterSpawnedTurn(ctx: ControlContext, sessionId: string): void {
   const session = ctx.store.get<Session>('sessions', sessionId);
   if (!session || ctx.closing) return;
-  tellSpawner(ctx, session);
+  if (session.spawned_by) tellCaller(ctx, session.spawned_by.session_id);
   tellCaller(ctx, sessionId);
 }
 
-/** Sends the waiting notices of the callers that take input again. */
+/** Once the session asked the user for something: tells its spawner, when it has one. */
+export function afterSpawnedRequest(ctx: ControlContext, sessionId: string): void {
+  const callerId = ctx.store.get<Session>('sessions', sessionId)?.spawned_by?.session_id;
+  if (callerId) tellCaller(ctx, callerId);
+}
+
+/** Sends the waiting notices of the callers that take input again or whose hold ended. */
 export function retrySpawnerNotices(ctx: ControlContext): void {
   const callers = unreached.get(ctx);
-  for (const callerId of callers ?? []) {
+  // A caller still held is added back while this runs.
+  for (const callerId of [...(callers ?? [])]) {
     const caller = ctx.store.get<Session>('sessions', callerId);
     if (caller && caller.state !== 'closed' && !takesNotice(ctx, caller)) continue;
     callers!.delete(callerId);
@@ -686,7 +769,10 @@ export function retrySpawnerNotices(ctx: ControlContext): void {
 
 /** On start, sends every notice that did not go out before the daemon stopped. */
 export function tellSpawners(ctx: ControlContext): void {
-  for (const session of ctx.store.list<Session>('sessions')) tellSpawner(ctx, session);
+  const callers = new Set(
+    ctx.store.list<Session>('sessions').flatMap((session) => session.spawned_by?.session_id ?? []),
+  );
+  for (const callerId of callers) tellCaller(ctx, callerId);
 }
 
 /** Whether the session's HEAD is the commit it last landed and its index and files are clean. */

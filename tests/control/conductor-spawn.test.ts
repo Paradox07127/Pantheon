@@ -3,18 +3,29 @@ import path from 'node:path';
 import { expect, it, vi } from 'vitest';
 import {
   id,
+  type Approval,
   type Principal,
   type Project,
+  type Review,
   type Session,
   type SessionTurn,
+  type WorkflowPolicy,
   type Workspace,
 } from '@pantheon/domain';
-import { afterSpawnedTurn } from '../../packages/control/dist/conductor.js';
+import { NOTICE_HOLD_MS, afterSpawnedTurn } from '../../packages/control/dist/conductor.js';
 import { usesPantheonTools, type ControlContext } from '../../packages/control/dist/context.js';
+import { settleReview } from '../../packages/control/dist/review.js';
 import { mergesPreparing, releaseIdleConversations } from '../../packages/control/dist/session.js';
 import { notifySession } from '../../packages/control/dist/session-wake.js';
 import { workbenchSessionSpec } from '../../packages/control/dist/workbench-session.js';
-import { awaitWorkspaceReady, eventually, settle, user } from '../helpers.js';
+import {
+  awaitWorkspaceReady,
+  eventually,
+  insideSandbox,
+  passTime,
+  settle,
+  user,
+} from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
 type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
@@ -153,13 +164,14 @@ it('tells the conductor once when a turn of the session it spawned completes', a
     script({ write: { path: 'docs.txt', text: 'docs\n' } }, { commit: 'Write the docs' }),
   );
   await settle(f, row(f, session_id));
+  passTime(f.store, NOTICE_HOLD_MS);
   await eventually(
     () => trackerTurns(f, conductor.id).length === 1,
     () => f.control.tick(),
   );
 
   const text = trackerTurns(f, conductor.id)[0]!.input;
-  expect(text).toMatch(/^\[Pantheon\] /);
+  expect(text).toMatch(/^\[completed\] \[Pantheon\] /);
   expect(text).toContain(session_id);
   expect(text).toContain(f.adapter.name);
   expect(text).toContain(COMMITS_LINE);
@@ -179,6 +191,7 @@ it('tells the conductor once when a turn of the session it spawned completes', a
 
   f.call('session.send', { session_id, input: 'Look again' }, row(f, session_id).revision);
   await settle(f, row(f, session_id));
+  passTime(f.store, NOTICE_HOLD_MS);
   await eventually(
     () => trackerTurns(f, conductor.id).length === 2,
     () => f.control.tick(),
@@ -195,6 +208,7 @@ async function toldOnce(f: Fixture) {
     script({ write: { path: 'docs.txt', text: 'docs\n' } }, { commit: 'Write the docs' }),
   );
   await settle(f, row(f, session_id));
+  passTime(f.store, NOTICE_HOLD_MS);
   await eventually(
     () => trackerTurns(f, conductor.id).length === 1,
     () => f.control.tick(),
@@ -261,6 +275,7 @@ it('tells the conductor of a turn that ended with the next turn of its session a
 
   await settle(f, row(f, session_id));
   const [first, next] = f.turns(session_id);
+  passTime(f.store, NOTICE_HOLD_MS);
   await eventually(
     () => toldTurns(f, session_id).includes(next!.id),
     () => f.control.tick(),
@@ -287,6 +302,7 @@ it('tells the conductor of a steer that ran as a turn of its own', async () => {
   await settle(f, row(f, session_id));
   const [first, steer] = f.turns(session_id);
   expect(steer).toMatchObject({ kind: 'steer', state: 'completed' });
+  passTime(f.store, NOTICE_HOLD_MS);
   await tellAgain(f, session_id);
 
   expect(toldTurns(f, session_id)).toEqual([first!.id, steer!.id]);
@@ -315,6 +331,7 @@ it('tells the conductor of the turns that ended before a stop as discarded, and 
     () => f.control.tick(),
   );
   merging.delete(conductor.id);
+  passTime(f.store, NOTICE_HOLD_MS);
   await tellAgain(f, session_id);
 
   const [first, stopped] = f.turns(session_id);
@@ -341,6 +358,7 @@ it('tells the conductor to read the commits with read_state in every notice and 
   await settle(f, row(f, session_id));
 
   merging.delete(conductor.id);
+  passTime(f.store, NOTICE_HOLD_MS);
   await eventually(
     () => toldTurns(f, session_id).length === 2,
     () => f.control.tick(),
@@ -362,6 +380,7 @@ it('tells the conductor of a turn the user failed by closing its reconciling ses
   const conductor = await openConductor(f);
   const { session_id } = await spawn(f, conductor.id, 'Port the parser');
   await settle(f, row(f, session_id));
+  passTime(f.store, NOTICE_HOLD_MS);
   await eventually(
     () => toldTurns(f, session_id).length === 1,
     () => f.control.tick(),
@@ -395,6 +414,11 @@ it('tells the conductor of a turn the user failed by closing its reconciling ses
   expect(f.store.must<SessionTurn>('session_turns', interrupted.id).state).toBe('failed');
   await Promise.resolve();
   await Promise.allSettled([...ctxOf(f).completions].filter((work) => !before.has(work)));
+  passTime(f.store, NOTICE_HOLD_MS);
+  await eventually(
+    () => toldTurns(f, session_id).length === 2,
+    () => f.control.tick(),
+  );
 
   expect(toldTurns(f, session_id)).toEqual([f.turns(session_id)[0]!.id, interrupted.id]);
   const closed = trackerTurns(f, conductor.id).at(-1)!.input;
@@ -413,6 +437,7 @@ it('tells the conductor once it takes input again', async () => {
 
   expect(toldTurns(f, session_id)).toEqual([]);
   merging.delete(conductor.id);
+  passTime(f.store, NOTICE_HOLD_MS);
   await eventually(
     () => trackerTurns(f, conductor.id).length === 1,
     () => f.control.tick(),
@@ -426,12 +451,17 @@ it('tells the conductor when a turn of the session it spawned fails', async () =
 
   const { session_id } = await spawn(f, conductor.id, script({ fail: 'The build broke' }));
   await eventually(
+    () => f.turns(session_id)[0]!.state === 'failed',
+    () => f.control.tick(),
+  );
+  passTime(f.store, NOTICE_HOLD_MS);
+  await eventually(
     () => trackerTurns(f, conductor.id).length === 1,
     () => f.control.tick(),
   );
 
   const text = trackerTurns(f, conductor.id)[0]!.input;
-  expect(text).toMatch(/^\[Pantheon\] /);
+  expect(text).toMatch(/^\[failed\] \[Pantheon\] /);
   expect(text).toContain(session_id);
   expect(text).toContain('failed');
   expect(text).toContain('The build broke');
@@ -456,6 +486,7 @@ it('tells the conductor when the worktree of the session it spawned fails to pre
     () => row(f, session_id).state === 'closed',
     () => f.control.tick(),
   );
+  passTime(f.store, NOTICE_HOLD_MS);
   await eventually(
     () => trackerTurns(f, conductor.id).length === 1,
     () => f.control.tick(),
@@ -491,6 +522,7 @@ it('tells the conductor after a restart when the daemon stopped while the worktr
   await f.control.shutdown();
   expect(trackerTurns(f, conductor.id)).toHaveLength(0);
   await f.restart(() => undefined, { abandon: true });
+  passTime(f.store, NOTICE_HOLD_MS);
   await eventually(
     () => trackerTurns(f, conductor.id).length === 1,
     () => f.control.tick(),
@@ -519,6 +551,7 @@ it('tells the conductor when a restart fails the turn of the session it spawned'
   expect(f.turns(session_id)).toMatchObject([
     { state: 'failed', delivery_reason: 'Interrupted by a daemon restart' },
   ]);
+  passTime(f.store, NOTICE_HOLD_MS);
   await eventually(
     () => trackerTurns(f, conductor.id).length === 1,
     () => f.control.tick(),
@@ -591,3 +624,262 @@ it('refuses the user, a planner and a writer, and tells no one about a session t
     f.store.list<SessionTurn>('session_turns').filter((turn) => turn.origin === 'tracker'),
   ).toEqual([]);
 });
+
+/** Two sessions the conductor spawned whose first turns end ten seconds apart. */
+async function endedTenSecondsApart(f: Fixture, conductorId: string) {
+  const first = await spawn(f, conductorId, 'Port the parser');
+  await settle(f, row(f, first.session_id));
+  passTime(f.store, 10_000);
+  const second = await spawn(f, conductorId, 'Port the lexer');
+  await settle(f, row(f, second.session_id));
+  return [first.session_id, second.session_id];
+}
+
+/** Ticks a few times, as the scheduler would while the hold lasts. */
+async function ticks(f: Fixture) {
+  for (let i = 0; i < 3; i++) await f.control.tick();
+}
+
+/** Waits for the conductor's first notice turn to end and returns its items. */
+async function toldItems(f: Fixture, conductorId: string) {
+  await eventually(
+    () => trackerTurns(f, conductorId).length > 0,
+    () => f.control.tick(),
+  );
+  await settle(f, row(f, conductorId));
+  expect(trackerTurns(f, conductorId)).toMatchObject([{ state: 'completed' }]);
+  return trackerTurns(f, conductorId)[0]!.input.split('\n\n');
+}
+
+function expectCompletedItems(items: string[], sessionIds: string[]) {
+  expect(items).toHaveLength(sessionIds.length);
+  sessionIds.forEach((sessionId, index) => {
+    expect(items[index]).toMatch(/^\[completed\] \[Pantheon\] /);
+    expect(items[index]).toContain(sessionId);
+  });
+}
+
+it('wakes an idle main agent once, after the hold, with the news of two sessions whose turns end ten seconds apart', async () => {
+  const f = await workbenchFixture();
+  const conductor = await openConductor(f);
+  const spawned = await endedTenSecondsApart(f, conductor.id);
+  await ticks(f);
+  expect(trackerTurns(f, conductor.id)).toEqual([]);
+
+  passTime(f.store, NOTICE_HOLD_MS - 10_000);
+
+  expectCompletedItems(await toldItems(f, conductor.id), spawned);
+});
+
+it('keeps the held news through a clean restart and sends it in one turn after the hold', async () => {
+  const f = await workbenchFixture();
+  const conductor = await openConductor(f);
+  const spawned = await endedTenSecondsApart(f, conductor.id);
+
+  await f.control.shutdown();
+  await f.restart(() => undefined, { abandon: true });
+  await ticks(f);
+  expect(trackerTurns(f, conductor.id)).toEqual([]);
+  passTime(f.store, NOTICE_HOLD_MS);
+
+  expectCompletedItems(await toldItems(f, conductor.id), spawned);
+  for (const sessionId of [conductor.id, ...spawned])
+    expect(f.turns(sessionId).map((turn) => turn.state)).not.toContain('failed');
+});
+
+it('runs a message the user sends within the hold first and the held news after it in one turn', async () => {
+  const f = await workbenchFixture();
+  const conductor = await openConductor(f);
+  const spawned = await endedTenSecondsApart(f, conductor.id);
+
+  const sent = f.call<SessionTurn>(
+    'session.send',
+    { session_id: conductor.id, input: 'Plan the docs next' },
+    row(f, conductor.id).revision,
+  );
+  passTime(f.store, NOTICE_HOLD_MS);
+
+  expectCompletedItems(await toldItems(f, conductor.id), spawned);
+  const notice = trackerTurns(f, conductor.id)[0]!;
+  expect(f.store.must<SessionTurn>('session_turns', sent.id)).toMatchObject({
+    state: 'completed',
+    input: 'Plan the docs next',
+  });
+  const started = f.store
+    .events(0, f.project.id, 10000, ['turn.running'])
+    .map((event) => event.aggregate_id)
+    .filter((turnId) => turnId === sent.id || turnId === notice.id);
+  expect(started).toEqual([sent.id, notice.id]);
+});
+
+it('sends the held news only once the project has budget again', async () => {
+  const f = await workbenchFixture();
+  const conductor = await openConductor(f);
+  const spawned = await endedTenSecondsApart(f, conductor.id);
+  f.call('workflow.policy.set', {
+    project_id: f.project.id,
+    project_budget: { input_tokens: 100 },
+  });
+  passTime(f.store, 1000);
+  const spent = f.store.insert<SessionTurn>('session_turns', {
+    id: id(),
+    revision: 1,
+    project_id: f.project.id,
+    session_id: conductor.id,
+    input: 'A message',
+    kind: 'send',
+    delivery: 'delivered',
+    state: 'completed',
+    usage: { input_tokens: 150, output_tokens: 0 },
+  });
+  f.store.event('turn.completed', spent, f.project.id, {});
+
+  passTime(f.store, NOTICE_HOLD_MS);
+  await ticks(f);
+  expect(trackerTurns(f, conductor.id)).toEqual([]);
+  for (const sessionId of spawned) expect(toldTurns(f, sessionId)).toEqual([]);
+  f.call(
+    'workflow.policy.set',
+    { project_id: f.project.id, project_budget: { input_tokens: 1_000_000 } },
+    f.store.must<WorkflowPolicy>('workflow_policies', f.project.id).revision,
+  );
+
+  expectCompletedItems(await toldItems(f, conductor.id), spawned);
+});
+
+it('tells the main agent once that a session it spawned waits for the user, however many requests that wait holds', async () => {
+  const f = await workbenchFixture();
+  const conductor = await openConductor(f);
+  const { session_id } = await spawn(
+    f,
+    conductor.id,
+    script({ ask: { tool: 'Bash', input: { command: 'pnpm test' } } }),
+  );
+  const pending = () =>
+    f.store
+      .list<Approval>('approvals')
+      .filter((approval) => approval.session_id === session_id && approval.state === 'pending');
+  await eventually(
+    () => pending().length === 1,
+    () => f.control.tick(),
+  );
+  passTime(f.store, NOTICE_HOLD_MS);
+  await f.control.tick();
+  await settle(f, row(f, conductor.id));
+  // A second request of the same wait.
+  f.store.insert<Approval>('approvals', {
+    ...pending()[0]!,
+    id: id(),
+    revision: 1,
+    request_id: 'second-request',
+    created_at: f.store.now(),
+  });
+  await tellAgain(f, session_id);
+  passTime(f.store, NOTICE_HOLD_MS);
+  await ticks(f);
+  await settle(f, row(f, conductor.id));
+
+  const waits = trackerTurns(f, conductor.id)
+    .flatMap((turn) => turn.input.split('\n\n'))
+    .filter((item) => item.startsWith('[input_required] [Pantheon] '));
+  expect(waits).toHaveLength(1);
+  expect(waits[0]).toContain(session_id);
+  expect(waits[0]).toContain('waits for the user to allow Bash');
+});
+
+it.each([
+  { who: 'a main agent at once, as one item', purpose: 'conductor' as const, mark: '[review] ' },
+  { who: 'a plain session unchanged', purpose: undefined, mark: '' },
+])('returns the result of a review to $who', async ({ purpose, mark }) => {
+  const f = await workbenchFixture();
+  const session = await f.call<Promise<Session>>('session.create', {
+    project_id: f.project.id,
+    runtime: f.adapter.name,
+    input: 'Ship the export',
+    ...(purpose ? { purpose } : {}),
+  });
+  await settle(f, session);
+  const reviewId = id();
+
+  f.store.transaction(() => {
+    f.store.insert<Review>('reviews', {
+      id: reviewId,
+      revision: 1,
+      project_id: f.project.id,
+      session_id: session.id,
+      notify_session_id: session.id,
+      round: 1,
+      runtimes: ['codex'],
+      session_ids: [],
+      state: 'running',
+      findings: [
+        {
+          id: id(),
+          review_id: reviewId,
+          runtime: 'codex',
+          round: 1,
+          location: 'answer.txt:1',
+          quote: 'base',
+          evidence: 'The answer is a placeholder.\n\nNothing reads it.',
+          impact: 'Readers get no answer',
+          status: 'open',
+          blocking: true,
+        },
+      ],
+    });
+    settleReview(ctxOf(f), reviewId);
+  });
+
+  const told = trackerTurns(f, session.id)[0]!;
+  expect(told.input.startsWith(`${mark}[Pantheon] Review ${reviewId}: `)).toBe(true);
+  expect(told.input.includes('\n\n')).toBe(!purpose);
+  expect(told.input).toContain('Nothing reads it.');
+  await settle(f, row(f, session.id));
+  expect(f.store.must<SessionTurn>('session_turns', told.id).state).toBe('completed');
+});
+
+it.skipIf(insideSandbox).each([
+  { state: 'landed', exit: 0, outcome: 'landed on main' },
+  { state: 'blocked', exit: 3, outcome: 'did not land' },
+])(
+  'tells the main agent at once, state first, that a session it spawned $outcome',
+  async ({ state, exit, outcome }) => {
+    const f = await workbenchFixture();
+    git(f.source, 'config', 'user.name', 'Source User');
+    git(f.source, 'config', 'user.email', 'source@example.invalid');
+    await f.call<Project>(
+      'project.gate.set',
+      {
+        project_id: f.project.id,
+        root: f.source,
+        commands: [{ name: 'Gate', argv: [process.execPath, '-e', `process.exit(${exit})`] }],
+      },
+      f.store.must<Project>('projects', f.project.id).revision,
+    );
+    const conductor = await openConductor(f);
+    const { session_id } = await spawn(f, conductor.id, 'Port the parser');
+    await settle(f, row(f, session_id));
+    passTime(f.store, NOTICE_HOLD_MS);
+    await eventually(
+      () => toldTurns(f, session_id).length === 1,
+      () => f.control.tick(),
+    );
+    await settle(f, row(f, conductor.id));
+    const folder = f.store.must<Workspace>('workspaces', row(f, session_id).workspace_id!).path;
+    writeFileSync(path.join(folder, 'answer.txt'), 'spawned\n');
+    git(folder, 'commit', '--quiet', '-am', 'Change the answer');
+
+    await f.call('session.merge', { session_id }, row(f, session_id).revision);
+    const merged = () =>
+      trackerTurns(f, conductor.id).find((turn) =>
+        turn.input.includes(`(${session_id}) ${outcome}`),
+      );
+    await eventually(
+      () => merged() !== undefined,
+      () => f.control.tick(),
+      10000,
+    );
+
+    expect(merged()!.input).toMatch(new RegExp(`^\\[${state}\\] \\[Pantheon\\] Session `));
+  },
+);

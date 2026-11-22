@@ -314,6 +314,20 @@ export function heldIndexLock(trigger: string) {
   };
 }
 
+const passed = new WeakMap<Store, { ms: number }>();
+
+/** Moves the store's clock on by ms, as waiting that long would. */
+export function passTime(store: Store, ms: number): void {
+  let offset = passed.get(store);
+  if (!offset) {
+    const now = store.now;
+    const added = { ms: 0 };
+    passed.set(store, (offset = added));
+    vi.spyOn(store, 'now').mockImplementation(() => now() + added.ms);
+  }
+  offset.ms += ms;
+}
+
 let waited = 0;
 
 /** Moves Date.now on past the 2 s a finished git status is reused for, as waiting that long would. */
