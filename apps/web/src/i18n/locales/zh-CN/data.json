@@ -65,7 +65,7 @@
   "data.reason.protocolMismatch": "应用和 daemon 的版本不一致，重启 Pantheon",
   "data.reason.notImplemented": "这个功能还没实现",
   "data.reason.gitFailed": "git 失败：{detail}",
-  "data.reason.testsDropped": "门禁 {gate} 的测试比上次落地少：通过 {passedBefore}→{passed}、跳过 {skippedBefore}→{skipped}",
+  "data.reason.testsDropped": "门禁 {gate} 的测试数和上次落地不同：通过 {passedBefore}→{passed}、跳过 {skippedBefore}→{skipped}",
   "data.failure.refreshed": "数据已刷新，请再点一次",
   "data.failure.codeMessage": "{code}：{message}",
   "data.failure.reasonMessage": "{reason}（{message}）",

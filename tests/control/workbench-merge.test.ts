@@ -491,6 +491,71 @@ it.each([
   },
 );
 
+it('holds a merge resumed after a restart whose saved gate run passed fewer tests than the last landing', async () => {
+  const f = await mergeFixture();
+  vi.spyOn(validation, 'runValidationCommand').mockImplementation(async () => ({
+    ...gatePassed(),
+    tests: { passed: 10, failed: 0, skipped: 0 },
+  }));
+  await setGate(f, [{ name: 'Checks', argv: ['check'] }]);
+  const update = vi.spyOn(f.store, 'update');
+  const first = await idleSession(f);
+  commit(first.workspace.path, 'first.txt', 'first\n');
+  await merge(f, first.session.id);
+  await eventually(
+    () => removed(f, first.workspace.id),
+    () => f.control.tick(),
+  );
+  const gateKey = update.mock.calls
+    .map(([, value]) => (value as Session).merge?.landing?.gate_argv)
+    .find((saved) => saved !== undefined)!;
+  const { session, workspace, sourceHead } = await idleSession(f);
+  const head = commit(workspace.path, 'second.txt', 'second\n');
+  await merge(f, session.id);
+  // An earlier run gated this commit with fewer tests and saved its progress, then the daemon stopped.
+  f.store.event('session.gate_checked', current(f, session.id), f.project.id, {
+    workspace_id: workspace.id,
+    commit: head,
+    results: [
+      {
+        name: 'Checks',
+        argv: ['check'],
+        state: 'passed',
+        exit_code: 0,
+        duration_ms: 1,
+        timed_out: false,
+        output: '',
+        tests: { passed: 9, failed: 0, skipped: 0 },
+      },
+    ],
+  });
+  const running = current(f, session.id);
+  f.store.update<Session>(
+    'sessions',
+    {
+      ...running,
+      merge: {
+        state: 'running',
+        landing: {
+          stage: 'gated',
+          candidate: head,
+          branch: 'main',
+          from_sha: sourceHead,
+          gate_argv: gateKey,
+        },
+      },
+    },
+    running.revision,
+  );
+  await settled(f, session.id);
+  expect(current(f, session.id).merge).toMatchObject({
+    state: 'blocked',
+    reason: 'tests_dropped: Checks: passed 10→9, skipped 0→0',
+  });
+  expect(git(f.source, 'rev-parse', 'main')).toBe(sourceHead);
+  expect(validation.runValidationCommand).toHaveBeenCalledTimes(1);
+});
+
 it.skipIf(insideSandbox)('lands a session commit that leaves the gate files alone', async () => {
   const f = await mergeFixture();
   commit(f.source, 'scripts/check.cjs', 'process.exit(0)\n');

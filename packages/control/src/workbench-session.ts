@@ -3804,8 +3804,12 @@ async function prepareLand(
       : droppedTests(
           ctx,
           session.project_id,
+          workspace.source!,
           reads.source(workspace)?.branch,
-          sessionGateResults(ctx, session.project_id, session.id, worktree.head),
+          // A gate the user removed or turned off since that run no longer holds the landing.
+          sessionGateResults(ctx, session.project_id, session.id, worktree.head)?.filter((gate) =>
+            commands?.some((command) => command.name === gate.name),
+          ),
         );
     if (leftover || gateRequired || unread || guarded.length || dropped) {
       const merge = leftover

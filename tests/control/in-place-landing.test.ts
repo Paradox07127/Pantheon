@@ -222,6 +222,35 @@ it.each([
   },
 );
 
+it('lands a folder session whose gate the user removed, though its earlier run passed fewer tests', async () => {
+  const f = await workbenchFixture();
+  await withGate(f);
+  const runs = [
+    { passed: 10, failed: 0, skipped: 0 },
+    { passed: 9, failed: 0, skipped: 0 },
+  ];
+  vi.mocked(validation.runValidationCommand).mockImplementation(async () => ({
+    ...passed(),
+    tests: runs.shift(),
+  }));
+  const first = await folderSession(f);
+  await runGates(f, first.id);
+  await land(f, first.id);
+  expect(current(f, first.id)).toMatchObject({ outcome: 'merged' });
+  const session = await folderSession(
+    f,
+    script({ write: { path: 'more.txt', text: 'more\n' } }, { commit: 'Add more' }),
+  );
+  await runGates(f, session.id);
+  await f.call(
+    'project.gate.set',
+    { project_id: f.project.id, root: f.source, commands: [] },
+    f.store.must<Project>('projects', f.project.id).revision,
+  );
+  await land(f, session.id);
+  expect(current(f, session.id)).toMatchObject({ outcome: 'merged', state: 'closed' });
+});
+
 /** A folder session over a committed gate script, its gates passed on the folder HEAD after change ran. */
 async function gatedFolderSession(f: Fixture, change: () => void) {
   mkdirSync(path.join(f.source, 'scripts'));

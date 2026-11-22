@@ -201,9 +201,9 @@ describe('reason text', () => {
     );
   });
 
-  it('writes the test counts of a landing held for fewer tests', () => {
-    expect(reasonText('tests_dropped: unit: passed 10→9, skipped 0→1')).toBe(
-      '门禁 unit 的测试比上次落地少：通过 10→9、跳过 0→1',
+  it('writes both test counts of a landing held for changed test counts', () => {
+    expect(reasonText('tests_dropped: unit: passed 10→10, skipped 0→1')).toBe(
+      '门禁 unit 的测试数和上次落地不同：通过 10→10、跳过 0→1',
     );
   });
 });

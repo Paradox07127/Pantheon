@@ -478,7 +478,7 @@ export function reasonText(code: string): string {
       {
         id: 'data.reason.testsDropped',
         defaultMessage:
-          'Gate {gate} ran fewer tests than at the last landing: passed {passedBefore}→{passed}, skipped {skippedBefore}→{skipped}',
+          'The test counts of gate {gate} differ from the last landing: passed {passedBefore}→{passed}, skipped {skippedBefore}→{skipped}',
       },
       {
         gate: dropped[1]!,
