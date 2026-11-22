@@ -387,7 +387,7 @@ export function queuedTurn(
   kind: SessionTurn['kind'],
   extras: Pick<
     SessionTurn,
-    'attachments' | 'skills' | 'refs' | 'reference_context' | 'handoff' | 'app' | 'via'
+    'attachments' | 'skills' | 'refs' | 'reference_context' | 'handoff' | 'app' | 'via' | 'origin'
   > = {},
 ): SessionTurn {
   return {
@@ -451,7 +451,13 @@ export function acceptInput(
   requireThat(!handle || !queues.get(handle)?.settled, 'resource_busy', 'Session is closing');
 }
 
-const queueInput: Handler = (ctx, p, c) => {
+/** session.send and session.steer; origin 'agent' marks input another session wrote, not the user. */
+export const queueInput = (
+  ctx: ControlContext,
+  p: Principal,
+  c: Command,
+  origin?: 'agent',
+): SessionTurn => {
   const cause = c.command_id,
     kind = c.type === 'session.steer' ? 'steer' : 'send',
     input = inputSchemas['session.send'].parse(c.input),
@@ -498,6 +504,7 @@ const queueInput: Handler = (ctx, p, c) => {
     ...turnExtras(ctx, session, input),
     ...(input.app ? { app: input.app } : {}),
     ...(p.role === 'personal' ? { via: { kind: 'personal', key_id: personalKeyId(p) } } : {}),
+    ...(origin ? { origin } : {}),
   });
   const { archived_at, ...rest } = session;
   const next = ctx.store.update(

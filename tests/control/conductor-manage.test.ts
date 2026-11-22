@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest';
-import { id, type Principal, type Session, type SessionTurn } from '@pantheon/domain';
+import { id, type Principal, type Project, type Session, type SessionTurn } from '@pantheon/domain';
 import { awaitWorkspaceReady, eventually, settle, waitOutStatusReuse } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
@@ -54,6 +54,34 @@ function refusal(fn: () => unknown): { code?: string; message?: string; name?: s
   throw new Error('Expected the command to fail');
 }
 
+/** The input a spawned session receives for the conductor's message. */
+const fromConductor = (f: Fixture, conductorId: string, text: string) =>
+  `[Pantheon] From the main agent "${row(f, conductorId).title ?? ''}":\n${text}`;
+
+/** Sets a budget of 100 input tokens and spends 150 of them in a turn of the session. */
+function spendBudget(f: Fixture, sessionId: string) {
+  let now = f.store.now();
+  vi.spyOn(f.store, 'now').mockImplementation(() => now);
+  f.call('workflow.policy.set', {
+    project_id: f.project.id,
+    project_budget: { input_tokens: 100 },
+  });
+  now += 1000;
+  const spent = f.store.insert<SessionTurn>('session_turns', {
+    id: id(),
+    revision: 1,
+    project_id: f.project.id,
+    session_id: sessionId,
+    input: 'A message',
+    kind: 'send',
+    delivery: 'delivered',
+    state: 'completed',
+    usage: { input_tokens: 150, output_tokens: 0 },
+  });
+  f.store.event('turn.completed', spent, f.project.id, {});
+  now += 1000;
+}
+
 async function running(f: Fixture, sessionId: string) {
   await awaitWorkspaceReady(f.control, row(f, sessionId).workspace_id!);
   await eventually(
@@ -83,14 +111,14 @@ it('sends a message to a session the conductor spawned, at most twice a minute t
     expect(receipt.session_id).toBe(spawned);
     expect(f.turns(spawned).at(-1)).toMatchObject({
       id: receipt.turn_id,
-      input: text,
+      input: fromConductor(f, conductor.id, text),
       kind: 'send',
     });
     await settle(f, row(f, spawned));
   }
   const limited = refusal(() => message(spawned, 'One more thing'));
   expect(limited.code).toBe('rate_limited');
-  expect(f.turns(spawned).at(-1)!.input).toBe('Cover the errors');
+  expect(f.turns(spawned).at(-1)!.input).toBe(fromConductor(f, conductor.id, 'Cover the errors'));
   // The limit counts each spawned session on its own.
   expect(message(other, 'Add the index').session_id).toBe(other);
 
@@ -110,7 +138,92 @@ it('steers the running turn of a session the conductor spawned', async () => {
     mode: 'steer',
   });
 
-  expect(f.turns(spawned).at(-1)).toMatchObject({ input: 'Cover the tests too', kind: 'steer' });
+  expect(f.turns(spawned).at(-1)).toMatchObject({
+    input: fromConductor(f, conductor.id, 'Cover the tests too'),
+    kind: 'steer',
+  });
+});
+
+it('refuses to steer a spawned session that has no running turn and still sends to it', async () => {
+  const f = await workbenchFixture();
+  const conductor = await openConductor(f);
+  const spawned = await spawn(f, conductor.id, 'Port the parser');
+  await settle(f, row(f, spawned));
+  const message = (mode: 'send' | 'steer') =>
+    asSession<{ turn_id: string }>(f, conductor.id, 'conductor.message', {
+      session_id: spawned,
+      text: 'Cover the tests too',
+      mode,
+    });
+
+  const steer = refusal(() => message('steer'));
+
+  expect(steer).toMatchObject({ code: 'invalid_state', message: expect.stringContaining('send') });
+  expect(f.turns(spawned)).toHaveLength(1);
+  expect(message('send').turn_id).toBe(f.turns(spawned).at(-1)!.id);
+  expect(f.turns(spawned).at(-1)!.kind).toBe('send');
+});
+
+it('refuses a send that would give a fifth spawned session a turn to take', async () => {
+  const f = await workbenchFixture();
+  const conductor = await openConductor(f);
+  const idle = await spawn(f, conductor.id, 'Write the docs');
+  await settle(f, row(f, idle));
+  const busy: string[] = [];
+  for (const input of ['Task one', 'Task two', 'Task three', 'Task four'])
+    busy.push(await spawn(f, conductor.id, input));
+
+  const error = refusal(() =>
+    asSession(f, conductor.id, 'conductor.message', { session_id: idle, text: 'Add the index' }),
+  );
+
+  expect(error.code).toBe('resource_busy');
+  expect(error.message).toContain('At most 4 spawned sessions take a turn at a time');
+  for (const sessionId of busy) expect(error.message).toContain(sessionId);
+  expect(f.turns(idle)).toHaveLength(1);
+});
+
+it.each(['send', 'steer'] as const)(
+  'refuses to %s a message to a spawned session once the project spent its budget',
+  async (mode) => {
+    const f = await workbenchFixture();
+    const conductor = await openConductor(f);
+    const spawned = await spawn(f, conductor.id, 'Port the parser');
+    await settle(f, row(f, spawned));
+    spendBudget(f, conductor.id);
+
+    const error = refusal(() =>
+      asSession(f, conductor.id, 'conductor.message', {
+        session_id: spawned,
+        text: 'More',
+        mode,
+      }),
+    );
+
+    expect(error).toMatchObject({
+      code: 'budget_exceeded',
+      message: 'Project runtime budget is exhausted',
+    });
+    expect(f.turns(spawned)).toHaveLength(1);
+  },
+);
+
+it('marks the message of the conductor as the main agent writing, not the user', async () => {
+  const f = await workbenchFixture();
+  const conductor = await openConductor(f);
+  const spawned = await spawn(f, conductor.id, 'Port the parser');
+  await settle(f, row(f, spawned));
+
+  const { turn_id } = asSession<{ turn_id: string }>(f, conductor.id, 'conductor.message', {
+    session_id: spawned,
+    text: 'Add the tests',
+  });
+
+  const turn = f.store.must<SessionTurn>('session_turns', turn_id);
+  expect(turn.origin).toBe('agent');
+  expect(turn.input).toBe(
+    `[Pantheon] From the main agent "${row(f, conductor.id).title ?? ''}":\nAdd the tests`,
+  );
 });
 
 it('interrupts the running turn of a session the conductor spawned, then closes the session', async () => {
@@ -189,26 +302,7 @@ it('opens a spawned session in the permission mode it is given, at most auto_edi
 it('refuses to spawn a session once the project spent its budget', async () => {
   const f = await workbenchFixture();
   const conductor = await openConductor(f);
-  let now = f.store.now();
-  vi.spyOn(f.store, 'now').mockImplementation(() => now);
-  f.call('workflow.policy.set', {
-    project_id: f.project.id,
-    project_budget: { input_tokens: 100 },
-  });
-  now += 1000;
-  const spent = f.store.insert<SessionTurn>('session_turns', {
-    id: id(),
-    revision: 1,
-    project_id: f.project.id,
-    session_id: conductor.id,
-    input: 'A message',
-    kind: 'send',
-    delivery: 'delivered',
-    state: 'completed',
-    usage: { input_tokens: 150, output_tokens: 0 },
-  });
-  f.store.event('turn.completed', spent, f.project.id, {});
-  now += 1000;
+  spendBudget(f, conductor.id);
   const sessions = f.store.list<Session>('sessions').length;
 
   const error = refusal(() =>
@@ -328,22 +422,92 @@ it('tells a conductor the usage of each session it spawned in read_state', async
 
   waitOutStatusReuse();
   await f.prefetch();
-  const state = await asSession<Promise<{ changes: Record<string, unknown>[] }>>(
-    f,
-    conductor.id,
-    'conductor.state',
-    {},
+  const state = await asSession<Promise<State>>(f, conductor.id, 'conductor.state', {});
+
+  expect(state.spawned).toEqual([
+    {
+      session_id: spawned,
+      title: row(f, spawned).title ?? '',
+      runtime: f.adapter.name,
+      state: 'open',
+      usage: {
+        input_tokens: 1200,
+        output_tokens: 300,
+        cached_input_tokens: 800,
+        turns: 1,
+        wall_ms: at('turn.completed') - at('turn.running'),
+      },
+    },
+  ]);
+  expect(state.changes.find((each) => each.id === `session:${spawned}`)).toBeDefined();
+  for (const change of state.changes) expect(change).not.toHaveProperty('usage');
+});
+
+type State = {
+  changes: Record<string, unknown>[];
+  spawned: { session_id: string; usage: Record<string, unknown> }[];
+};
+
+it('lists a spawned session with no commits in read_state with its usage', async () => {
+  const f = await workbenchFixture();
+  const conductor = await openConductor(f);
+  const spawned = await spawn(f, conductor.id, 'Answer the question');
+  await settle(f, row(f, spawned));
+  f.store.update<Session>(
+    'sessions',
+    { ...row(f, spawned), usage: { input_tokens: 500, output_tokens: 40 } },
+    row(f, spawned).revision,
   );
 
-  expect(state.changes.find((each) => each.id === `session:${spawned}`)).toMatchObject({
-    usage: {
-      input_tokens: 1200,
-      output_tokens: 300,
-      cached_input_tokens: 800,
-      turns: 1,
-      wall_ms: at('turn.completed') - at('turn.running'),
+  const state = await asSession<Promise<State>>(f, conductor.id, 'conductor.state', {});
+
+  expect(state.changes.map((each) => each.id)).not.toContain(`session:${spawned}`);
+  expect(state.spawned).toEqual([
+    expect.objectContaining({
+      session_id: spawned,
+      runtime: f.adapter.name,
+      usage: { input_tokens: 500, output_tokens: 40, turns: 1, wall_ms: expect.any(Number) },
+    }),
+  ]);
+});
+
+it('shows a spawned session that reported only cost as tokens unreported, with no token counts', async () => {
+  const f = await workbenchFixture();
+  const conductor = await openConductor(f);
+  const spawned = await spawn(f, conductor.id, 'Answer the question');
+  await settle(f, row(f, spawned));
+  f.store.update<Session>(
+    'sessions',
+    {
+      ...row(f, spawned),
+      usage: { input_tokens: 0, output_tokens: 0, cost_usd: 0.25, tokens_unreported: true },
     },
+    row(f, spawned).revision,
+  );
+
+  const state = await asSession<Promise<State>>(f, conductor.id, 'conductor.state', {});
+
+  const { usage } = state.spawned.find((each) => each.session_id === spawned)!;
+  expect(usage).toMatchObject({ tokens_unreported: true, turns: 1 });
+  for (const count of ['input_tokens', 'output_tokens', 'cached_input_tokens'])
+    expect(usage, count).not.toHaveProperty(count);
+});
+
+it('shows a session the names of the project environment variables without their values', async () => {
+  const f = await workbenchFixture();
+  const conductor = await openConductor(f);
+  const project = f.store.must<Project>('projects', f.project.id);
+  f.store.update<Project>(
+    'projects',
+    { ...project, env: { API_TOKEN: 'secret-value' } },
+    project.revision,
+  );
+  type Read = { project: { env?: Record<string, string> } };
+
+  const read = asSession<Read>(f, conductor.id, 'project.read', { project_id: f.project.id });
+
+  expect(read.project.env).toEqual({ API_TOKEN: '' });
+  expect(f.call<Read>('project.read', { project_id: f.project.id }).project.env).toEqual({
+    API_TOKEN: 'secret-value',
   });
-  const own = state.changes.find((each) => each.id === `session:${conductor.id}`);
-  expect(own ?? {}).not.toHaveProperty('usage');
 });

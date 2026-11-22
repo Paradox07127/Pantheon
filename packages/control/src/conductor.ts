@@ -9,7 +9,7 @@ import {
   type Workspace,
 } from '@pantheon/domain';
 import { inputSchemas, type Command } from '@pantheon/protocol';
-import { projectChanges, type ChangeRow } from './changes.js';
+import { projectChanges } from './changes.js';
 import {
   projectAccess,
   revision,
@@ -29,7 +29,7 @@ import {
   sessionChanges,
   startSessionReview,
 } from './review.js';
-import { interruptSession, sessionHandlers } from './session.js';
+import { interruptSession, queueInput } from './session.js';
 import { notifySession, takesNotice } from './session-wake.js';
 import {
   checkWorktreeSession,
@@ -43,7 +43,7 @@ import { projectOverBudget } from './workflow-policy.js';
 
 /** The instructions Pantheon adds to a conductor session after the line on where it works. */
 export const CONDUCTOR_INSTRUCTIONS =
-  "Pantheon gives this session these tools. request_review: another vendor reviews your committed changes or those of a session you spawned; the result comes back to you as a message. report_ready: committed changes go through the project's gate and land. spawn_session: another vendor's session starts in a new worktree from your current commit, in permission mode ask or auto_edit; you hear when its turn ends. message_session: a message to a session you spawned, or a steer into its running turn; at most 2 a minute to one session. stop_session: interrupts the running turn of a session you spawned, or closes that session. read_state: this project's changes, checks, landing queue, items waiting for the user, and what each session you spawned used. read_needs_you: the items waiting for the user; only the user answers them. project_read: the project's settings, brief and memory. memory_context, memory_search, memory_related and memory_get: project memory, which Pantheon does not add to your turns. memory_propose: a memory entry; a decision stays a draft until the user confirms it. draw: a chart or diagram the user sees in this session. Plan, split work and run subagents with your own tools.";
+  "Pantheon gives this session these tools. request_review: another vendor reviews your committed changes or those of a session you spawned; the result comes back to you as a message. report_ready: committed changes go through the project's gate and land. spawn_session: another vendor's session starts in a new worktree from your current commit, in permission mode ask or auto_edit; you hear when its turn ends. message_session: a message to a session you spawned, or a steer into its running turn; at most 2 a minute to one session. stop_session: interrupts the running turn of a session you spawned, or closes that session. read_state: this project's changes, checks, landing queue and items waiting for the user, and each session you spawned with its state and what it used. read_needs_you: the items waiting for the user; only the user answers them. project_read: the project's settings, brief and memory. memory_context, memory_search, memory_related and memory_get: project memory, which Pantheon does not add to your turns. memory_propose: a memory entry; a decision stays a draft until the user confirms it. draw: a chart or diagram the user sees in this session. Plan, split work and run subagents with your own tools.";
 
 /** conductor.review; the session's committed range and its diff are read before the transaction. */
 function prepareConductorReview(
@@ -185,19 +185,17 @@ function gated(ctx: ControlContext, session: Session): boolean {
 /** An upper bound on what one conductor can spend through the sessions it starts. */
 const SPAWNED_SESSION_LIMIT = 4;
 
-/** The session.create input of a spawned session: a worktree cut from the caller's committed HEAD. */
-function spawnInput(ctx: ControlContext, p: Principal, command: Command) {
-  requireThat(p.role === 'conductor', 'permission_denied', 'A conductor session only');
-  projectAccess(ctx, p, p.project_id!, command.type);
-  const { runtime, input, model, effort, permission_mode } = inputSchemas['conductor.spawn'].parse(
-    command.input,
-  );
-  const caller = ctx.store.must<Session>('sessions', p.session_id!);
+/** Refuses a spawned session's new turn once the project spent its budget. */
+function requireBudgetLeft(ctx: ControlContext, projectId: string): void {
   requireThat(
-    !projectOverBudget(ctx, caller.project_id),
+    !projectOverBudget(ctx, projectId),
     'budget_exceeded',
     'Project runtime budget is exhausted',
   );
+}
+
+/** Refuses a new turn while SPAWNED_SESSION_LIMIT of the caller's spawned sessions have one to take. */
+function requireTurnSlot(ctx: ControlContext, caller: Session): void {
   const busy = new Set(
     ctx.store
       .list<SessionTurn>('session_turns')
@@ -214,6 +212,18 @@ function spawnInput(ctx: ControlContext, p: Principal, command: Command) {
       .map((session) => `${session.id} (${session.title ?? ''})`)
       .join(', ')}. You get a message as each turn ends.`,
   );
+}
+
+/** The session.create input of a spawned session: a worktree cut from the caller's committed HEAD. */
+function spawnInput(ctx: ControlContext, p: Principal, command: Command) {
+  requireThat(p.role === 'conductor', 'permission_denied', 'A conductor session only');
+  projectAccess(ctx, p, p.project_id!, command.type);
+  const { runtime, input, model, effort, permission_mode } = inputSchemas['conductor.spawn'].parse(
+    command.input,
+  );
+  const caller = ctx.store.must<Session>('sessions', p.session_id!);
+  requireBudgetLeft(ctx, caller.project_id);
+  requireTurnSlot(ctx, caller);
   return inputSchemas['session.create'].parse({
     project_id: caller.project_id,
     workspace: 'worktree',
@@ -278,10 +288,11 @@ function spawnedTarget(
 /** How many messages a conductor sends to one spawned session within a minute. */
 const MESSAGES_PER_MINUTE = 2;
 
-/** conductor.message; the turn is queued as the user's send or steer would be. */
+/** conductor.message; the turn is queued as the user's send or steer would be, marked as the agent's. */
 const conductorMessage: Handler = (ctx, p, command) => {
   const input = inputSchemas['conductor.message'].parse(command.input);
   const target = spawnedTarget(ctx, p, command, input.session_id);
+  const caller = ctx.store.must<Session>('sessions', p.session_id!);
   const now = ctx.store.now();
   const recent = ctx.store
     .statement(
@@ -293,18 +304,32 @@ const conductorMessage: Handler = (ctx, p, command) => {
       'rate_limited',
       `At most ${MESSAGES_PER_MINUTE} messages a minute go to one session; send again in ${Math.ceil((recent[0]!.created_at + 60_000 - now) / 1000)} seconds`,
     );
+  requireBudgetLeft(ctx, target.project_id);
+  if (input.mode === 'steer')
+    requireThat(
+      ctx.store
+        .list<SessionTurn>('session_turns')
+        .some((turn) => turn.session_id === target.id && turn.state === 'running'),
+      'invalid_state',
+      'That session has no running turn to steer; message it with mode send',
+    );
+  else requireTurnSlot(ctx, caller);
   const type = input.mode === 'steer' ? 'session.steer' : 'session.send';
   // The conductor's access is checked above; the send then runs as the user's.
-  const turn = sessionHandlers[type]!(
+  const turn = queueInput(
     ctx,
     { id: p.id, role: 'user' },
     {
       ...command,
       type,
-      input: { session_id: target.id, input: input.text },
+      input: {
+        session_id: target.id,
+        input: `[Pantheon] From the main agent "${caller.title ?? ''}":\n${input.text}`,
+      },
       expected_revision: target.revision,
     },
-  ) as SessionTurn;
+    'agent',
+  );
   ctx.store.event(
     'session.conductor_messaged',
     ctx.store.must<Session>('sessions', target.id),
@@ -364,30 +389,57 @@ function prepareConductorNeedsYou(ctx: ControlContext, p: Principal, command: Co
   });
 }
 
-/** What a spawned session spent: its tokens, the turns it ran and their wall time. */
-function spawnedUsage(ctx: ControlContext, session: Session): NonNullable<ChangeRow['usage']> {
-  const times = ctx.store.statement(
-    "SELECT min(CASE WHEN kind='turn.running' THEN created_at END) AS started, min(CASE WHEN kind IN ('turn.completed','turn.failed','turn.cancelled') THEN created_at END) AS ended FROM events WHERE aggregate_id=?",
+const DAY_MS = 24 * 60 * 60_000;
+
+/**
+ * The sessions the caller spawned, without those discarded over a day ago, with what each spent:
+ * the tokens its runtime reported, the turns it ran and their wall time.
+ */
+function spawnedSessions(ctx: ControlContext, callerId: string, projectId: string) {
+  const now = ctx.store.now();
+  const discarded = new Map(
+    ctx.store
+      .kindEvents(projectId, ['session.discarded'])
+      .map((event) => [event.aggregate_id, event.created_at]),
   );
-  let turns = 0,
-    wallMs = 0;
-  for (const turn of ctx.store.list<SessionTurn>('session_turns')) {
-    if (turn.session_id !== session.id) continue;
-    const { started, ended } = times.get(turn.id) as {
-      started: number | null;
-      ended: number | null;
-    };
-    if (started === null) continue;
-    turns++;
-    wallMs += (ended ?? ctx.store.now()) - started;
-  }
-  return {
-    input_tokens: session.usage?.input_tokens ?? 0,
-    output_tokens: session.usage?.output_tokens ?? 0,
-    cached_input_tokens: session.usage?.cached_input_tokens ?? 0,
-    turns,
-    wall_ms: wallMs,
-  };
+  const times = new Map(
+    (
+      ctx.store
+        .statement(
+          "SELECT session_id, count(*) AS turns, sum(coalesce(ended, ?) - started) AS wall_ms FROM (SELECT t.data->>'$.session_id' AS session_id, min(CASE WHEN e.kind='turn.running' THEN e.created_at END) AS started, min(CASE WHEN e.kind<>'turn.running' THEN e.created_at END) AS ended FROM events e INDEXED BY events_project_kind JOIN session_turns t ON t.id=e.aggregate_id WHERE e.project_id=? AND e.kind IN ('turn.running','turn.completed','turn.failed','turn.cancelled') AND t.data->>'$.session_id' IN (SELECT id FROM sessions WHERE data->>'$.spawned_by.session_id'=?) GROUP BY t.id) WHERE started IS NOT NULL GROUP BY session_id",
+        )
+        .all(now, projectId, callerId) as { session_id: string; turns: number; wall_ms: number }[]
+    ).map((row) => [row.session_id, row]),
+  );
+  return ctx.store
+    .list<Session>('sessions')
+    .filter(
+      (session) =>
+        session.spawned_by?.session_id === callerId &&
+        !(session.outcome === 'discarded' && (discarded.get(session.id) ?? now) < now - DAY_MS),
+    )
+    .map((session) => {
+      const usage = session.usage,
+        counted = usage && !usage.tokens_unreported;
+      return {
+        session_id: session.id,
+        title: session.title ?? '',
+        runtime: session.runtime,
+        state: session.state,
+        ...(session.outcome ? { outcome: session.outcome } : {}),
+        usage: {
+          ...(counted
+            ? { input_tokens: usage.input_tokens, output_tokens: usage.output_tokens }
+            : {}),
+          ...(counted && usage.cached_input_tokens !== undefined
+            ? { cached_input_tokens: usage.cached_input_tokens }
+            : {}),
+          ...(usage?.tokens_unreported ? { tokens_unreported: true as const } : {}),
+          turns: times.get(session.id)?.turns ?? 0,
+          wall_ms: times.get(session.id)?.wall_ms ?? 0,
+        },
+      };
+    });
 }
 
 /** Per control, the callers a notice did not reach because they took no input then. */
@@ -560,15 +612,7 @@ function prepareConductorState(
               self: true,
               ...(row.status === 'running' && landed ? { landed: true as const } : {}),
             }
-          : row.kind === 'session' && row.spawned_by === p.session_id
-            ? {
-                ...row,
-                usage: spawnedUsage(
-                  ctx,
-                  ctx.store.must<Session>('sessions', row.id.slice('session:'.length)),
-                ),
-              }
-            : row,
+          : row,
       );
     const todo = items.slice(0, 20).map((item) => {
       const sessionId = item.source.table === 'sessions' ? item.source.id : item.session_id;
@@ -578,7 +622,7 @@ function prepareConductorState(
         created_at: item.created_at,
       };
     });
-    return { changes, todo };
+    return { changes, todo, spawned: spawnedSessions(ctx, p.session_id!, projectId) };
   });
 }
 

@@ -871,8 +871,10 @@ export interface SessionTurn extends Entity {
    * lead marks a turn that carries a lead's message or changed contract to a task session.
    * continuation marks a turn the daemon queued to continue a session it drives.
    * compaction marks a user-requested maintenance turn, whose input is compaction instructions.
+   * agent marks a turn that carries the message of the main agent that spawned the session.
    */
   origin?:
+    | 'agent'
     | 'tracker'
     | 'sync'
     | 'baseline'

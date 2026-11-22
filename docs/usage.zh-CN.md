@@ -164,7 +164,7 @@ Pantheon 读取 Claude Code 和 Codex 的原生历史。
 - `spawn_session`:从当前提交切一个新 worktree,起另一个运行时的会话。新会话不带 Pantheon 工具。它的权限模式是「逐条审批」(`ask`),工具要求时是「自动编辑」(`auto_edit`);别的模式会被拒绝。它的回合结束或失败时，起它的会话收到一条消息。一个会话起的会话里，同时最多 4 个在跑回合。项目用完预算时,Pantheon 拒绝。
 - `message_session`:给它起的会话发一条消息，作为新回合(`send`)或插进正在跑的回合(`steer`)。每个会话每分钟最多收 2 条。
 - `stop_session`:打断它起的会话正在跑的回合。带 `close` 时关闭那个会话并丢弃它的 worktree。
-- `read_state`:项目的改动、它们的检查、落地队列和等你处理的事。它起的每个会话那一行写着输入、输出和缓存读取 token、回合数和回合用时。
+- `read_state`:项目的改动、它们的检查、落地队列和等你处理的事。另外列出它起的每个会话：状态，输入、输出和缓存读取 token,回合数和回合用时;运行时没报的数不写。
 - `read_needs_you`:等你处理的事，不带处理它们的操作。只有你能处理。
 - `project_read`:项目的设置、简介和记忆。
 - `memory_context`、`memory_search`、`memory_related`、`memory_get`:读项目记忆。Pantheon 不把记忆加进这个会话的回合。

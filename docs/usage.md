@@ -164,7 +164,7 @@ A session that you create with `"purpose": "conductor"` in its `session.create` 
 - `spawn_session`: starts a session of another runtime in a new worktree from the current commit. The new session has no Pantheon tools. Its permission mode is "Manual" (`ask`), or "Auto edit" (`auto_edit`) when the tool asks for it; other modes are refused. When its turn ends or fails, the session that started it gets a message. At most 4 sessions that a session started can run a turn at the same time. When the project spent its budget, Pantheon refuses this.
 - `message_session`: sends a message to a session that it started, as a new turn (`send`) or into the running turn (`steer`). At most 2 messages a minute go to one session.
 - `stop_session`: interrupts the running turn of a session that it started. With `close` it closes that session and discards its worktree.
-- `read_state`: the changes of the project, their checks, the landing queue and the items that wait for you. The row of each session that it started shows the input, output and cache-read tokens, the turns and the time of the turns.
+- `read_state`: the changes of the project, their checks, the landing queue and the items that wait for you. It also lists every session that it started, with its state and the input, output and cache-read tokens, the turns and the time of the turns; a count the runtime did not report is left out.
 - `read_needs_you`: the items that wait for you, without the actions that answer them. Only you answer them.
 - `project_read`: the settings, the brief and the memory of the project.
 - `memory_context`, `memory_search`, `memory_related`, `memory_get`: read the project memory. Pantheon does not add the memory to the turns of this session.

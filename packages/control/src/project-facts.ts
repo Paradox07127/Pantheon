@@ -46,8 +46,19 @@ export function projectRead(
   const session = principal.session_id
     ? ctx.store.get<Session>('sessions', principal.session_id)
     : undefined;
+  const facts = projectFacts(ctx, projectId);
+  const env = facts.project.env;
   return {
-    ...projectFacts(ctx, projectId),
+    ...facts,
+    // A session sees which variables are set, not their values.
+    ...(principal.role !== 'user' && env
+      ? {
+          project: {
+            ...facts.project,
+            env: Object.fromEntries(Object.keys(env).map((key) => [key, ''])),
+          },
+        }
+      : {}),
     memory: memoryContext(ctx, projectId, session, 12000, !!session),
     ...(session ? { you: { session_id: session.id, role: principal.role } } : {}),
   };

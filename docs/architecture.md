@@ -39,7 +39,7 @@ apps/daemon ──> packages/control ─> packages/adapters, packages/store, pac
 - `spawn_session`(`conductor.spawn`):从调用者当前提交切一个新工作树，起一个不带工具的普通会话，记 `spawned_by`;权限模式只收 `ask`(默认)和 `auto_edit`;项目超预算时拒绝(`budget_exceeded`);每个带工具会话同时最多 4 个在跑回合(有排队或在跑的回合)的被起会话。被起会话的回合完成或失败时,`afterSpawnedTurn` 告诉起它的会话。
 - `message_session`(`conductor.message`):给 `spawned_by` 是自己的会话发 `send` 或 `steer`,按用户的发送排回合;每个被起会话 60 秒内最多 2 条(数 `session.conductor_messaged` 事件),超了 `rate_limited`。
 - `stop_session`(`conductor.stop`):对自己起的会话，不带 `close` 是打断当前回合(`interruptSession`),带 `close` 是关闭并丢弃工作树(`stopWorktreeSession`,`by: 'lead'`)。
-- `read_state`(`conductor.state`):项目的改动(`changes.ts`,最多 30 条,24 小时前合并的不列)和等用户的事(最多 20 条);自己起的会话那一行带 `usage`(会话累计的输入、输出、缓存读 token,跑过的回合数和这些回合从 `turn.running` 到结束的毫秒数)。
+- `read_state`(`conductor.state`):项目的改动(`changes.ts`,最多 30 条,24 小时前合并的不列)和等用户的事(最多 20 条);`spawned` 列出自己起的每个会话(一天前丢弃的不列)和它的 `usage`(会话累计的输入、输出、缓存读 token,跑过的回合数和这些回合从 `turn.running` 到结束的毫秒数;运行时没报的数不写，带 `tokens_unreported`)。
 - `read_needs_you`(`conductor.needs_you`):`needsYou` 的本项目条目，只留种类、原因、会话和时间，不带作答动作和请求输入。
 
 放行 `project.read` 也放行了按它检查的本项目只读查询(会话列表、文件、轨迹等),和规划会话一样。替用户批工具审批、设备、发现结论不在表里，主 agent 做不了。

@@ -91,7 +91,7 @@ const descriptions: Record<ToolCommand, string> = {
   'conductor.spawn':
     'Start another session in a new worktree cut from your current commit, with the given first message. Use it for work that needs another runtime; use your own subagents otherwise. It runs in permission mode ask unless you give auto_edit. You get a message when its turn ends. At most 4 spawned sessions take a turn at a time. Refused budget_exceeded once the project spent its budget.',
   'conductor.state':
-    "Read this project's changes, their checks (gate, reviews), the landing queue and the items waiting for the user. The row of each session you spawned has its usage: input, output and cache-read tokens, turns and the wall time of its turns in milliseconds.",
+    "Read this project's changes, their checks (gate, reviews), the landing queue and the items waiting for the user. spawned lists each session you spawned, except those discarded over a day ago: its title, runtime, state, outcome and usage: input, output and cache-read tokens, turns and the wall time of its turns in milliseconds. tokens_unreported true means its runtime reported no token counts, and a count it did not report is left out.",
   'conductor.message':
     'Send a message to a session you spawned. mode send starts a new turn of an idle session; mode steer adds the message to its running turn. You get a message when that turn ends. At most 2 messages a minute go to one session; refused rate_limited beyond that.',
   'conductor.stop':
