@@ -1133,12 +1133,5 @@ function notifyRequestingSession(ctx: ControlContext, review: Review, turns: Ses
       ? ['report_ready is refused until a later review has no open blocking findings.']
       : []),
   ];
-  const text = lines.join('\n');
-  // A main agent's news items are split at blank lines, so the whole review stays one item.
-  notifySession(
-    ctx,
-    review.notify_session_id,
-    conductor ? text.replace(/\n\s*\n/g, '\n') : text,
-    '',
-  );
+  notifySession(ctx, review.notify_session_id, lines.join('\n'), '');
 }

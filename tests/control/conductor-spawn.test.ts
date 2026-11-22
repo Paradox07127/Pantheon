@@ -788,7 +788,11 @@ it('tells the main agent once that a session it spawned waits for the user, howe
 });
 
 it.each([
-  { who: 'a main agent at once, as one item', purpose: 'conductor' as const, mark: '[review] ' },
+  {
+    who: 'a main agent at once, its text as written',
+    purpose: 'conductor' as const,
+    mark: '[review] ',
+  },
   { who: 'a plain session unchanged', purpose: undefined, mark: '' },
 ])('returns the result of a review to $who', async ({ purpose, mark }) => {
   const f = await workbenchFixture();
@@ -832,8 +836,7 @@ it.each([
 
   const told = trackerTurns(f, session.id)[0]!;
   expect(told.input.startsWith(`${mark}[Pantheon] Review ${reviewId}: `)).toBe(true);
-  expect(told.input.includes('\n\n')).toBe(!purpose);
-  expect(told.input).toContain('Nothing reads it.');
+  expect(told.input).toContain('The answer is a placeholder.\n\nNothing reads it.');
   await settle(f, row(f, session.id));
   expect(f.store.must<SessionTurn>('session_turns', told.id).state).toBe('completed');
 });

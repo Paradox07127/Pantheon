@@ -115,13 +115,13 @@ const messages = (f: Fixture, sessionId: string) =>
   f
     .turns(sessionId)
     .map((turn) => turn.input)
-    .filter((input) => /^(\[\w+\] )?\[Pantheon\]/.test(input));
+    .filter((input) => /^\[\w+\] \[Pantheon\]/.test(input));
 
 // A spawned session's turn end tells the conductor too, and a message that waits takes the next one in.
 const landings = (f: Fixture, sessionId: string) =>
   messages(f, sessionId)
     .flatMap((input) => input.split('\n\n'))
-    .filter((part) => /^(\[\w+\] )?\[Pantheon\]/.test(part) && !part.includes('which you spawned'));
+    .filter((part) => /^\[\w+\] \[Pantheon\]/.test(part) && !part.includes('which you spawned'));
 
 const passing = [{ name: 'Passes', argv: [process.execPath, '-e', 'process.exit(0)'] }];
 const failing = [
