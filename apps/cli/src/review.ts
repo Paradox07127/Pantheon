@@ -79,6 +79,27 @@ const hardened = [
 ];
 const noDrivers = ['--no-ext-diff', '--no-textconv'];
 
+const escapes: Record<string, number> = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13 };
+/** The patch header with each path git C-quoted written out as the name status writes it. */
+const unquoted = (header: string) =>
+  header.replace(/"((?:[^"\\]|\\.)*)"/g, (_, quoted: string) => {
+    const bytes: number[] = [];
+    for (let index = 0; index < quoted.length; index++) {
+      const char = String.fromCodePoint(quoted.codePointAt(index)!);
+      if (char !== '\\') {
+        bytes.push(...Buffer.from(char));
+        index += char.length - 1;
+        continue;
+      }
+      const next = quoted[++index]!;
+      if (/[0-7]/.test(next)) {
+        bytes.push(parseInt(quoted.slice(index, index + 3), 8));
+        index += 2;
+      } else bytes.push(escapes[next] ?? next.charCodeAt(0));
+    }
+    return Buffer.from(bytes).toString('utf8');
+  });
+
 /** Git's output in the root; a failure prints the message given, or git's, and exits 2. */
 const inRoot = (root: string, args: string[], failure?: string) => {
   const result = spawnSync('git', ['-C', root, ...hardened, ...args], {
@@ -100,8 +121,8 @@ const inRoot = (root: string, args: string[], failure?: string) => {
 };
 
 /**
- * The paths of each review part of a range, packed in diff order, and the deleted files no part
- * carries; a range with no deleted file within PART_BYTES goes as one part without paths.
+ * The paths of each review part of a range, packed in diff order, and the deleted files the parts
+ * are reviewed without; a range within PART_BYTES goes as one part without paths.
  */
 const rangeParts = (
   root: string,
@@ -125,14 +146,15 @@ const rangeParts = (
     ...noDrivers,
     '--src-prefix=a/',
     '--dst-prefix=b/',
+    '--diff-filter=d',
     ...range,
   ]);
-  if (!deleted.length && Buffer.byteLength(patch) <= PART_BYTES)
+  if (Buffer.byteLength(patch) <= PART_BYTES && (entries.length || !deleted.length))
     return { parts: [undefined], deleted };
   // A type change has two sections under one header.
   const sizes = new Map<string, number>();
   for (const section of patch.split(/^(?=diff --git )/m)) {
-    const header = section.slice(0, section.indexOf('\n'));
+    const header = unquoted(section.slice(0, section.indexOf('\n')));
     sizes.set(header, (sizes.get(header) ?? 0) + Buffer.byteLength(section));
   }
   const parts: { paths: string[]; bytes: number }[] = [];
@@ -202,9 +224,12 @@ export const poll = async <T>(
 };
 
 const printFinding = (finding: ReviewFinding) => {
-  console.log(
-    `${finding.location} [${finding.blocking ? 'blocking' : 'report'}] ${finding.runtime}: ${finding.impact}`,
-  );
+  const mark = finding.resolution
+    ? `resolved: ${finding.resolution.outcome}`
+    : finding.blocking
+      ? 'blocking'
+      : 'report';
+  console.log(`${finding.location} [${mark}] ${finding.runtime}: ${finding.impact}`);
   console.log(`  id: ${finding.id}`);
   console.log(`  quote: ${finding.quote}`);
   console.log(`  evidence: ${finding.evidence}`);
@@ -276,14 +301,15 @@ export const review = async (
   const root = projectRoot();
   const defaulted = !head;
   head ??= 'HEAD';
-  if (defaulted && git('status', '--porcelain').stdout.trim())
+  const here = process.cwd();
+  if (defaulted && inRoot(here, ['status', '--porcelain']).trim())
     console.error('Uncommitted changes are not reviewed; only committed content is.');
-  // Every part reviews the same commits, whatever the refs point at meanwhile.
+  // Every part reviews the same commits, whatever the refs point at meanwhile, as this worktree reads them.
   const commitOf = (ref: string) =>
     inRoot(
-      root,
-      ['rev-parse', '--verify', '-q', '--end-of-options', `${sharedRef(ref)}^{commit}`],
-      `Not a commit: ${ref}`,
+      here,
+      ['rev-parse', '--verify', '-q', '--end-of-options', `${ref}^{commit}`],
+      `unknown revision: ${ref}`,
     ).trim();
   const to = commitOf(head);
   const from = inRoot(
@@ -305,7 +331,7 @@ export const review = async (
   const settled: { label: string; id?: string; code: number; blocking?: number }[] = [];
   for (const [index, paths] of parts.entries()) {
     const label = `PART ${index + 1}/${parts.length}`;
-    let result: Review, id: string | undefined;
+    let id: string | undefined;
     try {
       const daemon = connect();
       const sent = await sendCommand(
@@ -317,6 +343,7 @@ export const review = async (
           head: to,
           ...(values.focus === undefined ? {} : { focus: values.focus }),
           ...(paths ? { paths } : {}),
+          ...(values.paths === undefined ? { exclude_deleted: true } : {}),
           ...(values.runtime?.length ? { runtimes: values.runtime } : {}),
           ...(values.fallback?.length ? { fallback: values.fallback } : {}),
         },
@@ -331,21 +358,20 @@ export const review = async (
       id = started.id;
       if (parts.length > 1) console.log(`${label} ${started.id}`);
       console.error(`Review ${started.id} started: ${started.runtimes.join(', ')}`);
-      result = await poll<Review>(
+      const result = await poll<Review>(
         daemon,
         'review.read',
         'review_id',
         started.id,
         (value) => value.state !== 'running',
       );
+      const blocking = result.findings.filter(unresolvedBlocking).length;
+      settled.push({ label, id: result.id, code: printReview(result), blocking });
     } catch (error) {
-      // Exit 1 means the review blocks; a review that never finished is exit 2.
+      // Exit 1 means the review blocks; one that never finished or reads back malformed is exit 2.
       console.error(String(error));
       settled.push({ label, id, code: 2 });
-      continue;
     }
-    const blocking = result.findings.filter(unresolvedBlocking).length;
-    settled.push({ label, id: result.id, code: printReview(result), blocking });
   }
   if (settled.length === 1) return settled[0]!.code;
   for (const part of settled)

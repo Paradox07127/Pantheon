@@ -90,14 +90,23 @@ beforeAll(async () => {
   git(repo, 'checkout', '-q', '-b', 'gone', 'main');
   git(repo, 'rm', '-q', 'a.txt');
   git(repo, 'commit', '-q', '-m', 'gone');
-  // a.txt turns into a symlink: one name-status entry, two patch sections.
-  git(repo, 'checkout', '-q', '-b', 'typed', 'main');
+  // A large a.txt turns into a symlink: one name-status entry, two patch sections.
+  git(repo, 'checkout', '-q', '-b', 'typed-base', 'main');
+  writeFileSync(path.join(repo, 'a.txt'), lines(60));
+  git(repo, 'commit', '-q', '-am', 'large a');
+  git(repo, 'checkout', '-q', '-b', 'typed');
   git(repo, 'rm', '-q', 'a.txt');
   symlinkSync('target', path.join(repo, 'a.txt'));
   writeFileSync(path.join(repo, 'b.txt'), lines(100));
   writeFileSync(path.join(repo, 'c.txt'), lines(100));
   git(repo, 'add', '.');
   git(repo, 'commit', '-q', '-m', 'typed');
+  // Names git quotes in patch headers even with core.quotePath=false.
+  git(repo, 'checkout', '-q', '-b', 'quoted', 'main');
+  writeFileSync(path.join(repo, 'q"uote.txt'), lines(100));
+  writeFileSync(path.join(repo, 't\tab.txt'), lines(100));
+  git(repo, 'add', '.');
+  git(repo, 'commit', '-q', '-m', 'quoted');
   // A branch named like a file of the checkout.
   git(repo, 'branch', 'a.txt', 'large');
   const tree = git(repo, 'rev-parse', 'main^{tree}').trim();
@@ -222,6 +231,17 @@ describe('pnpm cli review', () => {
       code: 0,
       stream: 'stdout',
       line: 'codex: pass — looks fine',
+    },
+    {
+      name: 'a resolved finding, marked with its outcome',
+      args: ['--base', 'main'],
+      answers: [
+        started,
+        { body: reviewOf({ findings: [finding({ blocking: true, resolution: resolved })] }) },
+      ],
+      code: 0,
+      stream: 'stdout',
+      line: 'src/a.ts:2 [resolved: intentional] codex: Hangs',
     },
     {
       name: 'a fail verdict',
@@ -350,6 +370,7 @@ describe('pnpm cli review', () => {
         root: repo,
         base: commit('main'),
         head: commit('linked-branch'),
+        exclude_deleted: true,
       });
     },
   );
@@ -368,7 +389,12 @@ describe('pnpm cli review', () => {
         ['review', range],
         [{ body: { receipt: running } }, { body: reviewOf({}) }],
       );
-      expect(sentInput().input).toEqual({ root: repo, base: commit('main'), head: head() });
+      expect(sentInput().input).toEqual({
+        root: repo,
+        base: commit('main'),
+        head: head(),
+        exclude_deleted: true,
+      });
     },
   );
 
@@ -382,7 +408,43 @@ describe('pnpm cli review', () => {
       root: repo,
       base: commit('main'),
       head: commit('HEAD', detached),
+      exclude_deleted: true,
     });
+  });
+
+  it('refuses a ref the worktree it runs in cannot resolve, though the main checkout can', async () => {
+    git(repo, 'update-ref', 'refs/worktree/marked', 'large');
+    try {
+      const result = await cli(linked, ['review', 'main..refs/worktree/marked'], []);
+      expect(result.stderr).toContain('unknown revision');
+      expect(result.code).toBe(2);
+      expect(requests).toEqual([]);
+    } finally {
+      git(repo, 'update-ref', '-d', 'refs/worktree/marked');
+    }
+  });
+
+  it('checks for uncommitted changes without running the fsmonitor the repository configures', async () => {
+    const marker = path.join(path.dirname(repo), 'monitored');
+    const hook = path.join(path.dirname(repo), 'fsmonitor.sh');
+    writeFileSync(hook, `#!/bin/sh\ntouch ${marker}\n`, { mode: 0o755 });
+    git(repo, 'config', 'core.fsmonitor', hook);
+    try {
+      await cli(repo, ['review', '--base', 'main'], [started, { body: reviewOf({}) }]);
+      expect(requests).toHaveLength(2);
+      expect(existsSync(marker)).toBe(false);
+    } finally {
+      git(repo, 'config', '--unset', 'core.fsmonitor');
+    }
+  });
+
+  it('stops when the check for uncommitted changes fails', async () => {
+    const broken = path.join(path.dirname(repo), 'broken');
+    git(repo, 'worktree', 'add', '-q', '--detach', broken, 'main');
+    writeFileSync(path.join(repo, '.git/worktrees/broken/index'), 'not an index');
+    const result = await cli(broken, ['review', '--base', 'main'], []);
+    expect(result.code).toBe(2);
+    expect(requests).toEqual([]);
   });
 
   it('sends each --fallback runtime in the order given', async () => {
@@ -395,7 +457,7 @@ describe('pnpm cli review', () => {
   });
 
   it('sends --focus and the --paths as given in one review', async () => {
-    await cli(
+    const result = await cli(
       repo,
       ['review', 'main..large', '--focus', 'Error handling', '--paths', 'big.txt,a.txt'],
       [{ body: { receipt: running } }, { body: reviewOf({}) }],
@@ -408,6 +470,7 @@ describe('pnpm cli review', () => {
       focus: 'Error handling',
       paths: ['big.txt', 'a.txt'],
     });
+    expect(result.stdout).not.toContain('LEFT OUT');
   });
 
   it('splits a large range into parts by file, leaves deleted files out and sums up the parts', async () => {
@@ -434,6 +497,7 @@ describe('pnpm cli review', () => {
         head: commit('large'),
         focus: 'Error handling',
         paths,
+        exclude_deleted: true,
       })),
     );
     const out = result.stdout.split('\n');
@@ -470,15 +534,20 @@ describe('pnpm cli review', () => {
   it('leaves the deleted files of a small range out of its one review', async () => {
     const result = await cli(repo, ['review', 'main..small'], settledParts(1));
     expect(posted()).toEqual([
-      { root: repo, base: commit('main'), head: commit('small'), paths: ['c.txt'] },
+      { root: repo, base: commit('main'), head: commit('small'), exclude_deleted: true },
     ]);
     expect(result.stdout.split('\n')[0]).toBe('LEFT OUT (deleted): a.txt');
     expect(result.code).toBe(0);
   });
 
   it('sizes a file changed into a symlink by both of its patch sections', async () => {
-    await cli(repo, ['review', 'main..typed'], settledParts(2));
-    expect(posted().map((input) => input.paths)).toEqual([['a.txt', 'b.txt'], ['c.txt']]);
+    await cli(repo, ['review', 'typed-base..typed'], settledParts(3));
+    expect(posted().map((input) => input.paths)).toEqual([['a.txt'], ['b.txt'], ['c.txt']]);
+  }, 20_000);
+
+  it('sizes a file whose name git quotes in the patch header', async () => {
+    await cli(repo, ['review', 'main..quoted'], settledParts(2));
+    expect(posted().map((input) => input.paths)).toEqual([['q"uote.txt'], ['t\tab.txt']]);
   }, 20_000);
 
   it('splits a range whose head is named like a file of the checkout', async () => {
@@ -527,6 +596,27 @@ describe('pnpm cli review', () => {
       expect(out).toContain(line);
     expect(result.stderr).toContain('resource_busy');
     expect(result.stderr).toContain('not_found');
+    expect(result.code).toBe(2);
+  }, 20_000);
+
+  it('goes on with the other parts after a part reads back malformed, then sums up', async () => {
+    const result = await cli(
+      repo,
+      ['review', 'main..large'],
+      [
+        { body: { receipt: reviewOf({ id: 'part-1', state: 'running', verdicts: [] }) } },
+        { body: { id: 'part-1' } },
+        ...settledParts(3).slice(2),
+      ],
+    );
+    expect(posted()).toHaveLength(3);
+    const out = result.stdout.split('\n');
+    for (const line of [
+      'PART 1/3 part-1: error',
+      'PART 2/3 part-2: pass, 0 blocking',
+      'PART 3/3 part-3: pass, 0 blocking',
+    ])
+      expect(out).toContain(line);
     expect(result.code).toBe(2);
   }, 20_000);
 

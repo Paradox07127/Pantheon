@@ -307,7 +307,8 @@ export function RunsView({
       revision,
     );
     // An accepted answer keeps the row's buttons off until the request reopens at a new revision.
-    if (result.ok) return;
+    // A late failure for an older revision leaves the newer answer's hold and says nothing.
+    if (result.ok || answering.current.get(approvalId) !== revision) return;
     answering.current.delete(approvalId);
     setAnswered(new Map(answering.current));
     setRespondFailure(failureText(result.error));

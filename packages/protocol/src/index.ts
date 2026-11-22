@@ -1618,6 +1618,10 @@ export const inputSchemas = {
       .max(500)
       .optional()
       .describe('Repository-relative paths; only their changes are reviewed. Absent means all.'),
+    exclude_deleted: z
+      .boolean()
+      .optional()
+      .describe('True leaves deleted files out of the reviewed diff.'),
     focus: z
       .string()
       .min(1)

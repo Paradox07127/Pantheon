@@ -137,6 +137,18 @@ it('reviews only the diff of the named paths and keeps them with the refs', asyn
   expect(turn!.input).not.toContain('left out of this part');
 });
 
+it('leaves the deleted files out of the diff when asked to', async () => {
+  const { w, reviewer, started } = await rangeFixture();
+  git(w.source, 'checkout', '--quiet', 'feature');
+  git(w.source, 'rm', '--quiet', 'answer.txt');
+  git(w.source, 'commit', '--quiet', '-m', 'Drop the answer');
+  git(w.source, 'checkout', '--quiet', 'main');
+  await started({ exclude_deleted: true });
+  const diff = readFileSync(path.join(reviewer.starts[0]!.spec.cwd, 'changes.diff'), 'utf8');
+  expect(diff).toContain('+export const c = 3;');
+  expect(diff).not.toContain('answer.txt');
+});
+
 it('puts the review focus into the reviewer input after the goal and before the changes', async () => {
   const { reviewer, started } = await rangeFixture();
   await started({ focus: 'Check the exported constants only' });
@@ -450,6 +462,18 @@ it.each<
     (f) => f.request({ paths: ['answer.txt'] }),
     'invalid_input',
     /No changes under the given paths/,
+  ],
+  [
+    'only deletions once deleted files are left out',
+    (f) => {
+      git(f.w.source, 'checkout', '--quiet', '-b', 'only-deletes', 'main');
+      git(f.w.source, 'rm', '--quiet', 'answer.txt');
+      git(f.w.source, 'commit', '--quiet', '-m', 'Drop the answer');
+      git(f.w.source, 'checkout', '--quiet', 'main');
+      return f.request({ base: 'main', head: 'only-deletes', exclude_deleted: true });
+    },
+    'invalid_input',
+    /No changes/,
   ],
   [
     'a root that is not a project root',

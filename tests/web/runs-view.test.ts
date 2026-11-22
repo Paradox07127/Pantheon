@@ -690,6 +690,32 @@ describe('runs now', () => {
     await h.flush();
     expect([...table(h.value).props.responding]).toEqual([]);
   });
+
+  it('keeps the hold of a newer revision when the answer to an older one fails late', async () => {
+    const asking = (revision: number) => [
+      listed('asker', {
+        state: 'waiting',
+        waiting: 1,
+        waiting_kind: 'question',
+        waiting_request: { id: 'question-1', revision, tool: 'AskUserQuestion' },
+      }),
+    ];
+    mock.snapshot = [];
+    mock.sessions = asking(3);
+    let failOld!: () => void;
+    mock.answered = new Promise((resolve) => (failOld = resolve));
+    const h = now();
+    table(h.value).props.onRespond('question-1', 'approve');
+    mock.sessions = asking(4);
+    h.render();
+    mock.answered = new Promise(() => {});
+    table(h.value).props.onRespond('question-1', 'reject');
+    failOld();
+    await h.flush();
+    expect(mock.commands).toHaveLength(2);
+    expect([...table(h.value).props.responding]).toEqual(['question-1']);
+    expect(nodes(h.value).some((n) => n.props.role === 'alert')).toBe(false);
+  });
 });
 
 describe('runs history', () => {

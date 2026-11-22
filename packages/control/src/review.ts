@@ -288,10 +288,11 @@ export function prepareRangeReview(
     );
     // Literal: a file name with * or ? names that file, not a pattern.
     const paths = input.paths ? ['--', ...input.paths.map((p) => `:(literal)${p}`)] : [];
+    const filter = input.exclude_deleted ? ['--diff-filter=d'] : [];
     const [diff, log] = await Promise.all([
       runGit(
         root,
-        ['diff', '--no-color', '--no-ext-diff', from_sha, to_sha, ...paths],
+        ['diff', '--no-color', '--no-ext-diff', ...filter, from_sha, to_sha, ...paths],
         undefined,
         true,
       ),
@@ -304,9 +305,9 @@ export function prepareRangeReview(
         result.stderr.toString().trim() || result.error || 'Git failed',
       );
     requireThat(
-      !input.paths || diff.stdout.length > 0,
+      (!input.paths && !input.exclude_deleted) || diff.stdout.length > 0,
       'invalid_input',
-      'No changes under the given paths',
+      'No changes under the given paths, or only deletions',
     );
     const goal = log.stdout.toString('utf8').slice(0, 2000);
     const pathSet = (named?: string[]) => [...new Set(named)].sort().join('\0');
