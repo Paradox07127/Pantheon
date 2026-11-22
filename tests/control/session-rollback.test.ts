@@ -187,24 +187,18 @@ it('marks the rolled back turn and the turns after it, and leaves them out of a 
   expect(next.handoff).not.toContain('Add a footer row');
 });
 
-it('gives the record before the rolled back turn to the next turn the task tracker queues', async () => {
+it('gives the record before the rolled back turn to the next notice Pantheon queues', async () => {
   const { f, session, second } = await twoTurns();
   await rollbackWhenIdle(f, session, second.id);
 
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   f.store.transaction(() => {
-    queueTurn(
-      ctx,
-      current(f, session.id),
-      'Continue the export',
-      'tracker',
-      'tracker-continuation',
-    );
+    queueTurn(ctx, current(f, session.id), 'Continue the export', 'notice', 'notice-continuation');
   });
   await settle(f, session);
 
   const next = f.turns(session.id).at(-1)!;
-  expect(next.origin).toBe('tracker');
+  expect(next.origin).toBe('notice');
   expect(next.input).toBe('Continue the export');
   expect(next.handoff!.split('\n')[0]).toBe(HANDOFF_LINE);
   expect(next.handoff).toContain('Start the export');

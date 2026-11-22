@@ -33,7 +33,7 @@ export interface MemoryRecord extends Entity {
   expires_at?: number;
   committed_at?: number;
   archived_at?: number;
-  /** Set when Pantheon wrote it from a lead's plan; the plan decided it, not the user. */
+  /** Set on a record a plan wrote; the plan decided it, not the user. */
   origin?: MemoryOrigin;
   reason?: 'superseded' | 'expired' | 'retracted' | 'stale';
   superseded_by?: string;
@@ -54,7 +54,6 @@ export interface MemoryOrigin {
   subject_id: string;
   outcome: 'confirmed' | 'refuted' | 'closed';
   edit_id?: string;
-  plan_version: number;
 }
 export interface MemoryState extends Entity {
   project_id: string;

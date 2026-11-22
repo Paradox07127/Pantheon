@@ -330,8 +330,8 @@ export interface Approval extends Entity {
   input_hash: string;
   /** Request input as one line of at most 300 characters; absent when the request has no input. */
   input_summary?: string;
-  /** lead: approved on the lead's behalf by the project's charter, without a model turn. */
-  decider: 'user' | 'lead';
+  /** Rows stored earlier may hold 'lead', an answer that was not the user's. */
+  decider: 'user';
   state: 'pending' | 'approved' | 'rejected' | 'void';
   reason?: 'session_lost' | 'input_replaced';
   created_at: number;
@@ -387,9 +387,6 @@ export function permissionRule(tool: string, input: unknown): string {
   if (/[;&|`\n<>{}*?[~$]/.test(command) || /[=/]/.test(first)) return `Bash(${command.trim()})`;
   return second && !second.startsWith('-') ? `Bash(${first} ${second})` : `Bash(${first})`;
 }
-/** Who acts next on a failing task: retry it, switch its runtime, its lead, or the user. */
-export type TaskRungName = 'retry' | 'switch' | 'lead' | 'user';
-
 export interface NeedsYouItem {
   source: {
     table:
@@ -410,13 +407,8 @@ export interface NeedsYouItem {
     | 'project.over_budget'
     | 'setting.proposed';
   project_id: string;
-  /**
-   * The approval's session, or the lead of a plan or milestone item; absent on session items,
-   * whose source is the session.
-   */
+  /** The approval's session; absent on session items, whose source is the session. */
   session_id?: string;
-  /** The plan task, `<lead session id>:<task id>`, of a task item. */
-  task_id?: string;
   /** The turn and native request of a lost request or an undelivered answer. */
   turn_id?: string;
   request_id?: string;
@@ -450,7 +442,6 @@ export interface NeedsYouItem {
     disabled_reason?: string;
     decision?: 'approve' | 'reject' | 'keep' | 'revert';
   }[];
-  task_title?: string;
   /** The title of the lane a `board.lane.approval` item holds; no other item has it. */
   lane_title?: string;
   /** The headline of the plan a `lead.question` item belongs to; session_id is its lead. */
@@ -704,8 +695,11 @@ export interface Session extends Entity {
   usage?: Usage;
   /** Keeps a concurrency slot until termination is confirmed, including after restart. */
   stop_pending?: boolean;
-  /** A discard waiting for the native process to stop; recovery finishes it after a restart. */
-  stop_requested?: { reason: string; at: number; by: 'user' | 'lead' };
+  /**
+   * A discard waiting for the native process to stop; recovery finishes it after a restart.
+   * agent: the main agent that spawned the session closed it; rows stored earlier hold 'lead' for it.
+   */
+  stop_requested?: { reason: string; at: number; by: 'user' | 'agent' };
   /** The linked worktree a workbench session writes in. */
   workspace_id?: string;
   /**
@@ -896,14 +890,16 @@ export interface SessionTurn extends Entity {
   /** Latest reported usage totals for this turn, in tokens and USD. */
   usage?: Usage;
   /**
-   * Set on a turn the task tracker, a board sync or a confirmed baseline wrote to a lead session;
-   * lead marks a turn that carries a lead's message or changed contract to a task session.
+   * notice marks a turn that carries Pantheon's own notice, such as news of a spawned session;
+   * turns stored earlier hold 'tracker' for it.
+   * baseline marks a turn that sends a baseline's failed commands back to the session to fix.
    * continuation marks a turn the daemon queued to continue a session it drives.
    * compaction marks a user-requested maintenance turn, whose input is compaction instructions.
    * agent marks a turn that carries the message of the main agent that spawned the session.
    */
   origin?:
     | 'agent'
+    | 'notice'
     | 'tracker'
     | 'sync'
     | 'baseline'
@@ -914,17 +910,6 @@ export interface SessionTurn extends Entity {
     | 'compaction';
   /** The turn started read-only, as its UserTurn told the runtime; absent when it could write. */
   read_only?: boolean;
-  /** What a resident did with the user's turn, from the events it caused on its plan; set when the turn completed. */
-  routing?: {
-    kind: 'answered' | 'new_plan' | 'added' | 'sent' | 'asked';
-    lane_id?: string;
-    task_ids?: string[];
-    /** The title lane_id had when the receipt was written. */
-    lane_title?: string;
-    /** The titles task_ids had when the receipt was written, in the same order. */
-    task_titles?: string[];
-    agent_id?: string;
-  };
 }
 export type SessionRole = 'reviewer' | 'baseline' | 'story' | 'main';
 export interface RoleUsage {

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { expect, it } from 'vitest';
 import type { LandingDiff } from '@pantheon/protocol';
 import { renderStoryBrief } from '../../packages/control/src/change-story-brief.js';
-import type { Session } from '@pantheon/domain';
+import { id, type Session, type SessionTurn } from '@pantheon/domain';
 import { rangeDiffWithSyncBounds, sessionGoal } from '../../packages/control/src/landing-diff.js';
 import { notifySession } from '../../packages/control/src/session-wake.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
@@ -145,5 +145,22 @@ it("leaves Pantheon's notices out of the goal, and keeps the first request when 
   f.store.event('session.merged', session, f.project.id, {});
   notifySession(f.control['ctx'], session.id, 'Landing checks passed', 'landing-notice');
   await settle(f, session);
+  expect(goalOf(f, session)).toEqual(['Write the parser']);
+});
+
+it('leaves a notice stored with the earlier tracker origin out of the goal', async () => {
+  const f = await workbenchFixture();
+  const session = await askedSession(f, ['Write the parser']);
+  f.store.insert<SessionTurn>('session_turns', {
+    id: id(),
+    revision: 1,
+    project_id: f.project.id,
+    session_id: session.id,
+    input: 'Review finished: pass',
+    kind: 'send',
+    delivery: 'delivered',
+    state: 'completed',
+    origin: 'tracker',
+  });
   expect(goalOf(f, session)).toEqual(['Write the parser']);
 });

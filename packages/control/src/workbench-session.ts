@@ -1820,7 +1820,7 @@ export function discardSession(
 export function stopWorktreeSession(
   ctx: ControlContext,
   session: Session,
-  stop: { reason: string; by: 'user' | 'lead' },
+  stop: { reason: string; by: 'user' | 'agent' },
   cause: string,
 ): Session {
   // A merge may already have moved the source; it records its own result.
@@ -1939,7 +1939,7 @@ const DELETE_REASON = 'Deleted by the user';
 /** Discards the stopped session and removes it, or for a delete no longer admitted keeps it without its stop. */
 export function discardStopped(ctx: ControlContext, sessionId: string, cause: string): void {
   const current = ctx.store.must<Session>('sessions', sessionId);
-  // A lead's task.stop can carry any reason; only the user deletes.
+  // A main agent's close can carry any reason; only the user deletes.
   if (current.stop_requested?.reason !== DELETE_REASON || current.stop_requested.by !== 'user') {
     failWorkbenchTurns(ctx, current, 'Session discarded');
     discardSession(ctx, sessionId, cause);

@@ -315,7 +315,11 @@ export function sessionGoal(ctx: ControlContext, session: Session): string {
       )
     : undefined;
   const asked = turns.filter(
-    (turn) => (!since || since.has(turn.id)) && turn.origin !== 'tracker' && !turn.rolled_back,
+    (turn) =>
+      (!since || since.has(turn.id)) &&
+      turn.origin !== 'notice' &&
+      turn.origin !== 'tracker' &&
+      !turn.rolled_back,
   );
   const inputs = (asked.length ? asked : turns.slice(0, 1)).map((turn) =>
     turn.input.slice(0, 2000),

@@ -257,7 +257,7 @@ it.skipIf(insideSandbox)(
     expect(seen[0]!.result).toEqual({
       next: expect.stringContaining('the turns queued after it end'),
     });
-    expect(f.turns(session.id).map((turn) => turn.origin)).toContain('tracker');
+    expect(f.turns(session.id).map((turn) => turn.origin)).toContain('notice');
     expect(git(f.source, 'rev-parse', 'main')).toBe(head);
     expect(payloads(f, session.id, 'session.merge_started')).toEqual([{}]);
     expect(messages(f, session.id)).toEqual([expect.stringContaining(`landed on main at ${head}`)]);

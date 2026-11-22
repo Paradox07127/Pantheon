@@ -184,7 +184,7 @@ async function conductorFixture(options?: Parameters<typeof workbenchFixture>[0]
   const notices = () =>
     f
       .turns(conductor.id)
-      .filter((turn) => turn.origin === 'tracker')
+      .filter((turn) => turn.origin === 'notice')
       .map((turn) => turn.input);
   const row = (proposalId: string) =>
     f.store.must<SettingProposal>('setting_change_proposals', proposalId);

@@ -101,7 +101,7 @@ async function conductorFixture() {
   const messages = () =>
     f
       .turns(conductor.id)
-      .filter((turn) => turn.origin === 'tracker')
+      .filter((turn) => turn.origin === 'notice')
       .map((turn) => turn.input);
   const planRows = () =>
     (f.store.db.prepare('SELECT COUNT(*) AS n FROM board_plans').get() as { n: number }).n;
@@ -200,7 +200,7 @@ it('returns a blocking finding to the conductor once, as a message without a pla
   expect(
     f
       .turns(conductor.id)
-      .filter((turn) => turn.origin === 'tracker')
+      .filter((turn) => turn.origin === 'notice')
       .map((turn) => turn.state),
   ).toEqual(['queued']);
   expect(planRows()).toBe(0);

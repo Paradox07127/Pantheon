@@ -33,10 +33,10 @@ export function notifySession(
             turn.session_id === session.id &&
             turn.state === 'queued' &&
             turn.delivery === 'pending' &&
-            turn.origin === 'tracker',
+            (turn.origin === 'notice' || turn.origin === 'tracker'),
         )
     : undefined;
-  if (!waiting) return queueTurn(ctx, session, text, 'tracker', cause);
+  if (!waiting) return queueTurn(ctx, session, text, 'notice', cause);
   return ctx.store.update(
     'session_turns',
     { ...waiting, input: `${waiting.input}\n\n${text}` },

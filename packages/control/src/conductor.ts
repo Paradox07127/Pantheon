@@ -411,7 +411,7 @@ const conductorStop: Handler = (ctx, p, command) => {
   stopWorktreeSession(
     ctx,
     target,
-    { reason: 'Closed by the session that started it', by: 'lead' },
+    { reason: 'Closed by the session that started it', by: 'agent' },
     command.command_id,
   );
   return { session_id: target.id, next: 'The session closes and its worktree is discarded.' };
@@ -426,7 +426,6 @@ function waitingItem(item: NeedsYouItem) {
     decision: item.decision,
     status: item.status,
     ...(sessionId ? { session_id: sessionId } : {}),
-    ...(item.task_title ? { task_title: item.task_title } : {}),
     ...(item.binding?.action ? { request: item.binding.action } : {}),
     ...(item.next_step ? { next_step: item.next_step } : {}),
     created_at: item.created_at,

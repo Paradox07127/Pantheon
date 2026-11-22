@@ -179,7 +179,11 @@ async function tokenInInputs() {
   } as const;
   f.store.insert<Approval>('approvals', { ...bash, id: 'bash-pending', state: 'pending' });
   for (const [id, answered] of [
-    ['bash-for-lead', { decider: 'lead', decided_by: `session:${session.id}` }],
+    // A row stored before every approval was the user's.
+    [
+      'bash-for-lead',
+      { decider: 'lead' as string as Approval['decider'], decided_by: `session:${session.id}` },
+    ],
     ['bash-by-rule', { answered_by_rule: bash.rule }],
   ] as const) {
     const approval = f.store.insert<Approval>('approvals', {

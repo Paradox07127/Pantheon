@@ -274,7 +274,7 @@ export async function run({ workspace, evidenceDir }) {
     await finished('report_ready', 1);
     board = await settled(ids.conductor, 'the conductor to try to land the blocked work');
     const woke = turnsOf(board, ids.conductor).find(
-      (turn) => turn.origin === 'tracker' && turn.input.includes(`(${ids.spawned}, ${WRITER})`),
+      (turn) => turn.origin === 'notice' && turn.input.includes(`(${ids.spawned}, ${WRITER})`),
     );
     observations.notified = {
       tracker_turn: woke?.input.startsWith('[completed] [Pantheon]') ?? false,

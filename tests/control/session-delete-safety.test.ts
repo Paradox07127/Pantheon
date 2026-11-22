@@ -312,6 +312,28 @@ it('removes a session deleted before a restart once recovery discards it', async
   expect(kinds(f, session.id)).toContain('session.deleted');
 });
 
+it('discards, not deletes, a session whose stored stop names the earlier lead closer', async () => {
+  const f = await workbenchFixture();
+  const session = await f.create();
+  await provisioned(f, session);
+  await eventually(
+    () => f.turns(session.id)[0]?.state === 'completed' && current(f, session.id).state === 'open',
+    () => f.control.tick(),
+  );
+  const stored = {
+    ...current(f, session.id),
+    stop_requested: { reason: 'Deleted by the user', by: 'lead', at: f.store.now() },
+  };
+  f.store.update<Session>(
+    'sessions',
+    stored as unknown as Session,
+    current(f, session.id).revision,
+  );
+  await f.restart(() => undefined, { abandon: true });
+  expect(current(f, session.id).outcome).toBe('discarded');
+  expect(kinds(f, session.id)).not.toContain('session.deleted');
+});
+
 it('keeps the files of a delete recovery finished in a transaction that failed', async () => {
   const f = await workbenchFixture();
   const upload = f.control.addAttachment(

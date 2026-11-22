@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest';
-import { id, type Session } from '@pantheon/domain';
+import { id, type Session, type SessionTurn } from '@pantheon/domain';
 import type { ControlContext } from '../../packages/control/dist/context.js';
 import { notifySession } from '../../packages/control/dist/session-wake.js';
 import { settle } from '../helpers.js';
@@ -20,7 +20,7 @@ it('starts a turn of its own on an idle session without a plan', async () => {
 
   const turn = notifySession(ctxOf(f), session.id, 'The review found two issues.', 'cause-1')!;
 
-  expect(turn).toMatchObject({ origin: 'tracker', input: 'The review found two issues.' });
+  expect(turn).toMatchObject({ origin: 'notice', input: 'The review found two issues.' });
   expect(f.turns(session.id)).toHaveLength(before + 1);
   expect(sessionOf(f, session.id).state).toBe('running');
   const jobs = f.store.db.prepare("SELECT payload FROM outbox WHERE kind='session.turn'").all() as {
@@ -52,7 +52,7 @@ it('folds a second text into the queued turn of a running session', async () => 
   const first = notifySession(ctxOf(f), session.id, 'The review found two issues.', 'cause-1')!;
   const second = notifySession(ctxOf(f), session.id, 'The worker finished its turn.', 'cause-2')!;
 
-  expect(first).toMatchObject({ origin: 'tracker', state: 'queued', delivery: 'pending' });
+  expect(first).toMatchObject({ origin: 'notice', state: 'queued', delivery: 'pending' });
   expect(second.id).toBe(first.id);
   const turns = f.turns(session.id);
   expect(turns).toHaveLength(before + 1);
@@ -60,6 +60,28 @@ it('folds a second text into the queued turn of a running session', async () => 
     'The review found two issues.\n\nThe worker finished its turn.',
   );
   expect(planRows(f)).toBe(0);
+});
+
+it('folds a text into a queued notice stored with the earlier tracker origin', async () => {
+  const f = await workbenchFixture({ delay: 3000 });
+  const session = await f.create('Rename the answer file');
+  expect(sessionOf(f, session.id).state).toBe('running');
+  const stored = f.store.insert<SessionTurn>('session_turns', {
+    id: id(),
+    revision: 1,
+    project_id: f.project.id,
+    session_id: session.id,
+    input: 'The review found two issues.',
+    kind: 'send',
+    delivery: 'pending',
+    state: 'queued',
+    origin: 'tracker',
+  });
+
+  const turn = notifySession(ctxOf(f), session.id, 'The worker finished its turn.', 'cause-1')!;
+
+  expect(turn.id).toBe(stored.id);
+  expect(turn.input).toBe('The review found two issues.\n\nThe worker finished its turn.');
 });
 
 it('takes no turn for a closed session, an unknown id, or a project over its budget', async () => {

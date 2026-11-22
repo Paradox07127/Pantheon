@@ -247,6 +247,10 @@ it('interrupts the running turn of a session the conductor spawned, then closes 
   expect(row(f, spawned).outcome).toBeUndefined();
 
   asSession(f, conductor.id, 'conductor.stop', { session_id: spawned, close: true });
+  const stop = f.store.db
+    .prepare("SELECT payload FROM events WHERE aggregate_id=? AND kind='session.stop_requested'")
+    .get(spawned) as { payload: string };
+  expect(JSON.parse(stop.payload)).toMatchObject({ by: 'agent' });
   await eventually(
     () => row(f, spawned).outcome === 'discarded',
     () => f.control.tick(),

@@ -80,7 +80,7 @@ function refusal(fn: () => unknown): { code?: string; message?: string } {
 }
 
 const trackerTurns = (f: Fixture, sessionId: string) =>
-  f.turns(sessionId).filter((turn) => turn.origin === 'tracker');
+  f.turns(sessionId).filter((turn) => turn.origin === 'notice');
 
 /** The turns of the spawned session its caller was told of, in the order they were told. */
 const toldTurns = (f: Fixture, sessionId: string) =>
@@ -621,7 +621,7 @@ it('refuses the user, a planner and a writer, and tells no one about a session t
   await settle(f, row(f, plain.id));
   await settle(f, row(f, conductor.id));
   expect(
-    f.store.list<SessionTurn>('session_turns').filter((turn) => turn.origin === 'tracker'),
+    f.store.list<SessionTurn>('session_turns').filter((turn) => turn.origin === 'notice'),
   ).toEqual([]);
 });
 
