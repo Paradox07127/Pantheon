@@ -55,6 +55,10 @@ vi.mock('@/data/workbench-sessions', async (actual) => {
   };
 });
 vi.mock('@/data/commands', () => ({ runCommand: async () => ({ ok: true, value: null }) }));
+vi.mock('@/data/needs-you', async (actual) => ({
+  ...(await actual<object>()),
+  useNeedsYou: () => ({ items: [], loading: false, error: null, reload() {} }),
+}));
 vi.mock('@/data/logs', async (actual) => ({
   ...(await actual<object>()),
   useEventHistory: () => ({ events: null, error: null, reload: () => undefined }),
