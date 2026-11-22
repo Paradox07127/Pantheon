@@ -1,3 +1,5 @@
+import { writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { open } from '../page.mjs';
 const { page, query, call, errors, poll } = await open(process.argv[2], { ms: 120_000 });
 const result = { id: 'settings.runtimes-acp-listed', checks: [] };
@@ -35,8 +37,13 @@ const NAMES = {
 const nameOf = (runtime) => NAMES[runtime] ?? runtime;
 const ACP = 'gemini';
 
-// Starts with the ACP runtime off, on an executable that never answers the ACP initialize.
-await call('runtime.config.set', { runtime: ACP, enabled: false, binary: '/usr/bin/false' });
+// Starts with the ACP runtime off, on an executable that answers --version, so it is installed on
+// any host, and never answers the ACP initialize.
+const SILENT = path.join(process.argv[2], 'acp-silent');
+writeFileSync(SILENT, '#!/bin/sh\n[ "$1" = --version ] && echo 0.0.1 && exit 0\nexit 1\n', {
+  mode: 0o755,
+});
+await call('runtime.config.set', { runtime: ACP, enabled: false, binary: SILENT });
 
 // The runtime groups on the runtimes page, with the not-installed fold opened.
 const groups = () =>
@@ -121,7 +128,8 @@ result.acp_controls = acpControls;
 check(
   `${nameOf(ACP)} 已安装时显示 "没有应答"；启用开关、路径和参数都能改`,
   acpControls &&
-    (!result.acp?.installed || acpControls.text.includes('没有应答')) &&
+    result.acp?.installed &&
+    acpControls.text.includes('没有应答') &&
     acpControls.enable === true &&
     acpControls.binary === true &&
     acpControls.args === true,

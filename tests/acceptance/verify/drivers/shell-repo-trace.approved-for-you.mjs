@@ -205,9 +205,9 @@ const table = () =>
       return {
         action: cells[0]?.textContent.trim() ?? null,
         by: cells[1]?.textContent.trim() ?? null,
-        rule: cells[3]?.textContent.trim() ?? null,
-        task: cells[4]?.querySelector('button')?.textContent.trim() ?? null,
-        when: cells[5]?.textContent.trim() ?? null,
+        rule: cells[2]?.textContent.trim() ?? null,
+        task: cells[3]?.querySelector('button')?.textContent.trim() ?? null,
+        when: cells[4]?.textContent.trim() ?? null,
       };
     });
   })()`);

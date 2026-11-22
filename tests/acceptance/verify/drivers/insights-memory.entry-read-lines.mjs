@@ -149,7 +149,8 @@ try {
     return JSON.stringify(receipt).includes(CHART) && receipt;
   }, 30_000);
   check('前置：visual.list 有这个会话画的图', drawn, JSON.stringify(drawn).slice(0, 300));
-  await page.click({ role: 'button', name: `${SESSION}，fixture`, exact: false });
+  // A main agent session's row names its type between the title and the runtime.
+  await page.click({ role: 'button', name: `${SESSION}，主 agent，fixture`, exact: false });
   await page.click({ role: 'button', name: '钉到图解', exact: true });
   await page.click({ role: 'button', name: '打开图解', exact: true });
   await page.click({ role: 'tab', name: '条目', exact: true });

@@ -11,12 +11,13 @@ const check = (what, ok, got) => result.checks.push({ what, ok: Boolean(ok), got
 const NAME = {
   question: '问题',
   permission: '权限请求',
+  budget: '预算',
   other: '其他',
   merged: '已合并',
 };
 const SHOWN = Object.keys(NAME);
 // Rows of removed decision kinds, which the page no longer lists.
-const GONE = ['计划变更', '待验收的里程碑', '预算', '外部审批', '失败两次', '改进'];
+const GONE = ['计划变更', '待验收的里程碑', '外部审批', '失败两次', '改进'];
 const CHOICE = { now: '立即', brief: '仅简报', never: '从不' };
 const OVERDUE = '等了超过 4 小时的问题';
 
@@ -83,7 +84,7 @@ const lines = (await page.evaluate('document.body.innerText')).split('\n').map((
 const named = (await names('')).map((c) => c.name);
 const presentNames = (list) => list.filter((n) => lines.includes(n) || named.includes(n));
 check(
-  '页面上没有 计划变更、待验收的里程碑、预算、外部审批 这四行',
+  '页面上没有 计划变更、待验收的里程碑、外部审批、失败两次、改进 这几行',
   shown && presentNames(GONE).length === 0,
   presentNames(GONE),
 );
