@@ -4,17 +4,16 @@ import { sessionTasks } from './session-tasks.js';
 
 /** A running turn without progress or a tool call under way this long shows as quiet on the board. */
 export const QUIET_MS = 2 * 60_000;
-/** A running turn without progress or a tool call under way this long is stalled; the tracker tells the lead. */
+/** A running turn without progress or a tool call under way this long is stalled. */
 export const STALL_MS = 10 * 60_000;
 /** A tool call open this long, in milliseconds, has hung; its turn is stalled. */
 export const HUNG_CALL_MS = 3 * STALL_MS;
 /**
- * A background task running this long is told once: to the lead of a task session, else in
- * needs-you. It is the line of a hung tool call; builds, test runs and servers sent to the
+ * A background task running this long is told once in needs-you. It is the line of a hung tool call; builds, test runs and servers sent to the
  * background are meant to outlast STALL_MS, and the runtimes catch a task blocked on a prompt sooner.
  */
 export const BACKGROUND_LONG_MS = HUNG_CALL_MS;
-/** Failed calls of one tool with one input in a row that make a loop; the tracker tells the lead. */
+/** Failed calls of one tool with one input in a row that make a loop. */
 export const LOOP_CALLS = 3;
 /** Successful calls of one tool with one input in a row, with no other call between, that make a loop. */
 export const REPEAT_CALLS = 5;

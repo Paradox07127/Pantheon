@@ -20,7 +20,7 @@ export function tickSessions(ctx: ControlContext): void {
     )
       ctx.store.event('session.merge_stuck', session, session.project_id, {});
   }
-  // The event marks the request escalated for needs-you, once; the lead of a task session hears of it from the tracker.
+  // The event marks the request escalated for needs-you, once.
   for (const approval of ctx.store.list<Approval>('approvals')) {
     const waited = ctx.store.now() - approval.created_at;
     if (

@@ -442,12 +442,6 @@ export interface NeedsYouItem {
     disabled_reason?: string;
     decision?: 'approve' | 'reject' | 'keep' | 'revert';
   }[];
-  /** The title of the lane a `board.lane.approval` item holds; no other item has it. */
-  lane_title?: string;
-  /** The headline of the plan a `lead.question` item belongs to; session_id is its lead. */
-  plan_title?: string;
-  /** When the recommended answer of a `lead.question` item applies unless the user answers first, in Unix milliseconds. */
-  default_at?: number;
   /** When a session that waits for its used-up usage limit resumes, in Unix milliseconds. */
   resets_at?: number;
   /** The background task that has run too long; session.background.stop takes its id. */
@@ -462,11 +456,9 @@ export interface NeedsYouItem {
     after?: Record<string, unknown>;
     reason: string;
   };
-  /** The upstream task, `<lead session id>:<task id>`, that keeps a queued task waiting, and why it does not go on. */
-  upstream?: { task_id: string; stuck: 'merge_blocked' | 'stopped' | 'never_started' };
   /** How long a permission request has waited for an answer, in milliseconds; set once it is escalated. */
   waited_ms?: number;
-  /** Set on a permission request that stayed unanswered past the escalation window, so the user and the lead were reminded. */
+  /** Set on a permission request that stayed unanswered past the escalation window, so the user was reminded. */
   escalated?: true;
   /** Why the gate of a failed gate or a merge blocked by its gate failed, when that is known. */
   failure_class?: GateFailureClass;
@@ -474,10 +466,6 @@ export interface NeedsYouItem {
   files?: string[];
   /** The questions of a pending AskUserQuestion request, as it asked them. */
   questions?: ApprovalQuestion[];
-  /** The lead's re-assessment of a paused plan; only a `board.plan.reassessment` item has it. */
-  reassessment?: { done: string; blocked: string; change: string; at: number };
-  /** On a lane waiting for plan approval: whether the automatic plan review of its tasks still runs. */
-  plan_review_running?: boolean;
   binding?: {
     action?: string;
     input_hash?: string;
@@ -896,6 +884,7 @@ export interface SessionTurn extends Entity {
    * continuation marks a turn the daemon queued to continue a session it drives.
    * compaction marks a user-requested maintenance turn, whose input is compaction instructions.
    * agent marks a turn that carries the message of the main agent that spawned the session.
+   * sync and lead are stored values only; nothing writes them now.
    */
   origin?:
     | 'agent'
@@ -954,25 +943,10 @@ export interface ReviewFinding {
 }
 export interface Review extends Entity {
   project_id: string;
-  /** The workbench session whose changes are reviewed; absent on a plan review. */
+  /** The workbench session whose changes are reviewed. */
   session_id?: string;
-  /**
-   * The owning lead and task generation that requested this review through MCP; a plan review
-   * names only the lead whose plan it reviews.
-   */
-  requester?: {
-    lead_session_id: string;
-    task_id?: string;
-    generation?: number;
-    /** The workflow step run that started this review; its result goes to that step, not the lead. */
-    step_run_id?: string;
-    /** The milestone row whose verification started this review; its result goes to that verification. */
-    milestone_id?: string;
-  };
   /** The session told when this review ends. */
   notify_session_id?: string;
-  /** On a plan review of older rows, the task generations it reviewed; nothing reads it. */
-  plan?: { tasks: { task_id: string; generation: number }[] };
   /** Frozen committed range supplied to every reviewer. */
   range?: { source: string; from_sha: string; to_sha: string };
   /** The refs, and the paths if any, the user named for a range review; absent on every other review. */

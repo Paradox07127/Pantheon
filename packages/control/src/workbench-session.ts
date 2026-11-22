@@ -3598,7 +3598,6 @@ function retryMergeAfterGates(
         ctx.store.transaction(() => {
           const again = blocked();
           if (!again || reads.worktree(workspace)?.head !== commit) return;
-          // A merge the daemon started stays its own, so the tracker still follows up a block.
           admitMerge(ctx, again.session, again.auto ? undefined : cause, GATES_PASSED, reads);
         });
       } catch (error) {

@@ -51,7 +51,6 @@ export interface NeedsYouItem {
     | 'session_turn_stalled'
     | 'background_task_long'
     | 'project_over_budget'
-    | 'plan_decisions_over_budget'
     | 'setting_proposed';
   /** What the user decides. */
   decision?: 'question' | 'permission' | 'budget' | 'other';
@@ -327,11 +326,6 @@ function knownReason(code: string): string | null {
       return t({
         id: 'data.reason.settingProposed',
         defaultMessage: 'The main agent proposes a settings change',
-      });
-    case 'plan_decisions_over_budget':
-      return t({
-        id: 'data.reason.planDecisionsOverBudget',
-        defaultMessage: 'Plan decisions did not fit the memory budget and were kept as notes',
       });
     case 'artifact_commit_missing':
       return t({

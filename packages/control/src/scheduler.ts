@@ -24,7 +24,7 @@ export async function tick(ctx: ControlContext): Promise<void> {
   ctx.busy = true;
   try {
     await stopConversations(ctx);
-    // The tracker and the merge jobs see the merges turns that ended have admitted.
+    // The merge jobs see the merges turns that ended have admitted.
     await autoMergesRead(ctx);
     ctx.store.transaction(() => tickProjectBaselines(ctx));
     ctx.store.transaction(() => tickChangeStories(ctx));

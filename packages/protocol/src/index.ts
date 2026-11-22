@@ -2445,7 +2445,7 @@ export interface BoardActivity {
   repeated_failure?: boolean;
   /**
    * quiet: the running turn made no progress for 2 minutes and has no tool call under way;
-   * stalled and looping: the task tracker told the lead so of the running turn.
+   * stalled and looping: the running turn is stuck or repeating calls.
    */
   health: 'fresh' | 'quiet' | 'stalled' | 'looping';
   /** The task's sessions, discarded ones included; at least 1. */

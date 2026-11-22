@@ -56,7 +56,7 @@ const ARTIFACT = 'changes.diff';
 /** A finding location naming a file and a line or line range. */
 const FINDING_PLACE = /^(.+?):(\d+)(?:-(\d+))?$/;
 
-/** The session, requester and goal of a review.request, once its permissions are checked. */
+/** The session and goal of a review.request, once its permissions are checked. */
 function reviewTarget(ctx: ControlContext, principal: Principal, command: Command) {
   const input = inputSchemas['review.request'].parse(command.input);
   const session = ctx.store.must<Session>('sessions', input.session_id);
@@ -183,7 +183,6 @@ export function startSessionReview(
     cause: string;
     goal: string;
     changes: Awaited<ReturnType<typeof sessionChanges>>;
-    requester?: Review['requester'];
     notify_session_id?: string;
     fallback?: string[];
     focus?: string;
@@ -203,7 +202,6 @@ export function startSessionReview(
     prompt: `${reviewInstruction}\n\nTask goal:\n${options.goal}\n\n${focusPart(options.focus)}Changes:\n${diff.toString('utf8')}`,
     artifact: diff,
     session_id: session.id,
-    requester: options.requester,
     notify_session_id: options.notify_session_id,
     range,
     fallback: options.fallback,
@@ -636,7 +634,6 @@ export function startReview(
     /** The reviewed changes, which each reviewer reads from its directory. */
     artifact: Buffer;
     session_id?: string;
-    requester?: Review['requester'];
     notify_session_id?: string;
     range?: NonNullable<Review['range']>;
     refs?: Review['refs'];
@@ -655,7 +652,6 @@ export function startReview(
       ...(options.session_id ? { session_id: options.session_id } : {}),
       ...(options.range ? { range: options.range } : {}),
       ...(options.refs ? { refs: options.refs } : {}),
-      ...(options.requester ? { requester: options.requester } : {}),
       ...(options.notify_session_id ? { notify_session_id: options.notify_session_id } : {}),
       ...(options.fallback ? { fallback: options.fallback } : {}),
       round: options.round,
