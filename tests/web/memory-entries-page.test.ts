@@ -52,7 +52,6 @@ const directory = (extra: Partial<MemoryDirectory> = {}): MemoryDirectory => ({
   index_pending: 0,
   facets: {
     tags: [{ tag: 'webhook', count: 2 }],
-    tasks: [{ id: 't1', lead_session_id: 'lead', title: 'Refunds' }],
   },
   budget: { used_bytes: 0, limit_bytes: 12000 },
   counts: { active: 2, draft: 1, archived: 0 },
@@ -180,7 +179,6 @@ describe('memory entries page', () => {
       state: 'draft',
       kind: 'decision',
       tag: ['webhook'],
-      task: { id: 't1', lead_session_id: 'lead' },
     });
     await rerender(h);
     expect(reads().at(-1)).toEqual({
@@ -188,25 +186,11 @@ describe('memory entries page', () => {
       state: 'draft',
       kind: 'decision',
       tag: ['webhook'],
-      task_id: 't1',
-      lead_session_id: 'lead',
       limit: '20',
     });
     useMemoryView.getState().setQuery('idem ');
     await rerender(h);
     expect(reads().at(-1)).toMatchObject({ state: 'draft', q: 'idem' });
-  });
-
-  it('reads only project-level memory, without a task, while that filter is on', async () => {
-    const h = await mount();
-    named(h.value, 'EntriesBar').props.onChange({ state: 'active', tag: [], projectOnly: true });
-    await rerender(h);
-    expect(reads().at(-1)).toEqual({
-      project_id: projectId,
-      state: 'active',
-      project_only: 'true',
-      limit: '20',
-    });
   });
 
   it('reads the entries carrying every ticked tag, and all of them again after All tags', async () => {
@@ -218,7 +202,6 @@ describe('memory entries page', () => {
             { tag: 'webhook', count: 2 },
             { tag: 'storage', count: 1 },
           ],
-          tasks: [],
         },
       }),
     });
@@ -242,35 +225,6 @@ describe('memory entries page', () => {
     await rerender(h);
     expect(reads().at(-1)).toMatchObject({ state: 'active', tag: ['webhook', 'storage'] });
     tagRow(zh('memory.entries.allTags')).props.onChange(true);
-    await rerender(h);
-    expect(reads().at(-1)).toEqual({ project_id: projectId, state: 'active', limit: '20' });
-  });
-
-  it("reads the plan's entries, then one milestone's, and neither once the source is cleared", async () => {
-    const h = await mount();
-    named(h.value, 'EntriesBar').props.onChange({ state: 'active', tag: [], origin: 'plan' });
-    await rerender(h);
-    expect(reads().at(-1)).toEqual({
-      project_id: projectId,
-      state: 'active',
-      origin: 'plan',
-      limit: '20',
-    });
-    named(h.value, 'EntriesBar').props.onChange({
-      state: 'active',
-      tag: [],
-      origin: 'plan',
-      milestone: 'ms-release',
-    });
-    await rerender(h);
-    expect(reads().at(-1)).toEqual({
-      project_id: projectId,
-      state: 'active',
-      origin: 'plan',
-      milestone_id: 'ms-release',
-      limit: '20',
-    });
-    named(h.value, 'EntriesBar').props.onChange({ state: 'active', tag: [] });
     await rerender(h);
     expect(reads().at(-1)).toEqual({ project_id: projectId, state: 'active', limit: '20' });
   });
@@ -389,28 +343,6 @@ describe('memory entries page', () => {
     press('j', { tagName: 'INPUT' });
     await rerender(h);
     expect(useMemoryView.getState().selectedId).toBe('r1');
-  });
-
-  it('moves with J through the rows in the order the list groups them', async () => {
-    pages = () => ({
-      ok: true,
-      value: directory({
-        records: [
-          summary('r1', { task: { id: 't1', lead_session_id: 'lead' } }),
-          summary('r2'),
-          summary('r3', { task: { id: 't1', lead_session_id: 'lead' } }),
-        ],
-        total: 3,
-      }),
-    });
-    const h = await mount();
-    const order: (string | null)[] = [];
-    for (let i = 0; i < 3; i++) {
-      press('j');
-      await rerender(h);
-      order.push(useMemoryView.getState().selectedId);
-    }
-    expect(order).toEqual(['r2', 'r1', 'r3']);
   });
 
   it('leaves the selection and the page dialog alone while a dialog over the page has focus', async () => {
@@ -607,7 +539,6 @@ describe('memory entries filter row', () => {
             { tag: 'webhook', count: 4 },
             { tag: 'storage', count: 1 },
           ],
-          tasks: [{ id: 't1', lead_session_id: 'lead', title: 'Refunds' }],
         },
         total: 2,
         onChange,
@@ -644,111 +575,6 @@ describe('memory entries filter row', () => {
         .filter((n) => n.type === 'span')
         .map((n) => text(n)),
     ).toEqual(['storage', '+2']);
-  });
-
-  it('bounds the chosen task title on the task button like the chosen tag', () => {
-    const trigger = menu(
-      bar({ state: 'active', tag: [], task: { id: 't1', lead_session_id: 'lead' } }).h,
-      zh('memory.entries.task'),
-    ).props.trigger;
-    expect(find(trigger, (n) => n.props?.className === 'mep-tgsel').props.children).toBe('Refunds');
-  });
-
-  it('offers project-level memory only in the task menu, which drops the task filter', () => {
-    const { h, onChange } = bar({
-      state: 'active',
-      tag: [],
-      task: { id: 't1', lead_session_id: 'lead' },
-    });
-    const group = find(
-      menu(h, zh('memory.entries.task')).props.children,
-      (n) => typeof n.type === 'function' && n.type.name === 'MenuRadioGroup',
-    );
-    expect(
-      nodes(group.props.children)
-        .filter((n) => typeof n.type === 'function' && n.type.name === 'MenuRadioItem')
-        .map((n) => text(n.props.children)),
-    ).toEqual([zh('memory.entries.allTasks'), zh('memory.entries.projectOnly'), 'Refunds']);
-    group.props.onChange('project');
-    expect(onChange).toHaveBeenLastCalledWith({ state: 'active', tag: [], projectOnly: true });
-    const again = bar({ state: 'active', tag: [], projectOnly: true });
-    const other = find(
-      menu(again.h, zh('memory.entries.task')).props.children,
-      (n) => typeof n.type === 'function' && n.type.name === 'MenuRadioGroup',
-    );
-    expect(other.props.value).toBe('project');
-    other.props.onChange(JSON.stringify(['t1', 'lead']));
-    expect(again.onChange).toHaveBeenLastCalledWith({
-      state: 'active',
-      tag: [],
-      task: { id: 't1', lead_session_id: 'lead' },
-    });
-  });
-
-  it("lists the plan's milestones with their counts in the source menu, and picks one", () => {
-    const onChange = vi.fn();
-    const h = mountHost(() =>
-      EntriesBar({
-        filters: { state: 'active', tag: [], task: { id: 't1', lead_session_id: 'lead' } },
-        counts: { active: 2, draft: 0, archived: 0 },
-        facets: {
-          tags: [],
-          tasks: [],
-          milestones: [
-            { id: 'ms-release', title: 'Release', count: 2 },
-            { id: 'ms-beta', count: 1 },
-          ],
-        },
-        total: 2,
-        onChange,
-      }),
-    );
-    const source = menu(h, zh('memory.entries.source'));
-    const group = find(
-      source.props.children,
-      (n) => typeof n.type === 'function' && n.type.name === 'MenuRadioGroup',
-    );
-    expect(
-      nodes(group.props.children)
-        .filter((n) => typeof n.type === 'function' && n.type.name === 'MenuRadioItem')
-        .map((n) => text(n.props.children)),
-    ).toEqual([
-      zh('memory.entries.allSources'),
-      zh('memory.entries.fromPlan'),
-      'Release2',
-      'ms-beta1',
-    ]);
-    expect(text(source.props.trigger)).toBe(zh('memory.entries.source'));
-    const task = { id: 't1', lead_session_id: 'lead' };
-    group.props.onChange('plan');
-    expect(onChange).toHaveBeenLastCalledWith({ state: 'active', tag: [], task, origin: 'plan' });
-    group.props.onChange('milestone:ms-release');
-    expect(onChange).toHaveBeenLastCalledWith({
-      state: 'active',
-      tag: [],
-      task,
-      origin: 'plan',
-      milestone: 'ms-release',
-    });
-    group.props.onChange('');
-    expect(onChange).toHaveBeenLastCalledWith({ state: 'active', tag: [], task });
-  });
-
-  it('names the source button by the picked milestone', () => {
-    const h = mountHost(() =>
-      EntriesBar({
-        filters: { state: 'active', tag: [], origin: 'plan', milestone: 'ms-release' },
-        counts: null,
-        facets: {
-          tags: [],
-          tasks: [],
-          milestones: [{ id: 'ms-release', title: 'Release', count: 2 }],
-        },
-        total: null,
-        onChange: () => {},
-      }),
-    );
-    expect(text(menu(h, zh('memory.entries.source')).props.trigger)).toBe('Release');
   });
 
   it('clears the search words with the button that shows while there are some', () => {

@@ -299,7 +299,7 @@ describe('memory overview first draw', () => {
     signature: 's'.repeat(64),
     total: 0,
     index_pending: 0,
-    facets: { tags: [], tasks: [] },
+    facets: { tags: [] },
     budget: { used_bytes: 0, limit_bytes: 12000 },
     counts: { active: 0, draft: 0, archived: 0 },
     jobs: [],

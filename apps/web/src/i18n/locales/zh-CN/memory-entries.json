@@ -11,15 +11,9 @@
   "memory.entries.allTags": "全部标签",
   "memory.entries.findTag": "筛选标签",
   "memory.entries.moreTags": "+{count}",
-  "memory.entries.task": "任务",
-  "memory.entries.allTasks": "全部任务",
-  "memory.entries.projectOnly": "只看项目级",
   "memory.entries.total": "{count, plural, other {# 条}}",
   "memory.entries.search": "搜索记忆",
   "memory.entries.searchPlaceholder": "搜索标题、正文、key",
   "memory.entries.clearSearch": "清空搜索",
-  "memory.entries.new": "记一条",
-  "memory.entries.source": "来源",
-  "memory.entries.fromPlan": "来自计划",
-  "memory.entries.allSources": "全部来源"
+  "memory.entries.new": "记一条"
 }

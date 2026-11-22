@@ -51,7 +51,7 @@ const directory = (extra: Partial<MemoryDirectory> = {}): MemoryDirectory => ({
   signature: 'sig',
   total: 0,
   index_pending: 0,
-  facets: { tags: [], tasks: [] },
+  facets: { tags: [] },
   budget: { used_bytes: 9100, limit_bytes: 12000 },
   counts: { active: 4, draft: 3, archived: 1 },
   jobs: [

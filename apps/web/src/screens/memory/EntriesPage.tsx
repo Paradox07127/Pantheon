@@ -117,11 +117,6 @@ export function EntriesPage({ projectId }: { projectId: string }) {
     state: filters.state,
     kind: filters.kind,
     tag: filters.tag.length > 0 ? filters.tag : undefined,
-    task_id: filters.task?.id,
-    lead_session_id: filters.task?.lead_session_id,
-    project_only: filters.projectOnly || undefined,
-    origin: filters.origin,
-    milestone_id: filters.milestone,
     q: query.trim() || undefined,
     limit: PAGE,
   };
@@ -144,16 +139,9 @@ export function EntriesPage({ projectId }: { projectId: string }) {
   const pages = more.key === listKey && more.from === directory?.next_cursor ? more : null;
   const next = pages?.records.length ? pages.next : directory?.next_cursor;
   const seen = new Set<string>();
-  const loaded = [...(directory?.records ?? []), ...(pages?.records ?? [])].filter(
+  const records = [...(directory?.records ?? []), ...(pages?.records ?? [])].filter(
     (r) => !seen.has(r.id) && !!seen.add(r.id),
   );
-  // The order the list shows: without search words, project-level rows, then each task's rows.
-  const groups = new Map<string, MemorySummary[]>([['', []]]);
-  for (const r of loaded) {
-    const group = query.trim() || !r.task ? '' : `${r.task.lead_session_id}/${r.task.id}`;
-    groups.set(group, [...(groups.get(group) ?? []), r]);
-  }
-  const records = [...groups.values()].flat();
 
   const itemQuery = useMemoryQuery<EntryItem>(
     'memory.item',
@@ -363,7 +351,6 @@ export function EntriesPage({ projectId }: { projectId: string }) {
         versions={versions}
         dependencies={dependencies.data?.items ?? []}
         dependents={dependents.data?.items ?? []}
-        tasks={directory?.facets.tasks ?? []}
         signature={directory?.signature}
         author={author}
         footer={
@@ -415,7 +402,6 @@ export function EntriesPage({ projectId }: { projectId: string }) {
               <EntryList
                 state={filters.state}
                 records={records}
-                tasks={directory.facets.tasks}
                 query={query}
                 total={directory.total}
                 pageSize={PAGE}

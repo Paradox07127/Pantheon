@@ -857,3 +857,35 @@ it('matches every selected tag and counts tags using all other filters before pa
   ).toEqual([first.id]);
   expect(f.directory({ tag: 'storage' }).total).toBe(2);
 });
+
+it('restores an entry stored with a board task scope as a project draft that can be confirmed', async () => {
+  const f = await catalogFixture();
+  const saved = f.save('scoped', 'Kept from an older version');
+  const scoped = f.store.update<any>(
+    'memory_records',
+    { ...saved, task: { lead_session_id: 'lead', id: 'task', generation: 1 } },
+    saved.revision,
+  );
+  const restored = f.call<any>('memory.restore', { memory_id: scoped.id }, scoped.revision);
+  expect(restored).not.toHaveProperty('task');
+  const committed = f.call<any>('memory.commit', { memory_id: restored.id }, restored.revision);
+  expect(committed).toMatchObject({ state: 'active', key: 'scoped' });
+  expect(f.directory().records.map((r: MemorySummary) => r.id)).toEqual([committed.id]);
+});
+
+it('reads the directory and graph unchanged when an older client sends task or plan filters', async () => {
+  const f = await catalogFixture();
+  const note = f.save('note', 'Project-wide');
+  const retired = {
+    task_id: 'task',
+    lead_session_id: 'lead',
+    project_only: true,
+    origin: 'plan',
+    milestone_id: 'milestone',
+  };
+  expect(f.directory(retired).records.map((r: MemorySummary) => r.id)).toEqual([note.id]);
+  expect(f.directory(retired).facets).toEqual({ tags: [] });
+  expect(
+    f.control.memoryGraph(user, { project_id: f.project.id, ...retired }).nodes.map((n) => n.id),
+  ).toEqual([note.id]);
+});

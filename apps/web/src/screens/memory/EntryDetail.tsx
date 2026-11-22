@@ -1,13 +1,6 @@
 import type { ReactNode } from 'react';
 import { Check, File, Globe, User, X } from 'lucide-react';
-import type {
-  MemoryDirectory,
-  MemoryItem,
-  MemoryOrigin,
-  MemoryRecord,
-  MemoryReference,
-  MemorySummary,
-} from '@pantheon/domain';
+import type { MemoryItem, MemoryRecord, MemoryReference, MemorySummary } from '@pantheon/domain';
 import { Markdown } from '../../components/Markdown';
 import { RuntimeGlyph } from '../../components/RuntimeGlyph';
 import { t } from '../../i18n';
@@ -26,7 +19,6 @@ export interface EntryDetailProps {
   versions: MemoryItem[];
   dependencies: MemorySummary[];
   dependents: MemorySummary[];
-  tasks: MemoryDirectory['facets']['tasks'];
   /** The directory signature now; a draft proposed against it is still the latest. */
   signature?: string;
   /** The session that proposed a draft. */
@@ -47,29 +39,10 @@ const kindText = (kind: MemoryRecord['kind']) =>
       ? t({ id: 'memory.detail.kind.report', defaultMessage: 'Report' })
       : t({ id: 'memory.detail.kind.note', defaultMessage: 'Note' });
 
-const authorityText = (r: Pick<MemoryRecord, 'authority' | 'origin'>) =>
-  r.origin
-    ? t({ id: 'memory.detail.byPlan', defaultMessage: 'Decided in the plan' })
-    : r.authority === 'user'
-      ? t({ id: 'memory.detail.byUser', defaultMessage: 'You decided' })
-      : t({ id: 'memory.detail.byAgent', defaultMessage: 'Agent report' });
-
-/** What became of the plan's assumption or risk, and the status tone of its chip. */
-export const OUTCOME: Record<MemoryOrigin['outcome'], { tone: Tone | 'bad'; text: () => string }> =
-  {
-    confirmed: {
-      tone: 'ok',
-      text: () => t({ id: 'memory.detail.outcome.confirmed', defaultMessage: 'Confirmed' }),
-    },
-    refuted: {
-      tone: 'bad',
-      text: () => t({ id: 'memory.detail.outcome.refuted', defaultMessage: 'Refuted' }),
-    },
-    closed: {
-      tone: 'ok',
-      text: () => t({ id: 'memory.detail.outcome.closed', defaultMessage: 'Risk closed' }),
-    },
-  };
+const authorityText = (r: Pick<MemoryRecord, 'authority'>) =>
+  r.authority === 'user'
+    ? t({ id: 'memory.detail.byUser', defaultMessage: 'You decided' })
+    : t({ id: 'memory.detail.byAgent', defaultMessage: 'Agent report' });
 
 const stateTone = (r: Pick<MemoryRecord, 'state'>): Tone =>
   r.state === 'active' ? 'ok' : r.state === 'draft' ? 'wait' : 'idle';
@@ -117,7 +90,6 @@ export function EntryDetail({
   versions,
   dependencies,
   dependents,
-  tasks,
   signature,
   author,
   footer,
@@ -137,13 +109,8 @@ export function EntryDetail({
   const draft = item.state === 'draft';
   const base = draft ? all.find((v) => v.state === 'active' && v.id !== item.id) : undefined;
   const baseNumber = base && numbers.get(base.id);
-  const scope = (task: MemoryRecord['task']) =>
-    task
-      ? (tasks.find((x) => x.id === task.id)?.title ?? task.id)
-      : t({ id: 'memory.detail.project', defaultMessage: 'Project' });
   const sources = item.reference_status ?? [];
   const latest = signature === undefined ? undefined : item.based_on === signature;
-  const origin = item.origin;
   const relatedRow = (s: MemorySummary, end: string) => (
     <button key={s.id} type="button" className="ed-row" data-id={s.id} onClick={() => onOpen(s.id)}>
       {kindIcon(s.kind, kindText(s.kind))}
@@ -180,14 +147,8 @@ export function EntryDetail({
           </span>
           {!(draft && item.author_session_id) && (
             <span className="chip">
-              {item.authority === 'user' && !origin && <User aria-hidden="true" />}
+              {item.authority === 'user' && <User aria-hidden="true" />}
               {authorityText(item)}
-            </span>
-          )}
-          <span className="chip">{scope(item.task)}</span>
-          {origin && (
-            <span className="chip ed-st" data-st={OUTCOME[origin.outcome].tone}>
-              {OUTCOME[origin.outcome].text()}
             </span>
           )}
         </div>
@@ -350,7 +311,7 @@ export function EntryDetail({
               { count: dependents.length },
             )}
           </h3>
-          {dependents.map((s) => relatedRow(s, scope(s.task)))}
+          {dependents.map((s) => relatedRow(s, authorityText(s)))}
         </section>
       )}
 

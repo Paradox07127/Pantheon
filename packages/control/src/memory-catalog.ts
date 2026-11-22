@@ -215,12 +215,7 @@ function view(
     (r) =>
       ((filters.state ?? 'active') === 'all' || r.state === (filters.state ?? 'active')) &&
       (!filters.kind || [filters.kind].flat().includes(r.kind)) &&
-      wanted.every((tag) => (r.tags ?? []).some((t) => fold(t) === tag)) &&
-      (!filters.task_id || r.task?.id === filters.task_id) &&
-      (!filters.lead_session_id || r.task?.lead_session_id === filters.lead_session_id) &&
-      (!filters.project_only || !r.task) &&
-      (!filters.origin || r.origin?.kind === filters.origin) &&
-      (!filters.milestone_id || r.origin?.milestone_id === filters.milestone_id),
+      wanted.every((tag) => (r.tags ?? []).some((t) => fold(t) === tag)),
   );
   return { all, chosen, signature: signature(ctx, project) };
 }
@@ -383,36 +378,6 @@ export function memoryRead(
     ) as MemoryDirectory['counts'],
     facets: {
       tags: [...tags.values()].sort((a, b) => a.tag.localeCompare(b.tag)).slice(0, 100),
-      tasks: [
-        ...new Map(
-          selected.all
-            .filter((r) => r.task)
-            .map((r) => {
-              const task = r.task!;
-              return [
-                task.lead_session_id + ':' + task.id,
-                { id: task.id, lead_session_id: task.lead_session_id },
-              ] as const;
-            }),
-        ).values(),
-      ].slice(0, 100),
-      milestones: [
-        ...matches(
-          ctx,
-          project,
-          input.q,
-          view(ctx, p, project, 'memory.read', { ...input, milestone_id: undefined }).chosen,
-        )
-          .reduce((facets, { record: r }) => {
-            const milestoneId = r.origin?.milestone_id;
-            if (!milestoneId) return facets;
-            const facet = facets.get(milestoneId);
-            if (facet) facet.count++;
-            else facets.set(milestoneId, { id: milestoneId, count: 1 });
-            return facets;
-          }, new Map<string, { id: string; title?: string; count: number }>())
-          .values(),
-      ].slice(0, 100),
     },
     jobs: jobs.slice(-10).reverse(),
     document_ready: jobs.some(
@@ -790,14 +755,6 @@ export function memoryGraph(ctx: ControlContext, p: Principal, raw: unknown): Me
       ...(version !== undefined && { version }),
       memory_id: id,
       summary: (r.summary ?? indexedExcerpt(ctx, id).text).split(/\r?\n/u)[0]!.slice(0, 120),
-      ...(r.task && {
-        task: {
-          id: r.task.id,
-          lead_session_id: r.task.lead_session_id,
-          generation: r.task.generation ?? 1,
-          title: r.task.id,
-        },
-      }),
     };
   });
   const edges = [

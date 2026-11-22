@@ -6,24 +6,6 @@
   overflow: auto;
   padding: 0 var(--sp-2) var(--sp-2);
 }
-.ml-grp {
-  display: flex;
-  flex-direction: column;
-}
-.ml-gh {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  height: var(--row);
-  margin-top: var(--sp-2);
-  padding: 0 var(--sp-2);
-  color: var(--mu);
-  font-size: var(--fs-xs);
-  font-weight: 500;
-}
-.ml-grp:first-child .ml-gh {
-  margin-top: 0;
-}
 .ml-ct {
   color: var(--mu);
   font-size: var(--fs-xs);
@@ -98,16 +80,7 @@
   flex: none;
   color: var(--mu);
 }
-.ml-oc {
-  display: grid;
-  flex: none;
-  color: var(--ok);
-}
-.ml-oc[data-o='refuted'] {
-  color: var(--bad);
-}
 .ml-ix svg.lucide,
-.ml-oc svg.lucide,
 .ml-r svg.lucide,
 .ml-nb svg.lucide {
   width: 12px;

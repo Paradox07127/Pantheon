@@ -25,13 +25,9 @@ const record = (over: Partial<MemorySummary> & { id: string }): MemorySummary =>
   ...over,
 });
 
-const taskA = { lead_session_id: 'lead-1', id: 'refund-idempotency' };
-const taskB = { lead_session_id: 'lead-1', id: 'webhook-signature' };
-
 const props = (over: Partial<EntryListProps> = {}): EntryListProps => ({
   state: 'active',
   records: [],
-  tasks: [{ ...taskA, title: 'Refund idempotency' }, taskB],
   query: '',
   total: 0,
   pageSize: 20,
@@ -60,33 +56,14 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('memory entry list', () => {
-  it('puts project-level entries first, then one group per task named by its title', () => {
+  it('lists the entries in directory order in one listbox', () => {
     const p = props({
-      records: [
-        record({ id: 'a', task: taskA }),
-        record({ id: 'b' }),
-        record({ id: 'c', task: taskB }),
-        record({ id: 'd', task: taskA }),
-      ],
-      total: 4,
+      records: [record({ id: 'a' }), record({ id: 'b' }), record({ id: 'c' })],
+      total: 3,
     });
-    const groups = nodes(tree(p)).filter((n) => n.props.role === 'group');
-    expect(groups.map((g) => g.props['aria-label'])).toEqual([
-      zh('memory.list.projectLevel'),
-      'Refund idempotency',
-      'webhook-signature',
-    ]);
-    expect(
-      groups.map((g) =>
-        nodes(g.props.children)
-          .filter((n) => n.props.role === 'option')
-          .map((n) => n.key),
-      ),
-    ).toEqual([['b'], ['a', 'd'], ['c']]);
-    const out = html(p);
-    expect(out).toContain(`role="listbox" aria-label="${zh('memory.list.label.active')}"`);
-    expect(out).toMatch(/class="ml-gh"[^>]*>项目级<span class="ml-ct">1<\/span>/);
-    expect(out).toMatch(/class="ml-gh"[^>]*>Refund idempotency<span class="ml-ct">2<\/span>/);
+    expect(nodes(tree(p)).some((n) => n.props.role === 'group')).toBe(false);
+    expect(options(p).map((n) => n.key)).toEqual(['a', 'b', 'c']);
+    expect(html(p)).toContain(`role="listbox" aria-label="${zh('memory.list.label.active')}"`);
   });
 
   it('draws a current row with kind, title, summary, tags, who set it and when', () => {
@@ -218,33 +195,6 @@ describe('memory entry list', () => {
     const marks = html(p).match(/aria-label="还没进索引，搜索只按标题、摘要和标签命中"/g);
     expect(marks).toHaveLength(1);
     expect(text(options(p)[0]!.props.children)).toContain('title a');
-  });
-
-  it("marks how each of the plan's entries ended and says the plan set it", () => {
-    const origin = (outcome: 'confirmed' | 'refuted' | 'closed') => ({
-      kind: 'plan' as const,
-      lead_session_id: 'lead-1',
-      subject: 'assumption' as const,
-      subject_id: outcome,
-      outcome,
-      plan_version: 2,
-    });
-    const p = props({
-      records: [
-        record({ id: 'a', origin: origin('confirmed') }),
-        record({ id: 'b', origin: origin('refuted') }),
-        record({ id: 'c', origin: origin('closed') }),
-        record({ id: 'd' }),
-      ],
-    });
-    const out = html(p);
-    for (const outcome of ['confirmed', 'refuted', 'closed'])
-      expect(
-        out.match(new RegExp(`aria-label="${zh(`memory.detail.outcome.${outcome}`)}"`, 'g')),
-      ).toHaveLength(1);
-    const rows = options(p).map((row) => text(row.props.children));
-    expect(rows.slice(0, 3).every((row) => row.includes(zh('memory.list.byPlan')))).toBe(true);
-    expect(rows[3]).toContain(zh('memory.list.byUser'));
   });
 
   it('puts a waiting mark before the time of an entry that awaits review', () => {
@@ -432,7 +382,6 @@ describe('memory entry list', () => {
           id: 'a',
           title: '幂等键存 Redis',
           tags: ['幂等'],
-          task: taskA,
           reasons: ['tag_exact:幂等', 'metadata', 'fts', 'literal'],
         }),
         record({ id: 'b', title: '状态转移表', reasons: ['fts'] }),

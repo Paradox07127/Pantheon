@@ -253,7 +253,7 @@ describe('memory delivery in the session header', () => {
     signature: 's',
     total: active,
     index_pending: 0,
-    facets: { tags: [], tasks: [] },
+    facets: { tags: [] },
     budget: { used_bytes: 0, limit_bytes: 1 },
     counts: { active, draft: 0, archived: 0 },
     jobs: [],

@@ -125,11 +125,6 @@ export interface MemoryFilters {
   kind?: MemoryRecord['kind'] | MemoryRecord['kind'][];
   /** A record matches when it has every tag given. */
   tag?: string | string[];
-  task_id?: string;
-  lead_session_id?: string;
-  project_only?: boolean;
-  origin?: 'plan';
-  milestone_id?: string;
   q?: string;
 }
 export interface MemoryDirectory {
@@ -141,9 +136,6 @@ export interface MemoryDirectory {
   index_pending: number;
   facets: {
     tags: { tag: string; count: number }[];
-    tasks: { id: string; lead_session_id: string; title?: string }[];
-    /** The milestones of plan-origin entries. */
-    milestones?: { id: string; title?: string; count: number }[];
   };
   budget: { used_bytes: number; limit_bytes: number };
   counts: Record<MemoryRecord['state'], number>;
@@ -168,7 +160,6 @@ export interface MemoryGraph {
     source_kind?: 'file' | 'url' | 'session';
     memory_id?: string;
     summary?: string;
-    task?: { id: string; lead_session_id: string; generation: number; title: string };
     uri?: string;
   }[];
   edges: {

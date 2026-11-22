@@ -1,21 +1,11 @@
 import type { KeyboardEvent, ReactNode, UIEvent } from 'react';
-import type { MemoryDirectory, MemorySummary } from '@pantheon/domain';
-import {
-  CircleAlert,
-  CircleCheck,
-  CircleX,
-  Clock,
-  RefreshCw,
-  Search,
-  ShieldCheck,
-  Undo2,
-} from 'lucide-react';
+import type { MemorySummary } from '@pantheon/domain';
+import { CircleAlert, Clock, RefreshCw, Search, Undo2 } from 'lucide-react';
 import { EmptyState } from '../../components/EmptyState';
 import { Tip } from '../../components/Tip';
 import { t } from '../../i18n';
 import { listText } from '../../lib/list-text';
 import { dayText } from '../../lib/time-text';
-import { OUTCOME } from './EntryDetail';
 import { kindIcon as kindGlyph } from './memory-kind';
 import './entry-list.css';
 
@@ -23,8 +13,7 @@ export interface EntryListProps {
   state: 'active' | 'draft' | 'archived';
   /** Every page read so far, in directory order. */
   records: MemorySummary[];
-  tasks: MemoryDirectory['facets']['tasks'];
-  /** The search words; non-empty turns the rows into ungrouped search results. */
+  /** The search words; non-empty turns the rows into search results. */
   query: string;
   total: number;
   pageSize: number;
@@ -161,40 +150,20 @@ function kindIcon(r: MemorySummary) {
   );
 }
 
-const OUTCOME_ICONS = {
-  confirmed: <CircleCheck aria-hidden="true" />,
-  refuted: <CircleX aria-hidden="true" />,
-  closed: <ShieldCheck aria-hidden="true" />,
-};
-
-/** What became of the plan's assumption or risk an entry records. */
-function outcomeMark(r: MemorySummary) {
-  if (!r.origin) return null;
-  const { outcome } = r.origin;
-  return (
-    <span className="ml-oc" data-o={outcome} role="img" aria-label={OUTCOME[outcome].text()}>
-      {OUTCOME_ICONS[outcome]}
-    </span>
-  );
-}
-
 function titleCell(r: MemorySummary) {
-  if (r.indexed && !r.origin) return <span className="ml-t">{r.title}</span>;
+  if (r.indexed) return <span className="ml-t">{r.title}</span>;
   const pending = t({
     id: 'memory.list.unindexed',
     defaultMessage: 'Not indexed yet; search matches only its title, summary and tags',
   });
   return (
     <span className="ml-tw">
-      {outcomeMark(r)}
       <span className="ml-t">{r.title}</span>
-      {!r.indexed && (
-        <Tip content={pending}>
-          <span className="ml-ix" role="img" aria-label={pending}>
-            <Clock aria-hidden="true" />
-          </span>
-        </Tip>
-      )}
+      <Tip content={pending}>
+        <span className="ml-ix" role="img" aria-label={pending}>
+          <Clock aria-hidden="true" />
+        </span>
+      </Tip>
     </span>
   );
 }
@@ -364,11 +333,9 @@ export function EntryList(p: EntryListProps) {
         </span>
         <span className="ml-by">
           {(r.state === 'draft' && r.author_session_id && p.authorTitle(r.author_session_id)) ||
-            (r.origin
-              ? t({ id: 'memory.list.byPlan', defaultMessage: 'Set in the plan' })
-              : r.authority === 'user'
-                ? t({ id: 'memory.list.byUser', defaultMessage: 'Set by you' })
-                : t({ id: 'memory.list.byAgent', defaultMessage: 'Agent report' }))}
+            (r.authority === 'user'
+              ? t({ id: 'memory.list.byUser', defaultMessage: 'Set by you' })
+              : t({ id: 'memory.list.byAgent', defaultMessage: 'Agent report' }))}
         </span>
         <span className="ml-tm">
           {r.state === 'draft' && (
@@ -383,23 +350,6 @@ export function EntryList(p: EntryListProps) {
       </>,
     );
   };
-  const groups = new Map<string, { title: string; rows: MemorySummary[] }>();
-  if (!p.query.trim()) {
-    groups.set('', {
-      title: t({ id: 'memory.list.projectLevel', defaultMessage: 'Project level' }),
-      rows: [],
-    });
-    for (const r of p.records) {
-      const key = r.task ? `${r.task.lead_session_id}/${r.task.id}` : '';
-      if (!groups.has(key)) {
-        const task = p.tasks.find(
-          (x) => x.id === r.task!.id && x.lead_session_id === r.task!.lead_session_id,
-        );
-        groups.set(key, { title: task?.title ?? r.task!.id, rows: [] });
-      }
-      groups.get(key)!.rows.push(r);
-    }
-  }
   const onScroll = (e: UIEvent<HTMLDivElement>) => {
     const el = e.currentTarget;
     if (!p.hasMore || p.loadingMore || p.stale) return;
@@ -440,19 +390,7 @@ export function EntryList(p: EntryListProps) {
           aria-busy={p.loadingMore || undefined}
           onKeyDown={moveSelection}
         >
-          {p.query.trim()
-            ? p.records.map(row)
-            : [...groups]
-                .filter(([, g]) => g.rows.length)
-                .map(([key, g]) => (
-                  <div key={key} className="ml-grp" role="group" aria-label={g.title}>
-                    <div className="ml-gh" aria-hidden="true">
-                      {g.title}
-                      <span className="ml-ct">{g.rows.length}</span>
-                    </div>
-                    {g.rows.map(row)}
-                  </div>
-                ))}
+          {p.records.map(row)}
         </div>
       )}
       {p.stale ? (

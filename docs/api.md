@@ -290,10 +290,10 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `memory.get` | `memory_id`: string | memory_get (reviewer), memory_get (planner) |
 | `memory.history` | `project_id`: string<br>`key?`: string<br>`limit?`: integer<br>`ids?`: string[] |  |
 | `memory.maintain` | `project_id`: string |  |
-| `memory.propose` | `project_id`: string<br>`key`: string<br>`kind`: "decision" \| "report" \| "note"<br>`title?`: string<br>`summary?`: string<br>`tags?`: string[]<br>`references?`: object[]<br>`text`: string<br>`dependencies?`: string[]<br>`task?`: object<br>`expires_at?`: integer<br>`based_on?`: string | memory_propose (reviewer), memory_propose (planner) |
-| `memory.related` | `project_id`: string<br>`memory_id`: string<br>`state?`: "active" \| "draft" \| "archived" \| "all"<br>`kind?`: "decision" \| "report" \| "note"<br>`tag?`: string \| string[]<br>`task_id?`: string<br>`lead_session_id?`: string<br>`project_only?`: boolean<br>`origin?`: "plan"<br>`milestone_id?`: string<br>`q?`: string<br>`relation?`: "all" \| "dependency" \| "dependent" \| "version" \| "tag"<br>`depth?`: integer<br>`limit?`: integer | memory_related (reviewer), memory_related (planner) |
+| `memory.propose` | `project_id`: string<br>`key`: string<br>`kind`: "decision" \| "report" \| "note"<br>`title?`: string<br>`summary?`: string<br>`tags?`: string[]<br>`references?`: object[]<br>`text`: string<br>`dependencies?`: string[]<br>`expires_at?`: integer<br>`based_on?`: string | memory_propose (reviewer), memory_propose (planner) |
+| `memory.related` | `project_id`: string<br>`memory_id`: string<br>`state?`: "active" \| "draft" \| "archived" \| "all"<br>`kind?`: "decision" \| "report" \| "note"<br>`tag?`: string \| string[]<br>`q?`: string<br>`relation?`: "all" \| "dependency" \| "dependent" \| "version" \| "tag"<br>`depth?`: integer<br>`limit?`: integer | memory_related (reviewer), memory_related (planner) |
 | `memory.restore` | `memory_id`: string |  |
-| `memory.search` | `project_id`: string<br>`state?`: "active" \| "draft" \| "archived" \| "all"<br>`kind?`: "decision" \| "report" \| "note"<br>`tag?`: string \| string[]<br>`task_id?`: string<br>`lead_session_id?`: string<br>`project_only?`: boolean<br>`origin?`: "plan"<br>`milestone_id?`: string<br>`q?`: string<br>`limit?`: integer | memory_search (reviewer), memory_search (planner) |
+| `memory.search` | `project_id`: string<br>`state?`: "active" \| "draft" \| "archived" \| "all"<br>`kind?`: "decision" \| "report" \| "note"<br>`tag?`: string \| string[]<br>`q?`: string<br>`limit?`: integer | memory_search (reviewer), memory_search (planner) |
 | `memory.undo_retraction` | `memory_id`: string |  |
 
 ### permission
@@ -533,9 +533,9 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `mcp.app.resource` | `session_id`: string<br>`server`: string<br>`uri`: string |
 | `mcp.status` | `project_id`: string<br>`runtime`: string<br>或<br>`session_id`: string |
 | `memory.document` | `project_id`: string |
-| `memory.graph` | `project_id`: string<br>`memory_id?`: string<br>`state?`: "active" \| "draft" \| "archived" \| "all"<br>`kind?`: "decision" \| "report" \| "note" \| "file" \| "url" \| "session" \| ("decision" \| "report" \| "note" \| "file" \| "url" \| "session")[]<br>`tag?`: string \| string[]<br>`task_id?`: string<br>`lead_session_id?`: string<br>`project_only?`: boolean \| "true" \| "false"<br>`origin?`: "plan"<br>`milestone_id?`: string<br>`q?`: string<br>`keep?`: string<br>`depth?`: integer<br>`max_nodes?`: integer<br>`include_tags?`: boolean \| "true" \| "false" |
+| `memory.graph` | `project_id`: string<br>`memory_id?`: string<br>`state?`: "active" \| "draft" \| "archived" \| "all"<br>`kind?`: "decision" \| "report" \| "note" \| "file" \| "url" \| "session" \| ("decision" \| "report" \| "note" \| "file" \| "url" \| "session")[]<br>`tag?`: string \| string[]<br>`q?`: string<br>`task_id?`: object<br>`lead_session_id?`: object<br>`project_only?`: object<br>`origin?`: object<br>`milestone_id?`: object<br>`keep?`: string<br>`depth?`: integer<br>`max_nodes?`: integer<br>`include_tags?`: boolean \| "true" \| "false" |
 | `memory.item` | `project_id`: string<br>`memory_id`: string |
-| `memory.read` | `project_id`: string<br>`state?`: "active" \| "draft" \| "archived" \| "all"<br>`kind?`: "decision" \| "report" \| "note"<br>`tag?`: string \| string[]<br>`task_id?`: string<br>`lead_session_id?`: string<br>`project_only?`: boolean \| "true" \| "false"<br>`origin?`: "plan"<br>`milestone_id?`: string<br>`q?`: string<br>`limit?`: integer<br>`cursor?`: string |
+| `memory.read` | `project_id`: string<br>`state?`: "active" \| "draft" \| "archived" \| "all"<br>`kind?`: "decision" \| "report" \| "note"<br>`tag?`: string \| string[]<br>`q?`: string<br>`task_id?`: object<br>`lead_session_id?`: object<br>`project_only?`: object<br>`origin?`: object<br>`milestone_id?`: object<br>`limit?`: integer<br>`cursor?`: string |
 | `memory.recent` | `project_id`: string<br>`limit?`: integer |
 | `memory.session_turns` | `session_id`: string |
 | `memory.turn` | `session_id`: string<br>`turn_id`: string |

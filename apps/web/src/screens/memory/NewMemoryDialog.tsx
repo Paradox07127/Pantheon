@@ -23,7 +23,7 @@ import type {
   MemoryReference,
   MemorySummary,
 } from '@pantheon/domain';
-import { Menu, MenuCheckboxItem, MenuRadioGroup, MenuRadioItem } from '../../components/Menu';
+import { Menu, MenuCheckboxItem } from '../../components/Menu';
 import { Tip } from '../../components/Tip';
 import { useMemoryQuery } from '../../data/memory';
 import { sendProjectCommand } from '../../data/project-read';
@@ -34,7 +34,6 @@ import { scrimFlag } from '../../lib/root-flag';
 import './new-memory.css';
 
 type Kind = MemoryRecord['kind'];
-type Task = NonNullable<MemoryRecord['task']>;
 type Reference = Omit<MemoryReference, 'content_hash'>;
 
 /** The input of `memory.propose`. */
@@ -48,7 +47,6 @@ export interface MemoryProposal {
   references?: Reference[];
   text: string;
   dependencies: string[];
-  task?: Task;
   expires_at?: number;
   based_on?: string;
 }
@@ -136,7 +134,6 @@ function expiryAt(day: string): number | null {
 
 interface Draft {
   kind: Kind;
-  task: Task | null;
   title: string;
   summary: string;
   text: string;
@@ -150,7 +147,6 @@ interface Draft {
 function draftOf(original: MemoryItem | null | undefined): Draft {
   return {
     kind: original?.kind ?? 'decision',
-    task: original?.task ?? null,
     title: original?.title ?? '',
     summary: original?.summary ?? '',
     text: original?.text ?? '',
@@ -187,21 +183,16 @@ function proposalOf(
       text,
       // A decision cannot rest on another memory.
       dependencies: draft.kind === 'decision' ? [] : draft.dependencies,
-      ...(draft.task ? { task: draft.task } : {}),
       ...(draft.expiresAt ? { expires_at: draft.expiresAt } : {}),
       based_on: signature,
     },
   };
 }
 
-const sameTask = (a: Task | null, b: { id: string; lead_session_id: string }) =>
-  !!a && a.id === b.id && a.lead_session_id === b.lead_session_id;
-
 /** The kind the draft must keep: confirming would replace the active original, which keeps its kind. */
 function lockedKind(draft: Draft, original: MemoryItem | null): Kind | null {
   if (original?.state !== 'active' || draft.key.trim() !== original.key) return null;
-  const sameScope = draft.task ? sameTask(original.task ?? null, draft.task) : !original.task;
-  return sameScope ? original.kind : null;
+  return original.kind;
 }
 
 function MemoryForm({
@@ -264,9 +255,6 @@ function MemoryForm({
     ...(rest && rest.signature === directory?.signature ? rest.records : []),
   ].filter((r) => r.id !== original?.id && !seen.has(r.id) && !!seen.add(r.id));
   const titleOf = (id: string) => candidates.find((r) => r.id === id)?.title ?? id;
-  const scopeName = draft.task
-    ? (directory?.facets.tasks.find((task) => sameTask(draft.task, task))?.title ?? draft.task.id)
-    : t({ id: 'memory.new.scope.project', defaultMessage: 'Project' });
   const locked = lockedKind(draft, original);
   const kind = locked ?? draft.kind;
   const decision = kind === 'decision';
@@ -331,7 +319,6 @@ function MemoryForm({
   };
 
   const confirmText = t({ id: 'memory.new.confirm', defaultMessage: 'Confirm' });
-  const scopeText = t({ id: 'memory.new.scope', defaultMessage: 'Scope' });
   const basedText = t({ id: 'memory.new.dependencies', defaultMessage: 'Based on' });
   const entryText =
     adding === 'tag'
@@ -388,37 +375,6 @@ function MemoryForm({
             </Radio.Root>
           ))}
         </RadioGroup>
-        {original?.task && (
-          <Menu
-            label={scopeText}
-            trigger={
-              <button
-                type="button"
-                className="btn ghost sm"
-                aria-label={t(
-                  { id: 'memory.new.scopeOf', defaultMessage: 'Scope: {name}' },
-                  { name: scopeName },
-                )}
-              >
-                {scopeName}
-                <ChevronDown aria-hidden="true" />
-              </button>
-            }
-          >
-            <MenuRadioGroup
-              value={draft.task ? 'task' : 'project'}
-              onChange={(value) => change({ task: value === 'task' ? original.task! : null })}
-            >
-              <MenuRadioItem value="project">
-                {t({ id: 'memory.new.scope.project', defaultMessage: 'Project' })}
-              </MenuRadioItem>
-              <MenuRadioItem value="task">
-                {directory?.facets.tasks.find((task) => sameTask(original.task!, task))?.title ??
-                  original.task.id}
-              </MenuRadioItem>
-            </MenuRadioGroup>
-          </Menu>
-        )}
         <Dialog.Close
           className="ib mnw-x"
           aria-label={t({ id: 'memory.new.close', defaultMessage: 'Close' })}

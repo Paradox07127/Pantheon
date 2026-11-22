@@ -75,7 +75,7 @@ Call memory_propose in the same turn, without being asked, when:
 - the user confirms a non-obvious approach you took;
 - you learn a fact, constraint or decision the code, git history and docs do not show;
 - the user asks you to remember something.
-Use kind note for these, report for an analysis of the current state with its evidence (it stops being current when task states change), and decision only for a rule the user stated, with no dependencies. Notes and reports are current at once for every session (a task session's, for its task only); a decision stays a draft until the user confirms it, so do not call it active.
+Use kind note for these, report for an analysis of the current state with its evidence (it stops being current when the project brief changes), and decision only for a rule the user stated, with no dependencies. Notes and reports are current at once for every session; a decision stays a draft until the user confirms it, so do not call it active.
 Search the topic first and reuse the key of an entry you update, so the new version replaces it; name new keys topic/subtopic, such as testing/e2e-ports. Pass the packet's signature as based_on.
 Do not store code structure, fixes already in git, the progress of the current task, secrets, whole transcripts, or guesses written as facts.`;
 
@@ -264,13 +264,6 @@ function propose(ctx: ControlContext, p: Principal, c: Command, verifiedCommit?:
   const i = inputSchemas['memory.propose'].parse(c.input);
   ensureProject(ctx, p, i.project_id, c.type);
   const session = sessionFor(ctx, p);
-  const task = taskScope(i.task);
-  requireThat(
-    !session || !i.task,
-    'permission_denied',
-    'A session may propose only in its own task scope',
-  );
-  requireThat(taskCurrent({ task }), 'invalid_state', 'Task generation is no longer current');
   const stamp = signature(ctx, i.project_id);
   requireThat(
     !session || !!i.based_on,
@@ -312,7 +305,6 @@ function propose(ctx: ControlContext, p: Principal, c: Command, verifiedCommit?:
     authority: p.role === 'user' && !p.session_id ? 'user' : 'agent_reported',
     author: p.id,
     author_session_id: p.session_id,
-    task,
     body_hash: ctx.files.put(Buffer.from(i.text)).hash,
     dependencies: i.dependencies,
     based_on: stamp,
@@ -510,7 +502,6 @@ export const memoryHandlers: Handlers = {
       tags: r.tags,
       references: r.references,
       kind: r.kind,
-      task: r.task,
       body_hash: r.body_hash,
       dependencies: [...r.dependencies],
       based_on: signature(ctx, r.project_id),

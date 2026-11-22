@@ -14,7 +14,7 @@ import { projectAccess, type ControlContext } from './context.js';
 
 export function rows<T>(
   ctx: ControlContext,
-  table: 'memory_records' | 'memory_jobs' | 'board_plans',
+  table: 'memory_records' | 'memory_jobs',
   project: string,
 ): T[] {
   return ctx.store

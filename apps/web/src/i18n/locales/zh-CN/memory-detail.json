@@ -15,7 +15,6 @@
   "memory.detail.source.unavailable": "读不到",
   "memory.detail.source.unverified": "未核实",
   "memory.detail.version": "第 {n} 版",
-  "memory.detail.project": "项目级",
   "memory.detail.label": "记忆详情",
   "memory.detail.close": "关闭详情",
   "memory.detail.key": "key",
@@ -35,9 +34,5 @@
   "memory.detail.versions": "版本 {count}",
   "memory.detail.draft": "草稿",
   "memory.detail.tags": "标签",
-  "memory.detail.filterTag": "只看带 {tag} 标签的记忆",
-  "memory.detail.byPlan": "计划里定的",
-  "memory.detail.outcome.confirmed": "已确认",
-  "memory.detail.outcome.refuted": "已否定",
-  "memory.detail.outcome.closed": "风险已关闭"
+  "memory.detail.filterTag": "只看带 {tag} 标签的记忆"
 }

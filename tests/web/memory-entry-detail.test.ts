@@ -88,13 +88,7 @@ const props = (extra: Partial<EntryDetailProps> = {}): EntryDetailProps => ({
   item: third,
   versions: [first, third, second],
   dependencies: [summary('review')],
-  dependents: [
-    summary('tolerance', {
-      kind: 'decision',
-      task: { lead_session_id: 'l', id: 'task-a', generation: 1 },
-    }),
-  ],
-  tasks: [{ id: 'task-a', lead_session_id: 'l', title: 'Signature checks' }],
+  dependents: [summary('tolerance', { kind: 'decision' })],
   footer: createElement('button', { type: 'button' }, 'footer action'),
   onOpen: () => {},
   onTag: () => {},
@@ -105,7 +99,7 @@ const html = (p: EntryDetailProps) => renderToStaticMarkup(createElement(EntryDe
 const plain = (markup: string) => markup.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
 
 describe('memory entry detail', () => {
-  it('heads a current entry with its kind, state, author, scope, key, version and commit time', () => {
+  it('heads a current entry with its kind, state, author, key, version and commit time', () => {
     const out = html(props());
     expect(out).toContain(`aria-label="${zh('memory.detail.label')}"`);
     expect(out).toContain(`aria-label="${zh('memory.detail.close')}"`);
@@ -115,7 +109,6 @@ describe('memory entry detail', () => {
       zh('memory.detail.kind.decision'),
       zh('memory.detail.state.active'),
       zh('memory.detail.byUser'),
-      zh('memory.detail.project'),
     ])
       expect(text).toContain(chip);
     expect(text).toContain('webhook-signature');
@@ -169,10 +162,10 @@ describe('memory entry detail', () => {
     expect(text).toMatch(/docs\.example\.com\/signature 未核实/);
   });
 
-  it('lists what it rests on with the author and what rests on it with the task', () => {
+  it('lists what it rests on and what rests on it with their authors', () => {
     const text = plain(html(props()));
     expect(text).toMatch(/依据 1 Summary review agent 报告/);
-    expect(text).toMatch(/被这些依据 1 Summary tolerance Signature checks/);
+    expect(text).toMatch(/被这些依据 1 Summary tolerance agent 报告/);
   });
 
   it('numbers committed versions newest first and marks the one being read', () => {
@@ -258,43 +251,6 @@ describe('memory entry detail', () => {
     );
     expect(text).toMatch(/版本 3 草稿 待确认 .*第 2 版 当前 .*第 1 版 被替代/);
     expect(out).not.toContain('<div class="md">');
-  });
-
-  it('says an entry the plan decided and how it ended', () => {
-    const decided = {
-      ...third,
-      origin: {
-        kind: 'plan',
-        lead_session_id: 'l',
-        milestone_id: 'ms-release',
-        subject: 'assumption',
-        subject_id: 'a1',
-        outcome: 'refuted',
-        plan_version: 3,
-      },
-    } as MemoryItem;
-    const p = props({
-      item: decided,
-      versions: [decided],
-    });
-    const shown = plain(html(p));
-    expect(shown).toContain(zh('memory.detail.byPlan'));
-    expect(shown).not.toContain(zh('memory.detail.byUser'));
-    expect(shown).toContain(zh('memory.detail.outcome.refuted'));
-    for (const outcome of ['confirmed', 'closed'] as const)
-      expect(
-        plain(html(props({ item: { ...decided, origin: { ...decided.origin!, outcome } } }))),
-      ).toContain(zh(`memory.detail.outcome.${outcome}`));
-  });
-
-  it('shows no plan chips on an entry the plan did not decide', () => {
-    const text = plain(html(props()));
-    for (const id of [
-      'memory.detail.byPlan',
-      'memory.detail.outcome.confirmed',
-      'memory.detail.outcome.refuted',
-    ])
-      expect(text).not.toContain(zh(id));
   });
 
   it('says when the directory moved on since a draft was proposed', () => {

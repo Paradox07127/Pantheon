@@ -26,52 +26,34 @@ export const memoryFilterShape = {
     .union([tag, z.array(tag)])
     .optional()
     .describe('Keep only entries with this tag, or with any of these tags.'),
-  task_id: id.optional().describe('Keep only entries scoped to the task with this id.'),
-  lead_session_id: id
-    .optional()
-    .describe('Keep only task-scoped entries whose task belongs to this session.'),
-  project_only: z
-    .boolean()
-    .optional()
-    .describe('true keeps only project-wide entries; not with task_id.'),
-  origin: z
-    .literal('plan')
-    .optional()
-    .describe('plan keeps only entries Pantheon wrote from plan decisions.'),
-  milestone_id: id.optional().describe('Keep only plan entries about the milestone with this id.'),
   q: z
     .string()
     .max(200)
     .default('')
     .describe('Words or a phrase to search for, at most 200 characters.'),
 };
-// A GET query carries a boolean as text. The session tools publish the command shape as JSON Schema, which has no transform.
-const queryFilterShape = {
-  ...memoryFilterShape,
-  project_only: z
-    .union([z.boolean(), z.enum(['true', 'false']).transform((v) => v === 'true')])
-    .optional(),
+/** Task and plan filters an older client may still send; accepted and not read. */
+const retiredQueryFilters = {
+  task_id: z.unknown().optional(),
+  lead_session_id: z.unknown().optional(),
+  project_only: z.unknown().optional(),
+  origin: z.unknown().optional(),
+  milestone_id: z.unknown().optional(),
 };
-const projectOnlyFilter = (input: {
-  project_only?: boolean;
-  task_id?: string;
-  lead_session_id?: string;
-}) => !input.project_only || (!input.task_id && !input.lead_session_id);
-const projectOnlyMessage = 'Project-only memory cannot be combined with a task filter';
-export const memoryDirectorySchema = z
-  .strictObject({
-    project_id: id,
-    ...queryFilterShape,
-    limit: z.coerce.number().int().min(1).max(50).default(20),
-    cursor: z.string().max(1024).optional(),
-  })
-  .refine(projectOnlyFilter, projectOnlyMessage);
+export const memoryDirectorySchema = z.strictObject({
+  project_id: id,
+  ...memoryFilterShape,
+  ...retiredQueryFilters,
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+  cursor: z.string().max(1024).optional(),
+});
 const graphKind = z.enum(['decision', 'report', 'note', 'file', 'url', 'session']);
 export const memoryGraphSchema = z
   .strictObject({
     project_id: id,
     memory_id: id.optional(),
-    ...queryFilterShape,
+    ...memoryFilterShape,
+    ...retiredQueryFilters,
     /** The memory and source kinds to draw, applied before the node cap. */
     kind: z.union([graphKind, z.array(graphKind)]).optional(),
     /** A memory that stays in the graph ahead of the cap when it passes the filters. */
@@ -82,7 +64,6 @@ export const memoryGraphSchema = z
       .union([z.boolean(), z.enum(['true', 'false']).transform((v) => v === 'true')])
       .default(false),
   })
-  .refine(projectOnlyFilter, projectOnlyMessage)
   .transform((input) => ({
     ...input,
     max_nodes: input.max_nodes ?? (input.memory_id ? 40 : 80),
@@ -183,14 +164,6 @@ export const memoryInputSchemas = {
       .describe(
         'Ids of current memory entries this one rests on, at most 32. Must be empty for kind decision.',
       ),
-    task: z
-      .strictObject({
-        lead_session_id: id.describe('The session the task belongs to.'),
-        id: id.describe('The task id.'),
-        generation: z.number().int().positive().describe('The task generation.'),
-      })
-      .optional()
-      .describe('Leave it out: an entry scoped to a task is never current.'),
     expires_at: z
       .number()
       .int()

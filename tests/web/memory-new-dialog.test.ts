@@ -64,7 +64,7 @@ const directory = (): Partial<MemoryDirectory> => ({
       bytes: 10,
     },
   ],
-  facets: { tags: [], tasks: [{ id: 'refunds', lead_session_id: 'lead-a', title: 'Refund flow' }] },
+  facets: { tags: [] },
 });
 
 beforeEach(() => {
@@ -199,7 +199,7 @@ describe('the new memory dialog', () => {
     );
   });
 
-  it('rewrites an entry with its text, scope, sources and expiry carried over', async () => {
+  it('rewrites an entry with its text, sources and expiry carried over', async () => {
     const original: MemoryItem = {
       id: 'memory-rewritten',
       revision: 2,
@@ -210,7 +210,6 @@ describe('the new memory dialog', () => {
       tags: ['refunds'],
       references: [{ kind: 'file', uri: 'src/retry.ts', root: 0, content_hash: 'f'.repeat(64) }],
       kind: 'note',
-      task: { lead_session_id: 'lead-a', id: 'refunds', generation: 2 },
       state: 'active',
       authority: 'user',
       author: 'user',
@@ -227,9 +226,6 @@ describe('the new memory dialog', () => {
     ).toBeTruthy();
     expect(labelled(h, zh('memory.new.title')).props.value).toBe('Retry with backoff');
     expect(labelled(h, zh('memory.new.key')).props.value).toBe('retry');
-    expect(menu(h, zh('memory.new.scope')).props.trigger.props['aria-label']).toBe(
-      '作用域：Refund flow',
-    );
     expect(text(button(h, '到期').props.children)).toContain('12月1日');
     // The version being replaced is no candidate for what the new one rests on.
     expect(
@@ -251,7 +247,6 @@ describe('the new memory dialog', () => {
         references: [{ kind: 'file', uri: 'src/retry.ts', root: 0 }],
         text: 'Double the wait, at most six times.',
         dependencies: ['memory-store'],
-        task: { lead_session_id: 'lead-a', id: 'refunds', generation: 2 },
         expires_at: new Date(2026, 11, 2).getTime(),
         based_on: SIGNATURE,
       },
@@ -260,21 +255,13 @@ describe('the new memory dialog', () => {
     );
   });
 
-  it('hides the scope menu when the project is the only scope to choose', () => {
-    const { h } = open();
-    expect(
-      nodes(h.value).some((n) => n.type === Menu && n.props.label === zh('memory.new.scope')),
-    ).toBe(false);
-  });
-
-  it('locks the kind to the active original while the key and scope still match it', async () => {
+  it('locks the kind to the active original while the key still matches it', async () => {
     const original: MemoryItem = {
       id: 'memory-rewritten',
       revision: 2,
       project_id: 'project-a',
       key: 'retry',
       kind: 'note',
-      task: { lead_session_id: 'lead-a', id: 'refunds', generation: 2 },
       state: 'active',
       authority: 'user',
       author: 'user',
@@ -301,12 +288,6 @@ describe('the new memory dialog', () => {
       true,
       {},
     );
-    find(menu(h, zh('memory.new.scope')).props.children, (n) => n.props.onChange).props.onChange(
-      'project',
-    );
-    h.render();
-    expect(labelled(h, zh('memory.new.kind')).props.value).toBe('decision');
-    expect(labelled(h, zh('memory.new.kind')).props.disabled).toBe(false);
   });
 
   it('sets and clears an expiry date', async () => {

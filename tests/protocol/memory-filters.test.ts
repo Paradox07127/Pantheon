@@ -18,17 +18,19 @@ it('accepts one tag or several tags in every memory filter', () => {
   }
 });
 
-it('accepts project-only filters, and the queries reject either task selector with them', () => {
-  for (const [schema, input] of schemas) {
-    expect(schema.parse({ ...input, project_only: true }).project_only).toBe(true);
-  }
-  for (const [schema, input] of schemas.slice(0, 2)) {
-    expect(schema.parse({ ...input, project_only: 'true' }).project_only).toBe(true);
-    for (const task of [{ task_id: 'task' }, { lead_session_id: 'lead' }]) {
-      expect(schema.safeParse({ ...input, project_only: true, ...task }).success).toBe(false);
-      expect(schema.safeParse({ ...input, project_only: false, ...task }).success).toBe(true);
-    }
-  }
+it('lets the queries take the task and plan filters an older client sends, and the session tools not offer them', () => {
+  const retired = {
+    task_id: 'task',
+    lead_session_id: 'lead',
+    project_only: 'true',
+    origin: 'plan',
+    milestone_id: 'milestone',
+  };
+  for (const [schema, input] of schemas.slice(0, 2))
+    expect(schema.safeParse({ ...input, ...retired }).success).toBe(true);
+  for (const [schema, input] of schemas.slice(2))
+    for (const [key, value] of Object.entries(retired))
+      expect(schema.safeParse({ ...input, [key]: value }).success).toBe(false);
 });
 
 it('takes several graph kinds, source kinds among them, and a memory to keep', () => {
