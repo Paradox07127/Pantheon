@@ -7,7 +7,7 @@ import {
   type SessionTurn,
   type Workspace,
 } from '@pantheon/domain';
-import { inputSchemas, USER_PRINCIPAL_ID, type Command } from '@pantheon/protocol';
+import { inputSchemas, type Command } from '@pantheon/protocol';
 import { projectChanges } from './changes.js';
 import {
   projectAccess,
@@ -34,7 +34,6 @@ import {
   openWorktreeSession,
   prepareReadyMerge,
   readSessionOpening,
-  sessionList,
   worktreeStatusArgs,
 } from './workbench-session.js';
 
@@ -246,8 +245,6 @@ function prepareConductorSpawn(
   );
 }
 
-const commits = (count: number) => `${count} ${count === 1 ? 'commit' : 'commits'}`;
-
 /** Per control, the callers a notice did not reach because they took no input then. */
 const unreached = new WeakMap<ControlContext, Set<string>>();
 
@@ -298,11 +295,13 @@ function tellSpawner(ctx: ControlContext, session: Session): void {
   const caller = ctx.store.get<Session>('sessions', callerId);
   if (!caller || caller.state === 'closed' || !untoldTurns(ctx, session.id).length) return;
   if (!takesNotice(ctx, caller)) return unreachedCaller(ctx, callerId);
-  const workspace = session.workspace_id
-    ? ctx.store.get<Workspace>('workspaces', session.workspace_id)
-    : undefined;
-  const target = workspace?.source_branch;
-  const notice = (turn: SessionTurn, ahead: number | undefined, branch?: string | null) => {
+  const ended =
+    session.outcome === 'discarded'
+      ? 'discarded'
+      : session.state === 'closed'
+        ? 'closed'
+        : undefined;
+  const notice = (turn: SessionTurn) => {
     const failure = latestEvent(ctx, turn.id, 'turn.failed');
     const { error, error_code } = failure
       ? (JSON.parse(failure.payload) as { error?: string; error_code?: string })
@@ -314,60 +313,30 @@ function tellSpawner(ctx: ControlContext, session: Session): void {
           ? 'completed its turn.'
           : `failed its turn${reason ? `: ${reason}` : ''}.`
       }`,
-      ...(branch
-        ? [
-            `It is on branch ${branch}${
-              ahead !== undefined && target ? `, ${commits(ahead)} ahead of ${target}` : ''
-            }.`,
-          ]
-        : ahead !== undefined && target
-          ? [`It is ${commits(ahead)} ahead of ${target}.`]
-          : []),
-      ...(turn.state === 'completed'
-        ? ['Review it with request_review, land it with report_ready, or read it in its worktree.']
-        : []),
+      ...(ended
+        ? [`It was ${ended}.`]
+        : [
+            'Read its commits with read_state.',
+            ...(turn.state === 'completed'
+              ? [
+                  'Review it with request_review, land it with report_ready, or read it in its worktree.',
+                ]
+              : []),
+          ]),
     ].join(' ');
   };
-  const tell = (ahead: number | undefined) => {
-    const branch = sessionList(
-      ctx,
-      { id: USER_PRINCIPAL_ID, role: 'user' },
-      session.project_id,
-      'cached',
-    ).find((each) => each.id === session.id)?.branch;
-    ctx.store.transaction(() => {
-      // While the count is read the daemon can start closing, the caller close, or another notice go out.
-      if (ctx.closing || ctx.store.must<Session>('sessions', caller.id).state === 'closed') return;
-      const turns = untoldTurns(ctx, session.id);
-      for (const turn of turns) {
-        // The count and branch describe the session now, so only the latest turn's notice carries them.
-        const latest = turn === turns.at(-1);
-        const text = latest ? notice(turn, ahead, branch) : notice(turn, undefined);
-        if (!notifySession(ctx, caller.id, text, turn.id)) return unreachedCaller(ctx, caller.id);
-        ctx.store.event(
-          'session.spawner_notified',
-          ctx.store.must<Session>('sessions', session.id),
-          session.project_id,
-          { turn_id: turn.id, session_id: caller.id },
-        );
-      }
-    });
-  };
-  if (!target || !workspace) return tell(undefined);
-  // The list's count can be from a read before the turn's last commit.
-  const counting: Promise<void> = runGit(
-    workspace.path,
-    ['rev-list', '--count', `refs/heads/${target}..HEAD`, '--'],
-    undefined,
-    true,
-  )
-    // Shutdown waits for this before storage closes.
-    .then((counted) =>
-      tell(counted.exit_code === 0 ? Number(counted.stdout.toString().trim()) : undefined),
-    )
-    .catch((error: unknown) => ctx.diagnostic(error))
-    .finally(() => ctx.completions.delete(counting));
-  ctx.completions.add(counting);
+  ctx.store.transaction(() => {
+    for (const turn of untoldTurns(ctx, session.id)) {
+      if (!notifySession(ctx, caller.id, notice(turn), turn.id))
+        return unreachedCaller(ctx, caller.id);
+      ctx.store.event(
+        'session.spawner_notified',
+        ctx.store.must<Session>('sessions', session.id),
+        session.project_id,
+        { turn_id: turn.id, session_id: caller.id },
+      );
+    }
+  });
 }
 
 /** Sends the notices of the sessions this one spawned that have not reached it. */

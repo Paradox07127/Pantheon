@@ -13,10 +13,7 @@ import { afterSpawnedTurn } from '../../packages/control/dist/conductor.js';
 import { usesPantheonTools, type ControlContext } from '../../packages/control/dist/context.js';
 import { mergesPreparing, releaseIdleConversations } from '../../packages/control/dist/session.js';
 import { notifySession } from '../../packages/control/dist/session-wake.js';
-import {
-  forgetWorktreeReads,
-  workbenchSessionSpec,
-} from '../../packages/control/dist/workbench-session.js';
+import { workbenchSessionSpec } from '../../packages/control/dist/workbench-session.js';
 import { awaitWorkspaceReady, eventually, settle, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
@@ -27,6 +24,7 @@ const row = (f: Fixture, sessionId: string) => f.store.must<Session>('sessions',
 const script = (...steps: object[]) => `fixture-script\n${JSON.stringify(steps)}`;
 const REVIEW_LINE =
   'Review it with request_review, land it with report_ready, or read it in its worktree.';
+const COMMITS_LINE = 'Read its commits with read_state.';
 
 const principalOf = (f: Fixture, sessionId: string, role: Principal['role']): Principal => ({
   id: `session:${sessionId}`,
@@ -153,7 +151,8 @@ it('tells the conductor once when a turn of the session it spawned completes', a
   expect(text).toMatch(/^\[Pantheon\] /);
   expect(text).toContain(session_id);
   expect(text).toContain(f.adapter.name);
-  expect(text).toContain('It is 1 commit ahead of main.');
+  expect(text).toContain(COMMITS_LINE);
+  expect(text).not.toContain('ahead of');
   expect(text.endsWith(REVIEW_LINE)).toBe(true);
   // Closing the idle process ends the same turn a second time.
   releaseIdleConversations(ctxOf(f), f.project.id);
@@ -167,48 +166,13 @@ it('tells the conductor once when a turn of the session it spawned completes', a
   await settle(f, row(f, conductor.id));
   expect(trackerTurns(f, conductor.id)).toHaveLength(1);
 
-  // Once the list has read the worktree, the next message says how far ahead its detached HEAD is.
-  await f.prefetch();
   f.call('session.send', { session_id, input: 'Look again' }, row(f, session_id).revision);
   await settle(f, row(f, session_id));
   await eventually(
     () => trackerTurns(f, conductor.id).length === 2,
     () => f.control.tick(),
   );
-  expect(trackerTurns(f, conductor.id)[1]!.input).toContain('It is 1 commit ahead of main.');
-});
-
-it('counts the commits of a later turn though the list read the worktree before it', async () => {
-  const f = await workbenchFixture();
-  const conductor = await openConductor(f);
-  const { session_id } = await spawn(
-    f,
-    conductor.id,
-    script({ write: { path: 'docs.txt', text: 'docs\n' } }, { commit: 'Write the docs' }),
-  );
-  await settle(f, row(f, session_id));
-  await eventually(
-    () => trackerTurns(f, conductor.id).length === 1,
-    () => f.control.tick(),
-  );
-  await settle(f, row(f, conductor.id));
-  await f.prefetch();
-
-  f.call(
-    'session.send',
-    {
-      session_id,
-      input: script({ write: { path: 'notes.txt', text: 'notes\n' } }, { commit: 'Add notes' }),
-    },
-    row(f, session_id).revision,
-  );
-  await settle(f, row(f, session_id));
-  await eventually(
-    () => trackerTurns(f, conductor.id).length === 2,
-    () => f.control.tick(),
-  );
-
-  expect(trackerTurns(f, conductor.id)[1]!.input).toContain('It is 2 commits ahead of main.');
+  expect(trackerTurns(f, conductor.id)[1]!.input).toContain(COMMITS_LINE);
 });
 
 /** A conductor told of the first turn of a spawned session that committed once. */
@@ -225,24 +189,21 @@ async function toldOnce(f: Fixture) {
     () => f.control.tick(),
   );
   await settle(f, row(f, conductor.id));
-  // The next notice counts the commits in git, since the list has not read the worktree.
-  forgetWorktreeReads(row(f, session_id).workspace_id!);
   return { conductor, session_id };
 }
 
-/** Runs the notice of the spawned session's latest turn and waits for the count it reads. */
-async function tellAgain(f: Fixture, sessionId: string, during?: () => void) {
+/** Runs the notices of the spawned session's untold turns and waits for the work they start. */
+async function tellAgain(f: Fixture, sessionId: string) {
   const ctx = ctxOf(f);
   const before = new Set(ctx.completions);
   afterSpawnedTurn(ctx, sessionId);
-  during?.();
   await Promise.allSettled([...ctx.completions].filter((work) => !before.has(work)));
 }
 
 it('tells the conductor of a turn once, though a later turn was told after it', async () => {
   const f = await workbenchFixture();
   const { conductor, session_id } = await toldOnce(f);
-  // A later turn's notice lands while a second count of the first turn is still read.
+  // A later turn's notice has gone out after the first turn's.
   f.store.event('session.spawner_notified', row(f, session_id), f.project.id, {
     turn_id: id(),
     session_id: conductor.id,
@@ -262,8 +223,8 @@ it('tells the conductor on the next start of a turn that ended while the daemon 
     revision: 1,
   });
 
-  const ctx = ctxOf(f);
-  await tellAgain(f, session_id, () => (ctx.closing = true));
+  ctxOf(f).closing = true;
+  await tellAgain(f, session_id);
 
   expect(toldTurns(f, session_id)).not.toContain(later.id);
   expect(trackerTurns(f, conductor.id)).toHaveLength(1);
@@ -273,7 +234,7 @@ it('tells the conductor on the next start of a turn that ended while the daemon 
     () => f.control.tick(),
   );
   expect(toldTurns(f, session_id)).toEqual([f.turns(session_id)[0]!.id, later.id]);
-  expect(trackerTurns(f, conductor.id)[1]!.input).toContain('It is 1 commit ahead of main.');
+  expect(trackerTurns(f, conductor.id)[1]!.input).toContain(COMMITS_LINE);
 });
 
 it('tells the conductor of a turn that ended with the next turn of its session already queued', async () => {
@@ -320,7 +281,7 @@ it('tells the conductor of a steer that ran as a turn of its own', async () => {
   expect(toldTurns(f, session_id)).toEqual([first!.id, steer!.id]);
 });
 
-it('tells the conductor of the turns that ended before a stop, and not of the turn the stop ended', async () => {
+it('tells the conductor of the turns that ended before a stop as discarded, and not of the turn the stop ended', async () => {
   const f = await workbenchFixture();
   const conductor = await openConductor(f);
   const { session_id } = await spawn(f, conductor.id, 'Port the parser');
@@ -348,9 +309,13 @@ it('tells the conductor of the turns that ended before a stop, and not of the tu
   const [first, stopped] = f.turns(session_id);
   expect(stopped!.state).toBe('failed');
   expect(toldTurns(f, session_id)).toEqual([first!.id]);
+  const text = trackerTurns(f, conductor.id)[0]!.input;
+  expect(text).toContain('It was discarded.');
+  expect(text).not.toContain(REVIEW_LINE);
+  expect(text).not.toContain(COMMITS_LINE);
 });
 
-it('says how far ahead the session is only in the notice of its latest turn', async () => {
+it('tells the conductor to read the commits with read_state in every notice and never counts them', async () => {
   const f = await workbenchFixture();
   const conductor = await openConductor(f);
   const { session_id } = await spawn(
@@ -375,8 +340,10 @@ it('says how far ahead the session is only in the notice of its latest turn', as
     turn.input.split('\n\n'),
   );
   expect(earlier).toContain(session_id);
-  expect(earlier).not.toContain('ahead of');
-  expect(latest).toContain('It is 1 commit ahead of main.');
+  for (const notice of [earlier, latest]) {
+    expect(notice).toContain(COMMITS_LINE);
+    expect(notice).not.toContain('ahead of');
+  }
 });
 
 it('tells the conductor of a turn the user failed by closing its reconciling session', async () => {
