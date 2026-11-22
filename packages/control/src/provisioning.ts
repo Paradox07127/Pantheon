@@ -90,7 +90,12 @@ function failWorkbenchSessions(
   return sessions;
 }
 
-function record(ctx: ControlContext, workspaceId: string, patch: Partial<Provisioning>): Workspace {
+function record(
+  ctx: ControlContext,
+  workspaceId: string,
+  patch: Partial<Provisioning>,
+  tell = true,
+): Workspace {
   const ended: Session[] = [];
   const recorded = ctx.store.transaction(() => {
     const current = ctx.store.must<Workspace>('workspaces', workspaceId);
@@ -138,7 +143,7 @@ function record(ctx: ControlContext, workspaceId: string, patch: Partial<Provisi
     ctx.changed();
     return next;
   });
-  for (const session of ended) if (session.spawned_by) afterSpawnedTurn(ctx, session.id);
+  if (tell) for (const session of ended) if (session.spawned_by) afterSpawnedTurn(ctx, session.id);
   return recorded;
 }
 
@@ -456,11 +461,17 @@ export function recoverWorkspaceProvisioning(ctx: ControlContext): void {
         groupAbsent = (error as NodeJS.ErrnoException).code === 'ESRCH';
       }
     }
-    record(ctx, workspace.id, {
-      state: groupAbsent ? 'failed' : 'reconciling',
-      error: groupAbsent
-        ? 'Provisioning interrupted; original process group is absent. Partial files preserved; detached descendants are unverified.'
-        : 'Provisioning interrupted; process termination is unconfirmed. Partial files preserved.',
-    });
+    // Before recovery the spawner may still look busy with a turn the restart ends; recovery tells it.
+    record(
+      ctx,
+      workspace.id,
+      {
+        state: groupAbsent ? 'failed' : 'reconciling',
+        error: groupAbsent
+          ? 'Provisioning interrupted; original process group is absent. Partial files preserved; detached descendants are unverified.'
+          : 'Provisioning interrupted; process termination is unconfirmed. Partial files preserved.',
+      },
+      false,
+    );
   }
 }

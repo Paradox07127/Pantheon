@@ -3,6 +3,18 @@ import { insert, type ControlContext } from './context.js';
 import { acceptInput, queuedTurn } from './session.js';
 import { projectOverBudget } from './workflow-policy.js';
 
+/** Whether a notice to the session would go in now. */
+export function takesNotice(ctx: ControlContext, session: Session | undefined): session is Session {
+  if (!session || projectOverBudget(ctx, session.project_id)) return false;
+  try {
+    acceptInput(ctx, session, session.state === 'running' ? 'steer' : 'send');
+  } catch (error) {
+    if (error instanceof DomainError) return false;
+    throw error;
+  }
+  return true;
+}
+
 /** Sends the text to the session as a turn of its own; undefined when the session takes no turn. */
 export function notifySession(
   ctx: ControlContext,
@@ -11,14 +23,8 @@ export function notifySession(
   cause: string,
 ): SessionTurn | undefined {
   const session = ctx.store.get<Session>('sessions', sessionId);
-  if (!session || projectOverBudget(ctx, session.project_id)) return;
+  if (!takesNotice(ctx, session)) return;
   const running = session.state === 'running';
-  try {
-    acceptInput(ctx, session, running ? 'steer' : 'send');
-  } catch (error) {
-    if (error instanceof DomainError) return;
-    throw error;
-  }
   const waiting = running
     ? ctx.store
         .list<SessionTurn>('session_turns')

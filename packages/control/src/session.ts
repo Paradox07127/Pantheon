@@ -1119,6 +1119,7 @@ export function createTurnQueue(ctx: ControlContext, initial: SessionTurn, resum
         const finished = ctx.store.update('session_turns', { ...t, state }, t.revision);
         ctx.store.event(`turn.${state}`, finished, t.project_id, { error: failure });
       });
+      afterSpawnedTurn(ctx, initial.session_id);
       sent = send(next);
     }
   };

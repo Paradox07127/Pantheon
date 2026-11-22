@@ -17,6 +17,7 @@ import { tickChangeStories } from './change-story.js';
 import { tickProjectBaselines } from './baseline.js';
 import { tickSessions } from './session-tick.js';
 import { tickSessionStalls } from './session-stall.js';
+import { retrySpawnerNotices } from './conductor.js';
 
 export async function tick(ctx: ControlContext): Promise<void> {
   if (ctx.busy || ctx.closing) return;
@@ -60,6 +61,7 @@ export async function tick(ctx: ControlContext): Promise<void> {
       else if (out.kind !== 'permission.answer') ctx.store.mark(out.id, 'done');
     }
     tickMemory(ctx);
+    retrySpawnerNotices(ctx);
     for (const out of ctx.store.pending().filter((out) => out.kind === 'permission.answer')) {
       const payload = JSON.parse(out.payload) as PermissionAnswer;
       ctx.store.mark(out.id, 'sent');

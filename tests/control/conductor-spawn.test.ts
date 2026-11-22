@@ -11,7 +11,8 @@ import {
 } from '@pantheon/domain';
 import { afterSpawnedTurn } from '../../packages/control/dist/conductor.js';
 import { usesPantheonTools, type ControlContext } from '../../packages/control/dist/context.js';
-import { releaseIdleConversations } from '../../packages/control/dist/session.js';
+import { mergesPreparing, releaseIdleConversations } from '../../packages/control/dist/session.js';
+import { notifySession } from '../../packages/control/dist/session-wake.js';
 import {
   forgetWorktreeReads,
   workbenchSessionSpec,
@@ -71,6 +72,13 @@ function refusal(fn: () => unknown): { code?: string; message?: string } {
 
 const trackerTurns = (f: Fixture, sessionId: string) =>
   f.turns(sessionId).filter((turn) => turn.origin === 'tracker');
+
+/** The turns of the spawned session its caller was told of, in the order they were told. */
+const toldTurns = (f: Fixture, sessionId: string) =>
+  f.store
+    .events(0, f.project.id, 10000, ['session.spawner_notified'])
+    .filter((event) => event.aggregate_id === sessionId)
+    .map((event) => (event.payload as { turn_id: string }).turn_id);
 
 /** Commits one file in the folder and leaves another uncommitted; returns the commit. */
 function commitAndLeaveDirty(folder: string) {
@@ -245,7 +253,7 @@ it('tells the conductor of a turn once, though a later turn was told after it', 
   expect(trackerTurns(f, conductor.id)).toHaveLength(1);
 });
 
-it('tells the conductor of a turn that ended while the daemon starts closing', async () => {
+it('tells the conductor on the next start of a turn that ended while the daemon starts closing', async () => {
   const f = await workbenchFixture();
   const { conductor, session_id } = await toldOnce(f);
   const later = f.store.insert<SessionTurn>('session_turns', {
@@ -256,16 +264,55 @@ it('tells the conductor of a turn that ended while the daemon starts closing', a
 
   const ctx = ctxOf(f);
   await tellAgain(f, session_id, () => (ctx.closing = true));
-  ctx.closing = false;
 
-  expect(
-    f.store
-      .events(0, f.project.id, 10000, ['session.spawner_notified'])
-      .filter((event) => event.aggregate_id === session_id)
-      .map((event) => (event.payload as { turn_id: string }).turn_id),
-  ).toContain(later.id);
-  expect(trackerTurns(f, conductor.id)).toHaveLength(2);
+  expect(toldTurns(f, session_id)).not.toContain(later.id);
+  expect(trackerTurns(f, conductor.id)).toHaveLength(1);
+  await f.restart(() => undefined);
+  await eventually(
+    () => trackerTurns(f, conductor.id).length === 2,
+    () => f.control.tick(),
+  );
+  expect(toldTurns(f, session_id)).toEqual([f.turns(session_id)[0]!.id, later.id]);
   expect(trackerTurns(f, conductor.id)[1]!.input).toContain('It is 1 commit ahead of main.');
+});
+
+it('tells the conductor of a turn that ended with the next turn of its session already queued', async () => {
+  const f = await workbenchFixture();
+  const conductor = await openConductor(f);
+  const { session_id } = await spawn(f, conductor.id, script({ wait: 300 }, { say: 'First' }));
+  await awaitWorkspaceReady(f.control, row(f, session_id).workspace_id!);
+  await eventually(
+    () => f.turns(session_id)[0]!.state === 'running',
+    () => f.control.tick(),
+  );
+  notifySession(ctxOf(f), session_id, 'The review found two issues.', 'review-cause');
+
+  await settle(f, row(f, session_id));
+  const [first, next] = f.turns(session_id);
+  await eventually(
+    () => toldTurns(f, session_id).includes(next!.id),
+    () => f.control.tick(),
+  );
+
+  expect(toldTurns(f, session_id)).toEqual([first!.id, next!.id]);
+});
+
+it('tells the conductor once it takes input again', async () => {
+  const f = await workbenchFixture();
+  const conductor = await openConductor(f);
+  const { session_id } = await spawn(f, conductor.id, 'Port the parser');
+  const merging = mergesPreparing(ctxOf(f));
+  merging.add(conductor.id);
+  await settle(f, row(f, session_id));
+  await tellAgain(f, session_id);
+
+  expect(toldTurns(f, session_id)).toEqual([]);
+  merging.delete(conductor.id);
+  await eventually(
+    () => trackerTurns(f, conductor.id).length === 1,
+    () => f.control.tick(),
+  );
+  expect(toldTurns(f, session_id)).toEqual([f.turns(session_id)[0]!.id]);
 });
 
 it('tells the conductor when a turn of the session it spawned fails', async () => {
@@ -304,6 +351,41 @@ it('tells the conductor when the worktree of the session it spawned fails to pre
     () => row(f, session_id).state === 'closed',
     () => f.control.tick(),
   );
+  await eventually(
+    () => trackerTurns(f, conductor.id).length === 1,
+    () => f.control.tick(),
+  );
+
+  const text = trackerTurns(f, conductor.id)[0]!.input;
+  expect(text).toContain(session_id);
+  expect(text).toContain('failed its turn');
+});
+
+it('tells the conductor after a restart when the daemon stopped while the worktree of the session it spawned was being prepared', async () => {
+  const f = await workbenchFixture();
+  const conductor = await openConductor(f);
+  f.call(
+    'project.worktree.set',
+    {
+      project_id: f.project.id,
+      copy_paths: [],
+      command: {
+        argv: [process.execPath, '-e', 'setTimeout(() => {}, 60000)'],
+        timeout_ms: 120000,
+      },
+    },
+    f.store.must<Project>('projects', f.project.id).revision,
+  );
+  const { session_id } = await spawn(f, conductor.id, 'Port the parser');
+  const workspaceId = row(f, session_id).workspace_id!;
+  await eventually(
+    () => f.store.must<Workspace>('workspaces', workspaceId).provisioning?.phase === 'prepare',
+    () => f.control.tick(),
+  );
+
+  await f.control.shutdown();
+  expect(trackerTurns(f, conductor.id)).toHaveLength(0);
+  await f.restart(() => undefined, { abandon: true });
   await eventually(
     () => trackerTurns(f, conductor.id).length === 1,
     () => f.control.tick(),

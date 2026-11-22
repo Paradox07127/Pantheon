@@ -28,7 +28,7 @@ import {
   sessionChanges,
   startSessionReview,
 } from './review.js';
-import { notifySession } from './session-wake.js';
+import { notifySession, takesNotice } from './session-wake.js';
 import {
   checkWorktreeSession,
   openWorktreeSession,
@@ -248,53 +248,65 @@ function prepareConductorSpawn(
 
 const commits = (count: number) => `${count} ${count === 1 ? 'commit' : 'commits'}`;
 
-/**
- * Once a spawned session has no turn left, tells the session that started it how its last turn
- * ended; a turn the user cancelled or stopped tells nothing, and each turn tells once.
- */
-export function afterSpawnedTurn(ctx: ControlContext, sessionId: string): void {
-  const session = ctx.store.get<Session>('sessions', sessionId);
-  const callerId = session?.spawned_by?.session_id;
-  if (!session || !callerId || session.stop_requested || ctx.closing) return;
-  const caller = ctx.store.get<Session>('sessions', callerId);
-  if (!caller || caller.state === 'closed') return;
-  const turn = ctx.store
+/** Per control, the callers a notice did not reach because they took no input then. */
+const unreached = new WeakMap<ControlContext, Set<string>>();
+
+function unreachedCaller(ctx: ControlContext, callerId: string): void {
+  let callers = unreached.get(ctx);
+  if (!callers) unreached.set(ctx, (callers = new Set()));
+  callers.add(callerId);
+}
+
+/** The spawned session's completed and failed turns its caller has not heard of, in the order they ended. */
+function untoldTurns(ctx: ControlContext, sessionId: string): SessionTurn[] {
+  const told = new Set(
+    (
+      ctx.store
+        .statement(
+          "SELECT json_extract(payload,'$.turn_id') AS turn_id FROM events WHERE aggregate_id=? AND kind='session.spawner_notified'",
+        )
+        .all(sessionId) as { turn_id: string }[]
+    ).map((row) => row.turn_id),
+  );
+  const turns = ctx.store
     .list<SessionTurn>('session_turns')
-    .filter((each) => each.session_id === session.id)
-    .at(-1);
-  if (!turn || (turn.state !== 'completed' && turn.state !== 'failed')) return;
-  const told = () =>
-    ctx.store
-      .statement(
-        "SELECT 1 FROM events WHERE aggregate_id=? AND kind='session.spawner_notified' AND json_extract(payload,'$.turn_id')=? LIMIT 1",
-      )
-      .get(session.id, turn.id) !== undefined;
-  if (told()) return;
-  const listed = sessionList(
-    ctx,
-    { id: USER_PRINCIPAL_ID, role: 'user' },
-    session.project_id,
-    'cached',
-  ).find((each) => each.id === session.id);
+    .filter((each) => each.session_id === sessionId && each.kind !== 'steer');
+  // Notices go out in order, so a turn before the last one told was passed over before that held.
+  return turns
+    .slice(turns.findLastIndex((each) => told.has(each.id)) + 1)
+    .filter((each) => each.state === 'completed' || each.state === 'failed');
+}
+
+/**
+ * Tells the session that started this one how each of its turns ended, once per turn and in
+ * order; a turn the user cancelled or stopped tells nothing. A notice the caller cannot take yet
+ * waits for it, and one the daemon's shutdown holds back goes out on the next start.
+ */
+function tellSpawner(ctx: ControlContext, session: Session): void {
+  const callerId = session.spawned_by?.session_id;
+  if (!callerId || session.stop_requested || ctx.closing) return;
+  const caller = ctx.store.get<Session>('sessions', callerId);
+  if (!caller || caller.state === 'closed' || !untoldTurns(ctx, session.id).length) return;
+  if (!takesNotice(ctx, caller)) return unreachedCaller(ctx, callerId);
   const workspace = session.workspace_id
     ? ctx.store.get<Workspace>('workspaces', session.workspace_id)
     : undefined;
   const target = workspace?.source_branch;
-  const failure = latestEvent(ctx, turn.id, 'turn.failed');
-  const { error, error_code } = failure
-    ? (JSON.parse(failure.payload) as { error?: string; error_code?: string })
-    : {};
-  const reason = error_code ?? error?.split('\n')[0];
-  const tell = (ahead: number | undefined) => {
-    const text = [
+  const notice = (turn: SessionTurn, ahead: number | undefined, branch?: string | null) => {
+    const failure = latestEvent(ctx, turn.id, 'turn.failed');
+    const { error, error_code } = failure
+      ? (JSON.parse(failure.payload) as { error?: string; error_code?: string })
+      : {};
+    const reason = error_code ?? error?.split('\n')[0];
+    return [
       `[Pantheon] Session "${session.title ?? ''}" (${session.id}, ${session.runtime}), which you spawned, ${
         turn.state === 'completed'
           ? 'completed its turn.'
           : `failed its turn${reason ? `: ${reason}` : ''}.`
       }`,
-      ...(listed?.branch
+      ...(branch
         ? [
-            `It is on branch ${listed.branch}${
+            `It is on branch ${branch}${
               ahead !== undefined && target ? `, ${commits(ahead)} ahead of ${target}` : ''
             }.`,
           ]
@@ -305,17 +317,28 @@ export function afterSpawnedTurn(ctx: ControlContext, sessionId: string): void {
         ? ['Review it with request_review, land it with report_ready, or read it in its worktree.']
         : []),
     ].join(' ');
+  };
+  const tell = (ahead: number | undefined) => {
+    const branch = sessionList(
+      ctx,
+      { id: USER_PRINCIPAL_ID, role: 'user' },
+      session.project_id,
+      'cached',
+    ).find((each) => each.id === session.id)?.branch;
     ctx.store.transaction(() => {
-      // The turn can end again, or the caller close, while the count is read.
-      if (told()) return;
-      if (ctx.store.must<Session>('sessions', caller.id).state === 'closed') return;
-      notifySession(ctx, caller.id, text, turn.id);
-      ctx.store.event(
-        'session.spawner_notified',
-        ctx.store.must<Session>('sessions', session.id),
-        session.project_id,
-        { turn_id: turn.id, session_id: caller.id },
-      );
+      // While the count is read the daemon can start closing, the caller close, or another notice go out.
+      if (ctx.closing || ctx.store.must<Session>('sessions', caller.id).state === 'closed') return;
+      if (ctx.store.must<Session>('sessions', session.id).stop_requested) return;
+      for (const turn of untoldTurns(ctx, session.id)) {
+        if (!notifySession(ctx, caller.id, notice(turn, ahead, branch), turn.id))
+          return unreachedCaller(ctx, caller.id);
+        ctx.store.event(
+          'session.spawner_notified',
+          ctx.store.must<Session>('sessions', session.id),
+          session.project_id,
+          { turn_id: turn.id, session_id: caller.id },
+        );
+      }
     });
   };
   if (!target || !workspace) return tell(undefined);
@@ -326,13 +349,46 @@ export function afterSpawnedTurn(ctx: ControlContext, sessionId: string): void {
     undefined,
     true,
   )
-    // Shutdown waits for this before storage closes, and a restart does not tell the turn again.
+    // Shutdown waits for this before storage closes.
     .then((counted) =>
       tell(counted.exit_code === 0 ? Number(counted.stdout.toString().trim()) : undefined),
     )
     .catch((error: unknown) => ctx.diagnostic(error))
     .finally(() => ctx.completions.delete(counting));
   ctx.completions.add(counting);
+}
+
+/** Sends the notices of the sessions this one spawned that have not reached it. */
+function tellCaller(ctx: ControlContext, callerId: string): void {
+  for (const session of ctx.store.list<Session>('sessions'))
+    if (session.spawned_by?.session_id === callerId) tellSpawner(ctx, session);
+}
+
+/**
+ * Once a turn of the session ended: tells its spawner, when it has one, and sends the notices
+ * that waited for this session to end its own turn.
+ */
+export function afterSpawnedTurn(ctx: ControlContext, sessionId: string): void {
+  const session = ctx.store.get<Session>('sessions', sessionId);
+  if (!session || ctx.closing) return;
+  tellSpawner(ctx, session);
+  tellCaller(ctx, sessionId);
+}
+
+/** Sends the waiting notices of the callers that take input again. */
+export function retrySpawnerNotices(ctx: ControlContext): void {
+  const callers = unreached.get(ctx);
+  for (const callerId of callers ?? []) {
+    const caller = ctx.store.get<Session>('sessions', callerId);
+    if (caller && caller.state !== 'closed' && !takesNotice(ctx, caller)) continue;
+    callers!.delete(callerId);
+    if (caller && caller.state !== 'closed') tellCaller(ctx, callerId);
+  }
+}
+
+/** On start, sends every notice that did not go out before the daemon stopped. */
+export function tellSpawners(ctx: ControlContext): void {
+  for (const session of ctx.store.list<Session>('sessions')) tellSpawner(ctx, session);
 }
 
 /** Whether the session's HEAD is the commit it last landed and its index and files are clean. */

@@ -18,7 +18,7 @@ import { failWorkbenchTurns, workspaceReady } from './provisioning.js';
 import { discardStopped, recoverGateRuns, rollbackTransaction } from './workbench-session.js';
 import { finishRollback, restoreCheckpoint } from './checkpoint.js';
 import { recoverQueuedHandoff, unsnooze } from './session.js';
-import { afterSpawnedTurn } from './conductor.js';
+import { afterSpawnedTurn, tellSpawners } from './conductor.js';
 import { recoverEnvironmentChecks } from './environment-check.js';
 import { reconciledStates } from './non-writer-audit.js';
 
@@ -310,6 +310,7 @@ export async function recover(ctx: ControlContext): Promise<void> {
       );
     recoverReviewDirectories(ctx);
   });
+  tellSpawners(ctx);
   ctx.changed();
 }
 
