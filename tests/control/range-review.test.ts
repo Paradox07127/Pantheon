@@ -121,6 +121,39 @@ it('reviews the range from the merge base of base and head without a session or 
   expect(turn!.input).not.toContain('base side change');
 });
 
+it('reviews only the diff of the named paths and keeps them with the refs', async () => {
+  const { w, reviewer, started, row } = await rangeFixture();
+  git(w.source, 'checkout', '--quiet', 'feature');
+  writeFileSync(path.join(w.source, 'notes.txt'), 'left out of this part\n');
+  git(w.source, 'add', '.');
+  git(w.source, 'commit', '--quiet', '-m', 'Add notes');
+  git(w.source, 'checkout', '--quiet', 'main');
+  const review = await started({ paths: ['src/a.ts'] });
+  expect(row(review.id).refs).toEqual({ base: 'main', head: 'feature', paths: ['src/a.ts'] });
+  const { spec, turn } = reviewer.starts[0]!;
+  const diff = readFileSync(path.join(spec.cwd, 'changes.diff'), 'utf8');
+  expect(diff).toContain('+export const c = 3;');
+  expect(diff).not.toContain('left out of this part');
+  expect(turn!.input).not.toContain('left out of this part');
+});
+
+it('puts the review focus into the reviewer input after the goal and before the changes', async () => {
+  const { reviewer, started } = await rangeFixture();
+  await started({ focus: 'Check the exported constants only' });
+  const input = reviewer.starts[0]!.turn!.input as string;
+  const focus = input.indexOf('Check the exported constants only');
+  expect(focus).toBeGreaterThan(input.indexOf('Add the a module'));
+  expect(focus).toBeLessThan(input.indexOf('+export const c = 3;'));
+});
+
+it('reviews the same range for another set of paths while the first is under review', async () => {
+  const { w, request } = await rangeFixture();
+  await request({ paths: ['src/a.ts'] });
+  await request({ paths: ['answer.txt', 'src/a.ts'] });
+  await request();
+  expect(w.store.list<Review>('reviews')).toHaveLength(3);
+});
+
 it('keeps a located blocking finding of a range review blocking and records a free-text one as unlocated and not blocking', async () => {
   const { reviewer, started, row } = await rangeFixture();
   const review = await started();
@@ -436,6 +469,15 @@ it.each<
     async (f) => {
       await f.request();
       return f.request();
+    },
+    'resource_busy',
+    undefined,
+  ],
+  [
+    'the same paths of a range already under review',
+    async (f) => {
+      await f.request({ paths: ['src/a.ts', 'answer.txt'] });
+      return f.request({ paths: ['answer.txt', 'src/a.ts'] });
     },
     'resource_busy',
     undefined,

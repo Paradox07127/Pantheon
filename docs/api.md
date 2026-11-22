@@ -421,7 +421,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 |---|---|---|
 | `review.finding` | `location`: string<br>`quote`: string<br>`evidence`: string<br>`impact`: string<br>`blocking`: boolean<br>`reproduction?`: object | review_finding (reviewer) |
 | `review.finding.resolve` | `review_id`: string<br>`finding_id`: string<br>`outcome`: "fixed" \| "intentional" \| "not_worth_it" \| "wrong"<br>`note?`: string |  |
-| `review.range` | `root`: string<br>`base`: string<br>`head?`: string<br>`runtimes?`: string[]<br>`fallback?`: string[] |  |
+| `review.range` | `root`: string<br>`base`: string<br>`head?`: string<br>`paths?`: string[]<br>`focus?`: string<br>`runtimes?`: string[]<br>`fallback?`: string[] |  |
 | `review.request` | `session_id`: string<br>`runtimes`: string[]<br>`fallback?`: string[] |  |
 | `review.verdict` | `verdict`: "pass" \| "fail"<br>`summary`: string | review_verdict (reviewer) |
 

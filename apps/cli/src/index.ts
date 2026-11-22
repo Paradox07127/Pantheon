@@ -32,6 +32,8 @@ try {
       message: { type: 'string' },
       'allow-gate-change': { type: 'boolean' },
       note: { type: 'string' },
+      focus: { type: 'string' },
+      paths: { type: 'string' },
     },
   });
 } catch (error) {

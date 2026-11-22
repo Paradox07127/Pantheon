@@ -957,8 +957,8 @@ export interface Review extends Entity {
   plan?: { tasks: { task_id: string; generation: number }[] };
   /** Frozen committed range supplied to every reviewer. */
   range?: { source: string; from_sha: string; to_sha: string };
-  /** The refs the user named for a range review; absent on every other review. */
-  refs?: { base: string; head: string };
+  /** The refs, and the paths if any, the user named for a range review; absent on every other review. */
+  refs?: { base: string; head: string; paths?: string[] };
   /** Artifact-store SHA-256 of the full reviewer input, when supplied. */
   input_hash?: string;
   round: number;

@@ -286,8 +286,15 @@ export function prepareRangeReview(
       'invalid_input',
       `No committed changes to review between ${input.base} and ${head}`,
     );
+    // Literal: a file name with * or ? names that file, not a pattern.
+    const paths = input.paths ? ['--', ...input.paths.map((p) => `:(literal)${p}`)] : [];
     const [diff, log] = await Promise.all([
-      runGit(root, ['diff', '--no-color', '--no-ext-diff', from_sha, to_sha], undefined, true),
+      runGit(
+        root,
+        ['diff', '--no-color', '--no-ext-diff', from_sha, to_sha, ...paths],
+        undefined,
+        true,
+      ),
       runGit(root, ['log', '--format=%B', `${from_sha}..${to_sha}`], undefined, true),
     ]);
     for (const result of [diff, log])
@@ -297,6 +304,7 @@ export function prepareRangeReview(
         result.stderr.toString().trim() || result.error || 'Git failed',
       );
     const goal = log.stdout.toString('utf8').slice(0, 2000);
+    const pathSet = (named?: string[]) => [...new Set(named)].sort().join('\0');
     return (ctx: ControlContext, principal: Principal, command: Command) => {
       const { input, project } = rangeTarget(ctx, principal, command);
       const busy = ctx.store
@@ -306,7 +314,8 @@ export function prepareRangeReview(
             review.state === 'running' &&
             review.refs &&
             review.range?.from_sha === from_sha &&
-            review.range.to_sha === to_sha,
+            review.range.to_sha === to_sha &&
+            pathSet(review.refs.paths) === pathSet(input.paths),
         );
       requireThat(!busy, 'resource_busy', 'This range is already under review');
       const reviewer = input.runtimes ? undefined : reviewerRuntime(ctx, project.id, '');
@@ -318,10 +327,10 @@ export function prepareRangeReview(
       const review = startReview(ctx, project.id, input.runtimes ?? [reviewer!], {
         round: 1,
         cause: command.command_id,
-        prompt: `${rangeInstruction}\n\nTask goal:\n${goal}\n\nChanges:\n${diff.stdout.toString('utf8')}`,
+        prompt: `${rangeInstruction}\n\nTask goal:\n${goal}\n\n${input.focus === undefined ? '' : `Review focus:\n${input.focus}\n\n`}Changes:\n${diff.stdout.toString('utf8')}`,
         artifact: diff.stdout,
         range: { source: root, from_sha, to_sha },
-        refs: { base: input.base, head },
+        refs: { base: input.base, head, ...(input.paths ? { paths: input.paths } : {}) },
         fallback: input.fallback,
       });
       return { ...review, review_id: review.id };
@@ -400,11 +409,6 @@ export const reviewHandlers: Handlers = {
     const finding = review.findings.find((item) => item.id === input.finding_id);
     requireThat(finding, 'not_found', 'Review finding not found');
     requireThat(
-      !finding.resolution,
-      'invalid_state',
-      `Review finding is already resolved as ${finding.resolution?.outcome}`,
-    );
-    requireThat(
       finding.status === 'open' || finding.status === 'stale',
       'invalid_state',
       `Review finding is ${finding.status}; only an open or stale finding can be resolved`,
@@ -429,7 +433,11 @@ export const reviewHandlers: Handlers = {
       'review.finding_resolved',
       next,
       review.project_id,
-      { finding_id: finding.id, outcome: input.outcome },
+      {
+        finding_id: finding.id,
+        outcome: input.outcome,
+        ...(finding.resolution ? { previous: finding.resolution } : {}),
+      },
       command.command_id,
     );
     return next;

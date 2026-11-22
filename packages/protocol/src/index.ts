@@ -1612,6 +1612,18 @@ export const inputSchemas = {
     root: str.describe('A project root; its repository is reviewed.'),
     base: str.describe('The ref the changes start from; the merge base with head is used.'),
     head: str.optional().describe('The ref with the changes; absent means HEAD.'),
+    paths: z
+      .array(str)
+      .min(1)
+      .max(500)
+      .optional()
+      .describe('Repository-relative paths; only their changes are reviewed. Absent means all.'),
+    focus: z
+      .string()
+      .min(1)
+      .max(2000)
+      .optional()
+      .describe("What to look at closely; it goes into the reviewer's input after the goal."),
     runtimes: strings
       .min(1)
       .optional()

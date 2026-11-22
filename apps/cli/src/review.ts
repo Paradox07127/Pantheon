@@ -10,7 +10,13 @@ export interface Daemon {
   token: string;
 }
 
-export const reviewUsage = 'review [--base REF] [RANGE] [--runtime NAME]... [--fallback NAME]...';
+export const reviewUsage =
+  'review [--base REF] [RANGE] [--runtime NAME]... [--fallback NAME]... [--focus TEXT] [--paths A,B]';
+/** The most diff one review part carries; a larger file goes alone in its part. */
+const PART_BYTES = 150 * 1024;
+const MAX_PARTS = 8;
+/** The most paths one review.range takes. */
+const PART_PATHS = 500;
 const outcomes = ['fixed', 'intentional', 'not_worth_it', 'wrong'];
 export const resolveUsage = `review resolve REVIEW_ID FINDING_ID ${outcomes.join('|')} [--note TEXT]`;
 
@@ -45,6 +51,49 @@ export const sharedRef = (ref: string) => {
     ).stdout.trim();
   const commit = git('rev-parse', '--verify', '-q', '--end-of-options', `${ref}^{commit}`);
   return commit.status === 0 ? commit.stdout.trim() : ref;
+};
+
+/**
+ * The paths of each review part of a range whose diff is over PART_BYTES, packed in diff order,
+ * and the deleted files no part carries; undefined when the range goes as one review.
+ */
+const rangeParts = (root: string, base: string, head: string) => {
+  const inRoot = (...args: string[]) =>
+    spawnSync('git', ['-C', root, ...args], { encoding: 'utf8', maxBuffer: 1 << 30 });
+  const from = inRoot('merge-base', '--end-of-options', base, head);
+  if (from.status !== 0) return undefined;
+  const range = [from.stdout.trim(), head];
+  const patch = inRoot('diff', '--no-color', '--no-ext-diff', ...range).stdout;
+  if (Buffer.byteLength(patch) <= PART_BYTES) return undefined;
+  // The patch has one section per entry of the name status, in the same order.
+  const sizes = patch.split(/^(?=diff --git )/m).map((section) => Buffer.byteLength(section));
+  const fields = inRoot('diff', '--name-status', '-z', ...range).stdout.split('\0');
+  const deleted: string[] = [];
+  const parts: { paths: string[]; bytes: number }[] = [];
+  for (let index = 0, entry = 0; fields[index]; index++, entry++) {
+    const status = fields[index]!;
+    const paths = fields.slice(index + 1, index + (/^[RC]/.test(status) ? 3 : 2));
+    index += paths.length;
+    const bytes = sizes[entry]!;
+    if (status === 'D') {
+      deleted.push(...paths);
+      continue;
+    }
+    const last = parts.at(-1);
+    if (
+      last &&
+      last.bytes + bytes <= PART_BYTES &&
+      last.paths.length + paths.length <= PART_PATHS
+    ) {
+      last.paths.push(...paths);
+      last.bytes += bytes;
+    } else parts.push({ paths, bytes });
+  }
+  if (parts.length > MAX_PARTS)
+    usageError(
+      `The range needs ${parts.length} review parts of at most ${PART_BYTES / 1024} KB, over ${MAX_PARTS}; review fewer files with --paths.`,
+    );
+  return { parts: parts.map((part) => part.paths), deleted };
 };
 
 /** The branch checked out in the current directory; undefined on a detached HEAD. */
@@ -144,7 +193,14 @@ const resolve = async (connect: () => Daemon, positionals: string[], note?: stri
 export const review = async (
   connect: () => Daemon,
   positionals: string[],
-  values: { base?: string; runtime?: string[]; fallback?: string[]; note?: string },
+  values: {
+    base?: string;
+    runtime?: string[];
+    fallback?: string[];
+    note?: string;
+    focus?: string;
+    paths?: string;
+  },
 ) => {
   if (positionals[0] === 'resolve') return resolve(connect, positionals.slice(1), values.note);
   if (positionals.length > 1) usageError(`Usage: pantheon ${reviewUsage}`);
@@ -164,39 +220,68 @@ export const review = async (
   head = sharedRef(head ?? 'HEAD');
   if (defaulted && git('status', '--porcelain').stdout.trim())
     console.error('Uncommitted changes are not reviewed; only committed content is.');
-  let result: Review;
-  try {
-    const daemon = connect();
-    const sent = await sendCommand(
-      daemon,
-      'review.range',
-      {
-        root,
-        base,
-        head,
-        ...(values.runtime?.length ? { runtimes: values.runtime } : {}),
-        ...(values.fallback?.length ? { fallback: values.fallback } : {}),
-      },
-      60_000,
-    );
-    if (!sent.ok) {
-      console.error(JSON.stringify(sent.body, null, 2));
-      return 2;
-    }
-    const started = sent.body.receipt as Review;
-    console.error(`Review ${started.id} started: ${started.runtimes.join(', ')}`);
-    result = await poll<Review>(
-      daemon,
-      'review.read',
-      'review_id',
-      started.id,
-      (value) => value.state !== 'running',
-    );
-  } catch (error) {
-    // Exit 1 means the review blocks; a review that never finished is exit 2.
-    console.error(String(error));
+  const split = values.paths === undefined ? rangeParts(root, base, head) : undefined;
+  if (split?.deleted.length) console.log(`LEFT OUT (deleted): ${split.deleted.join(', ')}`);
+  const parts = split?.parts ?? [values.paths?.split(',').filter(Boolean)];
+  if (!parts.length) {
+    console.error('Only deleted files changed; no part is left to review.');
     return 2;
   }
+  const settled: { label: string; id: string; code: number; blocking: number }[] = [];
+  for (const [index, paths] of parts.entries()) {
+    const label = `PART ${index + 1}/${parts.length}`;
+    let result: Review;
+    try {
+      const daemon = connect();
+      const sent = await sendCommand(
+        daemon,
+        'review.range',
+        {
+          root,
+          base,
+          head,
+          ...(values.focus === undefined ? {} : { focus: values.focus }),
+          ...(paths ? { paths } : {}),
+          ...(values.runtime?.length ? { runtimes: values.runtime } : {}),
+          ...(values.fallback?.length ? { fallback: values.fallback } : {}),
+        },
+        60_000,
+      );
+      if (!sent.ok) {
+        console.error(JSON.stringify(sent.body, null, 2));
+        return 2;
+      }
+      const started = sent.body.receipt as Review;
+      if (parts.length > 1) console.log(`${label} ${started.id}`);
+      console.error(`Review ${started.id} started: ${started.runtimes.join(', ')}`);
+      result = await poll<Review>(
+        daemon,
+        'review.read',
+        'review_id',
+        started.id,
+        (value) => value.state !== 'running',
+      );
+    } catch (error) {
+      // Exit 1 means the review blocks; a review that never finished is exit 2.
+      console.error(String(error));
+      return 2;
+    }
+    const blocking = result.findings.filter(
+      (finding) => finding.status === 'open' && finding.blocking,
+    ).length;
+    settled.push({ label, id: result.id, code: printReview(result), blocking });
+  }
+  if (settled.length === 1) return settled[0]!.code;
+  for (const part of settled)
+    console.log(
+      `${part.label} ${part.id}: ${['pass', 'fail', 'incomplete'][part.code]}, ${part.blocking} blocking`,
+    );
+  const codes = settled.map((part) => part.code);
+  return codes.includes(1) ? 1 : codes.includes(2) ? 2 : 0;
+};
+
+/** Prints a settled review's open findings and verdicts; returns its exit code. */
+const printReview = (result: Review) => {
   const open = result.findings.filter((finding) => finding.status === 'open');
   const located = open
     .filter((finding) => !finding.unlocated)

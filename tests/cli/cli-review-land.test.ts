@@ -69,7 +69,20 @@ beforeAll(async () => {
   writeFileSync(path.join(repo, 'a.txt'), 'one\n');
   git(repo, 'add', 'a.txt');
   git(repo, 'commit', '-q', '-m', 'first');
-  git(repo, 'checkout', '-q', '-b', 'feature');
+  const lines = (kilobytes: number) => `${'x'.repeat(99)}\n`.repeat(kilobytes * 10);
+  git(repo, 'checkout', '-q', '-b', 'large');
+  for (const name of ['b1.txt', 'b2.txt', 'b3.txt'])
+    writeFileSync(path.join(repo, name), lines(60));
+  writeFileSync(path.join(repo, 'big.txt'), lines(200));
+  git(repo, 'rm', '-q', 'a.txt');
+  git(repo, 'add', '.');
+  git(repo, 'commit', '-q', '-m', 'large');
+  git(repo, 'checkout', '-q', '-b', 'huge', 'main');
+  for (let index = 0; index < 9; index++)
+    writeFileSync(path.join(repo, `h${index}.txt`), lines(160));
+  git(repo, 'add', '.');
+  git(repo, 'commit', '-q', '-m', 'huge');
+  git(repo, 'checkout', '-q', '-b', 'feature', 'main');
   linked = path.join(parent, 'linked');
   git(repo, 'worktree', 'add', '-q', '-b', 'linked-branch', linked);
   detached = path.join(parent, 'detached');
@@ -248,6 +261,14 @@ describe('pnpm cli review', () => {
       stream: 'stderr',
       line: 'not both',
     },
+    {
+      name: 'a range that needs more than eight parts',
+      args: ['main..huge'],
+      answers: [],
+      code: 64,
+      stream: 'stderr',
+      line: '--paths',
+    },
   ])('exits $code on $name', async ({ args, answers, code, stream, line }) => {
     const result = await cli(repo, ['review', ...args], answers);
     expect(result[stream as 'stdout' | 'stderr']).toContain(line);
@@ -318,6 +339,69 @@ describe('pnpm cli review', () => {
     );
     expect(sentInput().input).toMatchObject({ fallback: ['grok', 'claude'] });
   });
+
+  it('sends --focus and the --paths as given in one review', async () => {
+    await cli(
+      repo,
+      ['review', 'main..large', '--focus', 'Error handling', '--paths', 'big.txt,a.txt'],
+      [{ body: { receipt: running } }, { body: reviewOf({}) }],
+    );
+    expect(requests.filter((request) => request.method === 'POST')).toHaveLength(1);
+    expect(sentInput().input).toEqual({
+      root: repo,
+      base: 'main',
+      head: 'large',
+      focus: 'Error handling',
+      paths: ['big.txt', 'a.txt'],
+    });
+  });
+
+  it('splits a large range into parts by file, leaves deleted files out and sums up the parts', async () => {
+    const part = (id: string, patch: Record<string, unknown> = {}) => [
+      { body: { receipt: reviewOf({ id, state: 'running', verdicts: [] }) } },
+      { body: reviewOf({ id, ...patch }) },
+    ];
+    const result = await cli(
+      repo,
+      ['review', 'main..large', '--focus', 'Error handling'],
+      [
+        ...part('part-1'),
+        ...part('part-2', { findings: [finding({ blocking: true })] }),
+        ...part('part-3'),
+      ],
+    );
+    const sent = requests
+      .filter((request) => request.method === 'POST')
+      .map((request) => JSON.parse(request.body).input);
+    expect(sent).toEqual(
+      [['b1.txt', 'b2.txt'], ['b3.txt'], ['big.txt']].map((paths) => ({
+        root: repo,
+        base: 'main',
+        head: 'large',
+        focus: 'Error handling',
+        paths,
+      })),
+    );
+    const out = result.stdout.split('\n');
+    expect(out[0]).toBe('LEFT OUT (deleted): a.txt');
+    for (const line of [
+      'PART 1/3 part-1',
+      'PART 2/3 part-2',
+      'PART 3/3 part-3',
+      'src/a.ts:2 [blocking] codex: Hangs',
+      'PART 1/3 part-1: pass, 0 blocking',
+      'PART 2/3 part-2: fail, 1 blocking',
+      'PART 3/3 part-3: pass, 0 blocking',
+    ])
+      expect(out).toContain(line);
+    expect(out.indexOf('PART 2/3 part-2')).toBeLessThan(
+      out.indexOf('src/a.ts:2 [blocking] codex: Hangs'),
+    );
+    expect(out.indexOf('PART 3/3 part-3')).toBeLessThan(
+      out.indexOf('PART 1/3 part-1: pass, 0 blocking'),
+    );
+    expect(result.code).toBe(1);
+  }, 20_000);
 
   it('prints each replacement and judges the review by the reviewer that took over', async () => {
     const result = await cli(

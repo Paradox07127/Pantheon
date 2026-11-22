@@ -172,23 +172,44 @@ it('records a fixed or wrong outcome on open session review findings and emits r
   ]);
 });
 
-it('refuses to resolve a session review finding that already has an outcome or was rejected', async () => {
+it('refuses to resolve a session review finding that was rejected', async () => {
+  const f = await sessionReviewFixture();
+  const review = await f.request();
+  f.reviewers[0]!.finding({ ...finding, quote: 'not in the changes' });
+  const [rejected] = f.row(review).findings;
+  expect(rejected!.status).toBe('rejected');
+  const before = f.row(review);
+  expect(() => f.resolve(review, rejected!.id, 'fixed')).toThrow(
+    expect.objectContaining({
+      code: 'invalid_state',
+      message: expect.stringContaining('rejected'),
+    }),
+  );
+  expect(f.row(review)).toEqual(before);
+});
+
+it('replaces the outcome of a resolved finding and records the previous one in the event', async () => {
   const f = await sessionReviewFixture();
   const review = await f.request();
   f.reviewers[0]!.finding(finding);
-  f.reviewers[0]!.finding({ ...finding, quote: 'not in the changes' });
-  const [open, rejected] = f.row(review).findings;
-  expect(rejected!.status).toBe('rejected');
-  f.resolve(review, open!.id, 'fixed');
-  const before = f.row(review);
-  for (const [id, outcome, reason] of [
-    [open!.id, 'wrong', 'fixed'],
-    [rejected!.id, 'fixed', 'rejected'],
-  ] as const)
-    expect(() => f.resolve(review, id, outcome)).toThrow(
-      expect.objectContaining({ code: 'invalid_state', message: expect.stringContaining(reason) }),
-    );
-  expect(f.row(review)).toEqual(before);
+  const [open] = f.row(review).findings;
+  f.resolve(review, open!.id, 'fixed', { note: 'Recorded by mistake' });
+  const previous = f.row(review).findings[0]!.resolution!;
+  f.resolve(review, open!.id, 'wrong');
+  expect(f.row(review).findings[0]!.resolution).toEqual({
+    outcome: 'wrong',
+    resolved_at: expect.any(Number),
+    resolved_by: user.id,
+  });
+  expect(
+    f.store
+      .events()
+      .filter((e) => e.kind === 'review.finding_resolved')
+      .map((e) => e.payload),
+  ).toEqual([
+    { finding_id: open!.id, outcome: 'fixed' },
+    { finding_id: open!.id, outcome: 'wrong', previous },
+  ]);
 });
 
 it('resolves a session review finding that went stale after a later commit', async () => {

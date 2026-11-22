@@ -244,7 +244,9 @@ Pantheon 读取 Claude Code 和 Codex 的原生历史。
 
 `pnpm cli review` 只审已提交的内容；不给 head 时审当前目录的分支。每个审查 runtime 加一次 `--runtime NAME`。`--fallback NAME` 按顺序给出接替的 runtime:某个审查者的回合因用量上限结束时由它接手。它等到结果，打印未关闭的发现和每个审查者的结论。退出码：每个审查者都通过为 0;有阻塞发现或 fail 结论为 1;审查失败、不完整、被拒或读不到 daemon 为 2;用法错误为 64。Ctrl-C 只停止等待，审查继续。
 
-`pnpm cli review resolve` 把一条发现记为 `fixed`、`intentional`、`not_worth_it` 或 `wrong`,`--note TEXT` 记下原因。
+`--focus TEXT`(最多 2000 字符)告诉审查者重点看什么，放在审查输入里目标之后。`--paths A,B` 只审这些仓库相对路径(最多 500 个)的改动，作为一次审查。不带 `--paths` 时，整段 diff 超过 150 KB 的范围按文件切成多段：每段不超过 150 KB,单个超大文件单独一段，最多 8 段;需要更多段时拒绝，请用 `--paths` 缩小范围。删除的文件不进任何一段，列在一行 `LEFT OUT (deleted): ...` 里。每段是一次单独的审查：先打印 `PART i/n` 和审查 id,再打印该段的发现和结论;最后一段结束后每段打印一行结论和阻塞发现数。退出码：任一段阻塞为 1;否则任一段没通过为 2;否则为 0。
+
+`pnpm cli review resolve` 把一条发现记为 `fixed`、`intentional`、`not_worth_it` 或 `wrong`,`--note TEXT` 记下原因。对已有结论的发现再记一次，新结论替换旧的;`review.finding_resolved` 事件在 `previous` 里留下旧结论。
 
 `pnpm cli land` 把分支(缺省为当前目录的分支)落到项目目录当前检出的分支上。项目目录要配了门禁。`--message TEXT` 把这些提交合成一个提交落地。退出码：已落地或没有改动为 0;落地受阻或被拒为 1。因门禁文件被改而挡下时，它打出带 `--allow-gate-change` 的放行命令。
 
