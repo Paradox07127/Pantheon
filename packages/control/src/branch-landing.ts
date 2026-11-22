@@ -192,8 +192,8 @@ async function squash(
 }
 
 /**
- * The squashed commit of the newest earlier landing onto the row's target that the worktree's HEAD
- * holds and the target does not; rows list in the order they were queued.
+ * The nearest commit HEAD shares with the branch of an earlier squashed landing onto the row's
+ * target, when the target holds that landing's squashed commit but not the shared commit itself.
  */
 async function squashedAncestor(
   ctx: ControlContext,
@@ -203,21 +203,35 @@ async function squashedAncestor(
   const holds = async (cwd: string, ancestor: string, descendant: string) =>
     (await runGit(cwd, ['merge-base', '--is-ancestor', ancestor, descendant], undefined, true))
       .exit_code === 0;
-  const squashed = ctx.store
-    .list<Landing>('landings')
-    .filter(
-      (other) =>
-        other.state === 'landed' &&
-        other.squashed_sha !== undefined &&
-        other.root === row.root &&
-        other.target_branch === row.target_branch,
-    );
-  for (const other of squashed.reverse())
+  const target = `refs/heads/${row.target_branch}`;
+  const cuts: string[] = [];
+  for (const other of ctx.store.list<Landing>('landings'))
     if (
-      (await holds(worktree, other.squashed_sha!, 'HEAD')) &&
-      !(await holds(row.root, other.squashed_sha!, `refs/heads/${row.target_branch}`))
-    )
-      return other.squashed_sha;
+      other.state === 'landed' &&
+      other.squashed_sha !== undefined &&
+      other.to_sha !== undefined &&
+      other.root === row.root &&
+      other.target_branch === row.target_branch
+    ) {
+      const cut = await runGit(
+        worktree,
+        ['merge-base', 'HEAD', other.squashed_sha],
+        undefined,
+        true,
+      );
+      const sha = cut.stdout.toString().trim();
+      if (
+        cut.exit_code === 0 &&
+        !(await holds(row.root, sha, target)) &&
+        (await holds(row.root, other.to_sha, target))
+      )
+        cuts.push(sha);
+    }
+  for (const cut of cuts) {
+    let nearest = true;
+    for (const other of cuts) nearest &&= await holds(worktree, other, cut);
+    if (nearest) return cut;
+  }
 }
 
 async function landBranch(ctx: ControlContext, landingId: string, jobId: string): Promise<void> {

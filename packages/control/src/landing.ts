@@ -790,7 +790,9 @@ export async function landWorkspace(
         sourceHead ??
         (await git(item.source, ['rev-parse', '--verify', 'HEAD^{commit}'], sourceEnv));
       if (landsOn !== sourceHead) await fetchBase(landsOn);
-      const changed = await changedPaths(workspace.path, landsOn, target);
+      // A rebase from the squashed commit's cut lands only the changes after it.
+      const landsFrom = onto && owner.squashedTip ? owner.squashedTip : landsOn;
+      const changed = await changedPaths(workspace.path, landsFrom, target);
       const agentConfiguration = changed.filter((file) =>
         AGENT_CONFIGURATION.some((entry) => within(file, entry)),
       );
@@ -806,7 +808,7 @@ export async function landWorkspace(
           project,
           item.source,
           workspace.path,
-          [landsOn, target],
+          [landsFrom, target],
           changed,
           commands,
         );

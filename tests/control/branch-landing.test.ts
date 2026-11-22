@@ -353,6 +353,103 @@ it.skipIf(insideSandbox)(
   },
 );
 
+it.skipIf(insideSandbox)(
+  'lands only its own commit, for a branch cut before the branch it came from got more commits and landed as one commit',
+  async () => {
+    const f = await landFixture();
+    branch(f, 'feature', [
+      ['stacked.txt', 'first\n'],
+      ['stacked.txt', 'second\n'],
+    ]);
+    branch(f, 'second', [['own.txt', 'own\n']], 'feature~1');
+    expect(await ended(f, (await land(f, { message: 'Land the feature' })).id)).toMatchObject({
+      state: 'landed',
+    });
+    const squashed = git(f.source, 'rev-parse', 'main');
+    const done = await ended(f, (await land(f, { branch: 'second' })).id);
+    expect(done).toMatchObject({ state: 'landed', from_sha: squashed });
+    expect(git(f.source, 'rev-list', '--count', `${squashed}..main`)).toBe('1');
+    expect(git(f.source, 'show', 'main:stacked.txt')).toBe('second');
+    expect(git(f.source, 'show', 'main:own.txt')).toBe('own');
+  },
+);
+
+it.skipIf(insideSandbox)(
+  'rebases from the nearest commit that landed as one commit, for a branch cut from a chain of such branches',
+  async () => {
+    const f = await landFixture();
+    branch(f, 'feature', [['stacked.txt', 'first\n']]);
+    branch(f, 'second', [['added.txt', 'second\n']], 'feature');
+    branch(f, 'third', [['own.txt', 'own\n']], 'second');
+    git(f.source, 'checkout', '--quiet', 'feature');
+    commit(f.source, 'later.txt', 'later\n');
+    git(f.source, 'checkout', '--quiet', 'main');
+    expect(
+      await ended(f, (await land(f, { branch: 'second', message: 'Land the second' })).id),
+    ).toMatchObject({ state: 'landed' });
+    expect(await ended(f, (await land(f, { message: 'Land the feature' })).id)).toMatchObject({
+      state: 'landed',
+    });
+    const moved = commit(f.source, 'added.txt', 'moved\n');
+    const done = await ended(f, (await land(f, { branch: 'third' })).id);
+    expect(done).toMatchObject({ state: 'landed', from_sha: moved });
+    expect(git(f.source, 'rev-list', '--count', `${moved}..main`)).toBe('1');
+    expect(git(f.source, 'show', 'main:own.txt')).toBe('own');
+    expect(git(f.source, 'show', 'main:added.txt')).toBe('moved');
+    expect(git(f.source, 'show', 'main:later.txt')).toBe('later');
+  },
+);
+
+it.skipIf(insideSandbox)(
+  'keeps the commits of the branch it was cut from, after the target lost their squashed commit',
+  async () => {
+    const f = await landFixture();
+    const base = git(f.source, 'rev-parse', 'main');
+    branch(f, 'feature', [
+      ['stacked.txt', 'first\n'],
+      ['stacked.txt', 'second\n'],
+    ]);
+    branch(f, 'second', [['own.txt', 'own\n']], 'feature');
+    expect(await ended(f, (await land(f, { message: 'Land the feature' })).id)).toMatchObject({
+      state: 'landed',
+    });
+    git(f.source, 'reset', '--quiet', '--hard', base);
+    const moved = commit(f.source, 'other.txt', 'other\n');
+    const done = await ended(f, (await land(f, { branch: 'second' })).id);
+    expect(done).toMatchObject({ state: 'landed', from_sha: moved });
+    expect(git(f.source, 'show', 'main:stacked.txt')).toBe('second');
+    expect(git(f.source, 'show', 'main:own.txt')).toBe('own');
+    expect(git(f.source, 'show', 'main:other.txt')).toBe('other');
+  },
+);
+
+it.skipIf(insideSandbox).each<[string, string, string, Partial<Landing>]>([
+  ['lands without leave a branch that', 'own.txt', 'own\n', { state: 'landed' }],
+  [
+    'blocks a branch that changes the gate file back and',
+    'scripts/check.cjs',
+    'process.exit(0)\n',
+    { state: 'blocked', reason: 'gate_files_changed', conflicts: ['scripts/check.cjs'] },
+  ],
+])(
+  '%s was cut from a branch whose gate file change landed as one commit with leave',
+  async (_name, file, contents, expected) => {
+    const f = await landFixture([]);
+    commit(f.source, 'scripts/check.cjs', 'process.exit(0)\n');
+    await setGate(f, [{ name: 'Checks', argv: [process.execPath, 'scripts/check.cjs'] }]);
+    branch(f, 'feature', [['scripts/check.cjs', '"changed"\n']]);
+    branch(f, 'second', [[file, contents]], 'feature');
+    expect(
+      await ended(f, (await land(f, { message: 'Land the feature', allow_gate_change: true })).id),
+    ).toMatchObject({ state: 'landed' });
+    const squashed = git(f.source, 'rev-parse', 'main');
+    const done = await ended(f, (await land(f, { branch: 'second' })).id);
+    expect(done).toMatchObject(expected);
+    if (expected.state === 'blocked') expect(git(f.source, 'rev-parse', 'main')).toBe(squashed);
+    else expect(git(f.source, 'show', `main:${file}`)).toBe(contents.trim());
+  },
+);
+
 it('reports no changes for a branch with a message whose commits undo each other', async () => {
   const f = await landFixture();
   const base = git(f.source, 'rev-parse', 'main');
