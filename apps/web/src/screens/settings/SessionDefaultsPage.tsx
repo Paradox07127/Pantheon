@@ -197,15 +197,16 @@ export function SessionDefaults({ project }: { project: Project | null }) {
 
   const send = async (next: Defaults) => {
     sending.current = true;
+    // Nothing reads the writer choice any more, and the daemon rejects a stored one that went stale.
+    const { writer: _, ...fallbacks } = next.fallbacks;
     const value = {
       runtime: next.runtime,
       permission_mode: next.permission_mode,
       ...(next.model !== null && { model: next.model }),
       ...(next.effort !== null && { effort: next.effort }),
       ...(next.single_model && { single_model: true }),
-      ...(next.writer && { writer: next.writer }),
       ...(next.reviewer && { reviewer: next.reviewer }),
-      ...(Object.keys(next.fallbacks).length > 0 && { fallbacks: next.fallbacks }),
+      ...(Object.keys(fallbacks).length > 0 && { fallbacks }),
     };
     const result = project
       ? await runCommand(

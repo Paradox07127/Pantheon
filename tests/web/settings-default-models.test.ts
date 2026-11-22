@@ -19,6 +19,7 @@ vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
 import { useBoard } from '@/data/board';
 import { t as format } from '@/i18n';
 import { SessionDefaults } from '@/screens/settings/SessionDefaultsPage';
+import { searchSettings } from '@/screens/settings/settings-search';
 import { pageHeader } from '@/screens/settings/settings-header';
 
 type Command = { type: string; input: Record<string, unknown>; expected_revision: number | null };
@@ -162,7 +163,7 @@ describe('default models page', () => {
     );
   });
 
-  it('offers no writer choice and keeps the saved writer and fallbacks when it saves', async () => {
+  it('offers no writer choice and drops the stored writer choices when it saves', async () => {
     const project = {
       ...kept,
       session_defaults: {
@@ -175,12 +176,17 @@ describe('default models page', () => {
       },
     };
     const h = await mount(() => SessionDefaults({ project: project as never }));
-    const writer = format({ id: 'settings.defaults.writer', defaultMessage: 'Writing code' });
-    expect(names(tree(h)).filter((name) => name.includes(writer))).toEqual([]);
+    expect(names(tree(h)).filter((name) => /写代码|Writing code|writer/i.test(name))).toEqual([]);
     labelled(tree(h), PERMISSION).props.onValueChange('plan');
     await h.flush();
+    const { writer: _, ...rest } = project.session_defaults;
     expect(bridge.commands.map((c) => c.input)).toEqual([
-      { ...project.session_defaults, project_id: 'alpha', permission_mode: 'plan' },
+      {
+        ...rest,
+        fallbacks: { lead: project.session_defaults.fallbacks.lead },
+        project_id: 'alpha',
+        permission_mode: 'plan',
+      },
     ]);
   });
 
@@ -377,4 +383,8 @@ describe('default models page', () => {
     expect(editor.type).toBe(SessionDefaults);
     expect(editor.props.project).toBe(saved);
   });
+});
+
+it.each(['外审', 'review model'])('finds the review model row itself by "%s"', (query) => {
+  expect(searchSettings(query)[0]).toMatchObject({ id: 'defaults.reviewer', pageOnly: false });
 });

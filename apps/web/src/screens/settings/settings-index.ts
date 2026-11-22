@@ -1194,7 +1194,7 @@ export const SETTINGS_INDEX: SettingRecord[] = [
     id: 'defaults.reviewer',
     page: 'defaults',
     section: outsideReview,
-    label: defineMessage({ id: 'settings.defaults.model', defaultMessage: 'Model' }),
+    label: defineMessage({ id: 'settings.defaults.reviewModel', defaultMessage: 'Review model' }),
   },
   {
     id: 'defaults.reviewerFallback',

@@ -8,5 +8,6 @@
   "settings.defaults.model": "模型",
   "settings.defaults.fallback": "不可用时",
   "settings.defaults.newSessions": "新会话",
-  "settings.defaults.roleModel": "{role}的模型"
+  "settings.defaults.roleModel": "{role}的模型",
+  "settings.defaults.reviewModel": "外审的模型"
 }
