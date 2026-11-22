@@ -238,7 +238,7 @@ describe('main agent sessions', () => {
     mock.board = {
       board: {
         sessions: [
-          { id: 'lead', revision: 1, conductor: true },
+          { id: 'lead', revision: 1 },
           { id: 'plain', revision: 1 },
         ],
         session_turns: [],
@@ -268,21 +268,22 @@ describe('main agent sessions', () => {
   };
 
   it('names a main agent in its row and no other session', () => {
-    expect(rowName(session('lead', 'idle'))).toContain(conductor);
+    expect(rowName(session('lead', 'idle', { conductor: true }))).toContain(conductor);
     expect(rowName(session('plain', 'idle'))).not.toContain(conductor);
   });
 
   it('is a type of its own that the type filter can leave out', () => {
     expect(SESSION_TYPES).toContain('conductor');
-    const lead = session('lead', 'idle');
+    const lead = session('lead', 'idle', { conductor: true });
+    const plain = session('plain', 'idle');
     const worker = session('worker', 'idle', { spawned_by: { session_id: 'lead' } });
-    expect(sessionType(lead, true)).toBe('conductor');
-    expect([sessionType(lead), sessionType(worker)]).toEqual(['direct', 'worker']);
+    expect(sessionType(lead)).toBe('conductor');
+    expect([sessionType(plain), sessionType(worker)]).toEqual(['direct', 'worker']);
     const hidden = readSessionView('{"hiddenTypes":["conductor"]}');
     expect(hidden.hiddenTypes).toEqual(['conductor']);
-    expect(keptByView(lead, hidden, true)).toBe(false);
-    expect(keptByView(lead, hidden)).toBe(true);
+    expect(keptByView(lead, hidden)).toBe(false);
+    expect(keptByView(plain, hidden)).toBe(true);
     expect(keptByView(worker, hidden)).toBe(true);
-    expect(keptByView(lead, view, true)).toBe(true);
+    expect(keptByView(lead, view)).toBe(true);
   });
 });

@@ -121,6 +121,17 @@ it('opens a plain worktree session from the committed head of a worktree conduct
   await expectPlainWorktreeFrom(f, conductor.id, session_id, head);
 });
 
+it('marks only the conductor as the main agent in the session list', async () => {
+  const f = await workbenchFixture();
+  const conductor = await openConductor(f);
+  const { session_id } = await spawn(f, conductor.id, 'Port the parser');
+
+  const listed = (sessionId: string) =>
+    f.control.sessionList(user, f.project.id).find((s) => s.id === sessionId)!;
+  expect(listed(conductor.id).conductor).toBe(true);
+  expect(listed(session_id)).not.toHaveProperty('conductor');
+});
+
 it('opens a plain worktree session from the project folder head of an in-place conductor', async () => {
   const f = await workbenchFixture();
   const conductor = await openConductor(f, 'in_place');

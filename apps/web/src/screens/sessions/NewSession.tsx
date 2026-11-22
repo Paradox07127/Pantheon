@@ -999,6 +999,9 @@ export function NewSession(props: {
                   <SessionStateIcon session={s} place="list" />
                 </span>
                 <span className="cr-sgt">{sessionRow(s).title}</span>
+                {s.conductor && (
+                  <Crown className="ic-sm cr-agent" role="img" aria-label={conductorLabel()} />
+                )}
                 <span className="cr-sgs">{why(s)}</span>
                 <span className="cr-meta">{ageText(Date.parse(s.last_activity_at), now)}</span>
                 {i < SUGGESTED && <KeyHint id="session-number" digit={i + 1} />}
@@ -1043,6 +1046,18 @@ export function NewSession(props: {
       )}
     </div>
   );
+  const scratch = (
+    <button
+      type="button"
+      className="btn cr-scratch"
+      disabled={busy}
+      aria-disabled={conductor ? 'true' : undefined}
+      onClick={conductor ? undefined : () => void create('project_setup')}
+    >
+      <Sprout size={14} aria-hidden="true" />
+      {scratchLabel()}
+    </button>
+  );
   return (
     <>
       <header className="cr-hero">
@@ -1050,17 +1065,19 @@ export function NewSession(props: {
           {t({ id: 'sessions.composer.heroQuestion', defaultMessage: 'What should we work on?' })}
         </h1>
       </header>
-      {fromScratch && (
-        <button
-          type="button"
-          className="btn cr-scratch"
-          disabled={busy}
-          onClick={() => void create('project_setup')}
-        >
-          <Sprout size={14} aria-hidden="true" />
-          {scratchLabel()}
-        </button>
-      )}
+      {fromScratch &&
+        (conductor ? (
+          <Tip
+            content={t({
+              id: 'sessions.composer.fromScratchConductor',
+              defaultMessage: 'Main agent and start from scratch cannot be used together',
+            })}
+          >
+            {scratch}
+          </Tip>
+        ) : (
+          scratch
+        ))}
       <div className="cr-box">
         <section className="cr-dlg" aria-label={label} onKeyDown={onComposerKey}>
           {body}

@@ -2134,6 +2134,8 @@ export interface WorkbenchSession {
   forked_from?: { session_id: string; before_turn_id?: string; before_span_id?: string };
   /** The conductor session that spawned this one. */
   spawned_by?: NonNullable<Session['spawned_by']>;
+  /** A main agent: the session was opened with purpose conductor. */
+  conductor?: true;
   /** ISO time of the session.opened event. */
   created_at: string;
   /** Empty for a baseline session without a title, which baseline_started_at names. */

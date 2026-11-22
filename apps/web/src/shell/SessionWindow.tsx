@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { PanelLeft, Pin } from 'lucide-react';
+import { Crown, PanelLeft, Pin } from 'lucide-react';
 import type { BridgeResult } from '@pantheon/protocol';
 import { ProjectMonogram } from '../components/ProjectMonogram';
 import { SessionStateIcon, sessionStateLabel } from '../components/SessionStateIcon';
@@ -12,7 +12,7 @@ import { useSessionList } from '../data/workbench-sessions';
 import { t } from '../i18n';
 import { groupWorkbenchSessions, referableSessions, sessionRow } from '../screens/sessions/model';
 import { parentLink } from '../screens/sessions/SessionHeader';
-import { parentOf } from '../screens/sessions/session-groups';
+import { conductorLabel, parentOf } from '../screens/sessions/session-groups';
 import { Thread } from '../screens/sessions/Thread';
 import { useShell } from '../store';
 import { readyAfterPaint } from './window-kind';
@@ -108,6 +108,9 @@ export function SessionWindow({
           </span>
         )}
         {parent && parentLink(parent, !!listed?.spawned_by && !listed.forked_from)}
+        {listed?.conductor && (
+          <Crown className="ic-sm sh-agent" role="img" aria-label={conductorLabel()} />
+        )}
         <h1 className="sw-title">{title}</h1>
         {listed && (
           <span className="sw-state">

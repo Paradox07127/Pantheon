@@ -25,7 +25,6 @@ import {
   sessionStateTone,
 } from '../../components/SessionStateIcon';
 import { KeyHint } from '../../components/Shortcuts';
-import { useBoard } from '../../data/board';
 import { ageText } from '../../data/needs-you';
 import { type ModelsState } from '../../data/runtime-models';
 import { elapsedText } from '../../data/transcript';
@@ -142,8 +141,6 @@ export function SessionRowButton(props: {
   number?: number;
   /** Picked with the list's select key; apart from the shown session and the keyboard focus. */
   selected?: boolean;
-  /** A main agent session. */
-  conductor?: boolean;
   onContextMenu?: (e: MouseEvent<HTMLButtonElement>) => void;
 }) {
   const { session } = props;
@@ -156,7 +153,7 @@ export function SessionRowButton(props: {
   const inPlace = session.workspace_kind === 'in_place';
   const name = [
     row.title,
-    ...(props.conductor ? [conductorLabel()] : []),
+    ...(session.conductor ? [conductorLabel()] : []),
     ...(inPlace
       ? [t({ id: 'sessions.screen.inPlace', defaultMessage: 'Session in its own folder' })]
       : []),
@@ -215,7 +212,7 @@ export function SessionRowButton(props: {
       ) : (
         <span className="ss-ttl">{row.title}</span>
       )}
-      {props.conductor && <Crown className="ic-sm ss-agent" aria-hidden="true" />}
+      {session.conductor && <Crown className="ic-sm ss-agent" aria-hidden="true" />}
       {device && <span className="chip mono ss-dev">{device}</span>}
       <span className="ss-time">{ageText(Date.parse(session.last_activity_at), props.now)}</span>
       {props.number !== undefined && <KeyHint id="session-number" digit={props.number} />}
@@ -465,9 +462,6 @@ export function SessionListRow(props: {
   } = useSessionMenu(session);
   const [menu, setMenu] = useState(false);
   const box = useRef<HTMLDivElement>(null);
-  const conductor = useBoard(
-    (s) => !!s.board?.sessions.some((each) => each.id === session.id && each.conductor),
-  );
   const renaming = useShell((s) => s.renaming === session.id && !props.on);
   useEffect(() => {
     if (!renaming) return;
@@ -515,7 +509,6 @@ export function SessionListRow(props: {
       tree={props.tree}
       number={props.number}
       selected={props.selected}
-      conductor={conductor}
       onContextMenu={nativeMenu ?? undefined}
     />
   );

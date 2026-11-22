@@ -35,7 +35,6 @@ import { SCREEN_NAMES } from '../screens';
 import { useProjectsView } from '../screens/projects/view';
 import {
   baselineRow,
-  conductorIds,
   keepOrder,
   keptByView,
   needsAttention,
@@ -623,17 +622,15 @@ export function Sidebar({
   const unread = useUnread(currentProjectId, list.data, leftHidden ? null : shownId);
   // The check is a new function each render; the unread ids say when the groups change.
   const unreadIds = (list.data ?? []).filter(unread).map((s) => s.id);
-  const boardSessions = useBoard((s) => s.board?.sessions);
-  const conductors = useMemo(() => conductorIds(boardSessions), [boardSessions]);
   const fresh = useMemo(
     () =>
       sidebarGroups(
-        (list.data ?? []).filter((s) => keptByView(s, view, conductors.has(s.id))),
+        (list.data ?? []).filter((s) => keptByView(s, view)),
         view,
         unread,
         now,
       ),
-    [list.data, view, unreadIds.join('\n'), now, conductors],
+    [list.data, view, unreadIds.join('\n'), now],
   );
   const shown = useRef<{ view: SessionListView; groups: SidebarGroup[] } | null>(null);
   const held =

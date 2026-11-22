@@ -285,7 +285,7 @@ export function SessionHeader({
       {listed && <SessionStateIcon session={listed} place="header" />}
       {listed && <LastTurn session={listed} />}
       {parent && parentLink(parent, !!listed?.spawned_by && !listed.forked_from)}
-      {session?.conductor && (
+      {listed?.conductor && (
         <Crown className="ic-sm sh-agent" role="img" aria-label={conductorLabel()} />
       )}
       {editing ? (

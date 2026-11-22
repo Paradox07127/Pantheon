@@ -239,6 +239,17 @@ describe('two sessions side by side', () => {
     expect(shell()).toMatchObject({ sessionId: 'session-b', splitId: null });
   });
 
+  it('marks a main agent in its pane head, and no other session', () => {
+    const conductor = zh('sessions.conductor.name');
+    const h = screen(list([listed('session-a'), listed('session-b', { conductor: true })]));
+    const mark = (pane: number) =>
+      nodes(draw(threads(h)[pane]!.props.head).value).find(
+        (n) => n.props['aria-label'] === conductor,
+      );
+    expect(mark(1)?.props.role).toBe('img');
+    expect(mark(0)).toBeUndefined();
+  });
+
   it("puts the terminal toggle in the current pane's head and shows its session's terminal under both", () => {
     const terminals = (h: HookHost<any>) =>
       nodes(h.value).filter((n) => typeof n.type === 'function' && n.type.name === 'TerminalPanel');

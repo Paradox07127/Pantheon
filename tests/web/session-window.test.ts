@@ -224,6 +224,21 @@ describe('a session window', () => {
     );
   });
 
+  it('marks a main agent in its bar, and no other session', () => {
+    inWindow({ kind: 'session', project_id: 'alpha', session_id: 'refund-1' });
+    const conductor = zh('sessions.conductor.name');
+    const mark = () =>
+      nodes(
+        find(
+          mount(() => SessionWindow({ project_id: 'alpha', session_id: 'refund-1' })).value,
+          (n) => n.type === 'header',
+        ),
+      ).find((n) => n.props['aria-label'] === conductor);
+    expect(mark()).toBeUndefined();
+    mock.list.data = [{ ...listed, conductor: true }];
+    expect(mark()?.props.role).toBe('img');
+  });
+
   it('draws nothing of the session until its board, list, requests and history are in, then all of it', async () => {
     inWindow({ kind: 'session', project_id: 'alpha', session_id: 'refund-1' });
     const board = mock.board.board;

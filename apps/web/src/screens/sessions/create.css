@@ -312,6 +312,9 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.cr-agent {
+  flex: none;
+}
 .cr-sgs {
   flex: 1;
   min-width: 0;

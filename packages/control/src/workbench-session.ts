@@ -1323,6 +1323,7 @@ export function sessionList(
       ...(session.backend_id ? { backend_id: session.backend_id } : {}),
       ...(session.forked_from ? { forked_from: session.forked_from } : {}),
       ...(session.spawned_by ? { spawned_by: session.spawned_by } : {}),
+      ...(session.conductor ? { conductor: true as const } : {}),
     };
     const goal = firstInputs.get(session.id);
     const fastModel = sessionModel(ctx, session)?.fast || session.fast;

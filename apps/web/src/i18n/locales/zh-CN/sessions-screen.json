@@ -137,6 +137,7 @@
   "sessions.composer.firstMessage": "新会话的第一条消息",
   "sessions.composer.firstMessagePlaceholder": "要做什么…",
   "sessions.composer.fromScratch": "从零开始",
+  "sessions.composer.fromScratchConductor": "主 agent 和从零开始不能同时用",
   "sessions.conductor.name": "主 agent",
   "sessions.card.permissionRequest": "权限请求 {tool}",
   "sessions.card.allowOnce": "允许一次",

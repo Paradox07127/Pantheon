@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
 import { Menu } from '@base-ui/react/menu';
-import { SquareTerminal, X } from 'lucide-react';
+import { Crown, SquareTerminal, X } from 'lucide-react';
 import type { WorkbenchSession } from '@pantheon/protocol';
 import { MenuItem } from '../../components/Menu';
 import { PantheonField } from '../../components/PantheonField';
@@ -62,7 +62,7 @@ import {
 import { DiscardDialog } from './parts';
 import { SessionCard, SessionInspector } from './SessionCard';
 import { MoreMenu, PANELS, parentLink, type TerminalToggle } from './SessionHeader';
-import { parentOf } from './session-groups';
+import { conductorLabel, parentOf } from './session-groups';
 import { TerminalPanel } from './TerminalPanel';
 import { Thread } from './Thread';
 import './split.css';
@@ -713,6 +713,9 @@ function SplitHead(props: {
     <header className="sp-head" data-current={props.current || undefined}>
       <SessionStateIcon session={listed} place="header" />
       {parent && parentLink(parent, !!listed.spawned_by && !listed.forked_from)}
+      {listed.conductor && (
+        <Crown className="ic-sm sh-agent" role="img" aria-label={conductorLabel()} />
+      )}
       <h2 className="sh-title" title={title}>
         {title}
       </h2>

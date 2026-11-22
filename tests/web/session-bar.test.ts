@@ -279,7 +279,7 @@ describe('session bar', () => {
 
   it('marks a main agent with a named glyph, and no other session', () => {
     const conductor = zh('sessions.conductor.name');
-    const lead = header({ session: { ...session('session-a'), conductor: true } });
+    const lead = header({ listed: listed('session-a', { conductor: true }) });
     expect(labelled(lead.value, conductor)?.props.role).toBe('img');
     expect(labelled(header().value, conductor)).toBeUndefined();
   });

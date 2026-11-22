@@ -248,6 +248,40 @@ it('offers no start from scratch for a project with code, and starts a plain ses
   expect((command.mock.calls[0] as any)[0].input.purpose).toBeUndefined();
 });
 
+it('greys out the start from scratch while the main agent toggle is on, and says why', async () => {
+  factsEmpty = true;
+  const { h } = await mount();
+  const toggle = () => find(h.value, labelled(zh('sessions.conductor.name')));
+  const why = (start: ReactElement<any>) =>
+    nodes(h.value).find(
+      (n) => typeof n.type === 'function' && n.type.name === 'Tip' && n.props.children === start,
+    )?.props.content;
+  expect(fromScratch(h)!.props['aria-disabled']).toBeUndefined();
+  expect(why(fromScratch(h)!)).toBeUndefined();
+  toggle().props.onClick();
+  h.render();
+  const start = fromScratch(h)!;
+  expect(start.props['aria-disabled']).toBe('true');
+  expect(start.props.onClick).toBeUndefined();
+  expect(why(start)).toBe(zh('sessions.composer.fromScratchConductor'));
+  toggle().props.onClick();
+  h.render();
+  expect(fromScratch(h)!.props['aria-disabled']).toBeUndefined();
+  fromScratch(h)!.props.onClick();
+  await h.flush();
+  expect((command.mock.calls[0] as any)[0].input.purpose).toBe('project_setup');
+});
+
+it('marks a main agent among the sessions in progress, and no other session', async () => {
+  const conductor = zh('sessions.conductor.name');
+  const { h } = await mount({ recent: [{ ...session(1), conductor: true }, session(2)] });
+  const rows = nodes(h.value).filter(classed('cr-sgm'));
+  const mark = (row: ReactElement<any>) => nodes(row).find(labelled(conductor));
+  expect(rows).toHaveLength(2);
+  expect(mark(rows[0]!)?.props.role).toBe('img');
+  expect(mark(rows[1]!)).toBeUndefined();
+});
+
 it('keeps the chosen runtime, model, effort and permission mode with the draft when it opens again', async () => {
   const chosen = { runtime: 'claude', backend: null, model: 'opus', effort: 'high' };
   const first = await mount();
