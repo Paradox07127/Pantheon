@@ -200,6 +200,12 @@ describe('reason text', () => {
       'git 失败：fatal: not a git repository',
     );
   });
+
+  it('writes the test counts of a landing held for fewer tests', () => {
+    expect(reasonText('tests_dropped: unit: passed 10→9, skipped 0→1')).toBe(
+      '门禁 unit 的测试比上次落地少：通过 10→9、跳过 0→1',
+    );
+  });
 });
 
 describe('attention kept by the backend', () => {

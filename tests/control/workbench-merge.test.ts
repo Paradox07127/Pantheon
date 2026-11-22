@@ -5,6 +5,7 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 import type { Principal, Project, Session, SessionTurn, Workspace } from '@pantheon/domain';
 import { readProcessIdentity } from '../../packages/adapters/dist/index.js';
 import type { ControlContext } from '../../packages/control/src/context.js';
+import * as validation from '../../packages/control/dist/validation-executor.js';
 import { insideSandbox, awaitWorkspaceReady, eventually, heldIndexLock, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
@@ -59,6 +60,20 @@ const payloads = (f: Fixture, sessionId: string, kind: string) =>
 
 const removed = (f: Fixture, workspaceId: string) =>
   f.store.must<Workspace>('workspaces', workspaceId).removed_at !== undefined;
+
+const gatePassed = (): validation.ValidationResult => ({
+  exit_code: 0,
+  timedOut: false,
+  signal: null,
+  duration_ms: 1,
+  stdout: Buffer.alloc(0),
+  stderr: Buffer.alloc(0),
+  log: Buffer.alloc(0),
+  tail: '',
+  stdout_sha256: '',
+  stderr_sha256: '',
+  output_truncated: false,
+});
 
 async function setGate(f: Fixture, commands: { name: string; argv: string[] }[]) {
   await f.call<Project>(
@@ -420,6 +435,49 @@ it.skipIf(insideSandbox).each([
       kind: 'session.merge_blocked',
       actions: [{ command: 'session.merge', allowed: true }],
     });
+    await f.call<Session>(
+      'session.merge',
+      { session_id: session.id, allow_gate_change: true },
+      current(f, session.id).revision,
+    );
+    await eventually(
+      () => removed(f, workspace.id),
+      () => f.control.tick(),
+    );
+    expect(git(f.source, 'rev-parse', 'main')).toBe(head);
+  },
+);
+
+it.each([
+  ['passes fewer tests', { passed: 9, failed: 0, skipped: 0 }, 'passed 10→9, skipped 0→0'],
+  ['skips more tests', { passed: 10, failed: 0, skipped: 1 }, 'passed 10→10, skipped 0→1'],
+])(
+  'holds a session commit whose gate %s than the last landing on the source, and lands it once allowed',
+  async (_name, tests, counts) => {
+    const f = await mergeFixture();
+    const runs = [{ passed: 10, failed: 0, skipped: 0 }, tests, tests];
+    vi.spyOn(validation, 'runValidationCommand').mockImplementation(async () => ({
+      ...gatePassed(),
+      tests: runs.shift(),
+    }));
+    await setGate(f, [{ name: 'Checks', argv: ['check'] }]);
+    const first = await idleSession(f);
+    commit(first.workspace.path, 'first.txt', 'first\n');
+    await merge(f, first.session.id);
+    await eventually(
+      () => removed(f, first.workspace.id),
+      () => f.control.tick(),
+    );
+    const { session, workspace } = await idleSession(f);
+    const head = commit(workspace.path, 'second.txt', 'second\n');
+    const before = git(f.source, 'rev-parse', 'main');
+    await merge(f, session.id);
+    await settled(f, session.id);
+    expect(current(f, session.id).merge).toMatchObject({
+      state: 'blocked',
+      reason: `tests_dropped: Checks: ${counts}`,
+    });
+    expect(git(f.source, 'rev-parse', 'main')).toBe(before);
     await f.call<Session>(
       'session.merge',
       { session_id: session.id, allow_gate_change: true },

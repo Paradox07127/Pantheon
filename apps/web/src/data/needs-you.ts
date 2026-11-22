@@ -463,6 +463,7 @@ export const needRowKey = (item: Pick<NeedsYouItem, 'source' | 'reason' | 'reque
   `${item.source.table}:${item.source.id}:${item.reason}:${item.request_id ?? ''}`;
 
 const GIT_FAILED = 'git_failed:';
+const TESTS_DROPPED = /^tests_dropped: (.+): passed (\d+)→(\d+), skipped (\d+)→(\d+)$/;
 
 /** Interface text for an error code, disabled reason or item reason; unknown codes show as they are. */
 export function reasonText(code: string): string {
@@ -470,6 +471,22 @@ export function reasonText(code: string): string {
     return t(
       { id: 'data.reason.gitFailed', defaultMessage: 'Git failed: {detail}' },
       { detail: code.slice(GIT_FAILED.length).trim() },
+    );
+  const dropped = TESTS_DROPPED.exec(code);
+  if (dropped)
+    return t(
+      {
+        id: 'data.reason.testsDropped',
+        defaultMessage:
+          'Gate {gate} ran fewer tests than at the last landing: passed {passedBefore}→{passed}, skipped {skippedBefore}→{skipped}',
+      },
+      {
+        gate: dropped[1]!,
+        passedBefore: dropped[2]!,
+        passed: dropped[3]!,
+        skippedBefore: dropped[4]!,
+        skipped: dropped[5]!,
+      },
     );
   return knownReason(code) ?? code;
 }

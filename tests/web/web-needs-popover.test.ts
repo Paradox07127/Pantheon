@@ -256,6 +256,12 @@ describe('needs-you list', () => {
     ['changed gate files', 'gate_files_changed', 'session.merge_blocked', true],
     ['a failed gate', 'gate_failed', 'session.merge_blocked', false],
     ['changed gate files after a failed gate', 'gate_files_changed', 'session.gate_failed', true],
+    [
+      'fewer tests',
+      'tests_dropped: check: passed 10→9, skipped 0→0',
+      'session.merge_blocked',
+      true,
+    ],
   ] as const)(
     'offers to land a merge blocked by %s anyway: %s',
     async (_name, reason, kind, offered) => {

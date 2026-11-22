@@ -108,10 +108,12 @@ import {
   AGENT_CONFIGURATION,
   changedGateFiles,
   checkGates,
+  droppedTests,
   gateArgv,
   gateCommands,
   gateFailed,
   landWorkspace,
+  sessionGateResults,
   type LandingOwner,
   type LandingProgress,
 } from './landing.js';
@@ -3797,14 +3799,24 @@ async function prepareLand(
         );
   return (ctx) => {
     const { session } = request(ctx);
-    if (leftover || gateRequired || unread || guarded.length) {
+    const dropped = allowed
+      ? undefined
+      : droppedTests(
+          ctx,
+          session.project_id,
+          reads.source(workspace)?.branch,
+          sessionGateResults(ctx, session.project_id, session.id, worktree.head),
+        );
+    if (leftover || gateRequired || unread || guarded.length || dropped) {
       const merge = leftover
         ? { state: 'blocked' as const, reason: UNCOMMITTED.code }
         : gateRequired
           ? { state: 'blocked' as const, reason: 'gate_required' }
           : unread
             ? { state: 'blocked' as const, reason: unread }
-            : { state: 'blocked' as const, reason: 'gate_files_changed', conflicts: guarded };
+            : guarded.length
+              ? { state: 'blocked' as const, reason: 'gate_files_changed', conflicts: guarded }
+              : { state: 'blocked' as const, reason: dropped! };
       const next = ctx.store.update('sessions', { ...session, merge }, session.revision);
       ctx.store.event('session.merge_blocked', next, next.project_id, next.merge, c.command_id);
       unsnooze(ctx, session.id, 'merge_blocked', c.command_id);

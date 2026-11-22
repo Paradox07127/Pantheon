@@ -207,6 +207,34 @@ it.skipIf(insideSandbox).each([
   },
 );
 
+it.each([
+  ['passes fewer tests', { passed: 9, failed: 0, skipped: 0 }, 'passed 10→9, skipped 0→0'],
+  ['skips more tests', { passed: 10, failed: 0, skipped: 1 }, 'passed 10→10, skipped 0→1'],
+])(
+  'holds a branch whose gate %s than the last landing on the target, and lands it when allowed',
+  async (_name, tests, counts) => {
+    const f = await landFixture();
+    const runs = [{ passed: 10, failed: 0, skipped: 0 }, tests, tests];
+    vi.spyOn(validation, 'runValidationCommand').mockImplementation(async () => ({
+      ...passedGate(),
+      tests: runs.shift(),
+    }));
+    branch(f, 'feature', [['feature.txt', 'feature\n']]);
+    expect(await ended(f, (await land(f)).id)).toMatchObject({ state: 'landed' });
+    const landed = git(f.source, 'rev-parse', 'main');
+    const tip = branch(f, 'second', [['second.txt', 'second\n']]);
+    const done = await ended(f, (await land(f, { branch: 'second' })).id);
+    expect(done).toMatchObject({ state: 'blocked', reason: `tests_dropped: Passes: ${counts}` });
+    expect(git(f.source, 'rev-parse', 'main')).toBe(landed);
+    const allowed = await ended(
+      f,
+      (await land(f, { branch: 'second', allow_gate_change: true })).id,
+    );
+    expect(allowed).toMatchObject({ state: 'landed', to_sha: tip });
+    expect(git(f.source, 'rev-parse', 'main')).toBe(tip);
+  },
+);
+
 it('blocks a landing whose root checked out another branch after the request', async () => {
   const f = await landFixture();
   const base = git(f.source, 'rev-parse', 'main');

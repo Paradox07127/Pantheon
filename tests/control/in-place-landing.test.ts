@@ -186,6 +186,42 @@ it('holds a folder session that changed a gate file for the user, and lands it o
   expect(current(f, session.id)).toMatchObject({ outcome: 'merged', state: 'closed' });
 });
 
+it.each([
+  ['passes fewer tests', { passed: 9, failed: 0, skipped: 0 }, 'passed 10→9, skipped 0→0'],
+  ['skips more tests', { passed: 10, failed: 0, skipped: 1 }, 'passed 10→10, skipped 0→1'],
+])(
+  'holds a folder session whose gate %s than the last landing on the branch, and lands it once allowed',
+  async (_name, tests, counts) => {
+    const f = await workbenchFixture();
+    await withGate(f);
+    const runs = [{ passed: 10, failed: 0, skipped: 0 }, tests];
+    vi.mocked(validation.runValidationCommand).mockImplementation(async () => ({
+      ...passed(),
+      tests: runs.shift(),
+    }));
+    const first = await folderSession(f);
+    await runGates(f, first.id);
+    await land(f, first.id);
+    expect(current(f, first.id)).toMatchObject({ outcome: 'merged' });
+    const session = await folderSession(
+      f,
+      script({ write: { path: 'more.txt', text: 'more\n' } }, { commit: 'Add more' }),
+    );
+    await runGates(f, session.id);
+    await land(f, session.id);
+    expect(current(f, session.id)).toMatchObject({
+      state: 'open',
+      merge: { state: 'blocked', reason: `tests_dropped: check: ${counts}` },
+    });
+    await f.call<Session>(
+      'session.merge',
+      { session_id: session.id, allow_gate_change: true },
+      current(f, session.id).revision,
+    );
+    expect(current(f, session.id)).toMatchObject({ outcome: 'merged', state: 'closed' });
+  },
+);
+
 /** A folder session over a committed gate script, its gates passed on the folder HEAD after change ran. */
 async function gatedFolderSession(f: Fixture, change: () => void) {
   mkdirSync(path.join(f.source, 'scripts'));

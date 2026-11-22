@@ -106,7 +106,8 @@ export function needActions(item: NeedsYouItem, session?: SnapshotSession): Need
         label: t({ id: 'board.needs.actions.merge', defaultMessage: 'Retry merge' }),
         reason: offReason(item, 'session.merge'),
       },
-      ...(session?.merge?.reason === 'gate_files_changed'
+      ...(session?.merge?.reason === 'gate_files_changed' ||
+      session?.merge?.reason?.startsWith('tests_dropped:')
         ? [
             {
               key: 'merge_anyway' as const,

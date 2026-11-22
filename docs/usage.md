@@ -142,7 +142,7 @@ The session list shows the files that will probably conflict when you merge.
 
 Gate commands run without a sandbox. They get the same environment as a session that you open: the project variables and the environment of the daemon. The desktop app starts the daemon with the PATH of your login shell. Pantheon records the tested commit, each command, its exit code and its output.
 
-The gate runs the files of the commit it tests, so a change to those files waits for you. A merge or a landing whose changes touch a repository file that a gate command names, or a path in the project's `protected_paths` (`project.gate.set`), does not land. A session merge goes to "Needs you" with the reason `gate_files_changed` and the files; "Land anyway" lands it. `pantheon land` prints the files and the command that lands them (`--allow-gate-change`).
+The gate runs the files of the commit it tests, so a change to those files waits for you. A merge or a landing whose changes touch a repository file that a gate command names, or a path in the project's `protected_paths` (`project.gate.set`), does not land. A session merge goes to "Needs you" with the reason `gate_files_changed` and the files; "Land anyway" lands it. `pantheon land` prints the files and the command that lands them (`--allow-gate-change`). A gate that passes fewer tests or skips more than the same gate did at the last landing onto the branch holds the landing the same way, with the reason `tests_dropped` and both counts; "Land anyway" and `--allow-gate-change` land it.
 
 ## Import an external session
 

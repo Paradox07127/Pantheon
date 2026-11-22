@@ -10,6 +10,7 @@ import {
   hash,
   requireThat,
   type GateFailureClass,
+  type Landing,
   type Project,
   type LandingItem,
   type Session,
@@ -592,6 +593,69 @@ export async function checkGates(
   return results;
 }
 
+type GateResults = NonNullable<LandingItem['gate_results']>;
+
+/** The results of the session's newest gate check on the commit. */
+export function sessionGateResults(
+  ctx: ControlContext,
+  projectId: string,
+  sessionId: string,
+  commit: string,
+): GateResults | undefined {
+  const checked = ctx.store
+    .kindEvents(projectId, ['session.gate_checked'])
+    .findLast(
+      (event) =>
+        event.aggregate_id === sessionId &&
+        (event.payload as { commit?: string }).commit === commit,
+    );
+  return (checked?.payload as { results?: GateResults } | undefined)?.results;
+}
+
+/** The gate results of the project's newest landing onto the branch, by `pantheon land` or a session merge. */
+function landedGateResults(
+  ctx: ControlContext,
+  projectId: string,
+  branch: string,
+): GateResults | undefined {
+  const landing = ctx.store
+    .list<Landing>('landings')
+    .filter(
+      (row) =>
+        row.project_id === projectId && row.target_branch === branch && row.state === 'landed',
+    )
+    .reduce<Landing | undefined>(
+      (newest, row) => (newest && newest.finished_at! >= row.finished_at! ? newest : row),
+      undefined,
+    );
+  const merged = ctx.store
+    .kindEvents(projectId, ['session.merged'])
+    .findLast((event) => (event.payload as { branch?: string }).branch === branch);
+  if (!merged || (landing && landing.finished_at! >= merged.created_at))
+    return landing?.gate_results;
+  const { to_sha } = merged.payload as { to_sha: string };
+  return sessionGateResults(ctx, projectId, merged.aggregate_id, to_sha);
+}
+
+/**
+ * The blocking reason, with both counts, when a gate passed fewer tests or skipped more than the
+ * same gate did at the newest landing onto the branch; undefined when either side has no counts.
+ */
+export function droppedTests(
+  ctx: ControlContext,
+  projectId: string,
+  branch: string | null | undefined,
+  results: GateResults | undefined,
+): string | undefined {
+  const baseline = branch && results ? landedGateResults(ctx, projectId, branch) : undefined;
+  for (const result of results ?? []) {
+    const before = baseline?.find((gate) => gate.name === result.name)?.tests,
+      after = result.tests;
+    if (before && after && (after.passed < before.passed || after.skipped > before.skipped))
+      return `tests_dropped: ${result.name}: passed ${before.passed}→${after.passed}, skipped ${before.skipped}→${after.skipped}`;
+  }
+}
+
 export async function landWorkspace(
   ctx: ControlContext,
   owner: LandingOwner,
@@ -808,6 +872,10 @@ export async function landWorkspace(
     item.branch = branch.stdout.toString().trim();
     if (workspace.source_branch !== undefined && item.branch !== workspace.source_branch)
       return { ...item, reason: 'target_branch_changed' };
+    if (!owner.allowGateChange) {
+      const dropped = droppedTests(ctx, owner.projectId, item.branch, item.gate_results);
+      if (dropped) return { ...item, reason: dropped };
+    }
     const head = await git(item.source, ['rev-parse', '--verify', 'HEAD^{commit}'], sourceEnv);
     // After a fast-forward the source HEAD is the candidate itself, so a rerun keeps the saved parent.
     item.from_sha = resumed?.branch === item.branch ? resumed.from_sha : head;

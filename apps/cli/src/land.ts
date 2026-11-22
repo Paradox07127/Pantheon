@@ -23,9 +23,9 @@ const findGate = (projectId: string) =>
 
 const quote = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`;
 
-/** The line that lands the branch again, letting it change the files that protect the gate. */
-const allowGateChange = (branch: string, message: string | undefined) =>
-  `Land with the gate files changed: pantheon land ${quote(branch)}${
+/** The line that lands the branch again, letting it change the files that protect the gate or drop tests. */
+const allowGateChange = (what: string, branch: string, message: string | undefined) =>
+  `Land with ${what}: pantheon land ${quote(branch)}${
     message === undefined ? '' : ` --message=${quote(message)}`
   } --allow-gate-change`;
 
@@ -93,6 +93,9 @@ export const land = async (
   for (const gate of result.gate_results ?? [])
     if (gateState(gate) === 'failed') console.log(`gate ${gate.name} failed:\n${gate.output}`);
   if (result.conflicts?.length) console.log(`conflicts:\n${result.conflicts.join('\n')}`);
-  if (result.reason === 'gate_files_changed') console.log(allowGateChange(branch, values.message));
+  if (result.reason === 'gate_files_changed')
+    console.log(allowGateChange('the gate files changed', branch, values.message));
+  if (result.reason?.startsWith('tests_dropped:'))
+    console.log(allowGateChange('fewer tests', branch, values.message));
   return 1;
 };
