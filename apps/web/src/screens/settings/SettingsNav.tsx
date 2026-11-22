@@ -23,7 +23,14 @@ import {
 } from 'lucide-react';
 import { t } from '../../i18n';
 import { hitGroups, jumpTo, useSearchCursor } from './settings-jump';
-import { navPage, SETTINGS_PAGES, useSettingsView, type SettingsPage } from './view';
+import {
+  navPage,
+  SETTINGS_PAGES,
+  SETTINGS_SECTIONS,
+  useSettingsView,
+  type SettingsPage,
+  type SettingsSection,
+} from './view';
 import './settings.css';
 
 const PAGE_ICONS: Record<SettingsPage, LucideIcon> = {
@@ -77,10 +84,10 @@ export function SettingsNav({ page }: { page: SettingsPage }) {
   for (const g of groups)
     counts.set(navPage(g.page), (counts.get(navPage(g.page)) ?? 0) + g.hits.length);
   const searchLabel = t({ id: 'settings.nav.search', defaultMessage: 'Search settings' });
-  const group = (key: 'app' | 'global', title: string) => (
-    <div role="group" aria-label={title} className="ps-group">
+  const group = (key: SettingsSection, title: string) => (
+    <div key={key} role="group" aria-label={title} className="ps-group">
       <h4>{title}</h4>
-      {SETTINGS_PAGES.filter((p) => p.group === key).map((p) => {
+      {SETTINGS_PAGES.filter((p) => p.section === key && p.group !== 'project').map((p) => {
         const count = counts.get(p.key) ?? 0;
         const Icon = PAGE_ICONS[p.key];
         return (
@@ -145,8 +152,7 @@ export function SettingsNav({ page }: { page: SettingsPage }) {
           /
         </kbd>
       </label>
-      {group('app', thisComputer())}
-      {group('global', allProjects())}
+      {SETTINGS_SECTIONS.map((s) => group(s.key, s.label))}
     </nav>
   );
 }

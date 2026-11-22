@@ -76,13 +76,14 @@ const model = (id: string) => ({
   permission_modes: [] as string[],
 });
 
-const WRITER = zh('settings.defaults.writer');
 const roleModel = (role: string) =>
   format({ id: 'settings.defaults.roleModel', defaultMessage: '' }, { role });
-const WRITER_MODEL = roleModel(WRITER);
-const REVIEWER_MODEL = roleModel(zh('settings.defaults.reviewer'));
+const NEW_SESSIONS = zh('settings.defaults.newSessions');
+const REVIEW = zh('settings.defaults.reviewer');
+const REVIEWER_MODEL = roleModel(REVIEW);
 const LEAD_MODEL = zh('settings.defaults.sameAsNew');
-const ROLES = zh('settings.defaults.roles');
+const fallbackOf = (role: string) =>
+  format({ id: 'settings.defaults.fallbackOf', defaultMessage: '' }, { role });
 const PERMISSION = zh('settings.defaults.permissionMode');
 async function mount<T>(body: () => T) {
   const h = host(body);
@@ -94,6 +95,16 @@ const labelled = (t: ReactNode, label: string) => find(t, (n) => n.props['aria-l
 const role = (t: ReactNode, name: string) => nodes(t).filter((n) => n.props.role === name);
 const menu = (h: HookHost<any>) => named(tree(h), 'ModelMenu');
 const alerts = (t: ReactNode) => role(t, 'alert').map((n) => text(n));
+const sections = (t: ReactNode) =>
+  nodes(t).filter((n) => typeof n.type === 'function' && n.type.name === 'Section');
+const section = (t: ReactNode, title: string) => sections(t).find((n) => n.props.title === title)!;
+const rowNames = (t: ReactNode) =>
+  nodes(t)
+    .filter((n) => typeof n.type === 'function' && n.type.name === 'Row')
+    .map((n) => n.props.label);
+/** The accessible names of the controls and the names of the rows. */
+const names = (t: ReactNode): string[] =>
+  nodes(t).flatMap((n) => [n.props['aria-label'], n.props.label].filter(Boolean));
 const leadSwitch = (h: HookHost<any>) =>
   labelled(tree(h), zh('settings.defaults.sameModelForReviews'));
 /** What the role chip labelled `label` draws: its menu, or the chip alone when it cannot be chosen. */
@@ -133,19 +144,43 @@ afterEach(() => {
 });
 
 describe('default models page', () => {
-  it('lays the lead, the writer and the reviewer out as rows of one table', async () => {
-    const h = await mount(() => SessionDefaults({ project: saved as never }));
-    const table = labelled(tree(h), ROLES);
-    expect(table.props.role).toBe('table');
-    expect(role(table, 'columnheader').map((n) => text(n))).toEqual([
-      zh('settings.defaults.who'),
+  it('shows a new sessions section and an outside review section, each with its rows', async () => {
+    const h = await mount(() => SessionDefaults({ project: kept as never }));
+    expect(sections(tree(h)).map((n) => n.props.title)).toEqual([NEW_SESSIONS, REVIEW]);
+    expect(rowNames(section(tree(h), NEW_SESSIONS))).toEqual([
       zh('settings.defaults.model'),
+      PERMISSION,
       zh('settings.defaults.fallback'),
     ]);
-    expect(role(table, 'rowheader').map((n) => text(n))).toEqual([
-      zh('settings.defaults.newSessions'),
-      WRITER,
-      zh('settings.defaults.reviewer'),
+    expect(rowNames(section(tree(h), REVIEW))).toEqual([
+      zh('settings.defaults.model'),
+      zh('settings.defaults.fallback'),
+      zh('settings.defaults.sameModelForReviews'),
+    ]);
+    expect(names(tree(h))).toEqual(
+      expect.arrayContaining([fallbackOf(NEW_SESSIONS), REVIEWER_MODEL, fallbackOf(REVIEW)]),
+    );
+  });
+
+  it('offers no writer choice and keeps the saved writer and fallbacks when it saves', async () => {
+    const project = {
+      ...kept,
+      session_defaults: {
+        ...kept.session_defaults,
+        writer: { runtime: 'claude', model: 'claude-opus' },
+        fallbacks: {
+          lead: { runtime: 'claude', model: 'claude-sonnet' },
+          writer: { runtime: 'claude', model: 'claude-opus' },
+        },
+      },
+    };
+    const h = await mount(() => SessionDefaults({ project: project as never }));
+    const writer = format({ id: 'settings.defaults.writer', defaultMessage: 'Writing code' });
+    expect(names(tree(h)).filter((name) => name.includes(writer))).toEqual([]);
+    labelled(tree(h), PERMISSION).props.onValueChange('plan');
+    await h.flush();
+    expect(bridge.commands.map((c) => c.input)).toEqual([
+      { ...project.session_defaults, project_id: 'alpha', permission_mode: 'plan' },
     ]);
   });
 
@@ -269,7 +304,7 @@ describe('default models page', () => {
     });
   });
 
-  it('names a failed save beside the table and goes back to the saved choice', async () => {
+  it('names a failed save after the section and goes back to the saved choice', async () => {
     bridge.commandAnswer = () =>
       Promise.resolve({ ok: false, error: { code: 'conflict', message: 'stale revision' } });
     const h = await mount(() => SessionDefaults({ project: saved as never }));
@@ -282,17 +317,17 @@ describe('default models page', () => {
     await h.flush();
     expect(alerts(tree(h))).toHaveLength(1);
     expect(menu(h).props.value).toMatchObject({ model: 'claude-opus', effort: 'high' });
-    const table = labelled(tree(h), ROLES);
-    expect(alerts(table)).toEqual([]);
+    expect(alerts(section(tree(h), NEW_SESSIONS))).toEqual([]);
   });
 
-  it("offers the writer the lead's model or another model, and only the lead's model while the switch is on", async () => {
+  it("offers the reviewer another runtime or a model, and only the new sessions' model while the switch is on", async () => {
     const off = await mount(() => SessionDefaults({ project: saved as never }));
-    expect([WRITER_MODEL, REVIEWER_MODEL].map((label) => text(chosen(open(off, label))))).toEqual([
-      LEAD_MODEL,
+    expect(text(chosen(open(off, REVIEWER_MODEL)))).toBe(zh('settings.defaults.otherRuntime'));
+    expect(items(open(off, REVIEWER_MODEL))).toEqual([
       zh('settings.defaults.otherRuntime'),
+      'claude-opus',
+      'claude-sonnet',
     ]);
-    expect(items(open(off, WRITER_MODEL))).toEqual([LEAD_MODEL, 'claude-opus', 'claude-sonnet']);
     const on = await mount(() =>
       SessionDefaults({
         project: {
@@ -301,54 +336,32 @@ describe('default models page', () => {
         } as never,
       }),
     );
-    const chips = [WRITER_MODEL, REVIEWER_MODEL].map((label) => open(on, label));
-    expect(chips.map((n) => [text(n), n.props.disabled])).toEqual([
-      [LEAD_MODEL, true],
-      [LEAD_MODEL, true],
-    ]);
+    const chip = open(on, REVIEWER_MODEL);
+    expect([text(chip), chip.props.disabled]).toEqual([LEAD_MODEL, true]);
   });
 
-  it('sends the chosen writer model and keeps the reviewer and the fallbacks already saved', async () => {
+  it('sends the chosen reviewer model and keeps the fallbacks already saved', async () => {
     const h = await mount(() => SessionDefaults({ project: kept as never }));
-    pick(open(h, WRITER_MODEL), 'claude-sonnet');
+    pick(open(h, REVIEWER_MODEL), 'claude-sonnet');
     await h.flush();
     expect(bridge.commands.map((c) => c.input)).toEqual([
       {
         ...kept.session_defaults,
         project_id: 'alpha',
-        writer: { runtime: 'claude', model: 'claude-sonnet' },
+        reviewer: { runtime: 'claude', model: 'claude-sonnet' },
       },
-    ]);
-  });
-
-  it("drops the writer model when the lead's model is chosen again", async () => {
-    const project = {
-      ...kept,
-      session_defaults: {
-        ...kept.session_defaults,
-        writer: { runtime: 'claude', model: 'claude-opus' },
-      },
-    };
-    const h = await mount(() => SessionDefaults({ project: project as never }));
-    expect(text(chosen(open(h, WRITER_MODEL)))).toBe('claude-opus');
-    pick(open(h, WRITER_MODEL), LEAD_MODEL!);
-    await h.flush();
-    expect(bridge.commands.map((c) => c.input)).toEqual([
-      { ...kept.session_defaults, project_id: 'alpha' },
     ]);
   });
 
   it('sends a fallback for a role beside the ones already saved', async () => {
     const h = await mount(() => SessionDefaults({ project: kept as never }));
-    const fallback = (role: string) =>
-      open(h, format({ id: 'settings.defaults.fallbackOf', defaultMessage: '' }, { role }));
-    expect(text(chosen(fallback(zh('settings.defaults.newSessions'))))).toBe('claude-sonnet');
-    expect(text(chosen(fallback(WRITER)))).toBe(zh('settings.defaults.noFallback'));
-    pick(fallback(WRITER), 'claude-opus');
+    expect(text(chosen(open(h, fallbackOf(NEW_SESSIONS))))).toBe('claude-sonnet');
+    expect(text(chosen(open(h, fallbackOf(REVIEW))))).toBe(zh('settings.defaults.noFallback'));
+    pick(open(h, fallbackOf(REVIEW)), 'claude-opus');
     await h.flush();
     expect(bridge.commands.at(-1)!.input.fallbacks).toEqual({
       lead: { runtime: 'claude', model: 'claude-sonnet' },
-      writer: { runtime: 'claude', model: 'claude-opus' },
+      reviewer: { runtime: 'claude', model: 'claude-opus' },
     });
   });
 

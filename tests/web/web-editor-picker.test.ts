@@ -48,7 +48,7 @@ describe('editor picker', () => {
     useSettingsView.setState({ page: 'editor' });
     const html = renderToStaticMarkup(createElement(ProjectSettingsScreen));
     const app = new RegExp(
-      `<div role="group" aria-label="${zh('settings.nav.app')}"(?:(?!</div>).)*</div>`,
+      `<div role="group" aria-label="${zh('settings.nav.general')}"(?:(?!</div>).)*</div>`,
     ).exec(html)?.[0];
     expect(app).toMatch(
       new RegExp(

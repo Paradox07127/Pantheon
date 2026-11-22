@@ -89,9 +89,17 @@ const environment = defineMessage({
   id: 'settings.environment.title',
   defaultMessage: 'Environment',
 });
-const sessionDefaults = defineMessage({
-  id: 'settings.defaults.roles',
-  defaultMessage: 'Model for each role',
+const newSessions = defineMessage({
+  id: 'settings.defaults.newSessions',
+  defaultMessage: 'New sessions',
+});
+const outsideReview = defineMessage({
+  id: 'settings.defaults.reviewer',
+  defaultMessage: 'Outside review',
+});
+const ifUnavailable = defineMessage({
+  id: 'settings.defaults.fallback',
+  defaultMessage: 'If unavailable',
 });
 const gate = defineMessage({ id: 'settings.gate.title', defaultMessage: 'Merge gate' });
 const worktreeSetup = defineMessage({
@@ -1145,7 +1153,7 @@ export const SETTINGS_INDEX: SettingRecord[] = [
   {
     id: 'defaults.runtime',
     page: 'defaults',
-    section: sessionDefaults,
+    section: newSessions,
     label: defineMessage({ id: 'settings.common.runtime', defaultMessage: 'Runtime' }),
     keywords: defineMessage({
       id: 'settings.search.keywords.defaultRuntime',
@@ -1156,7 +1164,7 @@ export const SETTINGS_INDEX: SettingRecord[] = [
   {
     id: 'defaults.model',
     page: 'defaults',
-    section: sessionDefaults,
+    section: newSessions,
     label: defineMessage({ id: 'sessions.composer.model', defaultMessage: 'Model' }),
     keywords: defineMessage({
       id: 'settings.search.keywords.defaultModel',
@@ -1164,27 +1172,9 @@ export const SETTINGS_INDEX: SettingRecord[] = [
     }),
   },
   {
-    id: 'defaults.writer',
-    page: 'defaults',
-    section: sessionDefaults,
-    label: defineMessage({ id: 'settings.defaults.writer', defaultMessage: 'Writing code' }),
-  },
-  {
-    id: 'defaults.reviewer',
-    page: 'defaults',
-    section: sessionDefaults,
-    label: defineMessage({ id: 'settings.defaults.reviewer', defaultMessage: 'Outside review' }),
-  },
-  {
-    id: 'defaults.fallback',
-    page: 'defaults',
-    section: sessionDefaults,
-    label: defineMessage({ id: 'settings.defaults.fallback', defaultMessage: 'If unavailable' }),
-  },
-  {
     id: 'defaults.permissionMode',
     page: 'defaults',
-    section: sessionDefaults,
+    section: newSessions,
     label: defineMessage({
       id: 'settings.defaults.permissionMode',
       defaultMessage: 'Permission mode',
@@ -1195,9 +1185,27 @@ export const SETTINGS_INDEX: SettingRecord[] = [
     }),
   },
   {
+    id: 'defaults.fallback',
+    page: 'defaults',
+    section: newSessions,
+    label: ifUnavailable,
+  },
+  {
+    id: 'defaults.reviewer',
+    page: 'defaults',
+    section: outsideReview,
+    label: defineMessage({ id: 'settings.defaults.model', defaultMessage: 'Model' }),
+  },
+  {
+    id: 'defaults.reviewerFallback',
+    page: 'defaults',
+    section: outsideReview,
+    label: ifUnavailable,
+  },
+  {
     id: 'defaults.singleModel',
     page: 'defaults',
-    section: sessionDefaults,
+    section: outsideReview,
     label: defineMessage({
       id: 'settings.defaults.sameModelForReviews',
       defaultMessage: "Reviews also use the new sessions' model",

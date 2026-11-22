@@ -27,12 +27,49 @@ export type SettingsPage =
 export const navPage = (page: SettingsPage): SettingsPage =>
   SETTINGS_PAGES.find((p) => p.key === page)?.group === 'project' ? 'projects' : page;
 
-/** The settings pages in navigation order: this computer's, then the ones for every project; a project page is a part of one project's page, which the navigation does not list. */
+export type SettingsSection = 'general' | 'models' | 'project' | 'connections' | 'data';
+
+/** The navigation's groups in order, each with its name. */
+export const SETTINGS_SECTIONS: { key: SettingsSection; label: string }[] = [
+  {
+    key: 'general',
+    get label() {
+      return t({ id: 'settings.nav.general', defaultMessage: 'General' });
+    },
+  },
+  {
+    key: 'models',
+    get label() {
+      return t({ id: 'settings.nav.models', defaultMessage: 'Models and permissions' });
+    },
+  },
+  {
+    key: 'project',
+    get label() {
+      return t({ id: 'settings.nav.project', defaultMessage: 'Project' });
+    },
+  },
+  {
+    key: 'connections',
+    get label() {
+      return t({ id: 'settings.nav.connections', defaultMessage: 'Connections and devices' });
+    },
+  },
+  {
+    key: 'data',
+    get label() {
+      return t({ id: 'settings.nav.data', defaultMessage: 'Data and about' });
+    },
+  },
+];
+
+/** The settings pages in navigation order, each in its navigation group and with its scope: this computer, every project, or a part of one project's page, which the navigation does not list. */
 // Labels are getters, so each is read in the language loaded by then.
 export const SETTINGS_PAGES: {
   key: SettingsPage;
   label: string;
   group: 'app' | 'global' | 'project';
+  section: SettingsSection;
 }[] = [
   {
     key: 'general',
@@ -40,6 +77,7 @@ export const SETTINGS_PAGES: {
       return t({ id: 'settings.pages.general', defaultMessage: 'General' });
     },
     group: 'app',
+    section: 'general',
   },
   {
     key: 'appearance',
@@ -47,6 +85,7 @@ export const SETTINGS_PAGES: {
       return t({ id: 'settings.pages.appearance', defaultMessage: 'Appearance' });
     },
     group: 'app',
+    section: 'general',
   },
   {
     key: 'sessionDisplay',
@@ -54,6 +93,7 @@ export const SETTINGS_PAGES: {
       return t({ id: 'settings.pages.sessionDisplay', defaultMessage: 'Session display' });
     },
     group: 'app',
+    section: 'general',
   },
   {
     key: 'diff',
@@ -61,13 +101,7 @@ export const SETTINGS_PAGES: {
       return t({ id: 'settings.pages.diff', defaultMessage: 'Diff view' });
     },
     group: 'app',
-  },
-  {
-    key: 'harness',
-    get label() {
-      return t({ id: 'settings.pages.runtimes', defaultMessage: 'Runtimes' });
-    },
-    group: 'app',
+    section: 'general',
   },
   {
     key: 'editor',
@@ -75,27 +109,7 @@ export const SETTINGS_PAGES: {
       return t({ id: 'settings.pages.openWith', defaultMessage: 'Open with' });
     },
     group: 'app',
-  },
-  {
-    key: 'connections',
-    get label() {
-      return t({ id: 'settings.pages.connections', defaultMessage: 'Connections' });
-    },
-    group: 'app',
-  },
-  {
-    key: 'devices',
-    get label() {
-      return t({ id: 'settings.devices.title', defaultMessage: 'Devices' });
-    },
-    group: 'app',
-  },
-  {
-    key: 'notifications',
-    get label() {
-      return t({ id: 'settings.pages.notifications', defaultMessage: 'Notifications' });
-    },
-    group: 'app',
+    section: 'general',
   },
   {
     key: 'shortcuts',
@@ -103,20 +117,23 @@ export const SETTINGS_PAGES: {
       return t({ id: 'settings.pages.shortcuts', defaultMessage: 'Shortcuts' });
     },
     group: 'app',
+    section: 'general',
   },
   {
-    key: 'data',
+    key: 'notifications',
     get label() {
-      return t({ id: 'settings.pages.data', defaultMessage: 'Data' });
+      return t({ id: 'settings.pages.notifications', defaultMessage: 'Notifications' });
     },
     group: 'app',
+    section: 'general',
   },
   {
-    key: 'about',
+    key: 'harness',
     get label() {
-      return t({ id: 'settings.pages.about', defaultMessage: 'About' });
+      return t({ id: 'settings.pages.runtimes', defaultMessage: 'Runtimes' });
     },
     group: 'app',
+    section: 'models',
   },
   {
     key: 'defaults',
@@ -124,6 +141,7 @@ export const SETTINGS_PAGES: {
       return t({ id: 'settings.pages.defaults', defaultMessage: 'Default model' });
     },
     group: 'global',
+    section: 'models',
   },
   {
     key: 'permissions',
@@ -131,6 +149,7 @@ export const SETTINGS_PAGES: {
       return t({ id: 'settings.pages.permissions', defaultMessage: 'Permissions' });
     },
     group: 'global',
+    section: 'models',
   },
   {
     key: 'projects',
@@ -138,6 +157,39 @@ export const SETTINGS_PAGES: {
       return t({ id: 'settings.pages.projects', defaultMessage: 'Projects' });
     },
     group: 'global',
+    section: 'project',
+  },
+  {
+    key: 'connections',
+    get label() {
+      return t({ id: 'settings.pages.connections', defaultMessage: 'Connections' });
+    },
+    group: 'app',
+    section: 'connections',
+  },
+  {
+    key: 'devices',
+    get label() {
+      return t({ id: 'settings.devices.title', defaultMessage: 'Devices' });
+    },
+    group: 'app',
+    section: 'connections',
+  },
+  {
+    key: 'data',
+    get label() {
+      return t({ id: 'settings.pages.data', defaultMessage: 'Data' });
+    },
+    group: 'app',
+    section: 'data',
+  },
+  {
+    key: 'about',
+    get label() {
+      return t({ id: 'settings.pages.about', defaultMessage: 'About' });
+    },
+    group: 'app',
+    section: 'data',
   },
   {
     key: 'gates',
@@ -145,6 +197,7 @@ export const SETTINGS_PAGES: {
       return t({ id: 'settings.pages.gates', defaultMessage: 'Gates' });
     },
     group: 'project',
+    section: 'project',
   },
   {
     key: 'worktrees',
@@ -152,6 +205,7 @@ export const SETTINGS_PAGES: {
       return t({ id: 'settings.pages.worktrees', defaultMessage: 'Worktrees and merging' });
     },
     group: 'project',
+    section: 'project',
   },
   {
     key: 'extensions',
@@ -159,6 +213,7 @@ export const SETTINGS_PAGES: {
       return t({ id: 'settings.pages.extensions', defaultMessage: 'Extensions' });
     },
     group: 'project',
+    section: 'project',
   },
   {
     key: 'project',
@@ -166,6 +221,7 @@ export const SETTINGS_PAGES: {
       return t({ id: 'settings.pages.project', defaultMessage: 'Project' });
     },
     group: 'project',
+    section: 'project',
   },
 ];
 

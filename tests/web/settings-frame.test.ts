@@ -37,29 +37,29 @@ afterEach(() => {
 });
 
 describe('settings navigation', () => {
-  it("lists the pages of this computer, then the pages for every project, then a project's parts", () => {
-    expect(SETTINGS_PAGES.map((p) => [p.group, p.key, p.label])).toEqual(
+  it("lists the pages in navigation order, each with its group and scope, then a project's parts", () => {
+    expect(SETTINGS_PAGES.map((p) => [p.section, p.group, p.key, p.label])).toEqual(
       [
-        ['app', 'general', 'settings.pages.general'],
-        ['app', 'appearance', 'settings.pages.appearance'],
-        ['app', 'sessionDisplay', 'settings.pages.sessionDisplay'],
-        ['app', 'diff', 'settings.pages.diff'],
-        ['app', 'harness', 'settings.pages.runtimes'],
-        ['app', 'editor', 'settings.pages.openWith'],
-        ['app', 'connections', 'settings.pages.connections'],
-        ['app', 'devices', 'settings.devices.title'],
-        ['app', 'notifications', 'settings.pages.notifications'],
-        ['app', 'shortcuts', 'settings.pages.shortcuts'],
-        ['app', 'data', 'settings.pages.data'],
-        ['app', 'about', 'settings.pages.about'],
-        ['global', 'defaults', 'settings.pages.defaults'],
-        ['global', 'permissions', 'settings.pages.permissions'],
-        ['global', 'projects', 'settings.pages.projects'],
-        ['project', 'gates', 'settings.pages.gates'],
-        ['project', 'worktrees', 'settings.pages.worktrees'],
-        ['project', 'extensions', 'settings.pages.extensions'],
-        ['project', 'project', 'settings.pages.project'],
-      ].map(([group, key, id]) => [group, key, zh(id!)]),
+        ['general', 'app', 'general', 'settings.pages.general'],
+        ['general', 'app', 'appearance', 'settings.pages.appearance'],
+        ['general', 'app', 'sessionDisplay', 'settings.pages.sessionDisplay'],
+        ['general', 'app', 'diff', 'settings.pages.diff'],
+        ['general', 'app', 'editor', 'settings.pages.openWith'],
+        ['general', 'app', 'shortcuts', 'settings.pages.shortcuts'],
+        ['general', 'app', 'notifications', 'settings.pages.notifications'],
+        ['models', 'app', 'harness', 'settings.pages.runtimes'],
+        ['models', 'global', 'defaults', 'settings.pages.defaults'],
+        ['models', 'global', 'permissions', 'settings.pages.permissions'],
+        ['project', 'global', 'projects', 'settings.pages.projects'],
+        ['connections', 'app', 'connections', 'settings.pages.connections'],
+        ['connections', 'app', 'devices', 'settings.devices.title'],
+        ['data', 'app', 'data', 'settings.pages.data'],
+        ['data', 'app', 'about', 'settings.pages.about'],
+        ['project', 'project', 'gates', 'settings.pages.gates'],
+        ['project', 'project', 'worktrees', 'settings.pages.worktrees'],
+        ['project', 'project', 'extensions', 'settings.pages.extensions'],
+        ['project', 'project', 'project', 'settings.pages.project'],
+      ].map(([section, group, key, id]) => [section, group, key, zh(id!)]),
     );
   });
 
@@ -70,12 +70,11 @@ describe('settings navigation', () => {
     );
   });
 
-  it('heads the groups with this computer and every project, and shows an icon on each page', () => {
+  it('heads the five groups by name, and shows an icon on each page', () => {
     const nav = html(SettingsNav as never, { page: 'appearance' });
-    expect([...nav.matchAll(/<h4>([^<]*)<\/h4>/g)].map((m) => m[1])).toEqual([
-      THIS_COMPUTER,
-      ALL_PROJECTS,
-    ]);
+    expect([...nav.matchAll(/<h4>([^<]*)<\/h4>/g)].map((m) => m[1])).toEqual(
+      ['general', 'models', 'project', 'connections', 'data'].map((g) => zh(`settings.nav.${g}`)),
+    );
     const pages = [...nav.matchAll(/<button type="button" class="ps-page"[^>]*>(.*?)<\/button>/g)];
     expect(pages).toHaveLength(SETTINGS_PAGES.filter((p) => p.group !== 'project').length);
     for (const [, body] of pages) expect(body).toContain('<svg');

@@ -43,12 +43,11 @@ describe('settings navigation rows', () => {
     });
   });
 
-  it('heads the two groups with this computer and every project', () => {
+  it('heads the five groups by name', () => {
     const nav = html(SettingsNav as never, { page: 'appearance' });
-    expect([...nav.matchAll(/<h4[^>]*>([^<]*)<\/h4>/g)].map((m) => m[1])).toEqual([
-      zh('settings.nav.app'),
-      zh('settings.nav.projects'),
-    ]);
+    expect([...nav.matchAll(/<h4[^>]*>([^<]*)<\/h4>/g)].map((m) => m[1])).toEqual(
+      ['general', 'models', 'project', 'connections', 'data'].map((g) => zh(`settings.nav.${g}`)),
+    );
   });
 
   it('shows a slash key cap at the end of the search field', () => {

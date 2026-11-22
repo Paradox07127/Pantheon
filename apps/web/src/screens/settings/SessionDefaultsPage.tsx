@@ -23,13 +23,13 @@ import {
 } from '../sessions/model';
 import { ModelMenu } from '../sessions/parts';
 import { Overrides } from './Overrides';
-import { failureText, Row, type Failure } from './ProjectSettingsScreen';
+import { failureText, Row, Section, type Failure } from './ProjectSettingsScreen';
 import { registerPageHeader } from './settings-header';
 import './defaults-page.css';
 
 type Project = BoardSnapshot['projects'][number];
-/** The role table or the rows under it. */
-type Group = 'roles' | 'rows';
+/** The new sessions' section or the review's. */
+type Group = 'new' | 'review';
 type Role = 'lead' | 'writer' | 'reviewer';
 
 type Defaults = {
@@ -40,7 +40,7 @@ type Defaults = {
   effort: EffortLevel | null;
   /** Tasks and reviews also run on this runtime, model and effort; only with a model. */
   single_model: boolean;
-  /** null uses the new sessions' model. */
+  /** null uses the new sessions' model; kept as saved, the page offers no choice for it. */
   writer: RuntimeChoice | null;
   /** null reviews on a runtime other than the writer's. */
   reviewer: RuntimeChoice | null;
@@ -64,7 +64,7 @@ export function DefaultsOverrides() {
 }
 registerPageHeader('defaults', { tools: DefaultsOverrides });
 
-/** The writer and the reviewer while every role runs on the new sessions' model. */
+/** The reviewer while reviews run on the new sessions' model. */
 function FollowedModel({ label }: { label: string }) {
   return (
     <button type="button" className="chip dp-chip" aria-label={label} disabled>
@@ -147,7 +147,7 @@ function RoleModel({
   );
 }
 
-/** What a new session starts on and what each role runs on, in every project or with a project in it; every change saves at once. */
+/** What a new session starts on and what outside review runs on, in every project or with a project in it; every change saves at once. */
 export function SessionDefaults({ project }: { project: Project | null }) {
   const { read, runtimes, unavailable, disconnected } = useRuntimeStatus('writer');
   const defaults = useProjectDefaults();
@@ -159,7 +159,7 @@ export function SessionDefaults({ project }: { project: Project | null }) {
   const [draft, setDraft] = useState<Defaults | null>(null);
   // A failed save shows under the group whose control made the last change.
   const [failure, setFailure] = useState<{ at: Group; failure: Failure } | null>(null);
-  const changedIn = useRef<Group>('roles');
+  const changedIn = useRef<Group>('new');
   const sending = useRef(false);
   // A global save is in once a read lands after it.
   const [savedAt, setSavedAt] = useState<{ revision: number; at: number; sent: Defaults } | null>(
@@ -241,50 +241,28 @@ export function SessionDefaults({ project }: { project: Project | null }) {
   };
 
   const newSessions = t({ id: 'settings.defaults.newSessions', defaultMessage: 'New sessions' });
-  const writer = t({ id: 'settings.defaults.writer', defaultMessage: 'Writing code' });
   const reviewer = t({ id: 'settings.defaults.reviewer', defaultMessage: 'Outside review' });
-  const roleModel = (role: string) =>
-    t({ id: 'settings.defaults.roleModel', defaultMessage: "{role}'s model" }, { role });
-  const fallback = (role: Role, name: string) => (
-    <span role="cell">
-      <RoleModel
-        label={t(
-          { id: 'settings.defaults.fallbackOf', defaultMessage: '{role} if unavailable' },
-          { role: name },
-        )}
-        none={t({ id: 'settings.defaults.noFallback', defaultMessage: "Don't switch" })}
-        value={current.fallbacks[role] ?? null}
-        runtimes={usable}
-        models={models}
-        onChange={(next) => {
-          const { [role]: _, ...rest } = current.fallbacks;
-          change({ ...current, fallbacks: next ? { ...rest, [role]: next } : rest }, 'roles');
-        }}
-      />
-    </span>
-  );
-  const routed = (role: 'writer' | 'reviewer', name: string) => (
-    <span role="cell">
-      {current.single_model ? (
-        <FollowedModel label={roleModel(name)} />
-      ) : (
-        <RoleModel
-          label={roleModel(name)}
-          none={
-            role === 'writer'
-              ? t({ id: 'settings.defaults.sameAsNew', defaultMessage: 'Same as new sessions' })
-              : t({
-                  id: 'settings.defaults.otherRuntime',
-                  defaultMessage: "A runtime other than the writer's",
-                })
-          }
-          value={current[role]}
-          runtimes={usable}
-          models={models}
-          onChange={(next) => change({ ...current, [role]: next }, 'roles')}
-        />
+  const modelLabel = t({ id: 'settings.defaults.model', defaultMessage: 'Model' });
+  const fallbackLabel = t({ id: 'settings.defaults.fallback', defaultMessage: 'If unavailable' });
+  const fallback = (role: Role, name: string, at: Group) => (
+    <RoleModel
+      label={t(
+        { id: 'settings.defaults.fallbackOf', defaultMessage: '{role} if unavailable' },
+        { role: name },
       )}
-    </span>
+      none={t({ id: 'settings.defaults.noFallback', defaultMessage: "Don't switch" })}
+      value={current.fallbacks[role] ?? null}
+      runtimes={usable}
+      models={models}
+      onChange={(next) => {
+        const { [role]: _, ...rest } = current.fallbacks;
+        change({ ...current, fallbacks: next ? { ...rest, [role]: next } : rest }, at);
+      }}
+    />
+  );
+  const reviewerModel = t(
+    { id: 'settings.defaults.roleModel', defaultMessage: "{role}'s model" },
+    { role: reviewer },
   );
   const singleModelLabel = t({
     id: 'settings.defaults.sameModelForReviews',
@@ -302,80 +280,43 @@ export function SessionDefaults({ project }: { project: Project | null }) {
     );
   return (
     <div className="dp">
-      <div
-        className="ps-grp"
-        role="table"
-        aria-label={t({ id: 'settings.defaults.roles', defaultMessage: 'Model for each role' })}
-      >
-        <div className="dp-r dp-hd" role="row">
-          <span className="cap" role="columnheader">
-            {t({ id: 'settings.defaults.who', defaultMessage: 'Who' })}
-          </span>
-          <span className="cap" role="columnheader">
-            {t({ id: 'settings.defaults.model', defaultMessage: 'Model' })}
-          </span>
-          <span className="cap" role="columnheader" data-setting-id="defaults.fallback">
-            {t({ id: 'settings.defaults.fallback', defaultMessage: 'If unavailable' })}
-          </span>
-        </div>
-        <div className="dp-r" role="row" data-setting-id="defaults.runtime">
-          <span className="dp-nm" role="rowheader">
-            {newSessions}
-          </span>
-          <span role="cell" className="dp-lead" data-setting-id="defaults.model">
-            <ModelMenu
-              runtimes={offered}
-              unavailable={unavailable}
-              disconnected={disconnected}
-              models={models}
-              value={{
-                runtime: current.runtime,
-                backend: null,
-                model: current.model,
-                effort: current.effort,
-              }}
-              onChange={(next) =>
-                change(
-                  {
-                    ...current,
-                    runtime: next.runtime,
-                    permission_mode: defaultPermissionMode(next.runtime, current.permission_mode),
-                    model: next.model,
-                    effort: next.effort,
-                    single_model: current.single_model && next.model !== null,
-                  },
-                  'roles',
-                )
-              }
-            />
-          </span>
-          {fallback('lead', newSessions)}
-        </div>
-        <div className="dp-r" role="row" data-setting-id="defaults.writer">
-          <span className="dp-nm" role="rowheader">
-            {writer}
-          </span>
-          {routed('writer', writer)}
-          {fallback('writer', writer)}
-        </div>
-        <div className="dp-r" role="row" data-setting-id="defaults.reviewer">
-          <span className="dp-nm" role="rowheader">
-            {reviewer}
-          </span>
-          {routed('reviewer', reviewer)}
-          {fallback('reviewer', reviewer)}
-        </div>
-      </div>
-      {error('roles')}
-      {read.state === 'failed' && <span className="ps-why">{read.text}</span>}
-      <div className="ps-grp">
+      <Section title={newSessions} settingId="defaults.runtime">
         <div className="ps-rows">
+          <Row label={modelLabel} settingId="defaults.model">
+            <span className="dp-lead">
+              <ModelMenu
+                runtimes={offered}
+                unavailable={unavailable}
+                disconnected={disconnected}
+                models={models}
+                value={{
+                  runtime: current.runtime,
+                  backend: null,
+                  model: current.model,
+                  effort: current.effort,
+                }}
+                onChange={(next) =>
+                  change(
+                    {
+                      ...current,
+                      runtime: next.runtime,
+                      permission_mode: defaultPermissionMode(next.runtime, current.permission_mode),
+                      model: next.model,
+                      effort: next.effort,
+                      single_model: current.single_model && next.model !== null,
+                    },
+                    'new',
+                  )
+                }
+              />
+            </span>
+          </Row>
           <Row label={permissionLabel} settingId="defaults.permissionMode">
             <RadioGroup<Defaults['permission_mode']>
               className="seg"
               aria-label={permissionLabel}
               value={current.permission_mode}
-              onValueChange={(m) => change({ ...current, permission_mode: m }, 'rows')}
+              onValueChange={(m) => change({ ...current, permission_mode: m }, 'new')}
             >
               {modes.map((m) => (
                 <Radio.Root key={m} value={m}>
@@ -384,6 +325,35 @@ export function SessionDefaults({ project }: { project: Project | null }) {
               ))}
             </RadioGroup>
           </Row>
+          <Row label={fallbackLabel} settingId="defaults.fallback">
+            {fallback('lead', newSessions, 'new')}
+          </Row>
+        </div>
+      </Section>
+      {error('new')}
+      {read.state === 'failed' && <span className="ps-why">{read.text}</span>}
+      <Section title={reviewer}>
+        <div className="ps-rows">
+          <Row label={modelLabel} settingId="defaults.reviewer">
+            {current.single_model ? (
+              <FollowedModel label={reviewerModel} />
+            ) : (
+              <RoleModel
+                label={reviewerModel}
+                none={t({
+                  id: 'settings.defaults.otherRuntime',
+                  defaultMessage: "A runtime other than the writer's",
+                })}
+                value={current.reviewer}
+                runtimes={usable}
+                models={models}
+                onChange={(next) => change({ ...current, reviewer: next }, 'review')}
+              />
+            )}
+          </Row>
+          <Row label={fallbackLabel} settingId="defaults.reviewerFallback">
+            {fallback('reviewer', reviewer, 'review')}
+          </Row>
           <Row label={singleModelLabel} settingId="defaults.singleModel">
             <input
               type="checkbox"
@@ -391,12 +361,12 @@ export function SessionDefaults({ project }: { project: Project | null }) {
               checked={current.single_model}
               disabled={current.model === null}
               aria-label={singleModelLabel}
-              onChange={(e) => change({ ...current, single_model: e.target.checked }, 'rows')}
+              onChange={(e) => change({ ...current, single_model: e.target.checked }, 'review')}
             />
           </Row>
         </div>
-      </div>
-      {error('rows')}
+      </Section>
+      {error('review')}
     </div>
   );
 }

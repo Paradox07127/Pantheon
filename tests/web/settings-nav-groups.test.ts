@@ -44,34 +44,44 @@ afterEach(() => {
 });
 
 describe('settings navigation groups', () => {
-  it('lists this computer, then every project, with no group named after a project', () => {
-    const labels = (group: 'app' | 'global' | 'project') =>
-      SETTINGS_PAGES.filter((p) => p.group === group).map((p) => p.label);
+  it('lists five groups in order, each with its pages, and no group named after a project', () => {
     const pages = (ids: string[]) =>
       ids.map((id) => zh(id === 'devices' ? 'settings.devices.title' : `settings.pages.${id}`));
-    expect(labels('app')).toEqual(
-      pages([
-        'general',
-        'appearance',
-        'sessionDisplay',
-        'diff',
-        'runtimes',
-        'openWith',
-        'connections',
-        'devices',
-        'notifications',
-        'shortcuts',
-        'data',
-        'about',
-      ]),
-    );
-    expect(labels('global')).toEqual(pages(['defaults', 'permissions', 'projects']));
-    expect(labels('project')).toEqual(pages(['gates', 'worktrees', 'extensions', 'project']));
     const nav = renderToStaticMarkup(createElement(SettingsNav, { page: 'general' }));
-    const shown = [...nav.matchAll(/class="ps-page"[^>]*>.*?<\/span>([^<]*)</g)].map((m) => m[1]);
-    expect(shown).toEqual([...labels('app'), ...labels('global')]);
-    const groups = [...nav.matchAll(/role="group" aria-label="([^"]+)"/g)].map((m) => m[1]);
-    expect(groups).toEqual([zh('settings.nav.app'), zh('settings.nav.projects')]);
+    const groups = [...nav.matchAll(/role="group" aria-label="([^"]+)"(.*?)<\/div>/g)].map(
+      ([, name, body]) => [
+        name,
+        [...body!.matchAll(/<button[^>]*>.*?<\/span>([^<]*)</g)].map((m) => m[1]),
+      ],
+    );
+    expect(groups).toEqual([
+      [
+        zh('settings.nav.general'),
+        pages([
+          'general',
+          'appearance',
+          'sessionDisplay',
+          'diff',
+          'openWith',
+          'shortcuts',
+          'notifications',
+        ]),
+      ],
+      [zh('settings.nav.models'), pages(['runtimes', 'defaults', 'permissions'])],
+      [zh('settings.nav.project'), pages(['projects'])],
+      [zh('settings.nav.connections'), pages(['connections', 'devices'])],
+      [zh('settings.nav.data'), pages(['data', 'about'])],
+    ]);
+    expect(groups.map(([name]) => name)).toEqual([
+      '通用',
+      '模型与权限',
+      '项目',
+      '连接与设备',
+      '数据与关于',
+    ]);
+    expect(SETTINGS_PAGES.filter((p) => p.group === 'project').map((p) => p.label)).toEqual(
+      pages(['gates', 'worktrees', 'extensions', 'project']),
+    );
     expect(nav).not.toContain(project.name);
   });
 

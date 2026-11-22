@@ -26,7 +26,7 @@ import {
   type ExtensionOverrides,
 } from '@/data/extensions';
 import { ProjectSettingsScreen } from '@/screens/settings/ProjectSettingsScreen';
-import { SETTINGS_PAGES, useSettingsView } from '@/screens/settings/view';
+import { SETTINGS_PAGES, SETTINGS_SECTIONS, useSettingsView } from '@/screens/settings/view';
 import { useShell } from '@/store';
 import { zh } from './i18n-setup.js';
 
@@ -81,10 +81,13 @@ const NONE = savedOverrides({}, 'codex');
 const loadedOf = (items: readonly { loaded: boolean }[]) => items.map((i) => i.loaded);
 
 describe('settings pages', () => {
-  it("lists the app pages, then the pages for every project, then a project's parts, and opens on the general app page", () => {
+  it("lists the pages group by group, then a project's parts, and opens on the general app page", () => {
     const groups = SETTINGS_PAGES.map((p) => p.group);
-    expect(groups.indexOf('global')).toBe(groups.lastIndexOf('app') + 1);
-    expect(groups.indexOf('project')).toBe(groups.lastIndexOf('global') + 1);
+    expect(groups.indexOf('project')).toBe(groups.lastIndexOf('app') + 1);
+    expect(groups.indexOf('project')).toBeGreaterThan(groups.lastIndexOf('global'));
+    const order = SETTINGS_SECTIONS.map((s) => s.key);
+    const sections = SETTINGS_PAGES.filter((p) => p.group !== 'project').map((p) => p.section);
+    expect(sections).toEqual(order.flatMap((key) => sections.filter((s) => s === key)));
     expect(useSettingsView.getState().page).toBe('general');
     expect(SETTINGS_PAGES.find((p) => p.key === 'general')).toMatchObject({
       label: zh('settings.pages.general'),
@@ -115,9 +118,11 @@ describe('settings groups', () => {
   it.each([
     ['with a project', [project]],
     ['without a project', []],
-  ])('shows this computer and every project %s', (_name, projects) => {
+  ])('shows the same five groups %s', (_name, projects) => {
     useBoard.setState({ board: { cursor: 0, projects, sessions: [] } as never });
-    expect(groupLabels(render())).toEqual([zh('settings.nav.app'), zh('settings.nav.projects')]);
+    expect(groupLabels(render())).toEqual(
+      ['general', 'models', 'project', 'connections', 'data'].map((g) => zh(`settings.nav.${g}`)),
+    );
   });
 
   it('opens on the chosen page whichever project it is opened from', () => {

@@ -1,4 +1,4 @@
-/* The role table and the rows under it. */
+/* The new sessions' section and the review's. */
 .dp {
   display: flex;
   flex-direction: column;
@@ -9,37 +9,14 @@
   margin-top: calc(-1 * var(--sp-2));
   padding: 0 4px;
 }
-
-/* One role: its name, the model it runs on, what it runs on when that is unavailable. */
-.dp-r {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 220px 200px;
-  align-items: center;
-  column-gap: 16px;
-  min-height: 52px;
-  padding: 8px 16px;
-  border-top: var(--hair) solid var(--bd2);
-}
-.dp-r[data-flash] {
-  border-radius: 0;
-}
-.dp-hd {
-  min-height: 32px;
-  border-top: 0;
-  background: var(--sf2);
-}
-.dp-nm {
-  min-width: 0;
-  font-weight: 500;
-}
-.dp-r > [role='cell'] {
+.dp-lead {
   display: flex;
   min-width: 0;
 }
 
 /* The model choices take the chip shape, 24px high. */
-.dp-r .dp-lead > button,
-.dp-r .dp-chip {
+.dp .dp-lead > button,
+.dp .dp-chip {
   max-width: 100%;
   height: 24px;
   padding: 0 6px;
@@ -49,8 +26,8 @@
   background: var(--sf2);
   font-size: var(--fs-xs);
 }
-.dp-r .dp-lead > button svg,
-.dp-r .dp-chip svg {
+.dp .dp-lead > button svg,
+.dp .dp-chip svg {
   width: 12px;
   height: 12px;
 }
@@ -60,7 +37,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.dp-r .dp-chip:disabled {
+.dp .dp-chip:disabled {
   color: var(--mu);
   cursor: default;
 }
