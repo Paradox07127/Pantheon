@@ -335,8 +335,17 @@ describe('a settings change the main agent proposes', () => {
       setting: {
         command: 'project.gate.set',
         root: '/repo/app',
-        before: { commands: ['pnpm test'], timeout_ms: null },
-        after: { commands: ['pnpm test', 'pnpm lint'], timeout_ms: 60000, env: { CI: '1' } },
+        before: {
+          commands: [{ name: 'test', argv: ['pnpm', 'test'], timeout_ms: 60000 }],
+          protected_paths: [],
+        },
+        after: {
+          commands: [
+            { name: 'test', argv: ['pnpm', 'test'], timeout_ms: 60000 },
+            { name: 'lint', argv: ['pnpm', 'lint'] },
+          ],
+          protected_paths: ['keep/**'],
+        },
         reason: 'Lint failures only show up in review',
       },
       ...over,
@@ -387,42 +396,166 @@ describe('a settings change the main agent proposes', () => {
     expect(reject(h.value).props.disabled).toBe(false);
   });
 
-  it('names the setting and its root, gives the reason and lists each field now and after', () => {
+  /** Each row of the change table: its label, then each cell as text or, when it has lines, the texts of each line. */
+  const tableRows = (tree: unknown, name: string) => {
+    const table = find(
+      tree as never,
+      (n) =>
+        n.type === 'table' &&
+        n.props['aria-label'] === zhf('components.needsPopover.setting.change', { name }),
+    );
+    const cell = (c: Parameters<typeof nodes>[0]) => {
+      const lines = nodes(c).filter((n) => n.props.className === 'np-ln');
+      return lines.length
+        ? lines.map((line) =>
+            nodes(line.props.children)
+              .filter((n) => n.type === 'span')
+              .map(text),
+          )
+        : text(c);
+    };
+    return nodes(table)
+      .filter((n) => n.type === 'tr')
+      .map((row) =>
+        nodes(row.props.children)
+          .filter((c) => c.type === 'th' || c.type === 'td')
+          .map(cell),
+      );
+  };
+
+  it('names the setting and its root, gives the reason and lists each gate command now and after', () => {
     const h = show(proposal());
     expect(text(button(h.value, gateName))).toContain('Fix login');
     expect(text(h.value)).toContain('/repo/app');
     expect(text(h.value)).toContain('Lint failures only show up in review');
-    const table = find(
-      h.value,
-      (n) =>
-        n.type === 'table' &&
-        n.props['aria-label'] === zhf('components.needsPopover.setting.change', { name: gateName }),
-    );
-    const cells = (n: unknown) =>
-      nodes(n as never)
-        .filter((c) => c.type === 'th' || c.type === 'td')
-        .map(text);
-    const rows = nodes(table).filter((n) => n.type === 'tr');
-    expect(cells(rows[0])).toEqual([
-      '',
-      zh('components.needsPopover.setting.now'),
-      zh('components.needsPopover.setting.after'),
-    ]);
-    expect(rows.slice(1).map(cells)).toEqual([
-      ['commands', 'pnpm test', 'pnpm test, pnpm lint'],
-      ['timeout_ms', '—', '60000'],
-      ['env', '—', '{"CI":"1"}'],
+    const minute = zhf('lib.time.minutes', { minutes: 1 });
+    expect(tableRows(h.value, gateName)).toEqual([
+      ['', zh('components.needsPopover.setting.now'), zh('components.needsPopover.setting.after')],
+      [
+        gateName,
+        [['test', 'pnpm test', minute]],
+        [
+          ['test', 'pnpm test', minute],
+          ['lint', 'pnpm lint'],
+        ],
+      ],
+      [zh('components.needsPopover.setting.protectedPaths'), '—', 'keep/**'],
     ]);
   });
 
-  it('shows a change without before and after by its reason and buttons alone', () => {
+  const defaultsName = zh('components.needsPopover.setting.sessionDefaults');
+  const inheritedName = zh('components.needsPopover.setting.inherited');
+  it.each([
+    {
+      what: 'the global defaults the project inherits',
+      before: { session_defaults: null, inherited: { runtime: 'claude', permission_mode: 'ask' } },
+      rows: [
+        [
+          defaultsName,
+          '—',
+          [
+            ['runtime', 'claude'],
+            ['permission_mode', 'auto_edit'],
+          ],
+        ],
+        [
+          inheritedName,
+          [
+            ['runtime', 'claude'],
+            ['permission_mode', 'ask'],
+          ],
+          '—',
+        ],
+      ],
+    },
+    {
+      what: 'no inherited row when the project has its own defaults',
+      before: { session_defaults: { runtime: 'claude', permission_mode: 'ask' }, inherited: null },
+      rows: [
+        [
+          defaultsName,
+          [
+            ['runtime', 'claude'],
+            ['permission_mode', 'ask'],
+          ],
+          [
+            ['runtime', 'claude'],
+            ['permission_mode', 'auto_edit'],
+          ],
+        ],
+      ],
+    },
+  ])('shows session defaults as fields per line with $what', ({ before, rows }) => {
     const h = show(
       proposal({
-        setting: { command: 'workflow.policy.set', reason: 'The budget runs out daily' },
+        setting: {
+          command: 'project.sessionDefaults.set',
+          before,
+          after: { session_defaults: { runtime: 'claude', permission_mode: 'auto_edit' } },
+          reason: 'Edits need no prompt',
+        },
       }),
     );
-    expect(text(h.value)).toContain(zh('components.needsPopover.setting.budget'));
-    expect(text(h.value)).toContain('The budget runs out daily');
+    expect(tableRows(h.value, defaultsName).slice(1)).toEqual(rows);
+  });
+
+  it('labels the budget and extension switches and shows an unknown field as it is', () => {
+    const budget = show(
+      proposal({
+        setting: {
+          command: 'workflow.policy.set',
+          before: { project_budget: null },
+          after: { project_budget: { input_tokens: 5000 } },
+          reason: 'The budget runs out daily',
+        },
+      }),
+    );
+    const budgetName = zh('components.needsPopover.setting.budget');
+    expect(tableRows(budget.value, budgetName).slice(1)).toEqual([
+      [budgetName, '—', [['input_tokens', '5000']]],
+    ]);
+    unmountAll();
+    const extensions = show(
+      proposal({
+        setting: {
+          command: 'project.extensions.set',
+          before: { overrides: null },
+          after: {
+            overrides: { disabled_mcp_servers: ['docs'], disable_hooks: false },
+            later: 'x',
+          },
+          reason: 'The docs server is slow',
+        },
+      }),
+    );
+    expect(
+      tableRows(extensions.value, zh('components.needsPopover.setting.extensions')).slice(1),
+    ).toEqual([
+      [
+        zh('components.needsPopover.setting.overrides'),
+        '—',
+        [
+          ['disabled_mcp_servers', 'docs'],
+          ['disable_hooks', 'false'],
+        ],
+      ],
+      ['later', '—', 'x'],
+    ]);
+  });
+
+  it('shows a gate change the personal agent sees by its root, reason and buttons alone', () => {
+    const h = show(
+      proposal({
+        setting: {
+          command: 'project.gate.set',
+          root: '/repo/app',
+          reason: 'Lint failures only show up in review',
+        },
+      }),
+    );
+    expect(text(h.value)).toContain(gateName);
+    expect(text(h.value)).toContain('/repo/app');
+    expect(text(h.value)).toContain('Lint failures only show up in review');
     expect(nodes(h.value).some((n) => n.type === 'table')).toBe(false);
     expect(approve(h.value)).toBeTruthy();
     expect(reject(h.value)).toBeTruthy();

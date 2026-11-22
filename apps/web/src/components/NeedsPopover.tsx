@@ -217,18 +217,84 @@ function settingName(command: string): string {
 
 const NONE = '—';
 
-function valueText(value: unknown): string {
-  if (value === undefined || value === null) return NONE;
+/** The row label of a field a proposal changes; an unknown field shows as it is. */
+function fieldName(key: string): string {
+  switch (key) {
+    case 'commands':
+      return settingName('project.gate.set');
+    case 'protected_paths':
+      return t({
+        id: 'components.needsPopover.setting.protectedPaths',
+        defaultMessage: 'Protected paths',
+      });
+    case 'project_budget':
+      return settingName('workflow.policy.set');
+    case 'session_defaults':
+      return settingName('project.sessionDefaults.set');
+    case 'inherited':
+      return t({ id: 'components.needsPopover.setting.inherited', defaultMessage: 'Inherited' });
+    case 'overrides':
+      return t({
+        id: 'components.needsPopover.setting.overrides',
+        defaultMessage: 'Extension switches',
+      });
+    default:
+      return key;
+  }
+}
+
+const empty = (value: unknown) =>
+  value === undefined ||
+  value === null ||
+  (Array.isArray(value) && value.length === 0) ||
+  (typeof value === 'object' && Object.keys(value).length === 0);
+
+function shortText(value: unknown): string {
+  if (empty(value)) return NONE;
   if (typeof value === 'string') return value;
   if (Array.isArray(value) && value.every((v) => typeof v === 'string')) return listText(...value);
   return JSON.stringify(value);
+}
+
+interface GateCommand {
+  name: string;
+  argv: string[];
+  timeout_ms?: number;
+}
+
+const gateCommands = (value: unknown): value is GateCommand[] =>
+  Array.isArray(value) &&
+  value.every(
+    (v) => typeof v === 'object' && v !== null && Array.isArray((v as { argv?: unknown }).argv),
+  );
+
+/** A gate command per line; an object's fields as key and value per line. */
+function valueText(value: unknown): ReactNode {
+  if (gateCommands(value) && value.length > 0)
+    return value.map((command, index) => (
+      <span key={index} className="np-ln">
+        <span>{command.name}</span>
+        <span>{command.argv.join(' ')}</span>
+        {command.timeout_ms !== undefined && <span>{durationText(command.timeout_ms)}</span>}
+      </span>
+    ));
+  if (!empty(value) && typeof value === 'object' && !Array.isArray(value))
+    return Object.entries(value as object).map(([key, field]) => (
+      <span key={key} className="np-ln">
+        <span>{key}</span>
+        <span>{shortText(field)}</span>
+      </span>
+    ));
+  return shortText(value);
 }
 
 /** The root, the agent's reason and each changed field now and after the change. */
 function settingBody(setting: NonNullable<NeedsYouItem['setting']>, name: string): ReactNode {
   const before = setting.before ?? {};
   const after = setting.after ?? {};
-  const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])];
+  const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])].filter(
+    (key) => !empty(before[key]) || !empty(after[key]),
+  );
   return (
     <>
       {setting.root && <span className="np-rt">{setting.root}</span>}
@@ -256,7 +322,7 @@ function settingBody(setting: NonNullable<NeedsYouItem['setting']>, name: string
             {keys.map((key) => (
               <tr key={key}>
                 <th scope="row" className="np-k">
-                  {key}
+                  {fieldName(key)}
                 </th>
                 <td className="np-v">{valueText(before[key])}</td>
                 <td className="np-v">{valueText(after[key])}</td>

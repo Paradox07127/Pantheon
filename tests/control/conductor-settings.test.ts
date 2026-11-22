@@ -377,6 +377,34 @@ it.each([
   },
 );
 
+it('tells the main agent an answer it could not take once after a daemon restart', async () => {
+  const { f, conductor, propose, respond, notices, row } = await conductorFixture();
+  const command = 'project.sessionDefaults.set';
+  const { proposal_id } = propose(command, cases[command].input(f));
+  spendBudget(f, conductor.id);
+  await respond(proposal_id, 'approve');
+
+  await f.restart();
+  await f.control.tick();
+
+  expect(notices()).toEqual([]);
+  expect(row(proposal_id).notified_at).toBeUndefined();
+
+  f.call(
+    'workflow.policy.set',
+    { project_id: f.project.id, project_budget: { input_tokens: 1000000 } },
+    policyRevision(f),
+  );
+  await f.control.tick();
+  await f.control.tick();
+  await settle(f, f.store.must<Session>('sessions', conductor.id));
+  await f.restart();
+  await f.control.tick();
+
+  expect(notices()).toEqual([`[setting] [Pantheon] approved: ${command} — ${REASON}`]);
+  expect(row(proposal_id).notified_at).toEqual(expect.any(Number));
+});
+
 it.each([
   {
     what: 'a gate root outside the project',
@@ -518,6 +546,27 @@ it('keeps the timeout the user gave a gate command the agent lists again', async
 
   expect(row(proposal_id).state).toBe('approved');
   expect(project(f).gates?.[root(f)]).toEqual([timed, lint]);
+});
+
+it('keeps the timeout of each named gate command when two run the same argv', async () => {
+  const { f, propose, items } = await conductorFixture();
+  const quick = { name: 'quick', argv: testCommand.argv, timeout_ms: 1000 };
+  const slow = { name: 'slow', argv: testCommand.argv, timeout_ms: 900000 };
+  await f.call(
+    'project.gate.set',
+    { project_id: f.project.id, root: root(f), commands: [quick, slow] },
+    project(f).revision,
+  );
+
+  propose('project.gate.set', {
+    root: root(f),
+    commands: [
+      { name: 'quick', argv: testCommand.argv },
+      { name: 'slow', argv: testCommand.argv },
+    ],
+  });
+
+  expect(items()[0]?.setting?.after).toEqual({ commands: [quick, slow] });
 });
 
 it('reads the budget and the session defaults in effect in project_read of a conductor', async () => {

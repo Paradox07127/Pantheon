@@ -101,8 +101,10 @@ const proposeSetting: Handler = (ctx, p, command) => {
   if (root !== undefined) {
     // A command the user gave a timeout keeps it.
     const now = project.gates?.[root] ?? [];
-    const commands = (proposed.input.commands as { argv: string[] }[]).map((each) => {
-      const timeout = now.find((c) => canonical(c.argv) === canonical(each.argv))?.timeout_ms;
+    const commands = (proposed.input.commands as { name: string; argv: string[] }[]).map((each) => {
+      const timeout = now.find(
+        (c) => c.name === each.name && canonical(c.argv) === canonical(each.argv),
+      )?.timeout_ms;
       return timeout === undefined ? each : { ...each, timeout_ms: timeout };
     });
     proposed = { ...proposed, input: { ...proposed.input, commands } };
