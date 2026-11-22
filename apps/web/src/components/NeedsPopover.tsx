@@ -187,20 +187,8 @@ const answerable = (item: NeedsYouItem) =>
   !item.questions?.length &&
   item.actions.find((a) => a.command === 'approval.respond')?.allowed === true;
 
-const FILES_SHOWN = 5;
-
-/** The first files, then how many more there are. */
-const filesText = (files: readonly string[]) =>
-  t(
-    {
-      id: 'components.needsPopover.files',
-      defaultMessage: '{count, plural, =0 {{files}} other {{files} and # more}}',
-    },
-    {
-      files: listText(...files.slice(0, FILES_SHOWN)),
-      count: Math.max(0, files.length - FILES_SHOWN),
-    },
-  );
+// Every file shows: the approval lands all of them.
+const filesText = (files: readonly string[]) => listText(...files);
 
 const ANSWERING = '';
 const NO_PROJECTS: readonly never[] = [];

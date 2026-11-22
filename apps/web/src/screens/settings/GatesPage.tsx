@@ -450,8 +450,9 @@ export function ProtectedPaths({
 
   const paths = sent?.paths ?? project.protected_paths?.[root] ?? [];
   const off = busy || sent !== null;
+  /** True once the board took the list. */
   const save = async (next: string[]) => {
-    if (off) return;
+    if (off) return false;
     setSent({ paths: next, revision: null });
     setFailure(null);
     const request = protectedPathsRequest(project, root, next);
@@ -465,8 +466,10 @@ export function ProtectedPaths({
         : null,
     );
     if (!result.ok) setFailure(result.error);
+    return result.ok;
   };
-  const add = () => {
+  const add = async () => {
+    if (off) return;
     const entry = adding.trim();
     const found = copyPathProblem(entry, paths);
     if (found === 'empty') return;
@@ -474,8 +477,8 @@ export function ProtectedPaths({
       setProblem(found);
       return;
     }
-    setAdding('');
-    void save([...paths, entry]);
+    // The text stays in the box until the list with it is saved.
+    if (await save([...paths, entry])) setAdding('');
   };
   const pathLabel = t({
     id: 'settings.gate.protectPath',
@@ -522,7 +525,7 @@ export function ProtectedPaths({
                 setProblem(null);
               }}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') add();
+                if (e.key === 'Enter') void add();
               }}
             />
             {problem !== null && (
@@ -537,7 +540,7 @@ export function ProtectedPaths({
               className="ib"
               disabled={off}
               aria-label={t({ id: 'settings.gate.protect', defaultMessage: 'Protect this path' })}
-              onClick={add}
+              onClick={() => void add()}
             >
               <Plus aria-hidden="true" />
             </button>

@@ -363,6 +363,18 @@ describe('the paths a merge changes only with your leave', () => {
     }
     expect(bridge.commands).toEqual([]);
   });
+
+  it('keeps the path in the box when its save is refused', async () => {
+    project = { ...project, protected_paths: { [ROOT]: ['config'] } };
+    const h = await paths();
+    bridge.replies.push({ ok: false, error: { code: 'conflict', message: 'stale revision' } });
+    input(h).props.onChange({ target: { value: 'migrations' } });
+    await h.flush();
+    input(h).props.onKeyDown({ key: 'Enter' });
+    await h.flush();
+    expect(bridge.commands).toHaveLength(1);
+    expect(input(h).props.value).toBe('migrations');
+  });
 });
 
 describe('gate step helpers', () => {

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
@@ -111,16 +111,18 @@ async function merge(f: Fixture, sessionId: string, allowGateChange = false) {
 }
 
 it.each([
-  ['changes only other files', 'answer.txt', null],
-  ['changes the gate file again', 'scripts/check.cjs', ['scripts/check.cjs']],
+  ['changes only other files', 'answer.txt', null, false],
+  ['changes the gate file again', 'scripts/check.cjs', ['scripts/check.cjs'], false],
   [
     'changes another protected file',
     'config/deploy.json',
     ['config/deploy.json', 'scripts/check.cjs'],
+    false,
   ],
+  ['makes the gate file executable', 'answer.txt', ['scripts/check.cjs'], true],
 ])(
   'after the gate fails on a gate file change the user allowed, a fix that %s asks again only for a new protected change',
-  async (_name, fixed, asked) => {
+  async (_name, fixed, asked, executable) => {
     const f = await workbenchFixture();
     mkdirSync(path.join(f.source, 'scripts'));
     writeFileSync(path.join(f.source, 'scripts/check.cjs'), 'process.exit(1)\n');
@@ -161,6 +163,11 @@ it.each([
       session.id,
       script({ write: { path: fixed, text: 'fixed\n' } }, { commit: 'Fix the failure' }),
     );
+    if (executable) {
+      chmodSync(path.join(workspace.path, 'scripts/check.cjs'), 0o755);
+      git(workspace.path, 'add', '--', 'scripts/check.cjs');
+      git(workspace.path, 'commit', '--quiet', '-m', 'Make the check executable');
+    }
     const head = git(workspace.path, 'rev-parse', 'HEAD');
     const before = git(f.source, 'rev-parse', 'main');
     await merge(f, session.id);

@@ -231,9 +231,9 @@ describe('needs-you list', () => {
   });
 
   it.each([
-    ['all five files', 5, 0],
-    ['five of seven files, then how many more', 7, 2],
-  ])('names the protected files a held merge changes: %s', (_name, count, more) => {
+    ['five files', 5],
+    ['seven files', 7],
+  ])('names every protected file a held merge changes: %s', (_name, count) => {
     const files = Array.from({ length: count }, (_, i) => `scripts/check-${i + 1}.cjs`);
     const held = item({
       source: { table: 'sessions', id: 'session-login', revision: 2 },
@@ -247,11 +247,7 @@ describe('needs-you list', () => {
     root(h.value).props.onOpenChange(true);
     h.render();
     const row = text(button(h.value, 'Fix login'));
-    expect(row).toContain(files.slice(0, 5).join(', '));
-    expect(row).not.toContain(files[5] ?? '\0');
-    expect(row).toContain(
-      zhf('components.needsPopover.files', { files: files.slice(0, 5).join(', '), count: more }),
-    );
+    for (const file of files) expect(row).toContain(file);
   });
 
   it("names a project over its budget and opens the project's settings from its button", async () => {

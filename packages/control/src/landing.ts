@@ -343,7 +343,7 @@ export async function changedGateFiles(
 export const inScope = (file: string, entry: string): boolean =>
   within(file, entry) || path.posix.matchesGlob(file, entry);
 
-/** The blob id of each file at commit; '' for a file the commit does not hold. */
+/** The mode and blob id of each file at commit; '' for a file the commit does not hold. */
 async function blobIds(
   cwd: string,
   commit: string,
@@ -361,7 +361,9 @@ async function blobIds(
   ]);
   for (const entry of listed.split('\0').filter(Boolean)) {
     const tab = entry.indexOf('\t');
-    ids[entry.slice(tab + 1)] = entry.slice(0, tab).split(' ')[2]!;
+    const [mode, , id] = entry.slice(0, tab).split(' ');
+    // The mode counts: a script made executable runs differently with the same contents.
+    ids[entry.slice(tab + 1)] = `${mode} ${id}`;
   }
   return ids;
 }
@@ -944,7 +946,16 @@ export async function landWorkspace(
         if (results.some(gateFailed))
           return Object.assign(
             { ...item, reason: 'gate_failed' },
-            guardedBlobs ? { allowed_gate_files: guardedBlobs } : {},
+            // Read at the gated candidate, which a rebase above may have rewritten.
+            guardedBlobs
+              ? {
+                  allowed_gate_files: await blobIds(
+                    workspace.path,
+                    target,
+                    Object.keys(guardedBlobs),
+                  ),
+                }
+              : {},
           );
       }
     } finally {
