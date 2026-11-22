@@ -111,21 +111,27 @@ async function merge(f: Fixture, sessionId: string, allowGateChange = false) {
 }
 
 it.each([
-  ['changes only other files', 'answer.txt', null, false],
-  ['changes the gate file again', 'scripts/check.cjs', ['scripts/check.cjs'], false],
+  ['changes only other files', 'answer.txt', null, undefined],
+  ['changes the gate file again', 'scripts/check.cjs', ['scripts/check.cjs'], undefined],
   [
     'changes another protected file',
     'config/deploy.json',
     ['config/deploy.json', 'scripts/check.cjs'],
-    false,
+    undefined,
   ],
-  ['makes the gate file executable', 'answer.txt', ['scripts/check.cjs'], true],
-])(
+  ['makes the gate file executable', 'answer.txt', ['scripts/check.cjs'], 'executable'],
+  [
+    'changes only other files after a rebase onto another change to the gate file',
+    'answer.txt',
+    null,
+    'source moved',
+  ],
+] as const)(
   'after the gate fails on a gate file change the user allowed, a fix that %s asks again only for a new protected change',
-  async (_name, fixed, asked, executable) => {
+  async (_name, fixed, asked, twist) => {
     const f = await workbenchFixture();
     mkdirSync(path.join(f.source, 'scripts'));
-    writeFileSync(path.join(f.source, 'scripts/check.cjs'), 'process.exit(1)\n');
+    writeFileSync(path.join(f.source, 'scripts/check.cjs'), '// check\n\n\nprocess.exit(1)\n');
     git(f.source, 'add', '--', 'scripts/check.cjs');
     git(f.source, 'commit', '--quiet', '-m', 'Add the check');
     vi.spyOn(validation, 'runValidationCommand')
@@ -152,10 +158,17 @@ it.each([
       f,
       session.id,
       script(
-        { write: { path: 'scripts/check.cjs', text: 'process.exit(0)\n' } },
+        { write: { path: 'scripts/check.cjs', text: '// check\n\n\nprocess.exit(0)\n' } },
         { commit: 'Pass the check' },
       ),
     );
+    if (twist === 'source moved') {
+      writeFileSync(
+        path.join(f.source, 'scripts/check.cjs'),
+        '// the check\n\n\nprocess.exit(1)\n',
+      );
+      git(f.source, 'commit', '--quiet', '-am', 'Name the check');
+    }
     await merge(f, session.id, true);
     expect(current(f, session.id).merge).toMatchObject({ state: 'blocked', reason: 'gate_failed' });
     await turn(
@@ -163,7 +176,7 @@ it.each([
       session.id,
       script({ write: { path: fixed, text: 'fixed\n' } }, { commit: 'Fix the failure' }),
     );
-    if (executable) {
+    if (twist === 'executable') {
       chmodSync(path.join(workspace.path, 'scripts/check.cjs'), 0o755);
       git(workspace.path, 'add', '--', 'scripts/check.cjs');
       git(workspace.path, 'commit', '--quiet', '-m', 'Make the check executable');
@@ -173,7 +186,11 @@ it.each([
     await merge(f, session.id);
     if (!asked) {
       expect(current(f, session.id)).toMatchObject({ outcome: 'merged' });
-      expect(git(f.source, 'rev-parse', 'main')).toBe(head);
+      if (twist === 'source moved')
+        expect(git(f.source, 'show', 'main:scripts/check.cjs')).toBe(
+          '// the check\n\n\nprocess.exit(0)',
+        );
+      else expect(git(f.source, 'rev-parse', 'main')).toBe(head);
       return;
     }
     expect(current(f, session.id).merge).toEqual({
