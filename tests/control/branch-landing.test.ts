@@ -685,6 +685,63 @@ it('ends a landing cancelled while its gate runs as cancelled and leaves the tar
   expect(git(f.source, 'rev-parse', 'main')).toBe(base);
 });
 
+it('ends at once a landing cancelled while another landing holds the root, and lands the branch again', async () => {
+  const f = await landFixture();
+  branch(f, 'feature', [['feature.txt', 'feature\n']]);
+  branch(f, 'other', [['other.txt', 'other\n']]);
+  let release: () => void = () => {};
+  const gate = vi
+    .spyOn(validation, 'runValidationCommand')
+    .mockResolvedValue(passedGate())
+    .mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => (release = resolve));
+      return passedGate();
+    });
+  const first = await land(f);
+  await eventually(
+    () => gate.mock.calls.length === 1,
+    () => f.control.tick(),
+    10000,
+  );
+  const waiting = await land(f, { branch: 'other' });
+  await eventually(
+    () => row(f, waiting.id).state === 'running',
+    () => f.control.tick(),
+    10000,
+  );
+  cancel(f, waiting.id);
+  await eventually(
+    () => row(f, waiting.id).state === 'blocked',
+    () => f.control.tick(),
+    10000,
+  );
+  expect(row(f, waiting.id)).toMatchObject({ reason: 'cancelled' });
+  expect(row(f, first.id).state).toBe('running');
+  const again = await land(f, { branch: 'other' });
+  expect(again).toMatchObject({ state: 'queued', branch: 'other' });
+  release();
+  expect(await ended(f, first.id)).toMatchObject({ state: 'landed' });
+  expect(await ended(f, again.id)).toMatchObject({ state: 'landed' });
+});
+
+it('refuses to cancel a landing that passed its gate', async () => {
+  const f = await landFixture();
+  branch(f, 'feature', [['feature.txt', 'feature\n']]);
+  const started = await land(f);
+  const current = row(f, started.id);
+  f.store.update<Landing>(
+    'landings',
+    {
+      ...current,
+      state: 'running',
+      landing: { stage: 'gated', candidate: 'c', branch: 'main', from_sha: 'f' },
+    },
+    current.revision,
+  );
+  expect(() => cancel(f, started.id)).toThrow(expect.objectContaining({ code: 'invalid_state' }));
+  expect(row(f, started.id).cancel_requested).toBeUndefined();
+});
+
 it('refuses to cancel a landing that already landed', async () => {
   const f = await landFixture();
   branch(f, 'feature', [['feature.txt', 'feature\n']]);

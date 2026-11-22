@@ -131,6 +131,8 @@ export const branchLandingHandlers: Handlers = {
       'invalid_state',
       `Landing ${row.id} already finished`,
     );
+    // Once the gate passed, the landing moves the target without checking the flag again.
+    requireThat(!row.landing, 'invalid_state', `Landing ${row.id} passed its gate and is landing`);
     return ctx.store.update<Landing>('landings', { ...row, cancel_requested: true }, row.revision);
   },
 };
@@ -269,83 +271,100 @@ async function landBranch(ctx: ControlContext, landingId: string, jobId: string)
     return finish(ctx, landingId, jobId, { state: 'blocked', reason: 'workspace_failed' });
   if (ctx.store.must<Landing>('landings', landingId).state === 'queued')
     updateRow(ctx, landingId, { state: 'running', started_at: ctx.store.now() });
-  await afterSourceLandings(ctx, ctx.store.must<Landing>('landings', landingId).root, async () => {
-    if (ctx.closing) return;
-    if (cancelled()) return stop();
-    const row = ctx.store.must<Landing>('landings', landingId);
-    const project = ctx.store.must<Project>('projects', row.project_id);
-    // The gate can be cleared while the landing waits for the root.
-    const commands = projectGateCommands(project, row.root);
-    if (!commands?.length)
-      return finish(ctx, landingId, jobId, { state: 'blocked', reason: 'no_gate_commands' });
-    // Commits of a branch that landed squashed would replay onto their own squashed commit.
-    const squashedTip = await squashedAncestor(ctx, row, workspace.path);
-    if (row.message !== undefined) {
-      const worktree = ctx.store.must<Workspace>('workspaces', workspaceId);
-      const failed = await squash(worktree, squashedTip ?? worktree.base_sha!, row.message);
-      if (failed !== undefined)
-        return finish(ctx, landingId, jobId, {
-          state: 'blocked',
-          reason: `commit_failed: ${failed}`,
-        });
+  let entered = false,
+    ended = false;
+  const landed = afterSourceLandings(
+    ctx,
+    ctx.store.must<Landing>('landings', landingId).root,
+    async () => {
+      entered = true;
+      if (ended || ctx.closing) return;
+      if (cancelled()) return stop();
+      const row = ctx.store.must<Landing>('landings', landingId);
+      const project = ctx.store.must<Project>('projects', row.project_id);
+      // The gate can be cleared while the landing waits for the root.
+      const commands = projectGateCommands(project, row.root);
+      if (!commands?.length)
+        return finish(ctx, landingId, jobId, { state: 'blocked', reason: 'no_gate_commands' });
+      // Commits of a branch that landed squashed would replay onto their own squashed commit.
+      const squashedTip = await squashedAncestor(ctx, row, workspace.path);
+      if (row.message !== undefined) {
+        const worktree = ctx.store.must<Workspace>('workspaces', workspaceId);
+        const failed = await squash(worktree, squashedTip ?? worktree.base_sha!, row.message);
+        if (failed !== undefined)
+          return finish(ctx, landingId, jobId, {
+            state: 'blocked',
+            reason: `commit_failed: ${failed}`,
+          });
+      }
+      workspace = ctx.store.must<Workspace>('workspaces', workspaceId);
+      const head = await runGit(
+        workspace.path,
+        ['rev-parse', '--verify', 'HEAD^{commit}'],
+        undefined,
+        true,
+      );
+      // Not session-: landing.ts reads an owner key of that form as the session whose task rules apply.
+      const owner: LandingOwner = {
+        key: `land-${landingId}`,
+        projectId: row.project_id,
+        cancelled,
+        allowGateChange: row.allow_gate_change,
+        squashedTip,
+        // A gate that starts again, after the root moved, drops the results of the earlier run.
+        event: (kind, payload) =>
+          updateRow(ctx, landingId, {
+            gate_results:
+              kind === 'gate_started'
+                ? []
+                : (payload.results as NonNullable<LandingItem['gate_results']>),
+          }),
+        progress: {
+          saved: row.landing,
+          save: (landing) => updateRow(ctx, landingId, { landing }),
+        },
+      };
+      const item = await landWorkspace(
+        ctx,
+        owner,
+        workspace,
+        head.exit_code === 0 ? head.stdout.toString().trim() : undefined,
+        commands,
+      );
+      if (!item) return;
+      const current = ctx.store.must<Landing>('landings', landingId);
+      const { conflicts, conflict_commits } = item as LandingItem & {
+        conflicts?: string[];
+        conflict_commits?: string[];
+      };
+      finish(
+        ctx,
+        landingId,
+        jobId,
+        {
+          // A rebase can drop every commit, when the target already has their changes.
+          state:
+            item.state === 'landed' && item.from_sha === item.to_sha ? 'no_changes' : item.state,
+          reason: item.reason,
+          conflicts,
+          conflict_commits,
+          gate_results: item.gate_results ?? current.gate_results,
+          from_sha: item.from_sha,
+          to_sha: item.to_sha,
+        },
+        commands,
+      );
+    },
+  );
+  // A cancel while another landing holds the root ends this one now; its turn in the queue does nothing.
+  while (!entered) {
+    await Promise.race([landed, new Promise((resolve) => setTimeout(resolve, 250))]);
+    if (!entered && !ctx.closing && cancelled()) {
+      ended = true;
+      return stop();
     }
-    workspace = ctx.store.must<Workspace>('workspaces', workspaceId);
-    const head = await runGit(
-      workspace.path,
-      ['rev-parse', '--verify', 'HEAD^{commit}'],
-      undefined,
-      true,
-    );
-    // Not session-: landing.ts reads an owner key of that form as the session whose task rules apply.
-    const owner: LandingOwner = {
-      key: `land-${landingId}`,
-      projectId: row.project_id,
-      cancelled,
-      allowGateChange: row.allow_gate_change,
-      squashedTip,
-      // A gate that starts again, after the root moved, drops the results of the earlier run.
-      event: (kind, payload) =>
-        updateRow(ctx, landingId, {
-          gate_results:
-            kind === 'gate_started'
-              ? []
-              : (payload.results as NonNullable<LandingItem['gate_results']>),
-        }),
-      progress: {
-        saved: row.landing,
-        save: (landing) => updateRow(ctx, landingId, { landing }),
-      },
-    };
-    const item = await landWorkspace(
-      ctx,
-      owner,
-      workspace,
-      head.exit_code === 0 ? head.stdout.toString().trim() : undefined,
-      commands,
-    );
-    if (!item) return;
-    const current = ctx.store.must<Landing>('landings', landingId);
-    const { conflicts, conflict_commits } = item as LandingItem & {
-      conflicts?: string[];
-      conflict_commits?: string[];
-    };
-    finish(
-      ctx,
-      landingId,
-      jobId,
-      {
-        // A rebase can drop every commit, when the target already has their changes.
-        state: item.state === 'landed' && item.from_sha === item.to_sha ? 'no_changes' : item.state,
-        reason: item.reason,
-        conflicts,
-        conflict_commits,
-        gate_results: item.gate_results ?? current.gate_results,
-        from_sha: item.from_sha,
-        to_sha: item.to_sha,
-      },
-      commands,
-    );
-  });
+  }
+  await landed;
 }
 
 /** By daemon, the landing jobs running now. */

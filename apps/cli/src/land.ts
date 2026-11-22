@@ -38,11 +38,16 @@ const cancel = async (daemon: Daemon, root: string, branch: string) => {
     headers: { Authorization: `Bearer ${daemon.token}` },
     signal: AbortSignal.timeout(5000),
   });
+  const body = (await found.json()) as Landing & { error?: string };
   if (!found.ok) {
-    console.error(`No landing of ${branch} is queued or running at ${root}`);
+    console.error(
+      body.error === 'not_found'
+        ? `No landing of ${branch} is queued or running at ${root}`
+        : JSON.stringify(body, null, 2),
+    );
     return 1;
   }
-  const landing = (await found.json()) as Landing;
+  const landing = body;
   const sent = await sendCommand(
     daemon,
     'project.landing.cancel',

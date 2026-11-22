@@ -1862,7 +1862,7 @@ export const querySchemas = {
     project_id: str,
     since: z.coerce.number().int().min(0).optional(),
   }),
-  /** ProjectChanges; the project's changes as the main agent's read_state lists them. */
+  /** ProjectChanges; every change row of the project, unsorted and uncapped; read_state lists the newest 30 of the same rows. */
   'project.changes': z.strictObject({ project_id: str }),
   /** DecisionsForUser; what a stored rule decided without the user from since on, Unix milliseconds, newest first. */
   'project.decisions': z.strictObject({
