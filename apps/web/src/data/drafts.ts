@@ -71,6 +71,8 @@ export interface Draft extends DraftMessage {
   fast?: boolean;
   /** Whether the new-session composer turned ultracode on. */
   ultracode?: boolean;
+  /** Whether the new-session composer starts a main agent. */
+  conductor?: boolean;
 }
 
 /** A question card's picked options and typed answer, one entry per question. */
@@ -132,6 +134,7 @@ function readDraft(raw: string | null): Draft | null {
       ...(typeof value.mode === 'string' ? { mode: value.mode } : {}),
       ...(value.fast === true ? { fast: true } : {}),
       ...(value.ultracode === true ? { ultracode: true } : {}),
+      ...(value.conductor === true ? { conductor: true } : {}),
     };
   } catch {
     return null;
@@ -167,7 +170,8 @@ function storeDraft(key: string, draft: Draft | undefined) {
         draft.model ||
         draft.mode ||
         draft.fast ||
-        draft.ultracode)
+        draft.ultracode ||
+        draft.conductor)
     )
       localStorage.setItem(
         STORED + key,
@@ -185,6 +189,7 @@ function storeDraft(key: string, draft: Draft | undefined) {
           mode: draft.mode,
           fast: draft.fast,
           ultracode: draft.ultracode,
+          conductor: draft.conductor,
         }),
       );
     else localStorage.removeItem(STORED + key);
@@ -224,6 +229,7 @@ interface Drafts {
       mode?: WorkbenchSession['permission_mode'];
       fast?: boolean;
       ultracode?: boolean;
+      conductor?: boolean;
     },
   ) => void;
   answer: (approvalId: string, answers: Answers) => void;
@@ -305,6 +311,7 @@ export const useDrafts = create<Drafts>()((set, get) => {
           ...(draft.mode && draft.mode !== message.mode ? { mode: draft.mode } : {}),
           ...(draft.fast && !message.fast ? { fast: true } : {}),
           ...(draft.ultracode && !message.ultracode ? { ultracode: true } : {}),
+          ...(draft.conductor && !message.conductor ? { conductor: true } : {}),
         };
         // Comments alone keep no draft: they belong to the text they came with.
         const kept =
@@ -320,7 +327,8 @@ export const useDrafts = create<Drafts>()((set, get) => {
           left.model ||
           left.mode ||
           left.fast ||
-          left.ultracode;
+          left.ultracode ||
+          left.conductor;
         return { drafts: kept ? { ...rest, [key]: left } : rest };
       });
       storeDraft(key, get().drafts[key]);

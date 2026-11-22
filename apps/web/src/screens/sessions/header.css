@@ -133,6 +133,10 @@
   height: 12px;
   flex: none;
 }
+.sh-agent {
+  flex: none;
+  color: var(--tx2);
+}
 .sh-diff {
   display: inline-flex;
   gap: var(--sp-1);

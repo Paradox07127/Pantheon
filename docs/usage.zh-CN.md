@@ -157,7 +157,7 @@ Pantheon 读取 Claude Code 和 Codex 的原生历史。
 
 ## 带 Pantheon 工具的会话
 
-`session.create` 命令里写 `"purpose": "conductor"` 开的会话，多五个 Pantheon 工具。app 里没有对应的按钮，用 `pnpm cli command` 发这条命令。会话用它自己运行时的工具做计划、拆活和跑子 agent。
+`session.create` 命令里写 `"purpose": "conductor"` 开的会话，多五个 Pantheon 工具。在 app 里，开始新会话前打开消息框下面那一排的「主 agent」开关(皇冠图标)。会话列表和会话栏用皇冠标出这个会话，列表的类型筛选里有「主 agent」一类。会话用它自己运行时的工具做计划、拆活和跑子 agent。
 
 - `request_review`:另一家厂商的运行时审这个会话或它起的会话已提交的改动。结果作为一条消息回到会话。
 - `report_ready`:已提交的改动过项目门禁并落地。这份工作最近一次审查还有未解决的阻塞发现时,Pantheon 拒绝。你自己点「合并到 <目标分支>」不受这条限制。

@@ -7,6 +7,7 @@ import {
   Check,
   ChevronDown,
   CircleDot,
+  Crown,
   ExternalLink,
   FileText,
   Folder,
@@ -22,6 +23,7 @@ import type { BoardSnapshot, WorkbenchSession } from '@pantheon/protocol';
 import { ProjectMonogram } from '../../components/ProjectMonogram';
 import { runtimeTraits } from '../../components/RuntimeGlyph';
 import { KeyHint } from '../../components/Shortcuts';
+import { Tip } from '../../components/Tip';
 import { SessionStateIcon, sessionStateLabel, StateGlyph } from '../../components/SessionStateIcon';
 import { useBoard } from '../../data/board';
 import { runCommand } from '../../data/commands';
@@ -85,6 +87,7 @@ import {
   usePickedSkills,
   type ModelChoice,
 } from './parts';
+import { conductorLabel } from './session-groups';
 import { fail, ON, useFileInput } from './shared';
 import { VoiceBar } from './VoiceBar';
 import './compose.css';
@@ -177,6 +180,7 @@ export function NewSession(props: {
   const setFast = (on: boolean) => pick({ fast: on });
   const ultracode = useDrafts((s) => s.drafts[key]?.ultracode) ?? false;
   const setUltracode = (on: boolean) => pick({ ultracode: on });
+  const conductor = useDrafts((s) => s.drafts[key]?.conductor) ?? false;
   const input = useDrafts((s) => s.drafts[key]?.text) ?? '';
   const setInput = (text: string) => useDrafts.getState().update(key, () => ({ text }));
   const [busy, setBusy] = useState(false);
@@ -401,7 +405,7 @@ export function NewSession(props: {
         workspace: pickedWorkspace ?? (from ? 'worktree' : 'auto'),
         ...(from ? { from } : {}),
         ...refsInput(refs, githubRefs),
-        ...(purpose ? { purpose } : {}),
+        ...(purpose ? { purpose } : conductor ? { purpose: 'conductor' } : {}),
       },
       null,
     ).catch(fail);
@@ -425,6 +429,7 @@ export function NewSession(props: {
       ...(mode ? { mode } : {}),
       fast,
       ultracode,
+      conductor,
     });
     const id = (result.value as { id?: unknown } | null)?.id;
     if (typeof id !== 'string' || shown.current !== props.projectId) return;
@@ -920,6 +925,17 @@ export function NewSession(props: {
             ultracode={ultracodeOn}
             onUltracode={setUltracode}
           />
+          <Tip content={conductorLabel()}>
+            <button
+              type="button"
+              className="ib"
+              aria-label={conductorLabel()}
+              aria-pressed={conductor}
+              onClick={() => pick({ conductor: !conductor })}
+            >
+              <Crown aria-hidden="true" />
+            </button>
+          </Tip>
           <span style={{ flex: 1 }} />
           {voice.available && (
             <button

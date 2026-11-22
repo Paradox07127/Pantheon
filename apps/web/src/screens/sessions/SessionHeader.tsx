@@ -5,6 +5,7 @@ import {
   ChartNoAxesGantt,
   ChevronDown,
   Columns2,
+  Crown,
   Ellipsis,
   FileDiff,
   Gauge,
@@ -74,7 +75,7 @@ import {
 } from './inspector-model';
 import { MemoryDelivery } from './MemoryUsed';
 import { DiscardDialog } from './parts';
-import { liveWorktree } from './session-groups';
+import { conductorLabel, liveWorktree } from './session-groups';
 import {
   baselineDiscard,
   discardDescription,
@@ -284,6 +285,9 @@ export function SessionHeader({
       {listed && <SessionStateIcon session={listed} place="header" />}
       {listed && <LastTurn session={listed} />}
       {parent && parentLink(parent, !!listed?.spawned_by && !listed.forked_from)}
+      {session?.conductor && (
+        <Crown className="ic-sm sh-agent" role="img" aria-label={conductorLabel()} />
+      )}
       {editing ? (
         <input
           ref={titleInput}

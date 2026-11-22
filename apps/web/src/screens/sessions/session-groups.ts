@@ -97,13 +97,24 @@ function groupOf(s: WorkbenchSession, unread: (s: WorkbenchSession) => boolean):
 
 export type SessionSort = 'activity' | 'created' | 'title';
 
-/** What a listed session is to the list's type filter: one a session spawned, a runtime analysis, or one the user opened. */
-export type SessionType = 'worker' | 'direct' | 'review';
+/**
+ * What a listed session is to the list's type filter: a main agent, one a session spawned, a
+ * runtime analysis, or one the user opened.
+ */
+export type SessionType = 'conductor' | 'worker' | 'direct' | 'review';
 
-export const SESSION_TYPES: readonly SessionType[] = ['worker', 'direct', 'review'];
+export const SESSION_TYPES: readonly SessionType[] = ['conductor', 'worker', 'direct', 'review'];
 
-export const sessionType = (s: WorkbenchSession): SessionType =>
-  s.spawned_by ? 'worker' : s.runtime_review ? 'review' : 'direct';
+/** `conductor` comes from the board's row of the session, which session.list does not repeat. */
+export const sessionType = (s: WorkbenchSession, conductor = false): SessionType =>
+  conductor ? 'conductor' : s.spawned_by ? 'worker' : s.runtime_review ? 'review' : 'direct';
+
+export const conductorLabel = () =>
+  t({ id: 'sessions.conductor.name', defaultMessage: 'Main agent' });
+
+/** The ids of the board's main agent sessions. */
+export const conductorIds = (sessions: readonly { id: string; conductor?: true }[] = []) =>
+  new Set(sessions.filter((s) => s.conductor).map((s) => s.id));
 
 export interface SessionListView {
   /** lead: by who opened or forked each session; time: by day of the sorted time. */
@@ -118,8 +129,13 @@ export interface SessionListView {
 }
 
 /** Whether the view's type and runtime filters keep the session. */
-export const keptByView = (s: WorkbenchSession, view: SessionListView): boolean =>
-  !view.hiddenTypes?.includes(sessionType(s)) && !view.hiddenRuntimes?.includes(s.runtime);
+export const keptByView = (
+  s: WorkbenchSession,
+  view: SessionListView,
+  conductor = false,
+): boolean =>
+  !view.hiddenTypes?.includes(sessionType(s, conductor)) &&
+  !view.hiddenRuntimes?.includes(s.runtime);
 
 export const DEFAULT_SESSION_VIEW: SessionListView = {
   grouping: 'lead',

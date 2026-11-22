@@ -17,6 +17,7 @@ export {
   sessionRow,
   sessionType,
   keptByView,
+  conductorIds,
   SESSION_TYPES,
 } from './session-groups';
 export type {

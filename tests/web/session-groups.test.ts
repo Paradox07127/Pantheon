@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ReactElement } from 'react';
 import type { WorkbenchSession } from '@pantheon/protocol';
-import { find, mount, text, unmountAll } from './web-hook-host.js';
+import { find, mount, named, text, unmountAll } from './web-hook-host.js';
 import { zh } from './i18n-setup.js';
 const mock = vi.hoisted(() => ({ board: {} as any, shell: {} as any }));
 vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMock(actual));
@@ -15,7 +16,14 @@ vi.mock('@/store', () => ({
   }),
 }));
 import { groupWorkbenchSessions, sessionMenu } from '@/screens/sessions/model';
-import { parentOf, sidebarGroups } from '@/screens/sessions/session-groups';
+import {
+  keptByView,
+  parentOf,
+  readSessionView,
+  SESSION_TYPES,
+  sessionType,
+  sidebarGroups,
+} from '@/screens/sessions/session-groups';
 import { SessionListRow, shownSessionId } from '@/screens/sessions/SessionsScreen';
 
 const AT = '2026-01-01T00:00:00.000Z';
@@ -220,5 +228,61 @@ describe('session parents', () => {
     expect(rows.map((row) => [row.session.id, row.children.map((child) => child.id)])).toEqual([
       ['lead', ['worker']],
     ]);
+  });
+});
+
+describe('main agent sessions', () => {
+  const conductor = zh('sessions.conductor.name');
+  const view = { grouping: 'lead', sort: 'activity', archived: false } as const;
+  beforeEach(() => {
+    mock.board = {
+      board: {
+        sessions: [
+          { id: 'lead', revision: 1, conductor: true },
+          { id: 'plain', revision: 1 },
+        ],
+        session_turns: [],
+        projects: [],
+        workspaces: [],
+        cursor: 1,
+      },
+      events: [],
+      status: { state: 'live' },
+      cursor: 1,
+      resync: 0,
+      refresh() {},
+    };
+    mock.shell = { sessionId: null, followFirstSession: vi.fn() };
+    vi.stubGlobal('window', { addEventListener() {}, removeEventListener() {} });
+  });
+  afterEach(() => {
+    unmountAll();
+    vi.unstubAllGlobals();
+  });
+  const rowName = (s: WorkbenchSession) => {
+    const row = mount(() => SessionListRow({ session: s, on: false, now: 0, onSelect() {} }));
+    const button = named(row.value, 'SessionRowButton');
+    return (button.type as (props: unknown) => ReactElement<any>)(button.props).props[
+      'aria-label'
+    ] as string;
+  };
+
+  it('names a main agent in its row and no other session', () => {
+    expect(rowName(session('lead', 'idle'))).toContain(conductor);
+    expect(rowName(session('plain', 'idle'))).not.toContain(conductor);
+  });
+
+  it('is a type of its own that the type filter can leave out', () => {
+    expect(SESSION_TYPES).toContain('conductor');
+    const lead = session('lead', 'idle');
+    const worker = session('worker', 'idle', { spawned_by: { session_id: 'lead' } });
+    expect(sessionType(lead, true)).toBe('conductor');
+    expect([sessionType(lead), sessionType(worker)]).toEqual(['direct', 'worker']);
+    const hidden = readSessionView('{"hiddenTypes":["conductor"]}');
+    expect(hidden.hiddenTypes).toEqual(['conductor']);
+    expect(keptByView(lead, hidden, true)).toBe(false);
+    expect(keptByView(lead, hidden)).toBe(true);
+    expect(keptByView(worker, hidden)).toBe(true);
+    expect(keptByView(lead, view, true)).toBe(true);
   });
 });

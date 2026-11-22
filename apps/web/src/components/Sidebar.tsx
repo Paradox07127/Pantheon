@@ -35,6 +35,7 @@ import { SCREEN_NAMES } from '../screens';
 import { useProjectsView } from '../screens/projects/view';
 import {
   baselineRow,
+  conductorIds,
   keepOrder,
   keptByView,
   needsAttention,
@@ -170,6 +171,11 @@ const SORTS = [
 ] as const;
 
 const TYPES: Record<SessionType, { readonly label: string }> = {
+  conductor: {
+    get label() {
+      return t({ id: 'components.sidebar.typeConductor', defaultMessage: 'Main agent' });
+    },
+  },
   worker: {
     get label() {
       return t({ id: 'components.sidebar.typeWorker', defaultMessage: 'Worker' });
@@ -617,15 +623,17 @@ export function Sidebar({
   const unread = useUnread(currentProjectId, list.data, leftHidden ? null : shownId);
   // The check is a new function each render; the unread ids say when the groups change.
   const unreadIds = (list.data ?? []).filter(unread).map((s) => s.id);
+  const boardSessions = useBoard((s) => s.board?.sessions);
+  const conductors = useMemo(() => conductorIds(boardSessions), [boardSessions]);
   const fresh = useMemo(
     () =>
       sidebarGroups(
-        (list.data ?? []).filter((s) => keptByView(s, view)),
+        (list.data ?? []).filter((s) => keptByView(s, view, conductors.has(s.id))),
         view,
         unread,
         now,
       ),
-    [list.data, view, unreadIds.join('\n'), now],
+    [list.data, view, unreadIds.join('\n'), now, conductors],
   );
   const shown = useRef<{ view: SessionListView; groups: SidebarGroup[] } | null>(null);
   const held =

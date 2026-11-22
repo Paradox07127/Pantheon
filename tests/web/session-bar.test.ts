@@ -277,6 +277,13 @@ describe('session bar', () => {
     ).toBe(false);
   });
 
+  it('marks a main agent with a named glyph, and no other session', () => {
+    const conductor = zh('sessions.conductor.name');
+    const lead = header({ session: { ...session('session-a'), conductor: true } });
+    expect(labelled(lead.value, conductor)?.props.role).toBe('img');
+    expect(labelled(header().value, conductor)).toBeUndefined();
+  });
+
   it('links the session it was forked from and opens it', () => {
     const h = header({
       listed: listed('session-a', { forked_from: { session_id: 'session-lead' } }),

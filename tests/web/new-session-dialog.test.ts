@@ -262,6 +262,34 @@ it('keeps the chosen runtime, model, effort and permission mode with the draft w
   expect(picker(h).props.mode).toBe('plan');
 });
 
+it('starts a main agent while its toggle is on, and keeps the toggle with the draft', async () => {
+  const conductor = zh('sessions.conductor.name');
+  const toggle = (h: HookHost<any>) => find(h.value, labelled(conductor));
+  const first = await mount();
+  expect(toggle(first.h).props['aria-pressed']).toBe(false);
+  const tip = find(
+    first.h.value,
+    (n) =>
+      typeof n.type === 'function' &&
+      n.type.name === 'Tip' &&
+      n.props.children?.props?.['aria-label'] === conductor,
+  );
+  expect(tip.props.content).toBe(conductor);
+  toggle(first.h).props.onClick();
+  first.h.render();
+  unmountAll();
+
+  const { h } = await mount();
+  expect(toggle(h).props['aria-pressed']).toBe(true);
+  type(h, 'plan the release');
+  press(h, 'Enter');
+  await h.flush();
+  expect((command.mock.calls[0] as any)[0]).toMatchObject({
+    type: 'session.create',
+    input: { input: 'plan the release', purpose: 'conductor' },
+  });
+});
+
 it.each([
   ['the installed runtimes', null, ['claude', 'gemini']],
   ['the installed runtimes and a chosen one that is not', 'codex', ['claude', 'codex', 'gemini']],

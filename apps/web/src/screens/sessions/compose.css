@@ -387,6 +387,13 @@
   width: 16px;
   height: 16px;
 }
+.cp-row .ib {
+  flex: none;
+}
+.cp-row .ib[aria-pressed='true'] {
+  background: var(--sel);
+  color: var(--tx);
+}
 .cp-mdn {
   min-width: 0;
   overflow: hidden;

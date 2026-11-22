@@ -107,6 +107,7 @@
   "components.sidebar.typeWorker": "Worker",
   "components.sidebar.typeDirect": "直接",
   "components.sidebar.typeReview": "分析",
+  "components.sidebar.typeConductor": "主 agent",
   "components.sidebar.runtimes": "运行时",
   "components.sidebar.grouping": "分组",
   "components.sidebar.sorting": "排序",

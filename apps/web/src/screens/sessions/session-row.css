@@ -5,6 +5,9 @@
 .ss-dev {
   flex: none;
 }
+.ss-agent {
+  flex: none;
+}
 .ss-hc-v > .meter {
   flex: 1;
 }

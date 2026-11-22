@@ -157,7 +157,7 @@ If a process outside Pantheon holds the native session, Pantheon refuses to cont
 
 ## Sessions with Pantheon tools
 
-A session that you create with `"purpose": "conductor"` in its `session.create` command gets five Pantheon tools. The app has no button for it; send the command with `pnpm cli command`. The session plans, splits the work and runs subagents with the tools of its own runtime.
+A session that you create with `"purpose": "conductor"` in its `session.create` command gets five Pantheon tools. In the app, turn on the "Main agent" toggle (the crown) in the row under the new session's message box before you start it. The session list and the session bar mark the session with the crown, and the list's type filter has a "Main agent" type. The session plans, splits the work and runs subagents with the tools of its own runtime.
 
 - `request_review`: a runtime of another vendor reviews the committed changes of the session, or of a session that it started. The result comes back to the session as a message.
 - `report_ready`: the committed changes go through the project gate and land. Pantheon refuses this while the latest review of the work has open blocking findings. When you click "Merge into <target>" yourself, this rule does not apply.
