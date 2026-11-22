@@ -62,6 +62,7 @@ import { AddProject } from './screens/projects/AddProject';
 import { SETTINGS_PAGES, useSettingsView } from './screens/settings/view';
 import { SetupScreen, useShowsSetup } from './screens/setup/SetupScreen';
 import { TraceScreen } from './screens/trace/TraceScreen';
+import { ChangesScreen } from './screens/changes/ChangesScreen';
 import { useMiniWindowPaletteItems } from './shell/MiniWindow';
 import { useRecentProject } from './shell/recent-project';
 import { SessionWindow } from './shell/SessionWindow';
@@ -69,7 +70,7 @@ import { shownWindow } from './shell/window-kind';
 import { resolveTheme, useShell, type Screen } from './store';
 
 const NO_PROJECTS: readonly never[] = [];
-const KEPT: readonly Screen[] = ['sessions', 'trace', 'memory', 'projects'];
+const KEPT: readonly Screen[] = ['sessions', 'changes', 'trace', 'memory', 'projects'];
 
 /** Whether the screen belongs to a project that is not there. */
 export function showsMissingProject(screen: Screen, current: string | null): boolean {
@@ -422,6 +423,9 @@ function MainWindow({ kind }: { kind: 'main' | 'project' }) {
                 )
               : []),
             ...miniWindowItems,
+            ...(current
+              ? [page('screen-changes', SCREEN_NAMES.changes, () => setScreen('changes'))]
+              : []),
             page('screen-projects', SCREEN_NAMES.projects, () => setScreen('projects')),
             page(
               'screen-settings',
@@ -533,6 +537,8 @@ function MainWindow({ kind }: { kind: 'main' | 'project' }) {
             <PanelBoundary model={s === screen}>
               {s === 'sessions' ? (
                 <SessionsScreen projectId={current} needs={needs} list={list} />
+              ) : s === 'changes' ? (
+                <ChangesScreen projectId={current} sessions={list.data} />
               ) : s === 'trace' ? (
                 <TraceScreen projectId={current} sessions={list.data} />
               ) : s === 'memory' ? (

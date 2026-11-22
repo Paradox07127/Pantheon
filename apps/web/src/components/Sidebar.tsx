@@ -13,6 +13,7 @@ import {
   ChevronDown,
   ChevronRight,
   Columns3,
+  GitMerge,
   LayoutGrid,
   ListFilter,
   Pin,
@@ -22,6 +23,7 @@ import {
   SquarePen,
 } from 'lucide-react';
 import { useBoard } from '../data/board';
+import { useProjectChanges } from '../data/changes';
 import { runCommand } from '../data/commands';
 import { saveLayout, setLayout, SIDEBAR, sidebarDrag, useLayout } from '../data/layout';
 import { failureText, useNow, type NeedsYouState } from '../data/needs-you';
@@ -960,6 +962,7 @@ export function Sidebar({
     <span className="sb-sw" aria-hidden="true" />
   );
   const current = (s: typeof screen) => (screen === s ? 'page' : undefined);
+  const changeCount = useProjectChanges(currentProjectId).read?.changes.length;
   const allProjects = screen === 'projects';
   // A project window stays on its project: its head names it and nothing switches it.
   const projectWindow = globalThis.window?.pantheon?.windowContext?.().kind === 'project';
@@ -1058,6 +1061,16 @@ export function Sidebar({
         )}
         {currentProjectId && !allProjects && (
           <>
+            <button
+              type="button"
+              className="sb-it"
+              aria-current={current('changes')}
+              onClick={() => setScreen('changes')}
+            >
+              <GitMerge aria-hidden="true" />
+              {SCREEN_NAMES.changes}
+              {changeCount !== undefined && <span className="sb-n">{changeCount}</span>}
+            </button>
             <nav
               className="ss-list"
               aria-label={SCREEN_NAMES.sessions}
@@ -1236,6 +1249,13 @@ export function Sidebar({
         <div className="sb-top" />
         {currentProjectId && !allProjects && (
           <>
+            {icon(
+              SCREEN_NAMES.changes,
+              SCREEN_NAMES.changes,
+              () => setScreen('changes'),
+              <GitMerge aria-hidden="true" />,
+              { current: current('changes') },
+            )}
             {icon(
               t({ id: 'components.sidebar.newSession', defaultMessage: 'New session' }),
               t(

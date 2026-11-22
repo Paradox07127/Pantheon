@@ -34,13 +34,17 @@ const render = (collapsed: boolean) =>
 afterEach(() => vi.unstubAllGlobals());
 
 describe('project page entries', () => {
-  it('lists no trace or memory entry, open or folded', () => {
+  it('lists the changes entry and no trace or memory entry, open or folded', () => {
     vi.stubGlobal('navigator', { userAgent: 'Macintosh' });
     const open = render(false);
     const entries = [...open.matchAll(/class="sb-it"[^>]*>(?:<svg.*?<\/svg>)?([^<]*)<\/button>/g)];
-    expect(entries.map((m) => m[1])).toEqual([zh('app.screenName.settings')]);
+    expect(entries.map((m) => m[1])).toEqual([
+      zh('app.screenName.changes'),
+      zh('app.screenName.settings'),
+    ]);
     const rail = render(true);
     const icons = [...rail.matchAll(/class="ib" aria-label="([^"]*)"/g)].map((m) => m[1]);
+    expect(icons).toContain(zh('app.screenName.changes'));
     expect(icons).toContain(zh('app.screenName.settings'));
     for (const gone of [...PAGES, zh('app.screenName.flow')]) {
       expect(open).not.toContain(`>${gone}</button>`);

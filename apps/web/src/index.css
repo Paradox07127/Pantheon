@@ -467,6 +467,7 @@ body {
 .sb-it:hover{background:var(--st-hov)}
 .sb-it:active:not(:disabled){background:var(--st-on)}
 .sb-it[aria-current]{background:var(--sel);color:var(--tx);font-weight:500}
+.sb-n{margin-left:auto;color:var(--mu);font-weight:400;font-variant-numeric:tabular-nums}
 /* The sessions title row: the label, then the needs-you count, group and sort, and new session. */
 .sb-sh{flex:none;display:flex;align-items:center;gap:var(--sp-1);height:var(--row);margin-top:var(--sp-3);padding:0 var(--sp-2);font-size:var(--fs-xs);font-weight:500;color:var(--mu)}
 .sb-sh>span{flex:1}
