@@ -15,6 +15,9 @@ const mock = vi.hoisted(() => ({
   commands: [] as { type: string; input: unknown }[],
   // The approval answers wait on this while it is set.
   answered: null as Promise<void> | null,
+  needs: [] as unknown[],
+  // The command result is a success while this is set.
+  accepted: false,
   setState: vi.fn(),
 }));
 vi.mock('react', async (actual) =>
@@ -70,11 +73,16 @@ vi.mock('@/data/commands', () => ({
   runCommand: async (type: string, input: unknown) => {
     mock.commands.push({ type, input });
     await mock.answered;
+    if (mock.accepted) return { ok: true, value: null };
     return {
       ok: false,
       error: { code: 'not_waiting', message: 'The approval is no longer waiting' },
     };
   },
+}));
+vi.mock('@/data/needs-you', async (actual) => ({
+  ...(await actual<object>()),
+  useNeedsYou: () => ({ items: mock.needs, loading: false, error: null, reload() {} }),
 }));
 vi.mock('@/data/logs', async (actual) => ({
   ...(await actual<object>()),
@@ -373,6 +381,8 @@ beforeEach(() => {
   mock.statsReads = [];
   mock.commands = [];
   mock.answered = null;
+  mock.needs = [];
+  mock.accepted = false;
   mock.setState = vi.fn();
 });
 afterEach(() => {
@@ -557,6 +567,61 @@ describe('runs now', () => {
       { type: 'approval.respond', input: { approval_id: 'approval-1', decision: 'approve' } },
     ]);
     expect(find(h.value, (n) => n.props.role === 'alert').props.children).toBeTruthy();
+  });
+
+  it('hands the table the questions waiting on an answer and sends the answers given', async () => {
+    const questions = [
+      { question: 'Which db?', header: 'Database', options: [], multiSelect: false },
+    ];
+    mock.sessions = [
+      listed('asker', {
+        state: 'waiting',
+        waiting: 1,
+        waiting_kind: 'question',
+        waiting_request: { id: 'question-1', revision: 3, tool: 'AskUserQuestion' },
+      }),
+    ];
+    mock.snapshot = [];
+    mock.needs = [
+      {
+        source: { table: 'approvals', id: 'question-1', revision: 3 },
+        kind: 'permission',
+        reason: 'permission_requested',
+        project_id: 'project-a',
+        session_id: 'asker',
+        status: 'pending',
+        created_at: NOW,
+        questions,
+        actions: [{ command: 'approval.respond', allowed: true }],
+      },
+    ];
+    const h = now();
+    expect([...table(h.value).props.asked]).toEqual([['question-1', { questions, reason: null }]]);
+    table(h.value).props.onAnswer('question-1', { 'Which db?': 'sqlite' });
+    await h.flush();
+    expect(mock.commands).toEqual([
+      {
+        type: 'approval.respond',
+        input: {
+          approval_id: 'question-1',
+          decision: 'approve',
+          answers: { 'Which db?': 'sqlite' },
+        },
+      },
+    ]);
+    expect(find(h.value, (n) => n.props.role === 'alert').props.children).toBeTruthy();
+    expect([...table(h.value).props.responding]).toEqual([]);
+  });
+
+  it('keeps an accepted answer held until the session stops waiting', async () => {
+    mock.accepted = true;
+    const h = now();
+    table(h.value).props.onAnswer('question-1', { 'Which db?': 'sqlite' });
+    await h.flush();
+    expect([...table(h.value).props.responding]).toEqual(['question-1']);
+    expect(nodes(h.value).some((n) => n.props.role === 'alert')).toBe(false);
+    table(h.value).props.onAnswer('question-1', { 'Which db?': 'sqlite' });
+    expect(mock.commands).toHaveLength(1);
   });
 
   it('holds an approval while its answer is out, so a second click sends nothing', async () => {

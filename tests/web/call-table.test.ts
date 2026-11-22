@@ -367,6 +367,57 @@ describe('call table', () => {
     expect(nodes(waited).some((n) => n.type === 'button')).toBe(false);
   });
 
+  it('answers a question inline in the now view through the question card', () => {
+    const sessions = [
+      listed('asker', {
+        state: 'waiting',
+        waiting: 1,
+        waiting_kind: 'question',
+        waiting_request: {
+          id: 'question-1',
+          revision: 2,
+          tool: 'AskUserQuestion',
+          detail: 'Which db?',
+        },
+        run: { phase: 'waiting_approval', since: T0, wait: { reason: 'approval', since: T0 } },
+      }),
+    ];
+    const spans = new Map([['asker', [turn('asker-turn', T0, null)]]]);
+    const questions = [
+      {
+        question: 'Which db?',
+        header: 'Database',
+        options: [{ label: 'sqlite', description: '' }],
+        multiSelect: false,
+      },
+    ];
+    const onAnswer = vi.fn();
+    const { h, props } = mount({
+      forest: runForest(sessions, new Map(), spans),
+      facts: sessionFacts(sessions),
+      spans,
+      asked: new Map([['question-1', { questions, reason: null }]]),
+      onAnswer,
+    });
+    const row = () => rowEl(h.value, 'w:asker/question-1');
+    expect(text(row())).toContain('Which db?');
+    const card = () =>
+      nodes(h.value).find((n) => typeof n.type === 'function' && n.type.name === 'QuestionCard');
+    expect(card()).toBeUndefined();
+    const answer = find(
+      row(),
+      (n) => n.type === 'button' && text(n) === zh('runs.table.question.answer'),
+    );
+    expect(answer.props['aria-expanded']).toBe(false);
+    answer.props.onClick({ stopPropagation() {} });
+    h.render();
+    expect(card()!.props).toMatchObject({ draft: 'question-1', questions, busy: false });
+    card()!.props.onSend({ 'Which db?': 'sqlite' });
+    expect(onAnswer).toHaveBeenCalledWith('question-1', { 'Which db?': 'sqlite' });
+    card()!.props.onDeny();
+    expect(props.onRespond).toHaveBeenCalledWith('question-1', 'reject');
+  });
+
   it('disables both answers of an approval whose answer is out', () => {
     const { h } = mount({ responding: new Set(['approval-1']) });
     const row = rowEl(h.value, 'w:worker-1/approval-1');

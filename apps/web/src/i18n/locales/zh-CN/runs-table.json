@@ -25,6 +25,10 @@
   "runs.table.approval.waitingFor": "等 {time}",
   "runs.table.approval.allow": "允许一次",
   "runs.table.approval.reject": "拒绝",
+  "runs.table.question.verb": "提问",
+  "runs.table.question.pending": "等回答",
+  "runs.table.question.answer": "回答",
+  "runs.table.question.label": "问题",
   "runs.table.label": "会话和调用",
   "runs.table.duration": "时长"
 }

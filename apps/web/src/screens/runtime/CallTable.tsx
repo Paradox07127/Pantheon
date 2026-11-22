@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import {
+  Fragment,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 import {
   Bot,
   Brain,
@@ -14,8 +22,11 @@ import {
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
+import type { ApprovalQuestion } from '@pantheon/domain';
 import type { SessionTrace } from '@pantheon/protocol';
 import { Equalizer } from '../../components/Equalizer';
+import { QuestionCard } from '../../components/QuestionCard';
+import { StateGlyph } from '../../components/SessionStateIcon';
 import { RuntimeGlyph } from '../../components/RuntimeGlyph';
 import { elapsedText } from '../../data/transcript';
 import { t } from '../../i18n';
@@ -129,6 +140,8 @@ export function CallTable({
   onSelect,
   filter,
   onRespond,
+  onAnswer,
+  asked,
   responding,
   keys,
 }: {
@@ -145,12 +158,18 @@ export function CallTable({
   filter?: CallFilter;
   /** Answers an approval; the now view shows its buttons only with this. */
   onRespond?: (approvalId: string, decision: 'approve' | 'reject') => void;
+  /** Answers a question request; the now view shows its answer card only with this. */
+  onAnswer?: (approvalId: string, answers: Record<string, string>) => void;
+  /** By approval id, the questions of a question request and why it takes no answer now. */
+  asked?: ReadonlyMap<string, { questions: readonly ApprovalQuestion[]; reason: string | null }>;
   /** The approvals whose answer is out; their buttons are disabled. */
   responding?: ReadonlySet<string>;
   /** Window-wide keys that move the highlight down and up. */
   keys?: { next: ShortcutId; previous: ShortcutId };
 }) {
   const [toggled, setToggled] = useState<ReadonlySet<string>>(new Set());
+  // The question rows whose answer card is open.
+  const [asking, setAsking] = useState<ReadonlySet<string>>(new Set());
   const { rows, scale } = useMemo(
     () => callRows({ forest, facts, spans, view, now, toggled, filter }),
     [forest, facts, spans, view, now, toggled, filter],
@@ -245,6 +264,16 @@ export function CallTable({
         </>
       );
     }
+    if (row.type === 'approval' && row.asks)
+      return (
+        <>
+          <StateGlyph name="question" />
+          <span className="ct-verb">
+            {t({ id: 'runs.table.question.verb', defaultMessage: 'Asks' })}
+          </span>
+          <span className={view === 'history' ? 'ct-tg' : 'ct-inl'}>{row.summary}</span>
+        </>
+      );
     if (row.type === 'approval') {
       const past = view === 'history';
       const Icon = past ? Terminal : KeyRound;
@@ -291,7 +320,9 @@ export function CallTable({
   const durationText = (row: CallRow): string => {
     if (row.type === 'approval')
       return view === 'history'
-        ? t({ id: 'runs.table.approval.pending', defaultMessage: 'Awaiting approval' })
+        ? row.asks
+          ? t({ id: 'runs.table.question.pending', defaultMessage: 'Awaiting answer' })
+          : t({ id: 'runs.table.approval.pending', defaultMessage: 'Awaiting approval' })
         : t(
             { id: 'runs.table.approval.waitingFor', defaultMessage: 'Waiting {time}' },
             { time: elapsedText(row.duration ?? 0) },
@@ -300,6 +331,29 @@ export function CallTable({
   };
 
   const lastCell = (row: CallRow): ReactNode => {
+    if (row.type === 'approval' && row.asks && view === 'now') {
+      if (!onAnswer || !asked?.has(row.approvalId)) return null;
+      const open = asking.has(row.key);
+      return (
+        <span className="ct-acts">
+          <button
+            type="button"
+            className="btn sm pri"
+            aria-expanded={open}
+            onClick={(e) => {
+              e.stopPropagation();
+              setAsking((was) => {
+                const next = new Set(was);
+                if (!next.delete(row.key)) next.add(row.key);
+                return next;
+              });
+            }}
+          >
+            {t({ id: 'runs.table.question.answer', defaultMessage: 'Answer' })}
+          </button>
+        </span>
+      );
+    }
     if (row.type === 'approval' && view === 'now') {
       if (!onRespond) return null;
       const busy = !!responding?.has(row.approvalId);
@@ -396,32 +450,54 @@ export function CallTable({
       {rows.map((row, i) => {
         const on = row.key === selected;
         const foldable = row.type === 'session' || row.type === 'subagent';
+        const ask =
+          row.type === 'approval' && row.asks && view === 'now' && onAnswer && asking.has(row.key)
+            ? asked?.get(row.approvalId)
+            : undefined;
         return (
-          <div
-            key={row.key}
-            id={`ct-${row.key}`}
-            data-key={row.key}
-            data-type={row.type}
-            className="ct-row"
-            role="row"
-            aria-level={row.depth + 1}
-            aria-selected={on}
-            aria-expanded={foldable ? row.open : undefined}
-            style={{ '--ct-k': Math.min(i, 6) } as CSSProperties}
-            onClick={() => onSelect(on ? null : row)}
-          >
-            <span role="gridcell" className="ct-name" style={{ paddingLeft: indent(row.depth) }}>
-              {nameCell(row)}
-            </span>
-            <span role="gridcell" className="ct-num" data-mono="">
-              {row.tokens === null ? '' : tokenText(row.tokens)}
-            </span>
-            <span role="gridcell">{row.type !== 'session' && <Status state={row.state} />}</span>
-            <span role="gridcell" className="ct-num" data-mono="">
-              {durationText(row)}
-            </span>
-            <span role="gridcell">{lastCell(row)}</span>
-          </div>
+          <Fragment key={row.key}>
+            <div
+              id={`ct-${row.key}`}
+              data-key={row.key}
+              data-type={row.type}
+              className="ct-row"
+              role="row"
+              aria-level={row.depth + 1}
+              aria-selected={on}
+              aria-expanded={foldable ? row.open : undefined}
+              style={{ '--ct-k': Math.min(i, 6) } as CSSProperties}
+              onClick={() => onSelect(on ? null : row)}
+            >
+              <span role="gridcell" className="ct-name" style={{ paddingLeft: indent(row.depth) }}>
+                {nameCell(row)}
+              </span>
+              <span role="gridcell" className="ct-num" data-mono="">
+                {row.tokens === null ? '' : tokenText(row.tokens)}
+              </span>
+              <span role="gridcell">{row.type !== 'session' && <Status state={row.state} />}</span>
+              <span role="gridcell" className="ct-num" data-mono="">
+                {durationText(row)}
+              </span>
+              <span role="gridcell">{lastCell(row)}</span>
+            </div>
+            {ask && row.type === 'approval' && (
+              // Keys typed into the card stay out of the table's list keys.
+              <div className="ct-ask" role="row" onKeyDown={(e) => e.stopPropagation()}>
+                <div role="gridcell">
+                  <QuestionCard
+                    draft={row.approvalId}
+                    questions={ask.questions}
+                    label={t({ id: 'runs.table.question.label', defaultMessage: 'Question' })}
+                    reason={ask.reason}
+                    busy={!!responding?.has(row.approvalId)}
+                    error={null}
+                    onSend={(answers) => onAnswer!(row.approvalId, answers)}
+                    onDeny={onRespond && (() => onRespond(row.approvalId, 'reject'))}
+                  />
+                </div>
+              </div>
+            )}
+          </Fragment>
         );
       })}
     </div>

@@ -10,7 +10,7 @@ import { StateGlyph, type GlyphName } from '../../components/SessionStateIcon';
 import { Skeleton } from '../../components/Skeleton';
 import { useBoard } from '../../data/board';
 import { runCommand } from '../../data/commands';
-import { failureText, useNow } from '../../data/needs-you';
+import { failureText, reasonText, useNeedsYou, useNow } from '../../data/needs-you';
 import { useRunHistory } from '../../data/run-history';
 import { useRunSpans } from '../../data/trace';
 import { elapsedText } from '../../data/transcript';
@@ -278,10 +278,14 @@ export function RunsView({
   const showHistory = () => useShell.setState({ runsView: 'history' });
 
   const [respondFailure, setRespondFailure] = useState<string | null>(null);
-  // The approvals whose answer is out.
+  // The requests whose answer is out or was accepted.
   const [responding, setResponding] = useState<ReadonlySet<string>>(() => new Set());
   const answering = useRef(new Set<string>());
-  const respond = async (approvalId: string, decision: 'approve' | 'reject') => {
+  const respond = async (
+    approvalId: string,
+    decision: 'approve' | 'reject',
+    answers?: Record<string, string>,
+  ) => {
     if (answering.current.has(approvalId)) return;
     answering.current.add(approvalId);
     setResponding(new Set(answering.current));
@@ -289,13 +293,35 @@ export function RunsView({
     const asked = [...facts.values()].find((f) => f.waiting?.approval_id === approvalId)?.waiting;
     const result = await runCommand(
       'approval.respond',
-      { approval_id: approvalId, decision },
+      { approval_id: approvalId, decision, ...(answers && { answers }) },
       asked?.revision ?? null,
     );
+    // An accepted answer keeps the row's buttons off until the session stops waiting.
+    if (result.ok) return;
     answering.current.delete(approvalId);
     setResponding(new Set(answering.current));
-    if (!result.ok) setRespondFailure(failureText(result.error));
+    setRespondFailure(failureText(result.error));
   };
+
+  const needs = useNeedsYou(projectId);
+  // Items kept after a failed read are no authority for an answer.
+  const questions = useMemo(
+    () =>
+      new Map(
+        (needs.error ? [] : (needs.items ?? [])).flatMap((item) => {
+          if (item.source.table !== 'approvals' || !item.questions?.length) return [];
+          const action = item.actions.find((a) => a.command === 'approval.respond');
+          const reason =
+            action && !action.allowed
+              ? action.disabled_reason
+                ? reasonText(action.disabled_reason)
+                : t({ id: 'board.needs.noReason', defaultMessage: 'The backend gave no reason' })
+              : null;
+          return [[item.source.id, { questions: item.questions, reason }] as const];
+        }),
+      ),
+    [needs.error, needs.items],
+  );
 
   const shownTrace = past.trace.data;
   const shownLane =
@@ -589,6 +615,10 @@ export function RunsView({
                     onSelect={select}
                     filter={filter}
                     onRespond={history ? undefined : (id, decision) => void respond(id, decision)}
+                    onAnswer={
+                      history ? undefined : (id, answers) => void respond(id, 'approve', answers)
+                    }
+                    asked={questions}
                     responding={responding}
                     keys={{ next: 'trace-next', previous: 'trace-previous' }}
                   />

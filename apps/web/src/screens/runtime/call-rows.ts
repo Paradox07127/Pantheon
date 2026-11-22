@@ -87,6 +87,8 @@ export interface SubagentRow extends RowBase {
 
 export interface ApprovalRow extends RowBase {
   type: 'approval';
+  /** The request asks questions rather than leave to run a tool. */
+  asks: boolean;
   approvalId: string;
   summary: string;
   since: number;
@@ -370,7 +372,7 @@ function sessionRows(
 
   const children = childRows(node, node.id, 1, byId, window, ctx, inTurn);
   const approval: Draft[] = [];
-  if (waiting?.kind === 'approval' && state === 'wait') {
+  if (waiting && state === 'wait') {
     const matched =
       !ctx.filter || (ctx.filter.only === 'all' && textMatches(ctx.filter, waiting.summary));
     if (matched)
@@ -382,6 +384,7 @@ function sessionRows(
         state: 'wait',
         tokens: null,
         duration: Math.max(0, ctx.now - waiting.since),
+        asks: waiting.kind === 'input',
         approvalId: waiting.approval_id,
         summary: waiting.summary,
         since: waiting.since,

@@ -27,6 +27,10 @@ vi.mock('@/data/trace', () => ({
   useTraceTick: () => 0,
 }));
 vi.mock('@/data/commands', () => ({ runCommand: vi.fn(async () => ({ ok: true, value: null })) }));
+vi.mock('@/data/needs-you', async (actual) => ({
+  ...(await actual<object>()),
+  useNeedsYou: () => ({ items: [], loading: false, error: null, reload() {} }),
+}));
 vi.mock('@/store', () => {
   const state = { openSession: (id: string) => mock.openSession(id) };
   return { useShell: Object.assign((selector: any) => selector(state), { getState: () => state }) };

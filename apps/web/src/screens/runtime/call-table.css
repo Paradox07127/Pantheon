@@ -193,6 +193,9 @@
   align-items: center;
   gap: var(--sp-1);
 }
+.ct-ask {
+  padding: var(--sp-1) var(--sp-3) var(--sp-2) calc(var(--sp-2) + 24px);
+}
 
 /* Status: a dot, bars that bounce while running, a ring that breathes while waiting, marks once done. */
 .ct-st {
