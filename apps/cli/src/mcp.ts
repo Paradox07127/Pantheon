@@ -98,6 +98,8 @@ const descriptions: Record<ToolCommand, string> = {
     'Stop a session you spawned. Without close it interrupts the running turn and keeps the session. With close true it closes the session and discards its worktree, with any work that did not land.',
   'conductor.needs_you':
     'Read the items in this project that wait for the user: permission requests, failed sessions, blocked merges and the budget. Only the user answers them; tell the user what is waiting.',
+  'conductor.propose_setting':
+    "Ask the user to change a project setting. command project.gate.set takes input { root, commands, protected_paths? }: a project root's gate commands and protected paths; workflow.policy.set takes input { project_budget }: { input_tokens } or null, and nothing else; project.sessionDefaults.set takes the session defaults as that command does; project.extensions.set takes input { runtime, overrides }. Leave out project_id. reason says why, in at most 500 characters. The change waits for the user with its value now and after, and runs as the user's own command only when the user approves it; the outcome comes back to you at once as a message starting [setting]. Returns proposal_id. Refused invalid_input with the field when input does not fit the command, and resource_busy while a proposal of the same command (of the same root for the gate) waits, or 5 of this project wait.",
 };
 
 /** The session supplies this tool's baseline and revision; the model never sees them. */

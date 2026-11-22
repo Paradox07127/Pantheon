@@ -11,6 +11,7 @@ import {
 import type { ControlContext } from './context.js';
 import { pendingApprovalItems, settledApprovalItems } from './needs-you-approvals.js';
 import { sessionItems } from './needs-you-sessions.js';
+import { settingProposalItems } from './needs-you-settings.js';
 import { projectBudgetItems } from './needs-you-workflow.js';
 
 /** A running merge with no progress event for this long is stuck; each gate command has a timeout. */
@@ -159,7 +160,11 @@ export function needsYou(
           !removed.has(s.project_id) &&
           (!projectId || s.project_id === projectId),
       );
-    items.push(...sessionItems(ctx, scope, sessions), ...projectBudgetItems(ctx, scope));
+    items.push(
+      ...sessionItems(ctx, scope, sessions),
+      ...projectBudgetItems(ctx, scope),
+      ...settingProposalItems(ctx, scope),
+    );
   }
   // Tool input can hold secrets, and a rule or a background command can be a whole command line.
   const shown =

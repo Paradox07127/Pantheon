@@ -10,6 +10,8 @@ import {
 } from '@pantheon/domain';
 import { inputSchemas } from '@pantheon/protocol';
 import { projectAccess, revision, type ControlContext, type Handlers } from './context.js';
+import { sessionDefaults } from './user-config.js';
+import { projectBudgetUse } from './workflow-policy.js';
 
 export function userOnly(principal: Principal): void {
   requireThat(
@@ -48,6 +50,7 @@ export function projectRead(
     : undefined;
   const facts = projectFacts(ctx, projectId);
   const env = facts.project.env;
+  const budget = principal.role === 'conductor' ? projectBudgetUse(ctx, projectId) : undefined;
   return {
     ...facts,
     // A session sees which variables are set, not their values.
@@ -61,6 +64,18 @@ export function projectRead(
       : {}),
     memory: memoryContext(ctx, projectId, session, 12000, !!session),
     ...(session ? { you: { session_id: session.id, role: principal.role } } : {}),
+    ...(principal.role === 'conductor'
+      ? {
+          budget: budget
+            ? {
+                input_tokens: budget.input_tokens,
+                used_input_tokens: budget.used_input_tokens,
+                left: Math.max(0, budget.input_tokens - budget.used_input_tokens),
+              }
+            : null,
+          session_defaults: sessionDefaults(ctx, facts.project) ?? null,
+        }
+      : {}),
   };
 }
 /** Internal evidence projection; no authority changes and no dispatch side effects. */

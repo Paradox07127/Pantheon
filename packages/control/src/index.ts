@@ -463,9 +463,9 @@ export class Control extends EventEmitter {
         // The failed visual and its event must commit before the agent receives the error.
         if (receipt.issues) throw new ZodError(receipt.issues);
       }
-      // Invalidating an approval must commit even when the response itself is refused.
+      // Invalidating an approval or failing a setting proposal must commit even when the response itself is refused.
       if (
-        command.type === 'approval.respond' &&
+        (command.type === 'approval.respond' || command.type === 'setting.proposal.respond') &&
         result &&
         typeof result === 'object' &&
         'error' in result &&

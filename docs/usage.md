@@ -166,6 +166,7 @@ A session that you create with `"purpose": "conductor"` in its `session.create` 
 - `stop_session`: interrupts the running turn of a session that it started. With `close` it closes that session and discards its worktree.
 - `read_state`: the changes of the project, their checks, the landing queue and the items that wait for you. It also lists every session that it started, with its state and the input, output and cache-read tokens, the turns and the time of the turns; a count the runtime did not report is left out.
 - `read_needs_you`: the items that wait for you, without the actions that answer them. Only you answer them.
+- `propose_setting`: proposes a change to the project's gate commands, protected paths, budget, session defaults or extension switches. It waits for you in needs-you with its value now and after, runs as your own command only when you approve it, and the session hears the outcome at once on a line that starts with `[setting]`.
 - `project_read`: the settings, the brief and the memory of the project.
 - `memory_context`, `memory_search`, `memory_related`, `memory_get`: read the project memory. Pantheon does not add the memory to the turns of this session.
 - `memory_propose`: writes a memory entry. A decision stays a draft until you confirm it.

@@ -257,6 +257,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 |---|---|---|
 | `conductor.message` | `session_id`: string<br>`text`: string<br>`mode?`: "send" \| "steer" | message_session (conductor) |
 | `conductor.needs_you` | — | read_needs_you (conductor) |
+| `conductor.propose_setting` | `command`: "project.gate.set" \| "workflow.policy.set" \| "project.sessionDefaults.set" \| "project.extensions.set"<br>`input`: object<br>`reason`: string | propose_setting (conductor) |
 | `conductor.ready` | `session_id?`: string | report_ready (conductor) |
 | `conductor.review` | `runtimes`: string[]<br>`session_id?`: string | request_review (conductor) |
 | `conductor.spawn` | `runtime?`: string<br>`runtimes?`: string[]<br>`input`: string<br>`acceptance?`: string[]<br>`owns?`: string[]<br>`model?`: string<br>`effort?`: "none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max" \| "ultra"<br>`permission_mode?`: "ask" \| "auto_edit" | spawn_session (conductor) |
@@ -477,6 +478,12 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `session.snooze` | `session_id`: string<br>`snoozed`: boolean |  |
 | `session.steer` | `session_id`: string<br>`input`: string<br>`refs?`: (object \| object)[]<br>`attachments?`: string[]<br>`skills?`: object[]<br>`app?`: object |  |
 | `session.unarchive` | `session_id`: string |  |
+
+### setting
+
+| type | input | MCP 工具 |
+|---|---|---|
+| `setting.proposal.respond` | `proposal_id`: string<br>`decision`: "approve" \| "reject" |  |
 
 ### terminal
 

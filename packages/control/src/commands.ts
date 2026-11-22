@@ -13,6 +13,7 @@ import { prepareResolve, sessionHandlers } from './session.js';
 import { workbenchSessionHandlers } from './workbench-session.js';
 import { approvalHandlers } from './approvals.js';
 import { prepareRangeReview, prepareReviewRequest, reviewHandlers } from './review.js';
+import { settingProposalPreparers } from './setting-proposal.js';
 import { workflowPolicyHandlers } from './workflow-policy.js';
 import { inPlaceSessionHandlers } from './in-place-session.js';
 import { visualHandlers } from './visual.js';
@@ -51,6 +52,7 @@ export const preparers: Preparers = {
   ...projectIntroPreparers,
   ...branchLandingPreparers,
   ...conductorPreparers,
+  ...settingProposalPreparers,
   'review.request': prepareReviewRequest,
   'review.range': prepareRangeReview,
   'session.resolve': prepareResolve,

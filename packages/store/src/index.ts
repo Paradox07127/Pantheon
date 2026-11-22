@@ -61,6 +61,7 @@ export const tables = [
   'project_goals',
   'environment_checks',
   'landings',
+  'setting_change_proposals',
 ] as const;
 export type Table = (typeof tables)[number];
 export interface Outbox {
@@ -332,6 +333,16 @@ export const migrations: readonly Migration[] = [
         if (changed)
           db.prepare('UPDATE reviews SET data=? WHERE id=?').run(JSON.stringify(review), row.id);
       }
+    },
+  },
+  {
+    // setting_proposals keeps the rows of an earlier proposal shape.
+    version: 18,
+    up(db) {
+      db.exec(`
+        CREATE TABLE setting_change_proposals (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;
+        CREATE INDEX setting_change_proposal_project ON setting_change_proposals(json_extract(data,'$.project_id'));
+      `);
     },
   },
 ];

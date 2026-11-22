@@ -19,6 +19,7 @@ import type {
   PermissionMode,
   ProjectFacts,
   ProjectIntro,
+  ProposableSettingCommand,
   QuotaWindow,
   CapabilityReport,
   Review,
@@ -204,6 +205,7 @@ export const sessionTools = {
     message_session: 'conductor.message',
     stop_session: 'conductor.stop',
     read_needs_you: 'conductor.needs_you',
+    propose_setting: 'conductor.propose_setting',
     project_read: 'project.read',
     ...memoryTools,
     draw: 'visual.draw',
@@ -247,6 +249,13 @@ export type {
 } from './bridge.js';
 export { ZOOM_FACTORS } from './bridge.js';
 export const PROTOCOL_VERSION = 1;
+/** The commands whose change a main agent may propose for the user to approve. */
+export const PROPOSABLE_SETTING_COMMANDS = [
+  'project.gate.set',
+  'workflow.policy.set',
+  'project.sessionDefaults.set',
+  'project.extensions.set',
+] as const satisfies readonly ProposableSettingCommand[];
 export const USER_PRINCIPAL_ID = 'local-user';
 const str = z.string().min(1).max(65536);
 const findingText = str.refine((value) => value.trim().length > 0);
@@ -1749,6 +1758,22 @@ export const inputSchemas = {
       ),
   }),
   'conductor.needs_you': z.strictObject({}),
+  'conductor.propose_setting': z.strictObject({
+    command: z
+      .enum(PROPOSABLE_SETTING_COMMANDS)
+      .describe('The command the user runs once they approve the change.'),
+    input: z
+      .record(z.string(), z.unknown())
+      .describe(
+        "That command's input without project_id; for workflow.policy.set only project_budget.",
+      ),
+    reason: z.string().min(1).max(500).describe('Why the project needs the change.'),
+  }),
+  /** The user only; approve runs the proposed command as the user's own, reject drops it. */
+  'setting.proposal.respond': z.strictObject({
+    proposal_id: str,
+    decision: z.enum(['approve', 'reject']),
+  }),
   /** The user only. */
   'runtime.reconnect': z.strictObject({ runtime: str }),
   /** Reconnects a server of a live native session; the user only. */

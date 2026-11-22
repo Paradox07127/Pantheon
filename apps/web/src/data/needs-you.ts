@@ -8,7 +8,12 @@ import type { DaemonEvent } from './sync';
 /** One item of GET /v1/needs_you.list, as the daemon's domain package defines it. */
 export interface NeedsYouItem {
   source: {
-    table: 'approvals' | 'sessions' | 'workflow_policies' | 'memory_records';
+    table:
+      | 'approvals'
+      | 'sessions'
+      | 'workflow_policies'
+      | 'memory_records'
+      | 'setting_change_proposals';
     id: string;
     revision: number;
   };
@@ -19,7 +24,8 @@ export interface NeedsYouItem {
     | 'session.gate_failed'
     | 'session.merge_blocked'
     | 'project.over_budget'
-    | 'memory.decision_budget';
+    | 'memory.decision_budget'
+    | 'setting.proposed';
   project_id: string;
   /** The approval's session; absent on session items, whose source is the session. */
   session_id?: string;
@@ -45,7 +51,8 @@ export interface NeedsYouItem {
     | 'session_turn_stalled'
     | 'background_task_long'
     | 'project_over_budget'
-    | 'plan_decisions_over_budget';
+    | 'plan_decisions_over_budget'
+    | 'setting_proposed';
   /** What the user decides. */
   decision?: 'question' | 'permission' | 'budget' | 'other';
   /** The command of the item's one primary action. */
@@ -146,6 +153,8 @@ export function touchesNeedsYou(kind: string): boolean {
       'turn.cancelled',
       'session.turn_stalled',
       'workflow.policy_changed',
+      'setting.proposed',
+      'setting.proposal_decided',
     ].includes(kind)
   );
 }
@@ -305,6 +314,11 @@ function knownReason(code: string): string | null {
       return t({
         id: 'data.reason.projectOverBudget',
         defaultMessage: 'The project used up its token budget',
+      });
+    case 'setting_proposed':
+      return t({
+        id: 'data.reason.settingProposed',
+        defaultMessage: 'The main agent proposes a settings change',
       });
     case 'plan_decisions_over_budget':
       return t({

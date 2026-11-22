@@ -166,6 +166,7 @@ Pantheon 读取 Claude Code 和 Codex 的原生历史。
 - `stop_session`:打断它起的会话正在跑的回合。带 `close` 时关闭那个会话并丢弃它的 worktree。
 - `read_state`:项目的改动、它们的检查、落地队列和等你处理的事。另外列出它起的每个会话：状态，输入、输出和缓存读取 token,回合数和回合用时;运行时没报的数不写。
 - `read_needs_you`:等你处理的事，不带处理它们的操作。只有你能处理。
+- `propose_setting`:提议改项目的门禁命令、受保护路径、预算、会话默认值或扩展开关。它带着现值和改后的值在等你处理的事里等你，你批准后才作为你自己的命令执行，结果马上以 `[setting]` 开头的一行告诉会话。
 - `project_read`:项目的设置、简介和记忆。
 - `memory_context`、`memory_search`、`memory_related`、`memory_get`:读项目记忆。Pantheon 不把记忆加进这个会话的回合。
 - `memory_propose`:写一条记忆。决定在你确认前一直是草稿。

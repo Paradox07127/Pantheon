@@ -140,6 +140,7 @@ it('gives a conductor session exactly its tools with strict inputs', () => {
     message_session: 'conductor.message',
     stop_session: 'conductor.stop',
     read_needs_you: 'conductor.needs_you',
+    propose_setting: 'conductor.propose_setting',
     project_read: 'project.read',
     memory_context: 'memory.context',
     memory_search: 'memory.search',

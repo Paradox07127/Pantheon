@@ -392,7 +392,12 @@ export type TaskRungName = 'retry' | 'switch' | 'lead' | 'user';
 
 export interface NeedsYouItem {
   source: {
-    table: 'approvals' | 'sessions' | 'workflow_policies' | 'memory_records';
+    table:
+      | 'approvals'
+      | 'sessions'
+      | 'workflow_policies'
+      | 'memory_records'
+      | 'setting_change_proposals';
     id: string;
     revision: number;
   };
@@ -402,7 +407,8 @@ export interface NeedsYouItem {
     | 'session.failed'
     | 'session.gate_failed'
     | 'session.merge_blocked'
-    | 'project.over_budget';
+    | 'project.over_budget'
+    | 'setting.proposed';
   project_id: string;
   /**
    * The approval's session, or the lead of a plan or milestone item; absent on session items,
@@ -432,7 +438,8 @@ export interface NeedsYouItem {
     | 'usage_limit_reached'
     | 'session_turn_stalled'
     | 'background_task_long'
-    | 'project_over_budget';
+    | 'project_over_budget'
+    | 'setting_proposed';
   /** What the user decides. */
   decision: 'question' | 'permission' | 'budget' | 'other';
   /** The command of the item's one primary action. */
@@ -456,6 +463,14 @@ export interface NeedsYouItem {
   background?: BackgroundTask;
   /** The input tokens a project over its budget spent since the budget was set, and the budget. */
   project_budget?: { used_input_tokens: number; input_tokens: number };
+  /** The change a main agent proposed: its command, the gate root it names, the values now and after, and why. */
+  setting?: {
+    command: ProposableSettingCommand;
+    root?: string;
+    before: Record<string, unknown>;
+    after: Record<string, unknown>;
+    reason: string;
+  };
   /** The upstream task, `<lead session id>:<task id>`, that keeps a queued task waiting, and why it does not go on. */
   upstream?: { task_id: string; stuck: 'merge_blocked' | 'stopped' | 'never_started' };
   /** How long a permission request has waited for an answer, in milliseconds; set once it is escalated. */
@@ -1630,6 +1645,35 @@ export interface ProjectRead {
   cursor: number;
   /** The calling session; absent for the user. */
   you?: { session_id: string; role: Role };
+  /** For a main agent: the project's input token budget and its use; null without a budget. */
+  budget?: { input_tokens: number; used_input_tokens: number; left: number } | null;
+  /** For a main agent: the project's own session defaults, else the global ones; null without either. */
+  session_defaults?: SessionDefaults | null;
+}
+
+/** The commands whose change a main agent may propose. */
+export type ProposableSettingCommand =
+  | 'project.gate.set'
+  | 'workflow.policy.set'
+  | 'project.sessionDefaults.set'
+  | 'project.extensions.set';
+
+/** A settings change a main agent proposed; it runs as the user's own command once the user approves it. */
+export interface SettingProposal extends Entity {
+  project_id: string;
+  /** The main agent that proposed it. */
+  session_id: string;
+  command: ProposableSettingCommand;
+  /** The command's parsed input, project_id included. */
+  input: Record<string, unknown>;
+  reason: string;
+  state: 'pending' | 'approved' | 'rejected' | 'failed';
+  /** The current value of what the input changes, read when it was proposed. */
+  before: Record<string, unknown>;
+  created_at: number;
+  decided_at?: number;
+  /** Why the approved command did not apply. */
+  error?: string;
 }
 
 export * from './memory.js';

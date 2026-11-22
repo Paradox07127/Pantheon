@@ -202,5 +202,6 @@
   "data.reason.outsideWorktreeWrite": "会话在工作树外写了文件",
   "data.transcript.busy.archived": "会话已归档，恢复后才能发送或插话",
   "data.reason.projectOverBudget": "项目用完了 token 预算",
-  "data.reason.planDecisionsOverBudget": "计划决定超出记忆预算，已存为笔记"
+  "data.reason.planDecisionsOverBudget": "计划决定超出记忆预算，已存为笔记",
+  "data.reason.settingProposed": "主 agent 提议改一项设置"
 }
