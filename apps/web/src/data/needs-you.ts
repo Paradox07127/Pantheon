@@ -71,6 +71,8 @@ export interface NeedsYouItem {
   escalated?: true;
   /** Why the gate of a failed gate or a merge blocked by its gate failed, when that is known. */
   failure_class?: GateFailureClass;
+  /** The protected files whose change holds the session's merge for the user's leave. */
+  files?: string[];
   /** The questions of a pending AskUserQuestion request, as it asked them. */
   questions?: ApprovalQuestion[];
   binding?: {

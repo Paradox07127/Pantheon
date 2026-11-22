@@ -2945,6 +2945,7 @@ async function completeMerge(ctx: ControlContext, sessionId: string, jobId: stri
           {
             ...owner,
             allowGateChange: session.merge.allow_gate_change,
+            allowedGateFiles: session.allowed_gate_files,
             // A gate changed meanwhile does not decide this merge; the session's next turn merges on it.
             cancelled: () => owner.cancelled() || gateArgv(gateNow()) !== gateArgv(commands),
             progress: { saved, save: saveProgress },
@@ -2987,7 +2988,7 @@ async function completeMerge(ctx: ControlContext, sessionId: string, jobId: stri
       const next = ctx.store.update(
         'sessions',
         current.conductor
-          ? { ...current, merge: undefined }
+          ? { ...current, merge: undefined, allowed_gate_files: undefined }
           : { ...current, state: 'closed' as const, outcome: 'merged' as const, merge: undefined },
         current.revision,
       );
@@ -3027,9 +3028,10 @@ async function completeMerge(ctx: ControlContext, sessionId: string, jobId: stri
   const gate = item.gate_results?.find(gateFailed),
     // The tail of the output, so the session that reads it need not rerun the command.
     tail = gate?.output.trimEnd().split('\n').slice(-20).join('\n').slice(-1500),
-    { conflicts, conflict_commits } = item as {
+    { conflicts, conflict_commits, allowed_gate_files } = item as {
       conflicts?: string[];
       conflict_commits?: string[];
+      allowed_gate_files?: Record<string, string>;
     };
   ctx.store.transaction(() => {
     const current = ctx.store.must<Session>('sessions', session.id),
@@ -3038,6 +3040,7 @@ async function completeMerge(ctx: ControlContext, sessionId: string, jobId: stri
       'sessions',
       {
         ...current,
+        ...(allowed_gate_files ? { allowed_gate_files } : {}),
         merge: {
           state: 'blocked' as const,
           reason,

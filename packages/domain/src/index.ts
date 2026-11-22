@@ -464,6 +464,8 @@ export interface NeedsYouItem {
   escalated?: true;
   /** Why the gate of a failed gate or a merge blocked by its gate failed, when that is known. */
   failure_class?: GateFailureClass;
+  /** The protected files whose change holds the session's merge for the user's leave. */
+  files?: string[];
   /** The questions of a pending AskUserQuestion request, as it asked them. */
   questions?: ApprovalQuestion[];
   /** The lead's re-assessment of a paused plan; only a `board.plan.reassessment` item has it. */
@@ -720,6 +722,11 @@ export interface Session extends Entity {
     finished_at?: number;
     error?: string;
   };
+  /**
+   * Protected files the user let a merge change whose gate then failed, by path to blob id; a later
+   * merge whose protected changes are exactly these needs no new leave.
+   */
+  allowed_gate_files?: Record<string, string>;
   /** The user's merge of the worktree into its source; cleared when the next turn starts. */
   merge?: {
     state: 'running' | 'blocked';

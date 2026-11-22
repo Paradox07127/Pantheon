@@ -108,6 +108,13 @@
   grid-column: 1 / -1;
 }
 
+/* A protected path, copied as typed. */
+.gt-path {
+  font-weight: 400;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
 /* What a failed gate does. */
 .gt-fail {
   display: flex;

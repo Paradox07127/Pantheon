@@ -26,7 +26,7 @@ import { GateMark, StateGlyph } from '@/components/SessionStateIcon';
 import { runCommand } from '@/data/commands';
 import { reasonText } from '@/data/needs-you';
 import { useSettingsView } from '@/screens/settings/view';
-import { zh } from './i18n-setup.js';
+import { zh, zhf } from './i18n-setup.js';
 
 const NOW = Date.now();
 const MINUTE = 60_000;
@@ -228,6 +228,30 @@ describe('needs-you list', () => {
         .filter((n) => !!n.props.onClick && retries.includes(text(n)))
         .map(text),
     ).toEqual(retries);
+  });
+
+  it.each([
+    ['all five files', 5, 0],
+    ['five of seven files, then how many more', 7, 2],
+  ])('names the protected files a held merge changes: %s', (_name, count, more) => {
+    const files = Array.from({ length: count }, (_, i) => `scripts/check-${i + 1}.cjs`);
+    const held = item({
+      source: { table: 'sessions', id: 'session-login', revision: 2 },
+      kind: 'session.merge_blocked',
+      reason: 'merge_blocked',
+      primary: 'session.merge',
+      actions: [{ command: 'session.merge', allowed: true }],
+      files,
+    });
+    const h = mount(() => NeedsPopover({ items: [held], trigger }));
+    root(h.value).props.onOpenChange(true);
+    h.render();
+    const row = text(button(h.value, 'Fix login'));
+    expect(row).toContain(files.slice(0, 5).join(', '));
+    expect(row).not.toContain(files[5] ?? '\0');
+    expect(row).toContain(
+      zhf('components.needsPopover.files', { files: files.slice(0, 5).join(', '), count: more }),
+    );
   });
 
   it("names a project over its budget and opens the project's settings from its button", async () => {

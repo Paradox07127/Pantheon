@@ -224,6 +224,12 @@ export function sessionItems(
             ).results?.find((result) => result.state !== 'skipped' && result.failure_class)
               ?.failure_class
           : undefined;
+    const files =
+      (kind === 'session.merge_blocked' || kind === 'session.gate_failed') &&
+      (session.merge?.reason === 'gate_files_changed' ||
+        session.merge?.reason === 'protected_paths')
+        ? session.merge.conflicts
+        : undefined;
     const actions: NeedsYouItem['actions'] = [];
     if (kind === 'session.reconciling')
       // Without a stored process identity session.resolve can never confirm the old process ended.
@@ -280,6 +286,7 @@ export function sessionItems(
       ...(actions[0] ? { primary: actions[0].command } : {}),
       actions,
       ...(failureClass ? { failure_class: failureClass } : {}),
+      ...(files?.length ? { files } : {}),
     });
   }
   return items;

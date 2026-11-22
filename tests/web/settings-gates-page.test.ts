@@ -11,7 +11,7 @@ vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
 import { useBoard } from '@/data/board';
 import { t as format } from '@/i18n';
 import { lastDuration, placeRow, rowsOf } from '@/screens/settings/gate';
-import { FolderGate, GatePolicy } from '@/screens/settings/GatesPage';
+import { FolderGate, GatePolicy, ProtectedPaths } from '@/screens/settings/GatesPage';
 import { useSettingsView } from '@/screens/settings/view';
 
 type Command = { type: string; input: Record<string, unknown>; expected_revision: number | null };
@@ -300,6 +300,68 @@ describe('the gates page steps', () => {
     const h = await folder();
     expect(text(step(h, 1))).toContain('8 秒');
     expect(text(step(h, 1))).toContain(zh('settings.gate.timeoutUnit'));
+  });
+});
+
+describe('the paths a merge changes only with your leave', () => {
+  const PATH = gate('protectPath');
+  async function paths() {
+    const h = mount(() => ProtectedPaths({ project, root: ROOT, busy: false }));
+    await h.flush();
+    return h;
+  }
+  const input = (h: HookHost<any>) =>
+    find(tree(h), (n) => n.type === 'input' && n.props['aria-label'] === PATH);
+
+  it("adds a path or glob and removes another, saving each with the folder's steps", async () => {
+    project = { ...project, protected_paths: { [ROOT]: ['config'] } };
+    const h = await paths();
+    input(h).props.onChange({ target: { value: ' migrations/**/*.sql ' } });
+    await h.flush();
+    input(h).props.onKeyDown({ key: 'Enter' });
+    await h.flush();
+    expect(bridge.commands).toMatchObject([
+      {
+        type: 'project.gate.set',
+        input: {
+          project_id: 'alpha',
+          root: ROOT,
+          commands: steps,
+          protected_paths: ['config', 'migrations/**/*.sql'],
+        },
+        expected_revision: 4,
+      },
+    ]);
+    expect(input(h).props.value).toBe('');
+    project = {
+      ...project,
+      revision: 5,
+      protected_paths: { [ROOT]: ['config', 'migrations/**/*.sql'] },
+    };
+    h.render();
+    await h.flush();
+    labelled(tree(h), gate('unprotect', { path: 'config' })).props.onClick();
+    await h.flush();
+    expect(bridge.commands[1]).toMatchObject({
+      input: { root: ROOT, commands: steps, protected_paths: ['migrations/**/*.sql'] },
+      expected_revision: 5,
+    });
+  });
+
+  it('keeps a path already in the list or outside the folder as a draft and says why', async () => {
+    project = { ...project, protected_paths: { [ROOT]: ['config'] } };
+    const h = await paths();
+    for (const [value, problem] of [
+      ['config', 'protectDuplicate'],
+      ['../outside', 'protectParent'],
+    ]) {
+      input(h).props.onChange({ target: { value } });
+      await h.flush();
+      input(h).props.onKeyDown({ key: 'Enter' });
+      await h.flush();
+      expect(text(find(tree(h), (n) => n.props.role === 'alert'))).toBe(gate(problem!));
+    }
+    expect(bridge.commands).toEqual([]);
   });
 });
 

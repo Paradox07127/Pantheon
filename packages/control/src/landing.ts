@@ -57,6 +57,8 @@ export interface LandingOwner {
   beforeLand?(): boolean;
   /** The user let this landing change the paths that protect the gate. */
   allowGateChange?: boolean;
+  /** Protected files the user let an earlier landing change, by path to blob id; changing exactly these needs no new leave. */
+  allowedGateFiles?: Record<string, string>;
   /** A commit of the candidate that already landed squashed; a rebase replays only the commits after it. */
   squashedTip?: string;
 }
@@ -340,6 +342,35 @@ export async function changedGateFiles(
 /** True when the path is the entry, lies below it, or matches it as a glob. */
 export const inScope = (file: string, entry: string): boolean =>
   within(file, entry) || path.posix.matchesGlob(file, entry);
+
+/** The blob id of each file at commit; '' for a file the commit does not hold. */
+async function blobIds(
+  cwd: string,
+  commit: string,
+  files: string[],
+): Promise<Record<string, string>> {
+  const ids: Record<string, string> = Object.fromEntries(files.map((file) => [file, '']));
+  const listed = await git(cwd, [
+    '--literal-pathspecs',
+    'ls-tree',
+    '-r',
+    '-z',
+    commit,
+    '--',
+    ...files,
+  ]);
+  for (const entry of listed.split('\0').filter(Boolean)) {
+    const tab = entry.indexOf('\t');
+    ids[entry.slice(tab + 1)] = entry.slice(0, tab).split(' ')[2]!;
+  }
+  return ids;
+}
+
+/** True when allowed holds exactly the files of blobs, each at the same blob id. */
+const sameBlobs = (blobs: Record<string, string>, allowed: Record<string, string> | undefined) =>
+  !!allowed &&
+  Object.keys(allowed).length === Object.keys(blobs).length &&
+  Object.entries(blobs).every(([file, id]) => allowed[file] === id);
 
 /** True when the path equals the scope entry or lies below it, compared by path segment. */
 function within(file: string, entry: string): boolean {
@@ -804,19 +835,23 @@ export async function landWorkspace(
           { conflicts: agentConfiguration },
         );
       // The gate runs the candidate's own files, so a change to them waits for the user.
-      if (!owner.allowGateChange) {
-        const project = ctx.store.must<Project>('projects', owner.projectId);
-        const guarded = await changedGateFiles(
-          project,
-          item.source,
-          workspace.path,
-          [landsFrom, target],
-          changed,
-          commands,
-        );
-        if (guarded.length)
-          return Object.assign({ ...item, reason: 'gate_files_changed' }, { conflicts: guarded });
-      }
+      const guarded = await changedGateFiles(
+        ctx.store.must<Project>('projects', owner.projectId),
+        item.source,
+        workspace.path,
+        [landsFrom, target],
+        changed,
+        commands,
+      );
+      const guardedBlobs = guarded.length
+        ? await blobIds(workspace.path, target, guarded)
+        : undefined;
+      if (
+        guardedBlobs &&
+        !owner.allowGateChange &&
+        !sameBlobs(guardedBlobs, owner.allowedGateFiles)
+      )
+        return Object.assign({ ...item, reason: 'gate_files_changed' }, { conflicts: guarded });
       // A rebase replays a merge's parents and drops the changes made in the merge itself.
       if (
         onto &&
@@ -905,7 +940,12 @@ export async function landWorkspace(
         const results = await checkGates(ctx, owner, workspace, item.source, commands, target);
         if (!results) return ctx.closing ? undefined : { ...item, reason: 'cancelled' };
         item.gate_results = results;
-        if (results.some(gateFailed)) return { ...item, reason: 'gate_failed' };
+        // The leave to change the protected files outlasts a failed gate, for these files as they are.
+        if (results.some(gateFailed))
+          return Object.assign(
+            { ...item, reason: 'gate_failed' },
+            guardedBlobs ? { allowed_gate_files: guardedBlobs } : {},
+          );
       }
     } finally {
       if (leased)

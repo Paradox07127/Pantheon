@@ -1,6 +1,7 @@
 {
   "components.needsPopover.empty": "没有需要你的事。",
   "components.needsPopover.more": "更多操作：{name}",
+  "components.needsPopover.files": "{count, plural, =0 {{files}} other {{files} 等另外 # 个}}",
   "data.attention.decision.permission": "权限",
   "data.attention.decision.question": "问题",
   "board.needs.noReason": "后端没有给出原因",

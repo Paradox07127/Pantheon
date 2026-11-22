@@ -17,6 +17,7 @@ import {
   type WorkflowPolicy,
 } from '../../data/workflow-policy';
 import { useQuery } from '../../data/workbench-sessions';
+import { copyPathProblem, type CopyPathProblem } from '../../data/worktree-setup';
 import { t } from '../../i18n';
 import { durationText } from '../../lib/time-text';
 import {
@@ -28,6 +29,7 @@ import {
   lastDuration,
   moveRow,
   placeRow,
+  protectedPathsRequest,
   removeRow,
   rowsOf,
   savedGate,
@@ -403,7 +405,146 @@ export function FolderGate({
         <Plus aria-hidden="true" />
         {t({ id: 'settings.gate.addStep', defaultMessage: 'Add a step' })}
       </button>
+      <ProtectedPaths project={project} root={root} busy={busy} />
     </div>
+  );
+}
+
+const PROTECT_PROBLEM: Record<Exclude<CopyPathProblem, 'empty'>, () => string> = {
+  duplicate: () =>
+    t({ id: 'settings.gate.protectDuplicate', defaultMessage: 'Already in the list' }),
+  absolute: () =>
+    t({
+      id: 'settings.gate.protectAbsolute',
+      defaultMessage: 'Use a path relative to the folder, not an absolute one',
+    }),
+  parent: () =>
+    t({
+      id: 'settings.gate.protectParent',
+      defaultMessage: 'The path cannot leave the folder with ..',
+    }),
+};
+
+/**
+ * The paths or globs, besides the files the gate names, that a merge into this folder changes only
+ * with the user's leave; a change saves at once.
+ */
+export function ProtectedPaths({
+  project,
+  root,
+  busy,
+}: {
+  project: Project;
+  root: string;
+  /** The folder's steps are being saved. */
+  busy: boolean;
+}) {
+  // The list sent, until the board reaches the revision its save returned; null while it is out.
+  const [sent, setSent] = useState<{ paths: string[]; revision: number | null } | null>(null);
+  const [adding, setAdding] = useState('');
+  const [problem, setProblem] = useState<Exclude<CopyPathProblem, 'empty'> | null>(null);
+  const [failure, setFailure] = useState<Failure | null>(null);
+  useEffect(() => {
+    if (sent?.revision != null && project.revision >= sent.revision) setSent(null);
+  }, [project.revision, sent]);
+
+  const paths = sent?.paths ?? project.protected_paths?.[root] ?? [];
+  const off = busy || sent !== null;
+  const save = async (next: string[]) => {
+    if (off) return;
+    setSent({ paths: next, revision: null });
+    setFailure(null);
+    const request = protectedPathsRequest(project, root, next);
+    const result = await runCommand(request.type, request.input, request.expected_revision);
+    setSent(
+      result.ok
+        ? {
+            paths: next,
+            revision: (result.value as Project).revision ?? request.expected_revision + 1,
+          }
+        : null,
+    );
+    if (!result.ok) setFailure(result.error);
+  };
+  const add = () => {
+    const entry = adding.trim();
+    const found = copyPathProblem(entry, paths);
+    if (found === 'empty') return;
+    if (found) {
+      setProblem(found);
+      return;
+    }
+    setAdding('');
+    void save([...paths, entry]);
+  };
+  const pathLabel = t({
+    id: 'settings.gate.protectPath',
+    defaultMessage: 'Path or glob to protect',
+  });
+
+  return (
+    <Section title={t({ id: 'settings.gate.protected', defaultMessage: 'Protected paths' })}>
+      {failure && (
+        <div className="ps-err" role="alert">
+          {failureText(failure)}
+        </div>
+      )}
+      <div className="ps-rows" aria-busy={sent !== null || undefined}>
+        {paths.map((entry) => (
+          <div key={entry} className="ps-row">
+            <span className="ps-row-nm mono gt-path">{entry}</span>
+            <div className="ps-row-ct">
+              <button
+                type="button"
+                className="ib"
+                disabled={off}
+                aria-label={t(
+                  { id: 'settings.gate.unprotect', defaultMessage: 'Stop protecting {path}' },
+                  { path: entry },
+                )}
+                onClick={() => void save(paths.filter((p) => p !== entry))}
+              >
+                <X aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        ))}
+        <div className="ps-row">
+          <span className="ps-row-nm">
+            <input
+              className="inp mono"
+              spellCheck={false}
+              aria-label={pathLabel}
+              aria-invalid={problem !== null || undefined}
+              value={adding}
+              onChange={(e) => {
+                setAdding(e.target.value);
+                setProblem(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') add();
+              }}
+            />
+            {problem !== null && (
+              <span className="ps-err" role="alert">
+                {PROTECT_PROBLEM[problem]()}
+              </span>
+            )}
+          </span>
+          <div className="ps-row-ct">
+            <button
+              type="button"
+              className="ib"
+              disabled={off}
+              aria-label={t({ id: 'settings.gate.protect', defaultMessage: 'Protect this path' })}
+              onClick={add}
+            >
+              <Plus aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+      </div>
+    </Section>
   );
 }
 

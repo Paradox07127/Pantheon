@@ -27,6 +27,7 @@ import {
 import { visibleProjects } from '../data/projects';
 import { sessionTitle } from '../data/transcript';
 import { t } from '../i18n';
+import { listText } from '../lib/list-text';
 import { holdRootFlag } from '../lib/root-flag';
 import type { SnapshotSession } from '../lib/snapshot-types';
 import { needActions, needCommand, type NeedAction } from '../data/need-actions';
@@ -53,6 +54,8 @@ interface ListRow {
   icon: ReactNode;
   title: string;
   detail?: ReactNode;
+  /** The files the item is about, under the detail. */
+  files?: string;
   actions?: ReactNode;
   end?: ReactNode;
   dim?: boolean;
@@ -139,6 +142,7 @@ function listPopover(props: {
                             <span className="np-t">{row.title}</span>
                           </span>
                           {row.detail && <span className="np-d">{row.detail}</span>}
+                          {row.files && <span className="np-fs">{row.files}</span>}
                         </button>
                         <span className="np-e">{row.end}</span>
                         <span className="np-a">{row.actions}</span>
@@ -182,6 +186,21 @@ const answerable = (item: NeedsYouItem) =>
   item.reason === 'permission_requested' &&
   !item.questions?.length &&
   item.actions.find((a) => a.command === 'approval.respond')?.allowed === true;
+
+const FILES_SHOWN = 5;
+
+/** The first files, then how many more there are. */
+const filesText = (files: readonly string[]) =>
+  t(
+    {
+      id: 'components.needsPopover.files',
+      defaultMessage: '{count, plural, =0 {{files}} other {{files} and # more}}',
+    },
+    {
+      files: listText(...files.slice(0, FILES_SHOWN)),
+      count: Math.max(0, files.length - FILES_SHOWN),
+    },
+  );
 
 const ANSWERING = '';
 const NO_PROJECTS: readonly never[] = [];
@@ -285,6 +304,7 @@ export function NeedsPopover({
       ) : named ? (
         reason
       ) : undefined,
+      ...(item.files?.length ? { files: filesText(item.files) } : {}),
       end: ageText(item.created_at, now),
       on: key === current,
     };

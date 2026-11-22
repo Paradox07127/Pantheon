@@ -257,6 +257,17 @@ export function checkGate(saved: readonly GateCommand[], rows: readonly GateRow[
   return { rows: checked.map((c) => c.check), status, commands: valid ? commands : null };
 }
 
+/** project.gate.set of one folder's protected paths at the project's revision, with its saved commands. */
+export const protectedPathsRequest = (
+  project: { id: string; revision: number; gates?: Record<string, GateCommand[]> },
+  root: string,
+  protected_paths: string[],
+) => ({
+  type: 'project.gate.set' as const,
+  input: { project_id: project.id, root, commands: savedGate(project, root), protected_paths },
+  expected_revision: project.revision,
+});
+
 /** project.gate.set for one folder at the project's revision; an empty list clears it. */
 export const gateSetRequest = (
   project: { id: string; revision: number },
