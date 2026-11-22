@@ -97,13 +97,16 @@ export function projectChanges(
               state:
                 listed.gate?.state === 'passed' || listed.gate?.state === 'stale'
                   ? listed.gate.state
-                  : 'none',
+                  : listed.gate?.state === 'running' || listed.gate?.state === 'cancelling'
+                    ? 'running'
+                    : 'none',
             },
       ...(review
         ? {
             review: {
               id: review.id,
               state: review.state,
+              ...(review.incomplete ? { incomplete: true as const } : {}),
               verdicts: (review.verdicts ?? []).map(({ runtime, verdict }) => ({
                 runtime,
                 verdict,

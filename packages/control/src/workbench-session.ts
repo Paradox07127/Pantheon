@@ -1204,10 +1204,14 @@ export function listedOutcomes(
   }));
 }
 
-/** When a running turn last started running; empty when no event says. */
-function startedAt(ctx: ControlContext, turnId: string): { started_at?: string } {
-  const started = latestEvent(ctx, turnId, 'turn.running');
-  return started ? { started_at: new Date(started.created_at).toISOString() } : {};
+/** When the session's running send turn last started running; empty when none runs or no event says. */
+function turnStartedAt(
+  ctx: ControlContext,
+  turns: readonly Pick<SessionTurn, 'id' | 'kind' | 'state'>[],
+): { turn_started_at?: string } {
+  const running = turns.findLast((turn) => turn.kind === 'send' && turn.state === 'running');
+  const started = running && latestEvent(ctx, running.id, 'turn.running');
+  return started ? { turn_started_at: new Date(started.created_at).toISOString() } : {};
 }
 
 /**
@@ -1345,6 +1349,7 @@ export function sessionList(
         changed_at: new Date(activity?.opened ?? 0).toISOString(),
       },
       ...(goal ? { goal } : {}),
+      ...turnStartedAt(ctx, sessionTurns.get(session.id) ?? []),
       ...(session.device_id ? { device_id: session.device_id } : {}),
       compaction_count: compactions.get(session.id) ?? 0,
       ...(session.auto_compact_at_tokens !== undefined
@@ -1358,7 +1363,6 @@ export function sessionList(
             last_turn: {
               id: latestTurn.id,
               state: latestTurn.state,
-              ...(latestTurn.state === 'running' && startedAt(ctx, latestTurn.id)),
               ...(turnError ? { error: turnError } : {}),
               ...(turnErrorCode ? { error_code: turnErrorCode } : {}),
             },

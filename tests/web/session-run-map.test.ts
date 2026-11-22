@@ -389,6 +389,33 @@ it('shows no passed review for a review without verdicts, and passed once all pa
   expect(rowOf('Fresh review').textContent).toContain(zh('sessions.runMap.reviewPassed'));
 });
 
+it('shows a review a reviewer left without a full result as incomplete, not passed', async () => {
+  const before = mock.changes;
+  mock.changes = [
+    change('kid-g', {
+      review: {
+        id: 'review-g',
+        state: 'completed',
+        incomplete: true,
+        verdicts: [{ runtime: 'codex', verdict: 'pass' }],
+        blocking_open: 0,
+      },
+    }),
+  ];
+  await show('ledger');
+  mock.changes = before;
+  expect(rowOf('Fresh review').textContent).toContain(zh('sessions.runMap.reviewIncomplete'));
+  expect(rowOf('Fresh review').textContent).not.toContain(zh('sessions.runMap.reviewPassed'));
+});
+
+it('shows a gate that is running as running', async () => {
+  const before = mock.changes;
+  mock.changes = [change('kid-g', { gate: { state: 'running' } })];
+  await show('ledger');
+  mock.changes = before;
+  expect(rowOf('Fresh review').textContent).toContain(zh('sessions.runMap.gateRunning'));
+});
+
 it('shows no token count for a runtime that reports none and marks the total as partial', async () => {
   await show('ledger');
   expect(rowOf('Quiet runtime').textContent).not.toMatch(/\d/);

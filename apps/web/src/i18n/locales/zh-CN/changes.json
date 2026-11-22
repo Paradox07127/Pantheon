@@ -29,6 +29,7 @@
   "changes.landing.queued": "排队落地",
   "changes.landing.running": "正在落地",
   "changes.review.blocking": "{count, plural, other {# 条阻塞}}",
+  "changes.review.incomplete": "审查未完成",
   "changes.review.noVerdict": "没有结论",
   "changes.review.none": "没审",
   "changes.review.running": "在审",

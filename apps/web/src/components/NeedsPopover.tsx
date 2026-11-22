@@ -37,7 +37,7 @@ import { runningSince, useProjectSessions } from '../shell/TrayPopover';
 import { useShell } from '../store';
 import { DiffCounts } from './DiffCounts';
 import { ProjectMonogram } from './ProjectMonogram';
-import { RuntimeGlyph } from './RuntimeGlyph';
+import { RuntimeGlyph, runtimeName } from './RuntimeGlyph';
 import { GateMark, MergeBlockedGlyph, StateGlyph } from './SessionStateIcon';
 import { Tip } from './Tip';
 import './needs-popover.css';
@@ -260,7 +260,13 @@ interface GateCommand {
   name: string;
   argv: string[];
   timeout_ms?: number;
+  enabled?: boolean;
+  skippable?: boolean;
 }
+
+/** The arguments, each empty one or one with a space, quote or backslash quoted, so their bounds show. */
+const argvText = (argv: string[]) =>
+  argv.map((arg) => (arg === '' || /[\s"\\]/.test(arg) ? JSON.stringify(arg) : arg)).join(' ');
 
 const gateCommands = (value: unknown): value is GateCommand[] =>
   Array.isArray(value) &&
@@ -274,8 +280,21 @@ function valueText(value: unknown): ReactNode {
     return value.map((command, index) => (
       <span key={index} className="np-ln">
         <span>{command.name}</span>
-        <span>{command.argv.join(' ')}</span>
+        <span>{argvText(command.argv)}</span>
         {command.timeout_ms !== undefined && <span>{durationText(command.timeout_ms)}</span>}
+        {command.enabled === false && (
+          <span>
+            {t({ id: 'components.needsPopover.setting.commandOff', defaultMessage: 'Off' })}
+          </span>
+        )}
+        {command.skippable === true && (
+          <span>
+            {t({
+              id: 'components.needsPopover.setting.commandSkippable',
+              defaultMessage: 'Skippable',
+            })}
+          </span>
+        )}
       </span>
     ));
   if (!empty(value) && typeof value === 'object' && !Array.isArray(value))
@@ -298,6 +317,7 @@ function settingBody(setting: NonNullable<NeedsYouItem['setting']>, name: string
   return (
     <>
       {setting.root && <span className="np-rt">{setting.root}</span>}
+      {setting.runtime && <span className="np-rt">{runtimeName(setting.runtime)}</span>}
       <p className="np-why">{setting.reason}</p>
       {keys.length > 0 && (
         <table

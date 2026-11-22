@@ -24,6 +24,7 @@ vi.mock('@/data/commands', () => ({
 }));
 import { runCommand } from '@/data/commands';
 import { ChangeInspector, ChangesScreen, ReviewGuide } from '@/screens/changes/ChangesScreen';
+import { GateResults } from '@/screens/sessions/GateResults';
 import { zh, zhf } from './i18n-setup.js';
 
 const row = (over: Partial<ChangeRow> & { id: string; title: string }): ChangeRow => ({
@@ -103,6 +104,8 @@ const tabs = (tree: unknown) =>
   nodes(tree as ReactElement)
     .filter((n) => n.type === Tabs.Tab)
     .map((n) => text(n));
+const inspectorOf = (h: HookHost<ReactElement>) =>
+  nodes(h.value).find((n) => n.type === ChangeInspector);
 /** Presses a plain key on the list and renders what it changed. */
 function press(h: HookHost<ReactElement>, key: string) {
   grid(h.value)!.props.onKeyDown({
@@ -272,6 +275,64 @@ describe('changes screen', () => {
     expect(shown).toContain(zhf('changes.review.blocking', { count: 2 }));
   });
 
+  const reviewCell = (h: HookHost<ReactElement>) => {
+    const cell = nodes(rows(h.value)[0]!).find(
+      (n) => typeof n.type === 'function' && n.type.name === 'ReviewCell',
+    )!;
+    return (cell.type as (props: unknown) => ReactElement)(cell.props);
+  };
+
+  it('shows a completed review a reviewer left without a full result as incomplete, with no pass mark', async () => {
+    changes = [
+      row({
+        id: 'session:one',
+        title: 'One',
+        review: {
+          id: 'review-one',
+          state: 'completed',
+          incomplete: true,
+          verdicts: [{ runtime: 'claude', verdict: 'pass' }],
+          blocking_open: 0,
+        },
+      }),
+    ];
+    const h = await screen();
+    const cell = reviewCell(h);
+    expect(text(cell)).toContain(zh('changes.review.incomplete'));
+    expect(
+      nodes(cell)
+        .filter((n) => n.props.className === 'chg-dot')
+        .map((n) => n.props['data-tone']),
+    ).toEqual([undefined]);
+  });
+
+  it('shows a running gate as running', async () => {
+    changes = [row({ id: 'session:one', title: 'One', gate: { state: 'running' } })];
+    const h = await screen();
+    const marks = nodes(rows(h.value)[0]!).filter(
+      (n) => typeof n.type === 'function' && n.type.name === 'GateMark',
+    );
+    expect(marks.map((n) => n.props.state)).toEqual(['running']);
+    expect(text(rows(h.value)[0]!)).toContain(zh('sessions.screen.gateRunning'));
+  });
+
+  it.each([
+    ['its close button', (h: HookHost<ReactElement>) => inspectorOf(h)!.props.onClose()],
+    ['Escape', (h: HookHost<ReactElement>) => press(h, 'Escape')],
+  ])('gives the focus back to the list on the row it showed when %s closes it', async (_, shut) => {
+    const h = await screen();
+    press(h, 'j');
+    press(h, 'Enter');
+    expect(inspectorOf(h)!.props.row.id).toBe('landing:docs');
+    const focus = vi.fn();
+    Object.assign(grid(h.value)!.props.ref ?? {}, { current: { focus } });
+    shut(h);
+    h.render();
+    expect(inspectorOf(h)).toBeUndefined();
+    expect(focus).toHaveBeenCalledOnce();
+    expect(grid(h.value)!.props['aria-activedescendant']).toBe('chg-landing:docs');
+  });
+
   it('says there are no changes and shows nothing else when the list is empty', async () => {
     changes = [];
     const h = await screen();
@@ -421,6 +482,34 @@ describe('change inspector', () => {
     await h.flush();
     expect(button(h.value, zh('changes.inspector.cancelLanding'))).toBeUndefined();
     expect(button(h.value, zh('changes.inspector.cancelling'))!.props.disabled).toBe(true);
+  });
+
+  it('keeps an out-of-date gate marked as such above the gate results it read', async () => {
+    answers['session.gates'] = {
+      configured: true,
+      running: false,
+      last: {
+        commit: 'abcdef1234567890',
+        checked_at: 1,
+        results: [{ name: 'Unit tests', exit_code: 0, timed_out: false, output_tail: '' }],
+      },
+    };
+    const h = await inspector(
+      row({ id: 'session:refund-list', title: 'Refund list page', gate: { state: 'stale' } }),
+    );
+    const gate = nodes(h.value).find(
+      (n) => n.type === 'section' && n.props['aria-label'] === zh('changes.inspector.gate'),
+    )!;
+    const parts = nodes(gate);
+    const results = parts.findIndex((n) => n.type === GateResults);
+    const stale = parts.findIndex(
+      (n) =>
+        typeof n.type === 'function' && n.type.name === 'GateMark' && n.props.state === 'stale',
+    );
+    expect(results).toBeGreaterThan(-1);
+    expect(stale).toBeGreaterThan(-1);
+    expect(stale).toBeLessThan(results);
+    expect(text(gate)).toContain(zh('sessions.screen.gateStale'));
   });
 
   it('offers no cancel on a landed row', async () => {

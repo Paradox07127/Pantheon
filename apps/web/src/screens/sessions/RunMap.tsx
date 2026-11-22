@@ -35,6 +35,11 @@ type Tone = 'ok' | 'bad' | 'run' | 'idle';
 
 function gateOf(gate: ChangeRow['gate'] | undefined): { text: string; tone: Tone } | null {
   switch (gate?.state) {
+    case 'running':
+      return {
+        text: t({ id: 'sessions.runMap.gateRunning', defaultMessage: 'Gate running' }),
+        tone: 'run',
+      };
     case 'passed':
       return {
         text: t({ id: 'sessions.runMap.gatePassed', defaultMessage: 'Gate passed' }),
@@ -87,6 +92,11 @@ function reviewOf(review: ChangeRow['review']): { text: string; tone: Tone } | n
     return {
       text: t({ id: 'sessions.runMap.reviewChanges', defaultMessage: 'Review asks for changes' }),
       tone: 'bad',
+    };
+  if (review.incomplete)
+    return {
+      text: t({ id: 'sessions.runMap.reviewIncomplete', defaultMessage: 'Review incomplete' }),
+      tone: 'idle',
     };
   // A review that ended without verdicts never reached one.
   if (review.verdicts.length === 0) return null;

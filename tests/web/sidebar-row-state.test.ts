@@ -132,7 +132,8 @@ describe('sidebar row state', () => {
   it('counts the running time from when the current turn started', () => {
     const running = session('running', {
       created_at: new Date(NOW - 3 * 86_400_000).toISOString(),
-      last_turn: { ...runningTurn, started_at: new Date(NOW - 2 * 60_000).toISOString() },
+      turn_started_at: new Date(NOW - 2 * 60_000).toISOString(),
+      last_turn: runningTurn,
     });
     expect(shownState(render(running, false))).toBe(zhf('lib.time.minutes', { minutes: 2 }));
   });

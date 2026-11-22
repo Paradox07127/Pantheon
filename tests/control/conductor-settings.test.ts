@@ -231,6 +231,15 @@ it.each(commands)(
   },
 );
 
+it('names the runtime whose extension switches a proposal changes', async () => {
+  const { f, propose, items } = await conductorFixture();
+  propose('project.extensions.set', cases['project.extensions.set'].input(f));
+  expect(items()[0]!.setting).toMatchObject({
+    command: 'project.extensions.set',
+    runtime: f.adapter.name,
+  });
+});
+
 it.each(commands)(
   'leaves %s as it was when the user rejects the proposal and tells the main agent',
   async (command) => {

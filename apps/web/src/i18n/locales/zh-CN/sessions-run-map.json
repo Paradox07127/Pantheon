@@ -6,6 +6,7 @@
   "sessions.runMap.usage": "用量",
   "sessions.runMap.turns": "{count, plural, other {# 回合}}",
   "sessions.runMap.ahead": "领先 {count}",
+  "sessions.runMap.gateRunning": "门禁运行中",
   "sessions.runMap.gatePassed": "门禁通过",
   "sessions.runMap.gateFailed": "门禁失败",
   "sessions.runMap.gateStale": "门禁已过时",
@@ -14,6 +15,7 @@
   "sessions.runMap.reviewFailed": "审查失败",
   "sessions.runMap.reviewBlocking": "{count, plural, other {外审 # 阻塞}}",
   "sessions.runMap.reviewChanges": "审查要求修改",
+  "sessions.runMap.reviewIncomplete": "审查未完成",
   "sessions.runMap.reviewPassed": "审查通过",
   "sessions.runMap.tokensPartial": "至少 {tokens}"
 }

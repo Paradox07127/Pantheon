@@ -97,6 +97,7 @@ export interface NeedsYouItem {
   setting?: {
     command: string;
     root?: string;
+    runtime?: string;
     before?: Record<string, unknown>;
     after?: Record<string, unknown>;
     reason: string;

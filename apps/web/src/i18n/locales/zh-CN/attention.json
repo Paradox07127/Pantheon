@@ -11,6 +11,8 @@
   "components.needsPopover.setting.protectedPaths": "受保护路径",
   "components.needsPopover.setting.inherited": "继承的全局默认值",
   "components.needsPopover.setting.overrides": "扩展开关",
+  "components.needsPopover.setting.commandOff": "已关闭",
+  "components.needsPopover.setting.commandSkippable": "失败可跳过",
   "data.attention.decision.permission": "权限",
   "data.attention.decision.question": "问题",
   "board.needs.noReason": "后端没有给出原因",

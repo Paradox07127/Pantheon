@@ -31,6 +31,8 @@ export function settingProposalItems(ctx: ControlContext, scope: NeedsYouScope):
     .map((row): NeedsYouDraft => {
       const respond = action('setting.proposal.respond', () => userOnly(principal));
       const root = gateRoot(row);
+      const runtime =
+        row.command === 'project.extensions.set' ? (row.input.runtime as string) : undefined;
       return {
         source: { table: SETTING_PROPOSALS, id: row.id, revision: row.revision },
         kind: 'setting.proposed',
@@ -48,6 +50,7 @@ export function settingProposalItems(ctx: ControlContext, scope: NeedsYouScope):
         setting: {
           command: row.command,
           ...(root ? { root } : {}),
+          ...(runtime ? { runtime } : {}),
           before: row.before,
           after: settingAfter(row),
           reason: row.reason,

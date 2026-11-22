@@ -22,6 +22,7 @@ vi.mock('@/data/commands', () => ({
   runCommand: vi.fn(async () => ({ ok: true, value: null })),
 }));
 import { NeedsPopover, SessionsPopover } from '@/components/NeedsPopover';
+import { runtimeName } from '@/components/RuntimeGlyph';
 import { GateMark, StateGlyph } from '@/components/SessionStateIcon';
 import { runCommand } from '@/data/commands';
 import { reasonText } from '@/data/needs-you';
@@ -441,6 +442,59 @@ describe('a settings change the main agent proposes', () => {
       ],
       [zh('components.needsPopover.setting.protectedPaths'), '—', 'keep/**'],
     ]);
+  });
+
+  it('marks a gate command that is off or skippable and keeps each argument apart', () => {
+    const h = show(
+      proposal({
+        setting: {
+          command: 'project.gate.set',
+          root: '/repo/app',
+          before: { commands: [{ name: 'echo', argv: ['echo', 'a', 'b'] }] },
+          after: {
+            commands: [
+              { name: 'echo', argv: ['echo', 'a b', ''] },
+              { name: 'quote', argv: ['echo', '"a', 'b"'], enabled: false, skippable: true },
+            ],
+          },
+          reason: 'Group the words',
+        },
+      }),
+    );
+    expect(tableRows(h.value, gateName).slice(1)).toEqual([
+      [
+        gateName,
+        [['echo', 'echo a b']],
+        [
+          ['echo', 'echo "a b" ""'],
+          [
+            'quote',
+            'echo "\\"a" "b\\""',
+            zh('components.needsPopover.setting.commandOff'),
+            zh('components.needsPopover.setting.commandSkippable'),
+          ],
+        ],
+      ],
+    ]);
+  });
+
+  it('names the runtime an extension change is for', () => {
+    const h = show(
+      proposal({
+        setting: {
+          command: 'project.extensions.set',
+          runtime: 'codex',
+          before: { overrides: null },
+          after: { overrides: { disable_hooks: true } },
+          reason: 'Hooks slow the runs',
+        },
+      }),
+    );
+    expect(
+      nodes(h.value)
+        .filter((n) => n.props.className === 'np-rt')
+        .map(text),
+    ).toEqual([runtimeName('codex')]);
   });
 
   const defaultsName = zh('components.needsPopover.setting.sessionDefaults');

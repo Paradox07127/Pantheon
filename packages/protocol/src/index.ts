@@ -2184,10 +2184,12 @@ export interface ChangeRow {
   landed?: true;
   ahead?: number;
   behind?: number;
-  gate: { state: 'passed' | 'failed' | 'stale' | 'none'; failed?: string[] };
+  gate: { state: 'running' | 'passed' | 'failed' | 'stale' | 'none'; failed?: string[] };
   review?: {
     id: string;
     state: Review['state'];
+    /** The review completed without a full result from every reviewer. */
+    incomplete?: true;
     verdicts: { runtime: string; verdict: 'pass' | 'fail' }[];
     blocking_open: number;
     to_sha?: string;
@@ -2255,6 +2257,8 @@ export interface WorkbenchSession {
   conductor?: true;
   /** ISO time of the session.opened event. */
   created_at: string;
+  /** ISO time the session's running turn started running; absent while no turn runs. */
+  turn_started_at?: string;
   /** Empty for a baseline session without a title, which baseline_started_at names. */
   title: string;
   /** Epoch milliseconds the baseline of a baseline session without a title started. */
@@ -2326,8 +2330,6 @@ export interface WorkbenchSession {
   last_turn?: {
     id: string;
     state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
-    /** ISO time a running turn started running; absent in every other state. */
-    started_at?: string;
     error?: string;
     error_code?: string;
   };

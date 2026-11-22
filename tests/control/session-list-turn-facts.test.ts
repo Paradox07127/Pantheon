@@ -71,11 +71,22 @@ it('lists the goal, last turn, context and compactions as the turns and their ev
   }
 });
 
-it('gives the last turn the time it started running, and no start while it waits in the queue', async () => {
+it("gives a session its running turn's start, past a notice queued behind it, and none while its turn waits in the queue", async () => {
   let clock = 1_800_000_000_000;
   const f = await fixture({ now: () => clock });
   try {
     const project = f.project.id;
+    const turn = (sessionId: string, id: string, state: SessionTurn['state']) =>
+      f.store.insert<SessionTurn>('session_turns', {
+        id,
+        revision: 1,
+        project_id: project,
+        session_id: sessionId,
+        input: id,
+        kind: 'send',
+        delivery: 'delivered',
+        state,
+      });
     const open = (id: string, state: SessionTurn['state']) => {
       const workspace = f.store.insert<Workspace>('workspaces', {
         id: `${id}-worktree`,
@@ -95,33 +106,30 @@ it('gives the last turn the time it started running, and no start while it waits
         workspace_id: workspace.id,
         turn_count: 1,
       });
-      return f.store.insert<SessionTurn>('session_turns', {
-        id: `${id}-turn`,
-        revision: 1,
-        project_id: project,
-        session_id: session.id,
-        input: id,
-        kind: 'send',
-        delivery: 'delivered',
-        state,
-      });
+      return turn(session.id, `${id}-turn`, state);
     };
     const running = open('running-session', 'running'),
-      queued = open('queued-session', 'queued');
+      queued = open('queued-session', 'queued'),
+      noticed = open('noticed-session', 'running');
     f.store.event('turn.running', running, project, running);
     // A turn put back in the queue after it ran has no start until it runs again.
     f.store.event('turn.running', queued, project, queued);
     clock += 60_000;
     f.store.event('turn.running', running, project, running);
+    f.store.event('turn.running', noticed, project, noticed);
     clock += 60_000;
+    const notice = turn('noticed-session', 'noticed-session-notice', 'queued');
 
     const listed = new Map(f.control.sessionList(user, project).map((s) => [s.id, s]));
-    expect(listed.get('running-session')!.last_turn).toEqual({
-      id: running.id,
-      state: 'running',
-      started_at: new Date(1_800_000_060_000).toISOString(),
+    const started = new Date(1_800_000_060_000).toISOString();
+    expect(listed.get('running-session')).toMatchObject({ turn_started_at: started });
+    expect(listed.get('running-session')!.last_turn).toEqual({ id: running.id, state: 'running' });
+    expect(listed.get('noticed-session')).toMatchObject({
+      turn_started_at: started,
+      last_turn: { id: notice.id, state: 'queued' },
     });
     expect(listed.get('queued-session')!.last_turn).toEqual({ id: queued.id, state: 'queued' });
+    expect(listed.get('queued-session')).not.toHaveProperty('turn_started_at');
   } finally {
     await f.close();
   }

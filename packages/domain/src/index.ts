@@ -448,10 +448,11 @@ export interface NeedsYouItem {
   background?: BackgroundTask;
   /** The input tokens a project over its budget spent since the budget was set, and the budget. */
   project_budget?: { used_input_tokens: number; input_tokens: number };
-  /** The change a main agent proposed: its command, the gate root it names, the values now and after, and why; the personal agent gets no values of a gate change. */
+  /** The change a main agent proposed: its command, the gate root or extension runtime it names, the values now and after, and why; the personal agent gets no values of a gate change. */
   setting?: {
     command: ProposableSettingCommand;
     root?: string;
+    runtime?: string;
     before?: Record<string, unknown>;
     after?: Record<string, unknown>;
     reason: string;

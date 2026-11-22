@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { Tabs } from '@base-ui/react/tabs';
 import { Eye, FileText, Flag, GitBranch, ShieldCheck, X } from 'lucide-react';
 import type { Review } from '@pantheon/domain';
@@ -79,6 +79,9 @@ const blockingText = (count: number) =>
     { count },
   );
 
+const incompleteText = () =>
+  t({ id: 'changes.review.incomplete', defaultMessage: 'Review incomplete' });
+
 /** The landing state of a row, as a chip's tone and words; null while it is not landing. */
 function landingOf(row: ChangeRow): { tone: string; text: string } | null {
   if (row.landing === 'queued')
@@ -122,7 +125,9 @@ function ReviewCell({ review }: { review: ChangeRow['review'] }) {
       <span className="chg-h chg-mu">
         {review.state === 'running'
           ? t({ id: 'changes.review.running', defaultMessage: 'Reviewing' })
-          : t({ id: 'changes.review.noVerdict', defaultMessage: 'No verdict' })}
+          : review.incomplete
+            ? incompleteText()
+            : t({ id: 'changes.review.noVerdict', defaultMessage: 'No verdict' })}
         {review.blocking_open > 0 && <span>{blockingText(review.blocking_open)}</span>}
       </span>
     );
@@ -136,9 +141,13 @@ function ReviewCell({ review }: { review: ChangeRow['review'] }) {
           aria-label={verdictText(v.runtime, v.verdict)}
         >
           <RuntimeGlyph runtime={v.runtime} />
-          <i className="chg-dot" data-tone={v.verdict === 'pass' ? 'ok' : 'bad'} />
+          <i
+            className="chg-dot"
+            data-tone={v.verdict === 'fail' ? 'bad' : review.incomplete ? undefined : 'ok'}
+          />
         </span>
       ))}
+      {review.incomplete && <span className="chg-mu">{incompleteText()}</span>}
       {review.blocking_open > 0 && (
         <span className="chg-mu">{blockingText(review.blocking_open)}</span>
       )}
@@ -174,9 +183,16 @@ export function ChangesScreen({
     const id = changeSessionId(row);
     return (id && sessions?.find((s) => s.id === id)) || null;
   };
+  const gridRef = useRef<HTMLDivElement>(null);
   const choose = (row: ChangeRow) => {
     setActive(row.id);
     setOpen(row.id);
+  };
+  /** Closes the inspector and gives the focus back to the list, on the row it showed. */
+  const close = () => {
+    if (open !== null) setActive(open);
+    setOpen(null);
+    gridRef.current?.focus();
   };
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (!rows?.length) return;
@@ -191,7 +207,7 @@ export function ChangesScreen({
     else if (shortcutMatches('list-first', e)) go(0);
     else if (shortcutMatches('list-last', e)) go(rows.length - 1);
     else if (shortcutMatches('list-open', e) && highlighted) setOpen(highlighted.id);
-    else if (e.key === 'Escape' && open !== null) setOpen(null);
+    else if (e.key === 'Escape' && open !== null) close();
     else return;
     e.preventDefault();
   };
@@ -228,6 +244,7 @@ export function ChangesScreen({
             />
           ) : (
             <div
+              ref={gridRef}
               className="chg-grid"
               role="grid"
               tabIndex={0}
@@ -324,7 +341,7 @@ export function ChangesScreen({
             </div>
           )}
         </div>
-        {opened && <ChangeInspector key={opened.id} row={opened} onClose={() => setOpen(null)} />}
+        {opened && <ChangeInspector key={opened.id} row={opened} onClose={close} />}
       </Tabs.Panel>
     </Tabs.Root>
   );
@@ -376,12 +393,20 @@ export function ChangeInspector({ row, onClose }: { row: ChangeRow; onClose: () 
             <b>{gateName}</b>
           </div>
           {sessionId && gates.data && (gateLast || gates.data.commands?.length) ? (
-            <GateResults
-              last={gateLast}
-              planned={gates.data.commands}
-              running={gates.data.running}
-              readOnly
-            />
+            <>
+              {row.gate.state === 'stale' && (
+                <div className="chg-h">
+                  <GateMark state="stale" />
+                  <span>{gateText(row.gate)}</span>
+                </div>
+              )}
+              <GateResults
+                last={gateLast}
+                planned={gates.data.commands}
+                running={gates.data.running}
+                readOnly
+              />
+            </>
           ) : (
             <div className="chg-h">
               <GateMark state={row.gate.state} />
@@ -406,6 +431,7 @@ export function ChangeInspector({ row, onClose }: { row: ChangeRow; onClose: () 
                 <span>{verdictText(v.runtime, v.verdict)}</span>
               </div>
             ))}
+            {row.review.incomplete && <span className="chg-mu">{incompleteText()}</span>}
           </section>
         )}
       </div>
