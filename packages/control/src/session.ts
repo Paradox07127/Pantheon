@@ -49,7 +49,7 @@ import {
   type Handler,
   type Handlers,
 } from './context.js';
-import { queueTurn } from './session-wake.js';
+import { queueTurn, waitingNotice } from './session-wake.js';
 import { runtime } from './admission.js';
 import {
   finishReconciledWriteAudit,
@@ -1746,6 +1746,11 @@ export async function finishTurn(
       .filter((turn) => turn.session_id === s.id && ['queued', 'running'].includes(turn.state));
     const stopPending = stop ? stop.receipt?.stopped !== true : s.stop_pending;
     const held = !s.stop_requested ? s.queued_handoff : undefined;
+    // The daemon's shutdown keeps a notice that never reached the session for the next start.
+    const kept =
+      ctx.closing && !held && !s.review_id && s.state !== 'closed'
+        ? turns.filter(waitingNotice)
+        : [];
     // A confirmed close ends the process even when the adapter no longer reports its identity.
     if (
       turns.length === 0 &&
@@ -1756,6 +1761,7 @@ export async function finishTurn(
       return;
     for (const turn of turns) {
       const undelivered = turn.delivery === 'pending' || turn.delivery === 'queued';
+      if (kept.includes(turn)) continue;
       if (
         (held || (turn.id !== key && isRuntimeHeld(ctx, s.runtime))) &&
         turn.state === 'queued' &&
@@ -1784,7 +1790,7 @@ export async function finishTurn(
             ? ('closed' as const)
             : held?.blocked || (stopPending && !ctx.handles.has(key))
               ? ('reconciling' as const)
-              : held
+              : held || kept.length
                 ? ('running' as const)
                 : ('open' as const),
         stop_pending: stopPending,
@@ -1797,6 +1803,8 @@ export async function finishTurn(
       },
       s.revision,
     );
+    if (kept.length && next.state === 'running')
+      ctx.store.enqueue('session.turn', { turn_id: kept[0]!.id });
     if (stop && !!s.stop_pending !== !!next.stop_pending)
       ctx.store.event(
         next.stop_pending ? 'session.stop_unconfirmed' : 'session.stop_confirmed',

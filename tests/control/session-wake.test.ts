@@ -1,8 +1,14 @@
 import { expect, it, vi } from 'vitest';
-import { id, type Session, type SessionTurn } from '@pantheon/domain';
+import {
+  id,
+  type Principal,
+  type Session,
+  type SessionTurn,
+  type SettingProposal,
+} from '@pantheon/domain';
 import type { ControlContext } from '../../packages/control/dist/context.js';
 import { notifySession } from '../../packages/control/dist/session-wake.js';
-import { settle } from '../helpers.js';
+import { eventually, settle } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
 type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
@@ -122,4 +128,139 @@ it('takes no turn for a closed session, an unknown id, or a project over its bud
   expect(notifySession(ctxOf(f), idle.id, 'Hello', 'cause-3')).toBeUndefined();
   expect(f.turns(idle.id)).toHaveLength(idleTurns);
   expect(planRows(f)).toBe(0);
+});
+
+const conductorOf = (f: Fixture, sessionId: string): Principal => ({
+  id: `session:${sessionId}`,
+  role: 'conductor',
+  project_id: f.project.id,
+  session_id: sessionId,
+  expires_at: f.store.now() + 60000,
+});
+
+/** A main agent whose turn runs without a fixture process, so it stays running until stopped. */
+async function mainAgentMidTurn(f: Fixture) {
+  const conductor = await f.call<Promise<Session>>('session.create', {
+    project_id: f.project.id,
+    runtime: f.adapter.name,
+    input: 'Ship the export',
+    purpose: 'conductor',
+  });
+  await settle(f, conductor);
+  vi.spyOn(f.adapter, 'send').mockImplementationOnce(async (handle, turn) => {
+    handle.process_identity = { pid: 4000001, start_time_us: 1700000000123456 };
+    return { turn_id: turn.turn_id, status: 'delivered' };
+  });
+  const running = f.call<SessionTurn>(
+    'session.send',
+    { session_id: conductor.id, input: 'Plan the docs' },
+    sessionOf(f, conductor.id).revision,
+  );
+  await eventually(
+    () =>
+      f.store.must<SessionTurn>('session_turns', running.id).state === 'running' &&
+      sessionOf(f, conductor.id).process_identity !== undefined,
+    () => f.control.tick(),
+  );
+  return conductor;
+}
+
+/** The main agent's notice turns that carry the text. */
+const noticesWith = (f: Fixture, sessionId: string, text: string) =>
+  f.turns(sessionId).filter((turn) => turn.origin === 'notice' && turn.input.includes(text));
+
+/** News that a spawned session finished, queued behind the main agent's running turn. */
+async function spawnedNewsQueued(f: Fixture, conductorId: string) {
+  const { session_id } = await f.call<Promise<{ session_id: string }>>(
+    'conductor.spawn',
+    { runtime: f.adapter.name, input: 'Port the parser' },
+    null,
+    conductorOf(f, conductorId),
+  );
+  await settle(f, sessionOf(f, session_id));
+  expect(noticesWith(f, conductorId, session_id)).toMatchObject([
+    { state: 'queued', delivery: 'pending' },
+  ]);
+  return session_id;
+}
+
+/** Starts the daemon again and lets the main agent run what waits for it. */
+async function afterRestart(f: Fixture, sessionId: string, clean: boolean) {
+  if (clean) {
+    await f.control.shutdown();
+    await f.restart(() => undefined, { abandon: true });
+  } else await f.restart(() => undefined);
+  await settle(f, sessionOf(f, sessionId));
+  for (let i = 0; i < 3; i++) await f.control.tick();
+}
+
+it.each([
+  { how: 'stop and start', clean: true },
+  { how: 'crash', clean: false },
+])(
+  'tells the main agent once after a daemon $how the news of a spawned session that waited behind its running turn',
+  async ({ clean }) => {
+    const f = await workbenchFixture();
+    const conductor = await mainAgentMidTurn(f);
+    const spawned = await spawnedNewsQueued(f, conductor.id);
+
+    await afterRestart(f, conductor.id, clean);
+
+    expect(noticesWith(f, conductor.id, spawned)).toMatchObject([
+      { state: 'completed', delivery: 'delivered' },
+    ]);
+  },
+);
+
+it('tells the main agent once after a daemon stop and start a settings answer that waited behind its running turn', async () => {
+  const f = await workbenchFixture();
+  const conductor = await mainAgentMidTurn(f);
+  const { proposal_id } = f.call<{ proposal_id: string }>(
+    'conductor.propose_setting',
+    {
+      command: 'workflow.policy.set',
+      input: { project_budget: { input_tokens: 9000000 } },
+      reason: 'The release needs it',
+    },
+    null,
+    conductorOf(f, conductor.id),
+  );
+  f.call(
+    'setting.proposal.respond',
+    { proposal_id, decision: 'reject' },
+    f.store.must<SettingProposal>('setting_change_proposals', proposal_id).revision,
+  );
+  const answer = '[setting] [Pantheon] rejected: workflow.policy.set';
+  expect(noticesWith(f, conductor.id, answer)).toMatchObject([
+    { state: 'queued', delivery: 'pending' },
+  ]);
+
+  await afterRestart(f, conductor.id, true);
+
+  expect(noticesWith(f, conductor.id, answer)).toMatchObject([
+    { state: 'completed', delivery: 'delivered' },
+  ]);
+});
+
+it('fails a message the user queued behind the running turn of the main agent when the daemon stops', async () => {
+  const f = await workbenchFixture();
+  const conductor = await mainAgentMidTurn(f);
+  const queued = f.store.insert<SessionTurn>('session_turns', {
+    id: id(),
+    revision: 1,
+    project_id: f.project.id,
+    session_id: conductor.id,
+    input: 'Then write the changelog',
+    kind: 'send',
+    delivery: 'pending',
+    state: 'queued',
+  });
+
+  await afterRestart(f, conductor.id, true);
+
+  expect(f.store.must<SessionTurn>('session_turns', queued.id)).toMatchObject({
+    state: 'failed',
+    delivery: 'failed',
+    delivery_reason: 'daemon_shutdown',
+  });
 });

@@ -15,6 +15,15 @@ export function takesNotice(ctx: ControlContext, session: Session | undefined): 
   return true;
 }
 
+/** Whether the turn is a notice that has not reached its session yet; stored rows may say tracker. */
+export function waitingNotice(turn: SessionTurn): boolean {
+  return (
+    turn.state === 'queued' &&
+    turn.delivery === 'pending' &&
+    (turn.origin === 'notice' || turn.origin === 'tracker')
+  );
+}
+
 /** Sends the text to the session as a turn of its own; undefined when the session takes no turn. */
 export function notifySession(
   ctx: ControlContext,
@@ -28,13 +37,7 @@ export function notifySession(
   const waiting = running
     ? ctx.store
         .list<SessionTurn>('session_turns')
-        .find(
-          (turn) =>
-            turn.session_id === session.id &&
-            turn.state === 'queued' &&
-            turn.delivery === 'pending' &&
-            (turn.origin === 'notice' || turn.origin === 'tracker'),
-        )
+        .find((turn) => turn.session_id === session.id && waitingNotice(turn))
     : undefined;
   if (!waiting) return queueTurn(ctx, session, text, 'notice', cause);
   return ctx.store.update(

@@ -18,6 +18,7 @@ import { failWorkbenchTurns, workspaceReady } from './provisioning.js';
 import { discardStopped, recoverGateRuns, rollbackTransaction } from './workbench-session.js';
 import { finishRollback, restoreCheckpoint } from './checkpoint.js';
 import { recoverQueuedHandoff, unsnooze } from './session.js';
+import { waitingNotice } from './session-wake.js';
 import { afterSpawnedTurn, tellSpawners } from './conductor.js';
 import { recoverEnvironmentChecks } from './environment-check.js';
 import { reconciledStates } from './non-writer-audit.js';
@@ -339,7 +340,10 @@ export async function reconcile(ctx: ControlContext): Promise<void> {
             (turn) => turn.session_id === session.id && ['queued', 'running'].includes(turn.state),
           );
         if (recoverQueuedHandoff(ctx, current, interrupted)) return;
+        // A notice that never reached the session runs once the session takes input again.
+        const kept = current.stop_requested ? [] : interrupted.filter(waitingNotice);
         for (const turn of interrupted) {
+          if (kept.includes(turn)) continue;
           const failed = turnDelivery(
             ctx,
             turn,
@@ -352,7 +356,12 @@ export async function reconcile(ctx: ControlContext): Promise<void> {
         loseSessionApprovals(ctx, session.id);
         const next = ctx.store.update(
           'sessions',
-          { ...current, state: 'open' as const, stop_pending: false, process_identity: undefined },
+          {
+            ...current,
+            state: kept.length ? ('running' as const) : ('open' as const),
+            stop_pending: false,
+            process_identity: undefined,
+          },
           current.revision,
         );
         // A stop the restart interrupted ends in the discard it asked for.
@@ -361,7 +370,8 @@ export async function reconcile(ctx: ControlContext): Promise<void> {
           return;
         }
         ctx.store.event('session.recovered', next, next.project_id, {});
-        if (!interrupted.length) return;
+        if (kept.length) ctx.store.enqueue('session.turn', { turn_id: kept[0]!.id });
+        if (interrupted.length === kept.length) return;
         unsnooze(ctx, next.id, 'turn_ended');
       });
       if (session.spawned_by) afterSpawnedTurn(ctx, session.id);
