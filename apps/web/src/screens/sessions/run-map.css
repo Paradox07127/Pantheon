@@ -139,6 +139,9 @@
 .rmap-st[data-tone='run']::before {
   background: var(--run);
 }
+.rmap-sk {
+  width: 72px;
+}
 .rmap-tok {
   margin-left: auto;
   font-family: var(--font-mono);

@@ -48,7 +48,7 @@ import {
 import { appDisplay, useAppDisplay } from './app-display';
 import { APP_DOCK_WIDTH, AppDock, AppFullscreen, reloadApp } from './AppPanels';
 import { NEW, NewSession } from './NewSession';
-import { RUN_MAP_WIDTH, RunMap, spawnedOf } from './RunMap';
+import { RUN_MAP_WIDTH, RunMap, spawnedOf, takeOpenedFocus } from './RunMap';
 import {
   createdHere,
   discardDescription,
@@ -257,7 +257,6 @@ export function SessionsScreen({ projectId, needs, list }: SessionsScreenProps) 
   const place = showPanel ? (places[currentId] ?? storedInspector(currentId)) : {};
   const tabs = inspectorTabs(current);
   const spawned = spawnedOf(current, list.data);
-  const runMapShown = showPanel && !narrow && spawned.length > 0;
   const asked = (
     place.panels ??
     ((opening === 'auto' ? !narrow && window.innerWidth >= 1280 : opening === 'always' && !narrow)
@@ -265,8 +264,7 @@ export function SessionsScreen({ projectId, needs, list }: SessionsScreenProps) 
       : [])
   ).filter((tab) => tabs.includes(tab));
   // The thread keeps THREAD_MIN; a sheet shows the newest panel only.
-  const room =
-    main - THREAD_MIN - (appDocked ? APP_DOCK_WIDTH : 0) - (runMapShown ? RUN_MAP_WIDTH : 0);
+  const room = main - THREAD_MIN - (appDocked ? APP_DOCK_WIDTH : 0);
   const fit = !showPanel
     ? { panels: [], widths }
     : narrow
@@ -424,6 +422,10 @@ export function SessionsScreen({ projectId, needs, list }: SessionsScreenProps) 
     />
   );
   const cardDocked = !!card && !narrow;
+  // The run map takes the room the panels, the overview and the app leave, and gives way first.
+  const runMapRoom = room - docked - (cardDocked ? OVERVIEW_WIDTH : 0);
+  const runMapShown = showPanel && !narrow && spawned.length > 0 && runMapRoom >= PANEL_WIDTH.min;
+  const runMapWidth = Math.min(RUN_MAP_WIDTH, runMapRoom);
   const composer = (projectId: string) => (
     <NewSession
       key={`${projectId}:${NEW}`}
@@ -517,7 +519,7 @@ export function SessionsScreen({ projectId, needs, list }: SessionsScreenProps) 
           // The overview's column takes its own width, none while it has nothing to show.
           '--ss-pw': cardDocked
             ? 'auto'
-            : `${(narrow ? 0 : docked) + (appDocked ? APP_DOCK_WIDTH : 0) + (runMapShown ? RUN_MAP_WIDTH : 0)}px`,
+            : `${(narrow ? 0 : docked) + (appDocked ? APP_DOCK_WIDTH : 0) + (runMapShown ? runMapWidth : 0)}px`,
           ...terminalStyle,
         } as CSSProperties
       }
@@ -551,7 +553,15 @@ export function SessionsScreen({ projectId, needs, list }: SessionsScreenProps) 
           <div className="ss-fill" aria-busy="true" />
         ) : (
           // The same section, key and slot as the first split pane, so opening one beside keeps this thread.
-          <section key={currentId} className="sp-pane">
+          <section
+            key={currentId}
+            ref={(el) => {
+              if (el && takeOpenedFocus(currentId)) el.focus({ preventScroll: true });
+            }}
+            className="sp-pane"
+            tabIndex={-1}
+            aria-label={current ? sessionRow(current).title : undefined}
+          >
             <Thread
               key={currentId}
               board={board}
@@ -628,7 +638,9 @@ export function SessionsScreen({ projectId, needs, list }: SessionsScreenProps) 
           {!narrow && panels.length > 0 && inspector}
           {cardDocked && card}
           {appHost && appDocked && <AppDock sessionId={appHost} call={appDocked} />}
-          {runMapShown && projectId && <RunMap projectId={projectId} spawned={spawned} />}
+          {runMapShown && projectId && (
+            <RunMap projectId={projectId} spawned={spawned} width={runMapWidth} />
+          )}
         </aside>
       )}
       {appHost && appFull && current && (
@@ -665,6 +677,9 @@ export function SessionsScreen({ projectId, needs, list }: SessionsScreenProps) 
     </div>
   );
 }
+
+/** The overview card's width in the panel dock, in px (`.ov-card`). */
+const OVERVIEW_WIDTH = 280;
 
 /** The terminal's height in px; the thread above keeps room. */
 const TERMINAL_HEIGHT = { initial: 240, min: 120, room: 200 } as const;

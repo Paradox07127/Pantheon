@@ -14,5 +14,6 @@
   "sessions.runMap.reviewFailed": "审查失败",
   "sessions.runMap.reviewBlocking": "{count, plural, other {外审 # 阻塞}}",
   "sessions.runMap.reviewChanges": "审查要求修改",
-  "sessions.runMap.reviewPassed": "审查通过"
+  "sessions.runMap.reviewPassed": "审查通过",
+  "sessions.runMap.tokensPartial": "至少 {tokens}"
 }

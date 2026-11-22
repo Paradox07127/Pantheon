@@ -3,7 +3,14 @@ import type { ReactNode } from 'react';
 import type { Session } from '@pantheon/domain';
 import type { ChangeRow, WorkbenchSession } from '@pantheon/protocol';
 
-const mock = vi.hoisted(() => ({ board: {} as any, changes: [] as unknown[], asked: 0 }));
+const mock = vi.hoisted(() => ({
+  board: {} as any,
+  changes: [] as unknown[],
+  asked: 0,
+  loading: false,
+  error: null as string | null,
+  places: {} as Record<string, unknown>,
+}));
 vi.mock('@/data/project-defaults', async (actual) => ({
   ...(await actual<object>()),
   useProjectDefaults: () => ({ data: null, loading: false, error: null, reload() {} }),
@@ -19,11 +26,12 @@ vi.mock('@/data/project-read', async (actual) => ({
   ...(await actual<object>()),
   useProjectQuery: (method: string) => {
     if (method === 'project.changes') mock.asked++;
+    const changes = method === 'project.changes';
     return {
-      read: method === 'project.changes' ? { changes: mock.changes } : null,
-      error: null,
+      read: changes && !mock.loading ? { changes: mock.changes } : null,
+      error: changes ? mock.error : null,
       unavailable: false,
-      loading: false,
+      loading: changes && mock.loading,
       stale: false,
       reload() {},
     };
@@ -46,6 +54,9 @@ import { zh, zhf } from './i18n-setup.js';
 
 class WideElement extends FakeElement {
   clientWidth = 1440;
+  focus() {
+    doc.activeElement = this as never;
+  }
 }
 
 const doc = new FakeDocument(WideElement);
@@ -130,7 +141,30 @@ const elsewhere = listedOf('kid-c', 'Other lead work', {
   spawned_by: { session_id: 'solo-x' },
   branch: 'pt/elsewhere',
 });
-const listed = [lead, solo, plain, idempotency, signature, elsewhere];
+const ledger = listedOf('ledger', 'Ledger cleanup', { conductor: true });
+const archived = listedOf('kid-d', 'Archived spike', {
+  spawned_by: { session_id: 'ledger' },
+  archived_at: '2026-11-03T01:00:00.000Z',
+});
+const starting = listedOf('kid-e', 'Starting probe', {
+  spawned_by: { session_id: 'ledger' },
+  state: 'starting',
+});
+const quiet = listedOf('kid-f', 'Quiet runtime', { spawned_by: { session_id: 'ledger' } });
+const fresh = listedOf('kid-g', 'Fresh review', { spawned_by: { session_id: 'ledger' } });
+const listed = [
+  lead,
+  solo,
+  plain,
+  idempotency,
+  signature,
+  elsewhere,
+  ledger,
+  archived,
+  starting,
+  quiet,
+  fresh,
+];
 
 const change = (id: string, extra: Partial<ChangeRow>): ChangeRow => ({
   id: `session:${id}`,
@@ -142,11 +176,14 @@ const change = (id: string, extra: Partial<ChangeRow>): ChangeRow => ({
   ...extra,
 });
 
-async function show(sessionId: string) {
+// The main area is the window's width; a new width mounts the screen again to measure it.
+async function show(sessionId: string, width = 1440) {
+  win.innerWidth = width;
   await act(() => {
     useShell.setState({ sessionId });
     root.render(
       createElement(SessionsScreen, {
+        key: width,
         projectId: 'project-a',
         needs: { items: [], loading: false, error: null, reload() {} } as any,
         list: { data: listed, loading: false, error: null, reload() {} } as any,
@@ -161,7 +198,11 @@ beforeAll(async () => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   vi.stubGlobal('localStorage', {
     getItem: (key: string) =>
-      key.startsWith('pantheon.inspector.') ? JSON.stringify({ overview: false }) : null,
+      key.startsWith('pantheon.inspector.')
+        ? JSON.stringify(
+            mock.places[key.slice('pantheon.inspector.'.length)] ?? { overview: false },
+          )
+        : null,
     setItem() {},
     removeItem() {},
   });
@@ -181,11 +222,30 @@ beforeAll(async () => {
           usage: { input_tokens: 200_000, output_tokens: 8_000 } as Session['usage'],
         }),
         sessionOf('kid-c', { turn_count: 9 }),
+        sessionOf('ledger', { conductor: true }),
+        sessionOf('kid-d', {
+          usage: { input_tokens: 90_000, output_tokens: 0 } as Session['usage'],
+        }),
+        sessionOf('kid-e'),
+        sessionOf('kid-f', {
+          usage: {
+            input_tokens: 0,
+            output_tokens: 0,
+            tokens_unreported: true,
+          } as Session['usage'],
+        }),
+        sessionOf('kid-g', {
+          usage: { input_tokens: 38_000, output_tokens: 2_000 } as Session['usage'],
+        }),
       ],
       session_turns: [],
       workspaces: [],
     },
     events: [],
+    status: { state: 'offline' },
+    resync: 0,
+    changed: 0,
+    reads: {},
   };
   mock.changes = [
     change('kid-a', { gate: { state: 'passed' } }),
@@ -198,6 +258,10 @@ beforeAll(async () => {
         blocking_open: 1,
       },
     }),
+    change('kid-g', {
+      gate: { state: 'passed' },
+      review: { id: 'review-g', state: 'completed', verdicts: [], blocking_open: 0 },
+    }),
   ];
   const { createRoot } = await import('react-dom/client');
   root = createRoot(container as never);
@@ -205,6 +269,10 @@ beforeAll(async () => {
 
 beforeEach(() => {
   mock.asked = 0;
+  mock.loading = false;
+  mock.error = null;
+  mock.places = {};
+  doc.activeElement = null;
 });
 
 afterAll(() => {
@@ -263,4 +331,99 @@ it('shows no run map for a main agent that spawned nothing', async () => {
   ).toHaveLength(1);
   expect(runMap()).toBeUndefined();
   expect(mock.asked).toBe(0);
+});
+
+const labelled = (label: string) =>
+  all(container, (n) => n instanceof FakeElement && n.getAttribute('aria-label') === label);
+const rowOf = (title: string) => buttons(runMap()!).find((b) => b.textContent.includes(title))!;
+
+it('keeps the panel the user opened beside the run map in a 1280 px window', async () => {
+  mock.places = { lead: { overview: false, panels: ['plan'] } };
+  // A 1280 px window leaves the session screen 1024 px beside the sidebar.
+  await show('lead', 1024);
+  expect(labelled(zh('sessions.panel.dock.plan'))).toHaveLength(1);
+  expect(runMap()).toBeDefined();
+});
+
+it('hides the run map, not the opened panel, when both leave the conversation too narrow', async () => {
+  mock.places = { lead: { overview: false, panels: ['plan'] } };
+  await show('lead', 900);
+  expect(labelled(zh('sessions.panel.dock.plan'))).toHaveLength(1);
+  expect(runMap()).toBeUndefined();
+});
+
+it('hides the run map beside the overview when both leave the conversation too narrow', async () => {
+  mock.places = { lead: {} };
+  await show('lead', 900);
+  expect(labelled(zh('sessions.overview.title'))).toHaveLength(1);
+  expect(runMap()).toBeUndefined();
+});
+
+it('shows no passed review for a review without verdicts, and passed once all pass', async () => {
+  await show('ledger');
+  expect(rowOf('Fresh review').textContent).toContain(zh('sessions.runMap.gatePassed'));
+  expect(rowOf('Fresh review').textContent).not.toContain(zh('sessions.runMap.reviewPassed'));
+  const before = mock.changes;
+  mock.changes = [
+    change('kid-g', {
+      review: {
+        id: 'review-g',
+        state: 'completed',
+        verdicts: [{ runtime: 'codex', verdict: 'pass' }],
+        blocking_open: 0,
+      },
+    }),
+  ];
+  await show('ledger');
+  mock.changes = before;
+  expect(rowOf('Fresh review').textContent).toContain(zh('sessions.runMap.reviewPassed'));
+});
+
+it('shows no token count for a runtime that reports none and marks the total as partial', async () => {
+  await show('ledger');
+  expect(rowOf('Quiet runtime').textContent).not.toMatch(/\d/);
+  expect(runMap()!.textContent).toContain(zhf('sessions.runMap.tokensPartial', { tokens: '40k' }));
+});
+
+it('leaves archived spawned sessions out of the rows and the counts', async () => {
+  await show('ledger');
+  const map = runMap()!;
+  expect(buttons(map).map((row) => row.textContent)).not.toContainEqual(
+    expect.stringContaining('Archived spike'),
+  );
+  expect(map.textContent).toContain(zhf('sessions.runMap.sessions', { count: 3 }));
+});
+
+it('counts a starting session as running', async () => {
+  await show('ledger');
+  expect(runMap()!.textContent).toContain(`${zh('sessions.runMap.running')}1`);
+});
+
+it('keeps the gate chips in place under aria-busy while the changes load', async () => {
+  mock.loading = true;
+  await show('lead');
+  const list = all(runMap()!, (n) => n.nodeName === 'UL')[0]!;
+  expect(String(list.getAttribute('aria-busy'))).toBe('true');
+  expect(buttons(list)).toHaveLength(2);
+  expect(list.textContent).not.toContain(zh('sessions.runMap.gatePassed'));
+});
+
+it('shows a failed changes read in the run map', async () => {
+  mock.error = 'changes read failed';
+  await show('lead');
+  const alert = all(
+    runMap()!,
+    (n) => n instanceof FakeElement && n.getAttribute('role') === 'alert',
+  );
+  expect(alert.map((a) => a.textContent)).toEqual([expect.stringContaining('changes read failed')]);
+});
+
+it('moves focus to the opened session once a row opens it', async () => {
+  await show('lead');
+  const row = rowOf('Webhook signature');
+  const key = Object.keys(row).find((k) => k.startsWith('__reactProps'))!;
+  await act(() => (row as any)[key].onClick());
+  expect((doc.activeElement as FakeElement | null)?.getAttribute('aria-label')).toBe(
+    'Webhook signature',
+  );
 });

@@ -1,15 +1,17 @@
 import { ArrowUpRight, Route } from 'lucide-react';
 import type { ChangeRow, ProjectChanges, WorkbenchSession } from '@pantheon/protocol';
 import { SessionStateIcon } from '../../components/SessionStateIcon';
+import { Skeleton } from '../../components/Skeleton';
 import { useBoard } from '../../data/board';
 import { useProjectQuery } from '../../data/project-read';
 import { t } from '../../i18n';
 import { tokenText } from '../../lib/number-text';
 import { useShell } from '../../store';
 import { sessionRow } from './model';
+import { readFailed } from './shared';
 import './run-map.css';
 
-/** The width of the run map's column in the panel dock, in px. */
+/** The widest the run map's column in the panel dock gets, in px. */
 export const RUN_MAP_WIDTH = 400;
 
 const NO_SESSIONS: readonly WorkbenchSession[] = [];
@@ -20,7 +22,9 @@ export function spawnedOf(
   sessions: readonly WorkbenchSession[] | null,
 ): readonly WorkbenchSession[] {
   if (!conductor?.conductor || !sessions) return NO_SESSIONS;
-  const spawned = sessions.filter((s) => s.spawned_by?.session_id === conductor.id);
+  const spawned = sessions.filter(
+    (s) => s.spawned_by?.session_id === conductor.id && !s.archived_at,
+  );
   return spawned.length ? spawned : NO_SESSIONS;
 }
 
@@ -84,14 +88,29 @@ function reviewOf(review: ChangeRow['review']): { text: string; tone: Tone } | n
       text: t({ id: 'sessions.runMap.reviewChanges', defaultMessage: 'Review asks for changes' }),
       tone: 'bad',
     };
+  // A review that ended without verdicts never reached one.
+  if (review.verdicts.length === 0) return null;
   return {
     text: t({ id: 'sessions.runMap.reviewPassed', defaultMessage: 'Review passed' }),
     tone: 'ok',
   };
 }
 
+let focusOnOpen: string | null = null;
+
+/** Whether a run map row just opened this session, so its pane takes the focus; true once. */
+export function takeOpenedFocus(sessionId: string): boolean {
+  if (focusOnOpen !== sessionId) return false;
+  focusOnOpen = null;
+  return true;
+}
+
 /** A main agent's spawned sessions: counts, then one row each that opens it. */
-export function RunMap(props: { projectId: string; spawned: readonly WorkbenchSession[] }) {
+export function RunMap(props: {
+  projectId: string;
+  spawned: readonly WorkbenchSession[];
+  width: number;
+}) {
   const { spawned } = props;
   const known = useBoard((s) => s.board?.sessions);
   const changes = useProjectQuery<ProjectChanges>('project.changes', props.projectId, isChanges);
@@ -99,11 +118,12 @@ export function RunMap(props: { projectId: string; spawned: readonly WorkbenchSe
   const usage = spawned.map((s) => known?.find((k) => k.id === s.id));
   const tokensOf = (i: number) =>
     (usage[i]?.usage?.input_tokens ?? 0) + (usage[i]?.usage?.output_tokens ?? 0);
-  const tokens = spawned.reduce((sum, _, i) => sum + tokensOf(i), 0);
+  const unreported = (i: number) => usage[i]?.usage?.tokens_unreported === true;
+  const tokens = tokenText(spawned.reduce((sum, _, i) => sum + tokensOf(i), 0));
   const turns = usage.reduce((sum, k) => sum + (k?.turn_count ?? 0), 0);
   const label = t({ id: 'sessions.runMap.title', defaultMessage: 'Run map' });
   return (
-    <section className="rmap" style={{ width: RUN_MAP_WIDTH }} aria-label={label}>
+    <section className="rmap" style={{ width: props.width }} aria-label={label}>
       <div className="rmap-h">
         <Route className="rmap-ic" aria-hidden="true" />
         <h2 className="rmap-t">{label}</h2>
@@ -122,7 +142,9 @@ export function RunMap(props: { projectId: string; spawned: readonly WorkbenchSe
           <span className="cap">
             {t({ id: 'sessions.runMap.running', defaultMessage: 'Running' })}
           </span>
-          <span className="kpi">{spawned.filter((s) => s.state === 'running').length}</span>
+          <span className="kpi">
+            {spawned.filter((s) => s.state === 'running' || s.state === 'starting').length}
+          </span>
         </div>
         <div className="cell">
           <span className="cap">
@@ -133,7 +155,14 @@ export function RunMap(props: { projectId: string; spawned: readonly WorkbenchSe
         <div className="cell">
           <span className="cap">{t({ id: 'sessions.runMap.usage', defaultMessage: 'Usage' })}</span>
           <span className="rmap-use">
-            <span className="kpi">{tokenText(tokens)}</span>
+            <span className="kpi">
+              {spawned.some((_, i) => unreported(i))
+                ? t(
+                    { id: 'sessions.runMap.tokensPartial', defaultMessage: 'At least {tokens}' },
+                    { tokens },
+                  )
+                : tokens}
+            </span>
             <span className="rmap-turns">
               {t(
                 {
@@ -146,7 +175,8 @@ export function RunMap(props: { projectId: string; spawned: readonly WorkbenchSe
           </span>
         </div>
       </div>
-      <ul className="rmap-list">
+      {!changes.unavailable && readFailed(changes)}
+      <ul className="rmap-list" aria-busy={changes.loading || undefined}>
         {spawned.map((s, i) => {
           const change = changeOf.get(`session:${s.id}`);
           const gate = gateOf(change?.gate);
@@ -156,7 +186,10 @@ export function RunMap(props: { projectId: string; spawned: readonly WorkbenchSe
               <button
                 type="button"
                 className="rmap-row"
-                onClick={() => useShell.getState().openSession(s.id)}
+                onClick={() => {
+                  focusOnOpen = s.id;
+                  useShell.getState().openSession(s.id);
+                }}
               >
                 <SessionStateIcon session={s} place="list" />
                 <span className="rmap-title">{sessionRow(s).title}</span>
@@ -171,6 +204,7 @@ export function RunMap(props: { projectId: string; spawned: readonly WorkbenchSe
                       )}
                     </span>
                   )}
+                  {changes.loading && <Skeleton className="rmap-sk" />}
                   {gate && (
                     <span className="rmap-st" data-tone={gate.tone}>
                       {gate.text}
@@ -181,7 +215,7 @@ export function RunMap(props: { projectId: string; spawned: readonly WorkbenchSe
                       {review.text}
                     </span>
                   )}
-                  <span className="rmap-tok">{tokenText(tokensOf(i))}</span>
+                  {!unreported(i) && <span className="rmap-tok">{tokenText(tokensOf(i))}</span>}
                 </span>
               </button>
             </li>
