@@ -1,10 +1,12 @@
 import * as appReopenRecovery from './app-reopen-recovery.mjs';
+import * as approvalRestartRecovery from './approval-restart-recovery.mjs';
 import * as commandDedupRevisions from './command-dedup-revisions.mjs';
 import * as conductorSpawnReviewLand from './conductor-spawn-review-land.mjs';
 import * as daemonCrashRecovery from './daemon-crash-recovery.mjs';
 import * as eventResumeBackpressure from './event-resume-backpressure.mjs';
 import * as firstRunImport from './first-run-import.mjs';
 import * as folderSessionLanding from './folder-session-landing.mjs';
+import * as gateCommitBinding from './gate-commit-binding.mjs';
 import * as nativeRuntimeAdmission from './native-runtime-admission.mjs';
 import * as nativeSessionRecovery from './native-session-recovery.mjs';
 import * as nativeExtensionIsolation from './native-extension-isolation.mjs';
@@ -18,8 +20,10 @@ for (const scenario of [
   storageCrashRecovery,
   commandDedupRevisions,
   eventResumeBackpressure,
+  gateCommitBinding,
   reviewIsolationFindings,
   daemonCrashRecovery,
+  approvalRestartRecovery,
   appReopenRecovery,
   nativeRuntimeAdmission,
   nativeSessionRecovery,
