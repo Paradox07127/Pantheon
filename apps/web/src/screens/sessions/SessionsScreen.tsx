@@ -409,7 +409,8 @@ export function SessionsScreen({ projectId, needs, list }: SessionsScreenProps) 
   );
   const overviewable = showPanel;
   // The overview takes the panels' place at the right; showing it closes the panels.
-  const overviewShown = overviewable && overview && panels.length === 0;
+  const overviewShown =
+    overviewable && overview && panels.length === 0 && (narrow || room >= OVERVIEW_WIDTH);
   const parentIn = (s: WorkbenchSession) =>
     list.data?.find((each) => each.id === parentOf(s) && each.id !== s.id) ?? null;
   const card = overviewShown && (

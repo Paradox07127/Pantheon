@@ -46,9 +46,19 @@ vi.mock('@/screens/sessions/Thread', async (actual) => {
   };
 });
 
+// The docked app stands in as one marker.
+vi.mock('@/screens/sessions/AppPanels', async (actual) => {
+  const { createElement } = await import('react');
+  return {
+    ...(await actual<object>()),
+    AppDock: () => createElement('div', { 'data-app-dock': '' }),
+  };
+});
+
 import { act, createElement } from 'react';
 import { SessionsScreen } from '@/screens/sessions/SessionsScreen';
 import { useShell } from '@/store';
+import { appDisplay } from '@/screens/sessions/app-display';
 import { FakeDocument, FakeElement, type FakeNode } from './web-fake-dom.js';
 import { zh, zhf } from './i18n-setup.js';
 
@@ -426,4 +436,38 @@ it('moves focus to the opened session once a row opens it', async () => {
   expect((doc.activeElement as FakeElement | null)?.getAttribute('aria-label')).toBe(
     'Webhook signature',
   );
+});
+
+const dockApp = () =>
+  appDisplay.setState({
+    places: { plain: { call: 'call-a', mode: 'pip' } },
+    calls: {
+      plain: [{ item: { id: 'call-a', kind: 'tool', app: {} } as any, state: 'done' as any }],
+    },
+  });
+const undock = () => act(() => appDisplay.setState({ places: {}, calls: {} }));
+
+it('leaves the overview out beside the app dock when the conversation would get too narrow', async () => {
+  mock.places = { plain: {} };
+  dockApp();
+  await show('plain', 1000);
+  expect(
+    all(container, (n) => n instanceof FakeElement && n.hasAttribute('data-app-dock')),
+  ).toHaveLength(1);
+  expect(labelled(zh('sessions.overview.title'))).toHaveLength(0);
+  expect(
+    all(container, (n) => n instanceof FakeElement && n.hasAttribute('data-thread')),
+  ).toHaveLength(1);
+  await undock();
+});
+
+it('shows the overview beside the app dock when the main area has room for both', async () => {
+  mock.places = { plain: {} };
+  dockApp();
+  await show('plain', 1100);
+  expect(
+    all(container, (n) => n instanceof FakeElement && n.hasAttribute('data-app-dock')),
+  ).toHaveLength(1);
+  expect(labelled(zh('sessions.overview.title'))).toHaveLength(1);
+  await undock();
 });
