@@ -834,7 +834,7 @@ describe('pnpm cli land', () => {
       name: 'fewer tests',
       landing: { state: 'blocked', reason: 'tests_dropped: unit: passed 10→9, skipped 0→0' },
       stdout:
-        "blocked: tests_dropped: unit: passed 10→9, skipped 0→0\nLand with fewer tests: pantheon land 'feature' --allow-gate-change\n",
+        "blocked: tests_dropped: unit: passed 10→9, skipped 0→0\nLand with changed test counts: pantheon land 'feature' --allow-gate-change\n",
       code: 1,
     },
   ])('prints the result and exits $code when $name', async ({ landing, stdout, code }) => {

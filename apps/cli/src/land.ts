@@ -96,6 +96,6 @@ export const land = async (
   if (result.reason === 'gate_files_changed')
     console.log(allowGateChange('the gate files changed', branch, values.message));
   if (result.reason?.startsWith('tests_dropped:'))
-    console.log(allowGateChange('fewer tests', branch, values.message));
+    console.log(allowGateChange('changed test counts', branch, values.message));
   return 1;
 };
