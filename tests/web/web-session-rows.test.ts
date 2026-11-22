@@ -426,7 +426,7 @@ describe('session row', () => {
   it('draws one line: the runtime glyph with its status mark, the title and the time', () => {
     const button = rowButton(render(busy, { on: true }));
     expect(button).toMatch(
-      /^<button[^>]*><span class="ss-av"><svg aria-hidden="true" class="rtg".*?<title>Codex<\/title>.*?<\/svg><span class="ss-badge" role="img" aria-label="待批准" data-badge="approval"[^>]*><\/span><\/span><span class="ss-ttl">title of a<\/span><span class="ss-time">2 分钟<\/span><\/button>$/,
+      /^<button[^>]*><span class="ss-av"><svg aria-hidden="true" class="rtg".*?<title>Codex<\/title>.*?<\/svg><span class="ss-badge" role="img" aria-label="待批准" data-badge="approval"[^>]*><\/span><\/span><span class="ss-ttl">title of a<\/span><span class="ss-time">待批准<\/span><\/button>$/,
     );
     for (const gone of ['+48', 'dbar', 'ss-l2', '待处理 2<']) expect(button).not.toContain(gone);
   });

@@ -2,6 +2,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type CSSProperties,
   type KeyboardEvent,
   type MouseEvent,
@@ -25,11 +26,11 @@ import {
   sessionStateTone,
 } from '../../components/SessionStateIcon';
 import { KeyHint } from '../../components/Shortcuts';
-import { ageText } from '../../data/needs-you';
 import { type ModelsState } from '../../data/runtime-models';
 import { elapsedText } from '../../data/transcript';
 import { currentLocale, t } from '../../i18n';
 import { listText } from '../../lib/list-text';
+import { durationText } from '../../lib/time-text';
 import { shortcutMatches } from '../../lib/shortcuts';
 import { useShell } from '../../store';
 import { tokenText } from '../../lib/number-text';
@@ -96,6 +97,71 @@ function badgeOf(s: WorkbenchSession, unread: boolean): Badge | null {
   return null;
 }
 
+/** One second clock for every running row, ticking while one is shown. */
+const secondClock = {
+  readers: new Set<() => void>(),
+  timer: undefined as ReturnType<typeof setInterval> | undefined,
+  subscribe(read: () => void) {
+    secondClock.readers.add(read);
+    secondClock.timer ??= setInterval(() => secondClock.readers.forEach((r) => r()), 1000);
+    return () => {
+      secondClock.readers.delete(read);
+      if (secondClock.readers.size) return;
+      clearInterval(secondClock.timer);
+      secondClock.timer = undefined;
+    };
+  },
+  read: () => Math.floor(Date.now() / 1000),
+};
+
+/** The session's time so far; only it re-renders as the seconds pass. */
+function RunTime({ since }: { since: number }) {
+  useSyncExternalStore(secondClock.subscribe, secondClock.read, secondClock.read);
+  return <>{durationText(Date.now() - since)}</>;
+}
+
+/**
+ * The row's one state in words, for its corner mark: how long a run has taken, the diff a ready
+ * session would land, that it landed, or the mark's own name; an idle session says nothing.
+ * `spoken` is what the row's name lacks of it.
+ */
+function stateSlot(
+  s: WorkbenchSession,
+  badge: Badge | null,
+): { text: ReactNode; spoken?: string } | null {
+  if (!badge)
+    return s.state === 'merged'
+      ? { text: t({ id: 'sessions.row.state.landed', defaultMessage: 'Landed' }) }
+      : null;
+  if (badge.kind === 'running' || badge.kind === 'starting')
+    return { text: <RunTime since={Date.parse(s.created_at)} /> };
+  if (badge.kind === 'environment') return { text: badge.label, spoken: badge.label };
+  if (badge.kind === 'failed') {
+    if (s.gate?.state === 'failed') return { text: GATE_NAME.failed };
+    if (s.merge?.state === 'blocked')
+      return { text: t({ id: 'sessions.screen.mergeBlocked', defaultMessage: 'Merge blocked' }) };
+  }
+  if (badge.kind === 'ready' && s.changes && s.changes.files > 0) {
+    const { additions, deletions } = s.changes;
+    return {
+      text: (
+        <span className="ss-chg">
+          <DiffCounts additions={additions} deletions={deletions} />
+        </span>
+      ),
+      spoken: t(
+        {
+          id: 'components.diffBar.label',
+          defaultMessage:
+            '{additions, plural, one {# line} other {# lines}} added, {deletions, plural, one {# line} other {# lines}} removed',
+        },
+        { additions, deletions },
+      ),
+    };
+  }
+  return { text: badge.label };
+}
+
 /** The runtime glyph with the session's status mark on its corner. */
 function Avatar({ session, unread = false }: { session: WorkbenchSession; unread?: boolean }) {
   const badge = badgeOf(session, unread);
@@ -151,6 +217,7 @@ export function SessionRowButton(props: {
   const turnResult = lastTurnLabel(session);
   const recap = recapLine(session.recap, session.state === 'waiting');
   const inPlace = session.workspace_kind === 'in_place';
+  const slot = stateSlot(session, badgeOf(session, !!props.unread));
   const name = [
     row.title,
     ...(session.conductor ? [conductorLabel()] : []),
@@ -162,6 +229,7 @@ export function SessionRowButton(props: {
       ? [t({ id: 'sessions.row.device', defaultMessage: 'On {device}' }, { device })]
       : []),
     sessionStateLabel(session),
+    ...(slot?.spoken ? [slot.spoken] : []),
     ...(turnResult ? [turnResult] : []),
     ...(recap ? [recap] : []),
     ...(session.waiting > 0
@@ -214,7 +282,7 @@ export function SessionRowButton(props: {
       )}
       {session.conductor && <Crown className="ic-sm ss-agent" aria-hidden="true" />}
       {device && <span className="chip mono ss-dev">{device}</span>}
-      <span className="ss-time">{ageText(Date.parse(session.last_activity_at), props.now)}</span>
+      {slot && <span className="ss-time">{slot.text}</span>}
       {props.number !== undefined && <KeyHint id="session-number" digit={props.number} />}
     </button>
   );

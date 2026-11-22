@@ -229,6 +229,7 @@
   "sessions.run.call.failed": "失败",
   "sessions.row.badge.failed": "失败",
   "sessions.row.badge.queued": "排队",
+  "sessions.row.state.landed": "已落地",
   "sessions.row.preview.where": "位置",
   "sessions.row.preview.changes": "改动",
   "sessions.row.preview.files": "{count, plural, other {# 个文件}}",
