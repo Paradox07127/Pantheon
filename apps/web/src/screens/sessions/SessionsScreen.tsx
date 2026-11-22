@@ -48,6 +48,7 @@ import {
 import { appDisplay, useAppDisplay } from './app-display';
 import { APP_DOCK_WIDTH, AppDock, AppFullscreen, reloadApp } from './AppPanels';
 import { NEW, NewSession } from './NewSession';
+import { RUN_MAP_WIDTH, RunMap, spawnedOf } from './RunMap';
 import {
   createdHere,
   discardDescription,
@@ -255,6 +256,8 @@ export function SessionsScreen({ projectId, needs, list }: SessionsScreenProps) 
   const showPanel = currentId !== null && currentId !== NEW;
   const place = showPanel ? (places[currentId] ?? storedInspector(currentId)) : {};
   const tabs = inspectorTabs(current);
+  const spawned = spawnedOf(current, list.data);
+  const runMapShown = showPanel && !narrow && spawned.length > 0;
   const asked = (
     place.panels ??
     ((opening === 'auto' ? !narrow && window.innerWidth >= 1280 : opening === 'always' && !narrow)
@@ -262,7 +265,8 @@ export function SessionsScreen({ projectId, needs, list }: SessionsScreenProps) 
       : [])
   ).filter((tab) => tabs.includes(tab));
   // The thread keeps THREAD_MIN; a sheet shows the newest panel only.
-  const room = main - THREAD_MIN - (appDocked ? APP_DOCK_WIDTH : 0);
+  const room =
+    main - THREAD_MIN - (appDocked ? APP_DOCK_WIDTH : 0) - (runMapShown ? RUN_MAP_WIDTH : 0);
   const fit = !showPanel
     ? { panels: [], widths }
     : narrow
@@ -502,7 +506,8 @@ export function SessionsScreen({ projectId, needs, list }: SessionsScreenProps) 
       </div>
     );
   }
-  const dockShown = (inspector && !narrow && panels.length > 0) || appDocked || cardDocked;
+  const dockShown =
+    (inspector && !narrow && panels.length > 0) || appDocked || cardDocked || runMapShown;
   return (
     <div
       ref={measure}
@@ -512,7 +517,7 @@ export function SessionsScreen({ projectId, needs, list }: SessionsScreenProps) 
           // The overview's column takes its own width, none while it has nothing to show.
           '--ss-pw': cardDocked
             ? 'auto'
-            : `${(narrow ? 0 : docked) + (appDocked ? APP_DOCK_WIDTH : 0)}px`,
+            : `${(narrow ? 0 : docked) + (appDocked ? APP_DOCK_WIDTH : 0) + (runMapShown ? RUN_MAP_WIDTH : 0)}px`,
           ...terminalStyle,
         } as CSSProperties
       }
@@ -623,6 +628,7 @@ export function SessionsScreen({ projectId, needs, list }: SessionsScreenProps) 
           {!narrow && panels.length > 0 && inspector}
           {cardDocked && card}
           {appHost && appDocked && <AppDock sessionId={appHost} call={appDocked} />}
+          {runMapShown && projectId && <RunMap projectId={projectId} spawned={spawned} />}
         </aside>
       )}
       {appHost && appFull && current && (

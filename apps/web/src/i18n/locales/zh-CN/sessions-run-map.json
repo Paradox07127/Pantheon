@@ -1,0 +1,18 @@
+{
+  "sessions.runMap.title": "运行图",
+  "sessions.runMap.sessions": "{count, plural, other {# 个会话}}",
+  "sessions.runMap.running": "在跑",
+  "sessions.runMap.waiting": "等你",
+  "sessions.runMap.usage": "用量",
+  "sessions.runMap.turns": "{count, plural, other {# 回合}}",
+  "sessions.runMap.ahead": "领先 {count}",
+  "sessions.runMap.gatePassed": "门禁通过",
+  "sessions.runMap.gateFailed": "门禁失败",
+  "sessions.runMap.gateStale": "门禁已过时",
+  "sessions.runMap.gateNone": "门禁没跑",
+  "sessions.runMap.reviewRunning": "审查中",
+  "sessions.runMap.reviewFailed": "审查失败",
+  "sessions.runMap.reviewBlocking": "{count, plural, other {外审 # 阻塞}}",
+  "sessions.runMap.reviewChanges": "审查要求修改",
+  "sessions.runMap.reviewPassed": "审查通过"
+}

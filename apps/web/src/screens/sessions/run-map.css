@@ -1,0 +1,146 @@
+/* The main agent's run map, a column of the panel dock. */
+.rmap {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  min-width: 0;
+  min-height: 0;
+  border-left: var(--hair) solid var(--bd2);
+  background: var(--sf);
+}
+.rmap-h {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 36px;
+  padding: 0 var(--sp-3);
+  border-bottom: var(--hair) solid var(--bd2);
+  font-size: var(--fs-sm);
+}
+.rmap-ic {
+  width: 14px;
+  height: 14px;
+  color: var(--mu);
+}
+.rmap-t {
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.rmap-n {
+  margin-left: auto;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.rmap-sum {
+  flex: none;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: var(--sp-3);
+}
+.rmap-sum > .cell {
+  gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3);
+}
+.rmap-use {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.rmap-turns {
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.rmap-list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+.rmap-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 14px;
+  gap: var(--sp-1) var(--sp-2);
+  align-items: center;
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  border-top: var(--hair) solid var(--bd2);
+  background: transparent;
+  color: var(--tx);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.rmap-row:hover {
+  background: var(--sf2);
+}
+.rmap-row:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.rmap-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.rmap-go {
+  width: 14px;
+  height: 14px;
+  color: var(--mu);
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease-std);
+}
+.rmap-row:hover > .rmap-go,
+.rmap-row:focus-visible > .rmap-go {
+  opacity: 1;
+}
+.rmap-sub {
+  grid-column: 2 / 4;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-3);
+  min-width: 0;
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.rmap-br {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.rmap-num {
+  font-variant-numeric: tabular-nums;
+}
+.rmap-st {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.rmap-st::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--idle);
+}
+.rmap-st[data-tone='ok']::before {
+  background: var(--ok);
+}
+.rmap-st[data-tone='bad']::before {
+  background: var(--bad);
+}
+.rmap-st[data-tone='run']::before {
+  background: var(--run);
+}
+.rmap-tok {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
