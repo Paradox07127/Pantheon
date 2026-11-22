@@ -6,36 +6,15 @@ import type {
   Review,
   Session,
 } from '@pantheon/domain';
-import type { WorkbenchSession } from '@pantheon/protocol';
-import type { ControlContext } from './context.js';
+import type { ChangeRow, ProjectChanges, WorkbenchSession } from '@pantheon/protocol';
+import { projectAccess, type ControlContext } from './context.js';
 import { gateFailed } from './landing.js';
+import { needsYou } from './needs-you.js';
 import { sessionList } from './workbench-session.js';
 
-export interface ChangeRow {
-  /** `session:<session id>`, or `landing:<landing id>` for a branch no session owns. */
-  id: string;
-  kind: 'session' | 'branch';
-  title: string;
-  branch?: string | null;
-  runtime?: string;
-  spawned_by?: string;
-  status: 'running' | 'needs_you' | 'ready' | 'merged' | 'failed';
-  /** The caller's running row at the commit it last landed, nothing changed; conductor.state sets it. */
-  landed?: true;
-  ahead?: number;
-  behind?: number;
-  gate: { state: 'passed' | 'failed' | 'stale' | 'none'; failed?: string[] };
-  review?: {
-    id: string;
-    state: Review['state'];
-    verdicts: { runtime: string; verdict: 'pass' | 'fail' }[];
-    blocking_open: number;
-    to_sha?: string;
-  };
-  landing?: 'queued' | 'running';
-  /** ISO time. */
-  updated_at: string;
-}
+export type { ChangeRow };
+
+const DAY_MS = 24 * 60 * 60_000;
 
 type GateResults = NonNullable<LandingItem['gate_results']>;
 
@@ -145,9 +124,14 @@ export function projectChanges(
       updated_at: listed.last_activity_at,
     });
   }
+  const since = ctx.store.now() - DAY_MS;
   for (const landing of ctx.store
     .list<Landing>('landings')
-    .filter((each) => each.project_id === projectId))
+    .filter(
+      (each) =>
+        each.project_id === projectId &&
+        (each.finished_at === undefined || each.finished_at >= since),
+    ))
     rows.push({
       id: `landing:${landing.id}`,
       kind: 'branch',
@@ -169,4 +153,19 @@ export function projectChanges(
       ).toISOString(),
     });
   return rows;
+}
+
+/** project.changes: the rows read_state lists, to whoever project.read admits. */
+export function changesRead(
+  ctx: ControlContext,
+  principal: Principal,
+  projectId: string,
+): ProjectChanges {
+  projectAccess(ctx, principal, projectId, 'project.read');
+  ctx.store.must('projects', projectId);
+  // As read_state, the shared reads run as for the user once access is checked.
+  const reader: Principal = { id: principal.id, role: 'user' };
+  return {
+    changes: projectChanges(ctx, reader, projectId, needsYou(ctx, reader, projectId).items),
+  };
 }

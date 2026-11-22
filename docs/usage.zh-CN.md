@@ -256,7 +256,7 @@ Pantheon 读取 Claude Code 和 Codex 的原生历史。
 
 `pnpm cli review resolve` 把一条发现记为 `fixed`、`intentional`、`not_worth_it` 或 `wrong`,`--note TEXT` 记下原因。对已有结论的发现再记一次，新结论替换旧的;`review.finding_resolved` 事件在 `previous` 里留下旧结论。
 
-`pnpm cli land` 把分支(缺省为当前目录的分支)落到项目目录当前检出的分支上。项目目录要配了门禁。`--message TEXT` 把这些提交合成一个提交落地。退出码：已落地或没有改动为 0;落地受阻或被拒为 1。因门禁文件被改而挡下时，它打出带 `--allow-gate-change` 的放行命令。
+`pnpm cli land` 把分支(缺省为当前目录的分支)落到项目目录当前检出的分支上。项目目录要配了门禁。`--message TEXT` 把这些提交合成一个提交落地。退出码：已落地或没有改动为 0;落地受阻或被拒为 1。因门禁文件被改而挡下时，它打出带 `--allow-gate-change` 的放行命令。`pnpm cli land --cancel [BRANCH]` 在项目目录被改动之前停下这个分支排队或进行中的落地，打出 `cancelled LANDING_ID`;这个分支没有排队或进行中的落地时退出码为 1。
 
 ```sh
 pnpm cli review --base main

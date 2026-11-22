@@ -256,7 +256,7 @@ In a checkout, run the CLI with `pnpm cli`. In the packaged app (macOS and Linux
 
 `pnpm cli review resolve` closes a finding as `fixed`, `intentional`, `not_worth_it` or `wrong`. `--note TEXT` records why. Resolving a finding again replaces its outcome; the `review.finding_resolved` event keeps the earlier one in `previous`.
 
-`pnpm cli land` lands the branch (by default the branch of the current directory) onto the branch checked out in the project directory. The project directory needs a gate. `--message TEXT` lands the commits as one commit. It exits 0 when the branch landed or had no changes, and 1 when the landing is blocked or refused. A landing held for changed gate files prints the command that lands it with `--allow-gate-change`.
+`pnpm cli land` lands the branch (by default the branch of the current directory) onto the branch checked out in the project directory. The project directory needs a gate. `--message TEXT` lands the commits as one commit. It exits 0 when the branch landed or had no changes, and 1 when the landing is blocked or refused. A landing held for changed gate files prints the command that lands it with `--allow-gate-change`. `pnpm cli land --cancel [BRANCH]` stops the queued or running landing of the branch before it moves the project directory, prints `cancelled LANDING_ID` and exits 1 when no landing of the branch is queued or running.
 
 ```sh
 pnpm cli review --base main

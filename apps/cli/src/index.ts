@@ -31,6 +31,7 @@ try {
       fallback: { type: 'string', multiple: true },
       message: { type: 'string' },
       'allow-gate-change': { type: 'boolean' },
+      cancel: { type: 'boolean' },
       note: { type: 'string' },
       focus: { type: 'string' },
       paths: { type: 'string' },

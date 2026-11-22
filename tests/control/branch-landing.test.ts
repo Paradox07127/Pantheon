@@ -2,6 +2,8 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, it, vi } from 'vitest';
 import type { Landing, Principal, Project, Session, Workspace } from '@pantheon/domain';
+import { projectChanges } from '../../packages/control/dist/changes.js';
+import type { ControlContext } from '../../packages/control/dist/context.js';
 import * as validation from '../../packages/control/dist/validation-executor.js';
 import { awaitWorkspaceReady, eventually, insideSandbox, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
@@ -641,4 +643,80 @@ it('leaves the commits of a landing that waited for the root unsquashed when the
     '2',
   );
   expect(gate).toHaveBeenCalledTimes(1);
+});
+
+const cancel = (f: Fixture, landingId: string) =>
+  f.call<Landing>('project.landing.cancel', { landing_id: landingId });
+
+it('ends a landing cancelled before it runs as cancelled, without its gate, and lands the branch again', async () => {
+  const f = await landFixture();
+  const base = git(f.source, 'rev-parse', 'main');
+  branch(f, 'feature', [['feature.txt', 'feature\n']]);
+  const gate = vi.spyOn(validation, 'runValidationCommand');
+  const started = await land(f);
+  expect(cancel(f, started.id)).toMatchObject({ state: 'queued', cancel_requested: true });
+  const done = await ended(f, started.id);
+  expect(done).toMatchObject({ state: 'blocked', reason: 'cancelled' });
+  expect(gate).not.toHaveBeenCalled();
+  expect(removalsQueued(f)).toContain(done.workspace_id);
+  expect(git(f.source, 'rev-parse', 'main')).toBe(base);
+  expect(await land(f)).toMatchObject({ state: 'queued', branch: 'feature' });
+});
+
+it('ends a landing cancelled while its gate runs as cancelled and leaves the target where it was', async () => {
+  const f = await landFixture();
+  const base = git(f.source, 'rev-parse', 'main');
+  branch(f, 'feature', [['feature.txt', 'feature\n']]);
+  let release: () => void = () => {};
+  const gate = vi.spyOn(validation, 'runValidationCommand').mockImplementation(async () => {
+    await new Promise<void>((resolve) => (release = resolve));
+    return passedGate();
+  });
+  const started = await land(f);
+  await eventually(
+    () => gate.mock.calls.length === 1,
+    () => f.control.tick(),
+    10000,
+  );
+  cancel(f, started.id);
+  release();
+  const done = await ended(f, started.id);
+  expect(done).toMatchObject({ state: 'blocked', reason: 'cancelled' });
+  expect(git(f.source, 'rev-parse', 'main')).toBe(base);
+});
+
+it('refuses to cancel a landing that already landed', async () => {
+  const f = await landFixture();
+  branch(f, 'feature', [['feature.txt', 'feature\n']]);
+  const done = await ended(f, (await land(f)).id);
+  expect(done.state).toBe('landed');
+  expect(() => cancel(f, done.id)).toThrow(expect.objectContaining({ code: 'invalid_state' }));
+  expect(row(f, done.id).cancel_requested).toBeUndefined();
+});
+
+it('lists a finished landing in the change list for one day, and a queued one until it ends', async () => {
+  const f = await landFixture();
+  const now = f.store.now(),
+    hour = 60 * 60_000;
+  const insert = (name: string, state: Landing['state'], finished?: number) =>
+    f.store.insert<Landing>('landings', {
+      id: `landing-${name}`,
+      revision: 1,
+      project_id: f.project.id,
+      root: f.source,
+      branch: name,
+      target_branch: 'main',
+      workspace_id: `workspace-${name}`,
+      state,
+      ...(finished === undefined ? {} : { reason: 'gate_failed', finished_at: finished }),
+    });
+  insert('old', 'blocked', now - 25 * hour);
+  insert('recent', 'blocked', now - hour);
+  insert('waiting', 'queued');
+  const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
+  const rows = projectChanges(ctx, user, f.project.id, []).filter((each) => each.kind === 'branch');
+  expect(rows.map((each) => each.id).sort()).toEqual([
+    'landing:landing-recent',
+    'landing:landing-waiting',
+  ]);
 });

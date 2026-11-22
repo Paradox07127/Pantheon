@@ -15,6 +15,7 @@ import {
   userOnly,
   type ControlContext,
   type Handler,
+  type Handlers,
   type Preparers,
 } from './context.js';
 import { runGit } from './git.js';
@@ -115,6 +116,24 @@ async function prepareBranchLanding(
 }
 
 export const branchLandingPreparers: Preparers = { 'project.land': prepareBranchLanding };
+
+export const branchLandingHandlers: Handlers = {
+  // The landing reads the flag only where it can stop without leaving the root half-moved.
+  'project.landing.cancel': (ctx, p, c) => {
+    userOnly(p);
+    const input = inputSchemas['project.landing.cancel'].parse(c.input);
+    const row = ctx.store.get<Landing>('landings', input.landing_id);
+    if (!row) throw new DomainError('not_found', `No landing ${input.landing_id}`);
+    projectAccess(ctx, p, row.project_id, c.type);
+    revision(ctx, c);
+    requireThat(
+      row.state === 'queued' || row.state === 'running',
+      'invalid_state',
+      `Landing ${row.id} already finished`,
+    );
+    return ctx.store.update<Landing>('landings', { ...row, cancel_requested: true }, row.revision);
+  },
+};
 
 /**
  * Ends the row, marks its job done and queues the removal of its worktree, in one transaction; a
@@ -236,18 +255,23 @@ async function squashedAncestor(
 
 async function landBranch(ctx: ControlContext, landingId: string, jobId: string): Promise<void> {
   const workspaceId = ctx.store.must<Landing>('landings', landingId).workspace_id;
+  const cancelled = () => ctx.store.must<Landing>('landings', landingId).cancel_requested === true;
+  const stop = () => finish(ctx, landingId, jobId, { state: 'blocked', reason: 'cancelled' });
   let workspace = ctx.store.must<Workspace>('workspaces', workspaceId);
   while (['queued', 'running'].includes(workspace.provisioning!.state)) {
+    if (cancelled()) return stop();
     await new Promise((resolve) => setTimeout(resolve, 250));
     if (ctx.closing) return;
     workspace = ctx.store.must<Workspace>('workspaces', workspaceId);
   }
+  if (cancelled()) return stop();
   if (workspace.provisioning!.state !== 'ready')
     return finish(ctx, landingId, jobId, { state: 'blocked', reason: 'workspace_failed' });
   if (ctx.store.must<Landing>('landings', landingId).state === 'queued')
     updateRow(ctx, landingId, { state: 'running', started_at: ctx.store.now() });
   await afterSourceLandings(ctx, ctx.store.must<Landing>('landings', landingId).root, async () => {
     if (ctx.closing) return;
+    if (cancelled()) return stop();
     const row = ctx.store.must<Landing>('landings', landingId);
     const project = ctx.store.must<Project>('projects', row.project_id);
     // The gate can be cleared while the landing waits for the root.
@@ -276,7 +300,7 @@ async function landBranch(ctx: ControlContext, landingId: string, jobId: string)
     const owner: LandingOwner = {
       key: `land-${landingId}`,
       projectId: row.project_id,
-      cancelled: () => false,
+      cancelled,
       allowGateChange: row.allow_gate_change,
       squashedTip,
       // A gate that starts again, after the root moved, drops the results of the earlier run.
@@ -375,5 +399,26 @@ export function landingRead(ctx: ControlContext, principal: Principal, landingId
   const row = ctx.store.get<Landing>('landings', landingId);
   if (!row) throw new DomainError('not_found', `No landing ${landingId}`);
   projectAccess(ctx, principal, row.project_id, 'project.landing.read');
+  return row;
+}
+
+/** project.landing.find: the queued or running landing of the branch at the root, to the user. */
+export function landingFind(
+  ctx: ControlContext,
+  principal: Principal,
+  named: string,
+  branch: string,
+): Landing {
+  userOnly(principal);
+  const { root } = projectAtRoot(ctx, principal, named, 'project.landing.find');
+  const row = ctx.store
+    .list<Landing>('landings')
+    .find(
+      (each) =>
+        each.root === root &&
+        each.branch === branch &&
+        (each.state === 'queued' || each.state === 'running'),
+    );
+  if (!row) throw new DomainError('not_found', `${branch} is not landing at ${root}`);
   return row;
 }

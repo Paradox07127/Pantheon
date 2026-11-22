@@ -602,6 +602,7 @@ export async function startDaemon(options: DaemonOptions) {
       'project.baseline.read': (p, i) => control.projectBaselineRead(p, i.project_id),
       'project.environment.checks': (p, i) => control.environmentChecks(p, i),
       'project.landing.read': (p, i) => control.landingRead(p, i.landing_id),
+      'project.landing.find': (p, i) => control.landingFind(p, i.root, i.branch),
       'project.facts.read': (p, i) => control.projectFactsRead(p, i.project_id),
       'change_story.list': (p, i) => control.changeStoryList(p, i.project_id),
       'change_story.diff': (p, i) => control.changeStoryDiff(p, i.story_id),
@@ -640,6 +641,7 @@ export async function startDaemon(options: DaemonOptions) {
         return timed('projects.summary', () => control.projectsSummary(p, 'cached'));
       },
       'project.brief': (p, i) => control.projectBrief(p, i.project_id, i.since),
+      'project.changes': (p, i) => control.projectChanges(p, i.project_id),
       'project.decisions': (p, i) => control.decisionsForUser(p, i.project_id, i.since),
       'extensions.inventory': (p, i) =>
         withRuntimeDeadline(

@@ -240,6 +240,48 @@ it("lists the project's changes, their review and to-dos to a conductor session 
     expect(await refusal(f, principal), principal.role).toBe('permission_denied');
 });
 
+it("answers project.changes with read_state's rows and refuses a principal of another project", async () => {
+  const f = await workbenchFixture();
+  const conductor = await idle(
+    f,
+    await f.call<Promise<Session>>('session.create', {
+      project_id: f.project.id,
+      runtime: f.adapter.name,
+      input: 'Ship the export',
+      purpose: 'conductor',
+    }),
+  );
+  const ahead = await idle(f, await f.create('Write the docs'));
+  commitIn(f, ahead, 'Docs');
+  const blocked = landing(f, f.project.id, 'blocked', 'feature');
+  const otherRoot = path.join(f.root, 'other');
+  mkdirSync(otherRoot);
+  const other = await f.call<Promise<Project>>('project.open', {
+    name: 'Other',
+    roots: [otherRoot],
+  });
+
+  waitOutStatusReuse();
+  await f.prefetch();
+  const state = (await f.control.execute(
+    credential(conductor, 'conductor'),
+    command(`session:${conductor.id}`, 'conductor.state', {}),
+  )) as ConductorState;
+  const { changes } = f.control.projectChanges(user, f.project.id);
+  const listed = new Map(changes.map((row) => [row.id, row]));
+  expect([...listed.keys()]).toEqual(
+    expect.arrayContaining([`session:${ahead.id}`, `landing:${blocked.id}`]),
+  );
+  expect(listed.size).toBe(state.changes.length);
+  for (const { self: _self, ...row } of state.changes) expect(listed.get(row.id)).toEqual(row);
+  expect(f.control.projectChanges(credential(conductor, 'conductor'), f.project.id)).toEqual({
+    changes,
+  });
+  expect(() => f.control.projectChanges(credential(conductor, 'conductor'), other.id)).toThrow(
+    expect.objectContaining({ code: 'permission_denied' }),
+  );
+});
+
 it('lists the work a conductor landed as merged while it stays open', async () => {
   const f = await workbenchFixture();
   const conductor = await idle(

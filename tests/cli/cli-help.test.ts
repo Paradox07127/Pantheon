@@ -12,6 +12,7 @@ it.each(['--help', '-h'])('prints usage and exits 0 for %s', (flag) => {
   expect(result.stdout).toMatch(/^Usage: pantheon /);
   expect(result.stdout).toContain('pantheon review [--base REF] [RANGE] [--runtime NAME]...');
   expect(result.stdout).toContain('pantheon land [BRANCH] [--message TEXT]');
+  expect(result.stdout).toContain('[--allow-gate-change] [--cancel]');
   expect(result.stderr).toBe('');
 });
 

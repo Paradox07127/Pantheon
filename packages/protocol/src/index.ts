@@ -21,6 +21,7 @@ import type {
   ProjectIntro,
   QuotaWindow,
   CapabilityReport,
+  Review,
   RuntimeStatus as PreflightRuntimeStatus,
   Session,
   SessionRecap,
@@ -1368,6 +1369,8 @@ export const inputSchemas = {
       .optional()
       .describe('Optional: true lands a branch that changes protected paths.'),
   }),
+  /** The user only; stops a queued or running landing, which ends blocked with the reason `cancelled`, and returns the Landing. */
+  'project.landing.cancel': z.strictObject({ landing_id: str }),
   'project.worktree.set': z.strictObject({
     project_id: str,
     copy_paths: z.array(worktreePath),
@@ -1822,6 +1825,8 @@ export const querySchemas = {
   }),
   /** The user only; returns one Landing. */
   'project.landing.read': z.strictObject({ landing_id: str }),
+  /** The user only; returns the queued or running Landing of branch at root. */
+  'project.landing.find': z.strictObject({ root: str, branch: str }),
   /** The user only; returns ProjectIntroRead. */
   'project.intro.read': z.strictObject({ project_id: str }),
   'project.facts.read': z.strictObject({ project_id: str }),
@@ -1857,6 +1862,8 @@ export const querySchemas = {
     project_id: str,
     since: z.coerce.number().int().min(0).optional(),
   }),
+  /** ProjectChanges; the project's changes as the main agent's read_state lists them. */
+  'project.changes': z.strictObject({ project_id: str }),
   /** DecisionsForUser; what a stored rule decided without the user from since on, Unix milliseconds, newest first. */
   'project.decisions': z.strictObject({
     project_id: str,
@@ -2137,6 +2144,36 @@ export interface ProjectBrief {
   items: ProjectBriefItem[];
   /** Present when it was written for these items after this since. */
   prose?: ProjectBriefProse;
+}
+/** One change of a project: a worktree session with work to show, or a branch landing no session owns. */
+export interface ChangeRow {
+  /** `session:<session id>`, or `landing:<landing id>` for a branch no session owns. */
+  id: string;
+  kind: 'session' | 'branch';
+  title: string;
+  branch?: string | null;
+  runtime?: string;
+  spawned_by?: string;
+  status: 'running' | 'needs_you' | 'ready' | 'merged' | 'failed';
+  /** The caller's running row at the commit it last landed, nothing changed; conductor.state sets it. */
+  landed?: true;
+  ahead?: number;
+  behind?: number;
+  gate: { state: 'passed' | 'failed' | 'stale' | 'none'; failed?: string[] };
+  review?: {
+    id: string;
+    state: Review['state'];
+    verdicts: { runtime: string; verdict: 'pass' | 'fail' }[];
+    blocking_open: number;
+    to_sha?: string;
+  };
+  landing?: 'queued' | 'running';
+  /** ISO time. */
+  updated_at: string;
+}
+/** GET /v1/project.changes. */
+export interface ProjectChanges {
+  changes: ChangeRow[];
 }
 /** A prompt answered by the stored permission rule; at is Unix milliseconds. */
 export interface DecisionForUser {

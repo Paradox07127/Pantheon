@@ -10,7 +10,7 @@ import {
   type Daemon,
 } from './review.js';
 
-export const landUsage = 'land [BRANCH] [--message TEXT] [--allow-gate-change]';
+export const landUsage = 'land [BRANCH] [--message TEXT] [--allow-gate-change] [--cancel]';
 
 const gateState = (gate: NonNullable<Landing['gate_results']>[number]) =>
   gate.state ?? (gate.exit_code === 0 ? 'passed' : 'failed');
@@ -29,10 +29,38 @@ const allowGateChange = (what: string, branch: string, message: string | undefin
     message === undefined ? '' : ` --message=${quote(message)}`
   } --allow-gate-change`;
 
+/** Stops the queued or running landing of the branch at the root. */
+const cancel = async (daemon: Daemon, root: string, branch: string) => {
+  const url = new URL('/v1/project.landing.find', daemon.url);
+  url.searchParams.set('root', root);
+  url.searchParams.set('branch', branch);
+  const found = await fetch(url, {
+    headers: { Authorization: `Bearer ${daemon.token}` },
+    signal: AbortSignal.timeout(5000),
+  });
+  if (!found.ok) {
+    console.error(`No landing of ${branch} is queued or running at ${root}`);
+    return 1;
+  }
+  const landing = (await found.json()) as Landing;
+  const sent = await sendCommand(
+    daemon,
+    'project.landing.cancel',
+    { landing_id: landing.id },
+    5000,
+  );
+  if (!sent.ok) {
+    console.error(JSON.stringify(sent.body, null, 2));
+    return 1;
+  }
+  console.log(`cancelled ${landing.id}`);
+  return 0;
+};
+
 export const land = async (
   connect: () => Daemon,
   positionals: string[],
-  values: { message?: string; 'allow-gate-change'?: boolean },
+  values: { message?: string; 'allow-gate-change'?: boolean; cancel?: boolean },
 ) => {
   if (positionals.length > 1) usageError(`Usage: pantheon ${landUsage}`);
   const branch = positionals[0]
@@ -40,6 +68,7 @@ export const land = async (
     : (currentBranch() ?? usageError('HEAD is detached; name the branch to land.'));
   const root = projectRoot(),
     daemon = connect();
+  if (values.cancel) return cancel(daemon, root, branch);
   const sent = await sendCommand(
     daemon,
     'project.land',

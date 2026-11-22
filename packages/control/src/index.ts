@@ -67,7 +67,8 @@ import { inheritedPolicy, workflowPolicy } from './workflow-policy.js';
 import { projectReviewMetrics, reviewExecutionReader, reviewTimeReader } from './review.js';
 import { projectBaselineRead, projectFactsRead } from './baseline.js';
 import { environmentChecks } from './environment-check.js';
-import { landingRead } from './branch-landing.js';
+import { landingFind, landingRead } from './branch-landing.js';
+import { changesRead } from './changes.js';
 import {
   changeStoryDiff,
   changeStoryList,
@@ -693,6 +694,9 @@ export class Control extends EventEmitter {
   landingRead(principal: Principal, landingId: string) {
     return landingRead(this.ctx, principal, landingId);
   }
+  landingFind(principal: Principal, root: string, branch: string) {
+    return landingFind(this.ctx, principal, root, branch);
+  }
   projectFactsRead(principal: Principal, projectId: string) {
     return projectFactsRead(this.ctx, principal, projectId);
   }
@@ -836,6 +840,9 @@ export class Control extends EventEmitter {
   }
   projectBrief(principal: Principal, projectId: string, since?: number) {
     return projectBrief(this.ctx, principal, projectId, since);
+  }
+  projectChanges(principal: Principal, projectId: string) {
+    return changesRead(this.ctx, principal, projectId);
   }
   decisionsForUser(principal: Principal, projectId: string, since?: number) {
     return decisionsForUser(this.ctx, principal, projectId, since);

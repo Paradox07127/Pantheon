@@ -923,6 +923,36 @@ describe('pnpm cli land', () => {
     expect(envelope.input).toEqual({ project_id: 'project-1' });
   });
 
+  it('cancels the running landing of the current branch with --cancel', async () => {
+    const result = await cli(
+      repo,
+      ['land', '--cancel'],
+      [{ body: landingOf({}) }, { body: { receipt: landingOf({ cancel_requested: true }) } }],
+    );
+    expect(requests.map((request) => request.method)).toEqual(['GET', 'POST']);
+    const found = new URL(requests[0]!.url, 'http://daemon');
+    expect(found.pathname).toBe('/v1/project.landing.find');
+    expect(Object.fromEntries(found.searchParams)).toEqual({ root: repo, branch: 'feature' });
+    expect(JSON.parse(requests[1]!.body)).toMatchObject({
+      type: 'project.landing.cancel',
+      actor: 'local-user',
+      input: { landing_id: 'landing-1' },
+    });
+    expect(result.stdout).toBe('cancelled landing-1\n');
+    expect(result.code).toBe(0);
+  });
+
+  it('exits 1 with --cancel when the branch has no queued or running landing', async () => {
+    const result = await cli(
+      repo,
+      ['land', '--cancel', 'feature'],
+      [{ status: 404, body: { error: 'not_found', message: 'feature is not landing' } }],
+    );
+    expect(requests).toHaveLength(1);
+    expect(result.stderr).toBe(`No landing of feature is queued or running at ${repo}\n`);
+    expect(result.code).toBe(1);
+  });
+
   it('refuses a detached HEAD without a branch with exit 64', async () => {
     const result = await cli(detached, ['land'], []);
     expect(result.stderr).toContain('detached');

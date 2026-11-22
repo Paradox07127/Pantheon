@@ -375,6 +375,12 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 |---|---|---|
 | `project.land` | `root`: string<br>`branch`: string<br>`message?`: string<br>`allow_gate_change?`: boolean |  |
 
+### project.landing
+
+| type | input | MCP 工具 |
+|---|---|---|
+| `project.landing.cancel` | `landing_id`: string |  |
+
 ### project.open
 
 | type | input | MCP 工具 |
@@ -548,6 +554,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `project.baseline.read` | `project_id`: string |
 | `project.branches` | `project_id`: string<br>`root?`: string |
 | `project.brief` | `project_id`: string<br>`since?`: integer |
+| `project.changes` | `project_id`: string |
 | `project.collab` | `project_id`: string<br>`since`: number<br>`until`: number |
 | `project.decisions` | `project_id`: string<br>`since?`: integer |
 | `project.defaults` | — |
@@ -557,6 +564,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `project.head` | `project_id`: string |
 | `project.heatmap` | `project_id`: string<br>`days?`: "7" \| "30" \| "90" \| "all" |
 | `project.intro.read` | `project_id`: string |
+| `project.landing.find` | `root`: string<br>`branch`: string |
 | `project.landing.read` | `landing_id`: string |
 | `project.read` | `project_id`: string |
 | `project.review.metrics` | `project_id`: string |

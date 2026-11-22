@@ -529,6 +529,8 @@ export interface Landing extends Entity {
   squashed_sha?: string;
   /** The user let the branch change protected paths. */
   allow_gate_change?: boolean;
+  /** The user stopped the landing; it ends blocked with the reason `cancelled` at its next safe point. */
+  cancel_requested?: boolean;
   state: 'queued' | 'running' | 'landed' | 'no_changes' | 'blocked';
   reason?: string;
   conflicts?: string[];

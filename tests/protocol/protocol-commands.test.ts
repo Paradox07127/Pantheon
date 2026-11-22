@@ -49,6 +49,7 @@ it('defines a strict input schema for each unimplemented command and the queries
     'project.baseline.read',
     'project.branches',
     'project.brief',
+    'project.changes',
     'project.collab',
     'project.decisions',
     'project.defaults',
@@ -58,6 +59,7 @@ it('defines a strict input schema for each unimplemented command and the queries
     'project.head',
     'project.heatmap',
     'project.intro.read',
+    'project.landing.find',
     'project.landing.read',
     'project.read',
     'project.review.metrics',
@@ -102,6 +104,10 @@ it('validates cancellation commands without granting session or revision overrid
     ).toBe(false);
     expect(inputSchemas[type].safeParse({}).success).toBe(false);
   }
+  const landing = inputSchemas['project.landing.cancel'];
+  expect(landing.safeParse({ landing_id: 'landing' }).success).toBe(true);
+  expect(landing.safeParse({ landing_id: 'landing', force: true }).success).toBe(false);
+  expect(landing.safeParse({}).success).toBe(false);
 });
 
 it('rejects a defined but unimplemented command with unsupported_command and keeps no receipt', async () => {

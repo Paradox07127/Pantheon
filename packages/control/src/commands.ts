@@ -3,7 +3,7 @@ import { memoryHandlers, memoryPreparers } from './memory.js';
 import { projectIntroPreparers } from './project-intro.js';
 import { baselinePreparers } from './baseline.js';
 import { environmentCheckHandlers } from './environment-check.js';
-import { branchLandingPreparers } from './branch-landing.js';
+import { branchLandingHandlers, branchLandingPreparers } from './branch-landing.js';
 import { conductorPreparers } from './conductor.js';
 import { changeStoryHandlers } from './change-story.js';
 import type { Handlers, Preparers } from './context.js';
@@ -27,6 +27,7 @@ export const handlers: Handlers = {
   ...projectHandlers,
   ...projectFactHandlers,
   ...environmentCheckHandlers,
+  ...branchLandingHandlers,
   ...changeStoryHandlers,
   ...sessionHandlers,
   ...runtimeReviewHandlers,
