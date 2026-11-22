@@ -680,6 +680,32 @@ it('starts one spawned session on each named runtime in one group, only when all
   for (const sessionId of busy) expect(groups.get(sessionId)).toBeUndefined();
 });
 
+it('refuses a spawn on several runtimes when one is out, though the project names a fallback', async () => {
+  const f = await workbenchFixture();
+  const conductor = await openConductor(f);
+  f.call<Project>(
+    'project.sessionDefaults.set',
+    {
+      project_id: f.project.id,
+      runtime: f.adapter.name,
+      permission_mode: 'ask',
+      fallbacks: { lead: { runtime: f.adapter.name } },
+    },
+    f.store.must<Project>('projects', f.project.id).revision,
+  );
+  const sessions = f.store.list<Session>('sessions').length;
+
+  const error = refusal(() =>
+    asSession(f, conductor.id, 'conductor.spawn', {
+      input: 'Port the parser',
+      runtimes: ['missing-runtime', f.adapter.name],
+    }),
+  );
+
+  expect(error.code).toBe('unsupported_capability');
+  expect(f.store.list<Session>('sessions')).toHaveLength(sessions);
+});
+
 it.each([
   ['both runtime and runtimes', { runtime: 'fixture', runtimes: ['fixture', 'second-runtime'] }],
   ['neither runtime nor runtimes', {}],
