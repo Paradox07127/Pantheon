@@ -57,6 +57,8 @@ export interface LandingOwner {
   beforeLand?(): boolean;
   /** The user let this landing change the paths that protect the gate. */
   allowGateChange?: boolean;
+  /** A commit of the candidate that already landed squashed; a rebase replays only the commits after it. */
+  squashedTip?: string;
 }
 
 /** The argv of the gate commands, as a landing saves and compares them. */
@@ -812,7 +814,14 @@ export async function landWorkspace(
           return Object.assign({ ...item, reason: 'gate_files_changed' }, { conflicts: guarded });
       }
       // A rebase replays a merge's parents and drops the changes made in the merge itself.
-      if (onto && (await git(workspace.path, ['rev-list', '--merges', `${onto}..${target}`])))
+      if (
+        onto &&
+        (await git(workspace.path, [
+          'rev-list',
+          '--merges',
+          `${owner.squashedTip ?? onto}..${target}`,
+        ]))
+      )
         return { ...item, reason: 'merge_commits' };
       if (onto) {
         const committer = await sourceCommitter(item.source);
@@ -822,7 +831,12 @@ export async function landWorkspace(
         // Repository configuration may turn on rebase.updateRefs, which moves other branches.
         const rebase = await runGit(
           workspace.path,
-          ['rebase', '--quiet', '--no-update-refs', onto],
+          [
+            'rebase',
+            '--quiet',
+            '--no-update-refs',
+            ...(owner.squashedTip ? ['--onto', onto, owner.squashedTip] : [onto]),
+          ],
           undefined,
           true,
           {

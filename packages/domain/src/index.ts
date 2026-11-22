@@ -523,6 +523,8 @@ export interface Landing extends Entity {
   workspace_id: string;
   /** When present, the branch's commits land as one commit with this message. */
   message?: string;
+  /** The branch's commit that lands as that one commit; a branch cut from it lands only the commits after it. */
+  squashed_sha?: string;
   /** The user let the branch change protected paths. */
   allow_gate_change?: boolean;
   state: 'queued' | 'running' | 'landed' | 'no_changes' | 'blocked';

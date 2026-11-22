@@ -39,9 +39,9 @@ function commit(repository: string, name: string, contents: string) {
   return git(repository, 'rev-parse', 'HEAD');
 }
 
-/** Makes the branch from main with one commit per file, returns its tip and checks main out again. */
-function branch(f: Fixture, name: string, files: [string, string][]) {
-  git(f.source, 'checkout', '--quiet', '-b', name, 'main');
+/** Makes the branch from `from` with one commit per file, returns its tip and checks main out again. */
+function branch(f: Fixture, name: string, files: [string, string][], from = 'main') {
+  git(f.source, 'checkout', '--quiet', '-b', name, from);
   for (const [file, contents] of files) commit(f.source, file, contents);
   git(f.source, 'checkout', '--quiet', 'main');
   return git(f.source, 'rev-parse', name);
@@ -285,6 +285,71 @@ it.skipIf(insideSandbox)(
     const landed = git(f.source, 'rev-parse', 'main');
     expect(await ended(f, (await land(f)).id)).toMatchObject({ state: 'no_changes' });
     expect(git(f.source, 'rev-parse', 'main')).toBe(landed);
+  },
+);
+
+it.skipIf(insideSandbox).each([
+  ['its own commits', undefined, 'Update stacked.txt'],
+  ['its own commits as one commit', 'Land the second branch', 'Land the second branch'],
+])(
+  'lands %s onto the target, for a branch cut from a branch that landed as one commit',
+  async (_name, message, subject) => {
+    const f = await landFixture();
+    branch(f, 'feature', [
+      ['stacked.txt', 'first\n'],
+      ['stacked.txt', 'second\n'],
+    ]);
+    const tip = branch(f, 'second', [['stacked.txt', 'third\n']], 'feature');
+    expect(await ended(f, (await land(f, { message: 'Land the feature' })).id)).toMatchObject({
+      state: 'landed',
+    });
+    const squashed = git(f.source, 'rev-parse', 'main');
+    const done = await ended(
+      f,
+      (await land(f, { branch: 'second', ...(message === undefined ? {} : { message }) })).id,
+    );
+    expect(done).toMatchObject({ state: 'landed', from_sha: squashed });
+    expect(git(f.source, 'rev-parse', 'main~1')).toBe(squashed);
+    expect(git(f.source, 'log', '-1', '--format=%B', 'main')).toBe(subject);
+    expect(git(f.source, 'show', 'main:stacked.txt')).toBe('third');
+    expect(git(f.source, 'rev-parse', 'second')).toBe(tip);
+  },
+);
+
+it.skipIf(insideSandbox)(
+  'rebases only its own commit, for a branch cut from a branch that landed with its commits',
+  async () => {
+    const f = await landFixture();
+    const kept = branch(f, 'feature', [
+      ['stacked.txt', 'first\n'],
+      ['stacked.txt', 'second\n'],
+    ]);
+    branch(f, 'second', [['stacked.txt', 'third\n']], 'feature');
+    expect(await ended(f, (await land(f)).id)).toMatchObject({ state: 'landed', to_sha: kept });
+    const moved = commit(f.source, 'other.txt', 'other\n');
+    const done = await ended(f, (await land(f, { branch: 'second' })).id);
+    expect(done).toMatchObject({ state: 'landed', from_sha: moved });
+    expect(git(f.source, 'rev-list', '--count', `${moved}..main`)).toBe('1');
+    expect(git(f.source, 'show', 'main:stacked.txt')).toBe('third');
+  },
+);
+
+it.skipIf(insideSandbox)(
+  'rebases a branch cut from the target as before, after another branch landed as one commit',
+  async () => {
+    const f = await landFixture();
+    branch(f, 'feature', [
+      ['stacked.txt', 'first\n'],
+      ['stacked.txt', 'second\n'],
+    ]);
+    branch(f, 'other', [['other.txt', 'other\n']]);
+    await ended(f, (await land(f, { message: 'Land the feature' })).id);
+    const squashed = git(f.source, 'rev-parse', 'main');
+    const done = await ended(f, (await land(f, { branch: 'other' })).id);
+    expect(done).toMatchObject({ state: 'landed', from_sha: squashed });
+    expect(git(f.source, 'rev-parse', 'main~1')).toBe(squashed);
+    expect(git(f.source, 'show', 'main:stacked.txt')).toBe('second');
+    expect(git(f.source, 'show', 'main:other.txt')).toBe('other');
   },
 );
 

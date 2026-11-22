@@ -105,7 +105,7 @@ async function prepareBranchLanding(
       branch: input.branch,
       target_branch,
       workspace_id: workspace.id,
-      ...(input.message === undefined ? {} : { message: input.message }),
+      ...(input.message === undefined ? {} : { message: input.message, squashed_sha: tip }),
       ...(input.allow_gate_change ? { allow_gate_change: true } : {}),
       state: 'queued',
     });
@@ -157,11 +157,14 @@ function updateRow(ctx: ControlContext, landingId: string, fields: Partial<Landi
 }
 
 /**
- * Commits base_sha..HEAD of the worktree as one commit with the message, as the user commits;
+ * Commits base..HEAD of the worktree as one commit with the message, as the user commits;
  * a worktree that already holds that one commit is left as it is, so saved gate progress holds.
  */
-async function squash(workspace: Workspace, message: string): Promise<string | undefined> {
-  const base = workspace.base_sha!;
+async function squash(
+  workspace: Workspace,
+  base: string,
+  message: string,
+): Promise<string | undefined> {
   const read = async (args: string[]) => {
     const result = await runGit(workspace.path, args, undefined, true);
     requireThat(
@@ -188,6 +191,35 @@ async function squash(workspace: Workspace, message: string): Promise<string | u
   return (committed.output || 'git commit failed').split('\n')[0];
 }
 
+/**
+ * The squashed commit of the newest earlier landing onto the row's target that the worktree's HEAD
+ * holds and the target does not; rows list in the order they were queued.
+ */
+async function squashedAncestor(
+  ctx: ControlContext,
+  row: Landing,
+  worktree: string,
+): Promise<string | undefined> {
+  const holds = async (cwd: string, ancestor: string, descendant: string) =>
+    (await runGit(cwd, ['merge-base', '--is-ancestor', ancestor, descendant], undefined, true))
+      .exit_code === 0;
+  const squashed = ctx.store
+    .list<Landing>('landings')
+    .filter(
+      (other) =>
+        other.state === 'landed' &&
+        other.squashed_sha !== undefined &&
+        other.root === row.root &&
+        other.target_branch === row.target_branch,
+    );
+  for (const other of squashed.reverse())
+    if (
+      (await holds(worktree, other.squashed_sha!, 'HEAD')) &&
+      !(await holds(row.root, other.squashed_sha!, `refs/heads/${row.target_branch}`))
+    )
+      return other.squashed_sha;
+}
+
 async function landBranch(ctx: ControlContext, landingId: string, jobId: string): Promise<void> {
   const workspaceId = ctx.store.must<Landing>('landings', landingId).workspace_id;
   let workspace = ctx.store.must<Workspace>('workspaces', workspaceId);
@@ -208,11 +240,11 @@ async function landBranch(ctx: ControlContext, landingId: string, jobId: string)
     const commands = projectGateCommands(project, row.root);
     if (!commands?.length)
       return finish(ctx, landingId, jobId, { state: 'blocked', reason: 'no_gate_commands' });
+    // Commits of a branch that landed squashed would replay onto their own squashed commit.
+    const squashedTip = await squashedAncestor(ctx, row, workspace.path);
     if (row.message !== undefined) {
-      const failed = await squash(
-        ctx.store.must<Workspace>('workspaces', workspaceId),
-        row.message,
-      );
+      const worktree = ctx.store.must<Workspace>('workspaces', workspaceId);
+      const failed = await squash(worktree, squashedTip ?? worktree.base_sha!, row.message);
       if (failed !== undefined)
         return finish(ctx, landingId, jobId, {
           state: 'blocked',
@@ -232,6 +264,7 @@ async function landBranch(ctx: ControlContext, landingId: string, jobId: string)
       projectId: row.project_id,
       cancelled: () => false,
       allowGateChange: row.allow_gate_change,
+      squashedTip,
       // A gate that starts again, after the root moved, drops the results of the earlier run.
       event: (kind, payload) =>
         updateRow(ctx, landingId, {
