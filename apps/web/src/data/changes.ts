@@ -66,10 +66,11 @@ export interface ReviewGuideModel {
 }
 
 const isOpen = (finding: ReviewFinding): boolean =>
-  finding.status === 'open' && !finding.resolution;
+  (finding.status === 'open' || finding.status === 'stale') && !finding.resolution;
 
-/** The path of a `path:line` location; the whole location when it has no line. */
-export const locationPath = (location: string): string => location.replace(/:\d+(?::\d+)?$/, '');
+/** The path of a `path:N`, `path:N:M` or `path:N-M` location; the whole location when it has no line. */
+export const locationPath = (location: string): string =>
+  location.replace(/:\d+(?::\d+|-\d+)?$/, '');
 
 /** What to read first: open blocking findings, the count of reports, and the riskiest files. */
 export function reviewGuide(review: Pick<Review, 'findings'>): ReviewGuideModel {

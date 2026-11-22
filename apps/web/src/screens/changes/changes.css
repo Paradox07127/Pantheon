@@ -30,6 +30,9 @@
   border-radius: var(--r-sm);
   transition: background-color var(--dur-1) var(--ease-std);
 }
+.chg[data-inspector] .chg-r {
+  grid-template-columns: 16px minmax(0, 1fr) 112px;
+}
 .chg-r > * {
   min-width: 0;
 }
@@ -80,8 +83,7 @@
 .chg-chip[data-tone='ok'] {
   --chg-tone: var(--ok);
 }
-.chg-dot[data-tone='bad'],
-.chg-chip[data-tone='bad'] {
+.chg-dot[data-tone='bad'] {
   --chg-tone: var(--bad);
 }
 .chg-chip[data-tone='wait'] {

@@ -197,6 +197,81 @@ describe('changes screen', () => {
     expect(rows(h.value).map((r) => r.props['aria-selected'])).toEqual([false, true, false, false]);
   });
 
+  it('scrolls the row the keys highlight into view', async () => {
+    const scrollIntoView = vi.fn();
+    class FakeElement {
+      constructor(readonly id: string) {}
+    }
+    Object.assign(FakeElement.prototype, { scrollIntoView });
+    vi.stubGlobal('Element', FakeElement);
+    vi.stubGlobal('document', { getElementById: (id: string) => new FakeElement(id) });
+    const h = await screen();
+    press(h, 'j');
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
+    expect(scrollIntoView.mock.contexts.at(-1)).toMatchObject({ id: 'chg-landing:docs' });
+    press(h, 'End');
+    expect(scrollIntoView.mock.contexts.at(-1)).toMatchObject({ id: 'chg-session:report' });
+  });
+
+  it('keeps only the status, the title and the landing column while the inspector is open', async () => {
+    const h = await screen();
+    const headers = () =>
+      nodes(grid(h.value))
+        .filter((n) => n.props.role === 'columnheader')
+        .map((n) => text(n))
+        .filter(Boolean);
+    const every = ['change', 'diff', 'branch', 'gate', 'review', 'landing'].map((c) =>
+      zh(`changes.column.${c}`),
+    );
+    expect(headers()).toEqual(every);
+    press(h, 'Enter');
+    expect(headers()).toEqual([zh('changes.column.change'), zh('changes.column.landing')]);
+    for (const listed of rows(h.value))
+      expect(nodes(listed).filter((n) => n.props.role === 'gridcell')).toHaveLength(3);
+  });
+
+  it('closes the inspector when its row leaves the filter', async () => {
+    const h = await screen();
+    const inspector = () => nodes(h.value).find((n) => n.type === ChangeInspector);
+    press(h, 'Enter');
+    expect(inspector()!.props.row.id).toBe('session:refund-list');
+    const root = () => nodes(h.value).find((n) => n.type === Tabs.Root)!;
+    root().props.onValueChange('merged');
+    h.render();
+    expect(inspector()).toBeUndefined();
+    root().props.onValueChange('all');
+    h.render();
+    expect(inspector()).toBeUndefined();
+  });
+
+  it.each([
+    ['a failed session that never landed', { status: 'failed' }, ''],
+    ['a landed row', { status: 'merged' }, zh('changes.landing.merged')],
+    ['a queued landing', { status: 'running', landing: 'queued' }, zh('changes.landing.queued')],
+  ] as const)('shows in the landing column of %s only its landing', async (_, over, landing) => {
+    changes = [row({ id: 'session:one', title: 'One', ...over })];
+    const h = await screen();
+    const cells = nodes(rows(h.value)[0]!).filter((n) => n.props.role === 'gridcell');
+    expect(text(cells.at(-1)!)).toBe(landing);
+  });
+
+  it('counts the open blocking findings of a review that has no verdict yet', async () => {
+    changes = [
+      row({
+        id: 'session:one',
+        title: 'One',
+        review: { id: 'review-one', state: 'running', verdicts: [], blocking_open: 2 },
+      }),
+    ];
+    const h = await screen();
+    const cell = nodes(rows(h.value)[0]!).find(
+      (n) => typeof n.type === 'function' && n.type.name === 'ReviewCell',
+    )!;
+    const shown = text((cell.type as (props: unknown) => ReactElement)(cell.props));
+    expect(shown).toContain(zh('changes.review.running'));
+    expect(shown).toContain(zhf('changes.review.blocking', { count: 2 }));
+  });
+
   it('says there are no changes and shows nothing else when the list is empty', async () => {
     changes = [];
     const h = await screen();
@@ -247,6 +322,41 @@ describe('review guide', () => {
     const location = nodes(blocking).find((n) => n.type === 'button')!;
     location.props.onClick();
     expect(mock.shell.openSession).toHaveBeenCalledWith('refund-list', 'review');
+  });
+
+  it('lists a blocking finding that went stale unresolved', () => {
+    const tree = ReviewGuide({
+      review: {
+        findings: [
+          finding({
+            id: 'moved',
+            location: 'src/refunds/list.tsx:88',
+            blocking: true,
+            status: 'stale',
+          }),
+          finding({
+            id: 'settled',
+            location: 'src/refunds/list.tsx:12',
+            blocking: true,
+            status: 'stale',
+            resolution: { outcome: 'fixed', resolved_at: 1, resolved_by: 'user' },
+          }),
+        ],
+      },
+      sessionId: null,
+    }) as ReactElement;
+    const items = nodes(blockingList(tree, 1)!).filter((n) => n.type === 'li');
+    expect(items.map((n) => text(n))).toEqual(['src/refunds/list.tsx:88impact of moved']);
+  });
+
+  it.each(['a.ts:9', 'a.ts:9:4', 'a.ts:9-14'])('counts %s under its file', (location) => {
+    const findings = [
+      finding({ id: 'line', location: 'a.ts:1' }),
+      finding({ id: 'other', location }),
+    ];
+    const tree = ReviewGuide({ review: { findings }, sessionId: null }) as ReactElement;
+    const files = nodes(fileList(tree)!).filter((n) => n.type === 'li');
+    expect(files.map((n) => text(n))).toEqual(['a.ts2']);
   });
 
   it('ranks the files by blocking findings and lists at most eight', () => {
@@ -301,6 +411,16 @@ describe('change inspector', () => {
       { landing_id: 'land-7' },
       null,
     );
+  });
+
+  it('keeps the cancel disabled as cancelling once the daemon accepted it', async () => {
+    const h = await inspector(
+      row({ id: 'landing:land-7', title: 'docs/refund-api', status: 'running', landing: 'queued' }),
+    );
+    button(h.value, zh('changes.inspector.cancelLanding'))!.props.onClick();
+    await h.flush();
+    expect(button(h.value, zh('changes.inspector.cancelLanding'))).toBeUndefined();
+    expect(button(h.value, zh('changes.inspector.cancelling'))!.props.disabled).toBe(true);
   });
 
   it('offers no cancel on a landed row', async () => {

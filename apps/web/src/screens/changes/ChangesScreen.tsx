@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { useEffect, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { Tabs } from '@base-ui/react/tabs';
 import { Eye, FileText, Flag, GitBranch, ShieldCheck, X } from 'lucide-react';
 import type { Review } from '@pantheon/domain';
@@ -90,8 +90,6 @@ function landingOf(row: ChangeRow): { tone: string; text: string } | null {
     return { tone: 'run', text: t({ id: 'changes.landing.running', defaultMessage: 'Landing' }) };
   if (row.status === 'merged')
     return { tone: 'ok', text: t({ id: 'changes.landing.merged', defaultMessage: 'Landed' }) };
-  if (row.status === 'failed')
-    return { tone: 'bad', text: t({ id: 'changes.landing.failed', defaultMessage: 'Failed' }) };
   return null;
 }
 
@@ -121,10 +119,11 @@ function ReviewCell({ review }: { review: ChangeRow['review'] }) {
     );
   if (review.verdicts.length === 0)
     return (
-      <span className="chg-mu">
+      <span className="chg-h chg-mu">
         {review.state === 'running'
           ? t({ id: 'changes.review.running', defaultMessage: 'Reviewing' })
           : t({ id: 'changes.review.noVerdict', defaultMessage: 'No verdict' })}
+        {review.blocking_open > 0 && <span>{blockingText(review.blocking_open)}</span>}
       </span>
     );
   return (
@@ -166,7 +165,11 @@ export function ChangesScreen({
   const rows = all?.filter((row) => inFilter(row, filter)) ?? null;
   const count = (f: ChangeFilter) => all?.filter((row) => inFilter(row, f)).length ?? 0;
   const highlighted = rows?.find((row) => row.id === active) ?? rows?.[0] ?? null;
-  const opened = all?.find((row) => row.id === open) ?? null;
+  const opened = rows?.find((row) => row.id === open) ?? null;
+  const filteredOut = open !== null && rows !== null && !opened;
+  useEffect(() => {
+    if (filteredOut) setOpen(null);
+  }, [filteredOut]);
   const sessionOf = (row: ChangeRow) => {
     const id = changeSessionId(row);
     return (id && sessions?.find((s) => s.id === id)) || null;
@@ -178,8 +181,11 @@ export function ChangesScreen({
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (!rows?.length) return;
     const at = highlighted ? rows.indexOf(highlighted) : 0;
-    const go = (index: number) =>
-      setActive(rows[Math.max(0, Math.min(rows.length - 1, index))]!.id);
+    const go = (index: number) => {
+      const id = rows[Math.max(0, Math.min(rows.length - 1, index))]!.id;
+      setActive(id);
+      globalThis.document?.getElementById(`chg-${id}`)?.scrollIntoView({ block: 'nearest' });
+    };
     if (shortcutMatches('list-down', e) || shortcutMatches('list-next', e)) go(at + 1);
     else if (shortcutMatches('list-up', e) || shortcutMatches('list-previous', e)) go(at - 1);
     else if (shortcutMatches('list-first', e)) go(0);
@@ -206,7 +212,7 @@ export function ChangesScreen({
           ))}
         </Tabs.List>
       </TopBar>
-      <Tabs.Panel className="chg" value={filter}>
+      <Tabs.Panel className="chg" value={filter} data-inspector={opened ? '' : undefined}>
         <div className="chg-main">
           {read.error && <Failure error={read.error} onRetry={read.reload} />}
           {rows === null ? (
@@ -234,18 +240,22 @@ export function ChangesScreen({
                 <span role="columnheader">
                   {t({ id: 'changes.column.change', defaultMessage: 'Change' })}
                 </span>
-                <span role="columnheader">
-                  {t({ id: 'changes.column.diff', defaultMessage: 'Diff' })}
-                </span>
-                <span role="columnheader">
-                  {t({ id: 'changes.column.branch', defaultMessage: 'Branch' })}
-                </span>
-                <span role="columnheader">
-                  {t({ id: 'changes.column.gate', defaultMessage: 'Gate' })}
-                </span>
-                <span role="columnheader">
-                  {t({ id: 'changes.column.review', defaultMessage: 'Review' })}
-                </span>
+                {!opened && (
+                  <>
+                    <span role="columnheader">
+                      {t({ id: 'changes.column.diff', defaultMessage: 'Diff' })}
+                    </span>
+                    <span role="columnheader">
+                      {t({ id: 'changes.column.branch', defaultMessage: 'Branch' })}
+                    </span>
+                    <span role="columnheader">
+                      {t({ id: 'changes.column.gate', defaultMessage: 'Gate' })}
+                    </span>
+                    <span role="columnheader">
+                      {t({ id: 'changes.column.review', defaultMessage: 'Review' })}
+                    </span>
+                  </>
+                )}
                 <span role="columnheader">
                   {t({ id: 'changes.column.landing', defaultMessage: 'Landing' })}
                 </span>
@@ -276,24 +286,31 @@ export function ChangesScreen({
                       <RowMark row={row} />
                       <Clip text={row.title} />
                     </span>
-                    <span role="gridcell" className="chg-num">
-                      {changed && (
-                        <DiffCounts additions={changed.additions} deletions={changed.deletions} />
-                      )}
-                    </span>
-                    <span role="gridcell" className="chg-h chg-num">
-                      {row.branch && <Clip text={row.branch} className="mono" />}
-                      {ahead && <span className="chg-mu">{ahead}</span>}
-                    </span>
-                    <span role="gridcell" className="chg-h">
-                      <span className="chg-glyph" aria-hidden="true">
-                        <GateMark state={row.gate.state} />
-                      </span>
-                      <Clip text={gateText(row.gate)} className="chg-mu" />
-                    </span>
-                    <span role="gridcell">
-                      <ReviewCell review={row.review} />
-                    </span>
+                    {!opened && (
+                      <>
+                        <span role="gridcell" className="chg-num">
+                          {changed && (
+                            <DiffCounts
+                              additions={changed.additions}
+                              deletions={changed.deletions}
+                            />
+                          )}
+                        </span>
+                        <span role="gridcell" className="chg-h chg-num">
+                          {row.branch && <Clip text={row.branch} className="mono" />}
+                          {ahead && <span className="chg-mu">{ahead}</span>}
+                        </span>
+                        <span role="gridcell" className="chg-h">
+                          <span className="chg-glyph" aria-hidden="true">
+                            <GateMark state={row.gate.state} />
+                          </span>
+                          <Clip text={gateText(row.gate)} className="chg-mu" />
+                        </span>
+                        <span role="gridcell">
+                          <ReviewCell review={row.review} />
+                        </span>
+                      </>
+                    )}
                     <span role="gridcell" className="chg-end">
                       {landing && (
                         <span className="chip chg-chip" data-tone={landing.tone}>
@@ -319,14 +336,19 @@ export function ChangeInspector({ row, onClose }: { row: ChangeRow; onClose: () 
   const landingId = row.kind === 'branch' && row.landing ? changeLandingId(row) : null;
   const gates = useSessionGates(sessionId);
   const review = useReview(row.review?.id ?? null);
-  const [cancel, setCancel] = useState<{ busy: boolean; error: string | null }>({
-    busy: false,
-    error: null,
-  });
+  const [cancel, setCancel] = useState<{
+    busy: boolean;
+    accepted: boolean;
+    error: string | null;
+  }>({ busy: false, accepted: false, error: null });
   const cancelLanding = async () => {
-    setCancel({ busy: true, error: null });
+    setCancel({ busy: true, accepted: false, error: null });
     const result = await runCommand('project.landing.cancel', { landing_id: landingId }, null);
-    setCancel({ busy: false, error: result.ok ? null : failureText(result.error) });
+    setCancel({
+      busy: false,
+      accepted: result.ok,
+      error: result.ok ? null : failureText(result.error),
+    });
   };
   const gateLast = gates.data?.last ?? null;
   const gateName = t({ id: 'changes.inspector.gate', defaultMessage: 'Gate' });
@@ -393,11 +415,13 @@ export function ChangeInspector({ row, onClose }: { row: ChangeRow; onClose: () 
             <button
               type="button"
               className="btn"
-              disabled={cancel.busy}
+              disabled={cancel.busy || cancel.accepted}
               aria-busy={cancel.busy || undefined}
               onClick={() => void cancelLanding()}
             >
-              {t({ id: 'changes.inspector.cancelLanding', defaultMessage: 'Cancel landing' })}
+              {cancel.accepted
+                ? t({ id: 'changes.inspector.cancelling', defaultMessage: 'Cancelling' })
+                : t({ id: 'changes.inspector.cancelLanding', defaultMessage: 'Cancel landing' })}
             </button>
           )}
           {sessionId && (
