@@ -108,6 +108,7 @@ import {
   overlaps,
   afterSourceLandings,
   AGENT_CONFIGURATION,
+  changedGateFiles,
   checkGates,
   gateArgv,
   gateCommands,
@@ -2685,9 +2686,14 @@ export async function sessionPreflight(
   const workspace = ctx.store.must<Workspace>('workspaces', started.workspace_id),
     source = workspace.source ?? workspace.path,
     base = sessionBase(started, workspace);
+  const approvals = ctx.store
+    .list<Approval>('approvals')
+    .filter((approval) => approval.session_id === sessionId);
+  // A read from before the session's last activity may not show the commit that activity made.
+  const activity = sessionActivity(ctx, started.project_id, approvals).get(sessionId)?.at ?? 0;
   const [worktreeStatus, sourceStatus] = await Promise.all([
-    worktreeStatusArgs().then((args) => readStatus(workspace.path, args, workspace.id)),
-    readStatus(source, SOURCE_STATUS, workspace.id),
+    worktreeStatusArgs().then((args) => readStatus(workspace.path, args, workspace.id, activity)),
+    readStatus(source, SOURCE_STATUS, workspace.id, activity),
   ]);
   const worktree = worktreeStateOf(worktreeStatus);
   requireThat(worktree, 'workspace_read_failed', 'Worktree status could not be read');
@@ -2924,6 +2930,7 @@ async function completeMerge(ctx: ControlContext, sessionId: string, jobId: stri
           ctx,
           {
             ...owner,
+            allowGateChange: session.merge.allow_gate_change,
             // A gate changed meanwhile does not decide this merge; the session's next turn merges on it.
             cancelled: () => owner.cancelled() || gateArgv(gateNow()) !== gateArgv(commands),
             progress: { saved, save: saveProgress },
@@ -3333,6 +3340,7 @@ export function admitMerge(
   cause: string | undefined,
   reason: string | undefined,
   reads: MergeReads,
+  allowGateChange?: boolean,
 ): Session {
   requireMergeReady(ctx, session, reads);
   // Only prepareMerge commits first, so any other merge of uncommitted files would leave them behind.
@@ -3353,6 +3361,7 @@ export function admitMerge(
         ...(session.merge?.reason === 'workflow_approval' && session.merge.landing
           ? { landing: session.merge.landing }
           : {}),
+        ...(allowGateChange ? { allow_gate_change: true } : {}),
       },
     },
     session.revision,
@@ -3598,7 +3607,7 @@ function mergeRequest(ctx: ControlContext, p: Principal, c: Command): MergeReque
   revision(ctx, c, session);
   return {
     session,
-    admit: (reads) => admitMerge(ctx, session, cause, undefined, reads),
+    admit: (reads) => admitMerge(ctx, session, cause, undefined, reads, input.allow_gate_change),
   };
 }
 
@@ -3743,17 +3752,46 @@ async function prepareLand(
       true,
     ),
     files = numstat.exit_code === 0 ? numstatFiles(numstat.stdout) : [];
+  const allowed =
+    c.type === 'session.merge' && inputSchemas['session.merge'].parse(c.input).allow_gate_change;
+  const project = ctx.store.must<Project>('projects', session.project_id);
+  // Both paths of a rename, so a gate file moved away counts as changed.
+  const changed = allowed
+    ? undefined
+    : await runGit(
+        workspace.path,
+        ['diff', '--name-only', '-z', '--no-renames', base, worktree.head],
+        undefined,
+        true,
+      );
+  const unread =
+    changed && changed.exit_code !== 0
+      ? `git_failed: ${changed.stderr.toString().trim().split('\n')[0] || 'git diff failed'}`
+      : undefined;
+  // The folder already holds these commits; a gate that ran changed gate files does not land them.
+  const guarded =
+    !changed || unread
+      ? []
+      : await changedGateFiles(
+          project,
+          workspace.source!,
+          workspace.path,
+          [base, worktree.head],
+          changed.stdout.toString().split('\0').filter(Boolean),
+          gateCommands(ctx, project, workspace, session),
+        );
   return (ctx) => {
     const { session } = request(ctx);
-    if (committed) {
-      const next = ctx.store.update(
-        'sessions',
-        { ...session, merge: { state: 'blocked' as const, reason: 'gate_required' } },
-        session.revision,
-      );
+    if (committed || unread || guarded.length) {
+      const merge = committed
+        ? { state: 'blocked' as const, reason: 'gate_required' }
+        : unread
+          ? { state: 'blocked' as const, reason: unread }
+          : { state: 'blocked' as const, reason: 'gate_files_changed', conflicts: guarded };
+      const next = ctx.store.update('sessions', { ...session, merge }, session.revision);
       ctx.store.event('session.merge_blocked', next, next.project_id, next.merge, c.command_id);
       unsnooze(ctx, session.id, 'merge_blocked', c.command_id);
-      notifyMergeWatcher(ctx, next, 'did not land: gate_required', c.command_id);
+      notifyMergeWatcher(ctx, next, `did not land: ${merge.reason}`, c.command_id);
       return next;
     }
     requireMergeReady(ctx, session, { ...reads, worktree: () => worktree });

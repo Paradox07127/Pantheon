@@ -228,6 +228,43 @@ describe('needs-you list', () => {
         .map(text),
     ).toEqual(retries);
   });
+
+  it.each([
+    ['changed gate files', 'gate_files_changed', 'session.merge_blocked', true],
+    ['a failed gate', 'gate_failed', 'session.merge_blocked', false],
+    ['changed gate files after a failed gate', 'gate_files_changed', 'session.gate_failed', true],
+  ] as const)(
+    'offers to land a merge blocked by %s anyway: %s',
+    async (_name, reason, kind, offered) => {
+      mock.board.board.sessions.push({
+        id: 'session-gate',
+        project_id: 'alpha',
+        title: 'Edit the gate',
+        merge: { state: 'blocked', reason },
+      });
+      const blocked = item({
+        source: { table: 'sessions', id: 'session-gate', revision: 4 },
+        kind,
+        reason: kind === 'session.gate_failed' ? 'gate_failed' : 'merge_blocked',
+        primary: 'session.merge',
+        actions: [{ command: 'session.merge', allowed: true }],
+      });
+      const h = mount(() => NeedsPopover({ items: [blocked], trigger }));
+      root(h.value).props.onOpenChange(true);
+      h.render();
+      const anyway = nodes(h.value).find(
+        (n) => !!n.props.onClick && text(n) === zh('board.needs.actions.mergeAnyway'),
+      );
+      expect(!!anyway).toBe(offered);
+      if (!anyway) return;
+      await anyway.props.onClick();
+      expect(runCommand).toHaveBeenCalledWith(
+        'session.merge',
+        { session_id: 'session-gate', allow_gate_change: true },
+        4,
+      );
+    },
+  );
 });
 
 describe('running and ready lists', () => {

@@ -1774,6 +1774,11 @@ export const inputSchemas = {
     project_id: str,
     root: str,
     commands: z.array(gateCommand),
+    protected_paths: strings
+      .optional()
+      .describe(
+        'Optional: repository paths or globs a landing may change only when the user allows it, besides the files the gate argv names; absent keeps the current list.',
+      ),
   }),
   /** The user only; runs the enabled gate of each root, or of the named root, in a fresh worktree and returns the started EnvironmentCheck rows. With baseline_id it runs the submitted baseline's proposed commands of each folder instead. */
   'project.environment.verify': z.strictObject({
@@ -1788,6 +1793,10 @@ export const inputSchemas = {
     message: str
       .optional()
       .describe('When present, the commits land as one commit with this message.'),
+    allow_gate_change: z
+      .boolean()
+      .optional()
+      .describe('Optional: true lands a branch that changes protected paths.'),
   }),
   'project.worktree.set': z.strictObject({
     project_id: str,
@@ -2021,6 +2030,10 @@ export const inputSchemas = {
   'session.merge': z.strictObject({
     session_id: str.optional(),
     project_id: str.optional(),
+    allow_gate_change: z
+      .boolean()
+      .optional()
+      .describe('Optional: true lands a session that changes protected paths.'),
   }),
   'session.gates.run': z.strictObject({ session_id: str, only_failed: z.boolean().optional() }),
   'session.gates.cancel': z.strictObject({ session_id: str }),

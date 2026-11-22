@@ -12,6 +12,7 @@ export type NeedActionKey =
   | 'answer'
   | 'reply'
   | 'merge'
+  | 'merge_anyway'
   | 'gates'
   | 'continue'
   | 'stop_background'
@@ -35,7 +36,7 @@ function offReason(item: NeedsYouItem, command: string): string | null {
 const asksQuestion = (item: NeedsYouItem) => item.binding?.action === 'AskUserQuestion';
 
 /** The inline buttons of one needs-you item, in the order they show. */
-export function needActions(item: NeedsYouItem): NeedAction[] {
+export function needActions(item: NeedsYouItem, session?: SnapshotSession): NeedAction[] {
   const open: NeedAction = {
     key: 'open',
     label: t({ id: 'board.needs.actions.open', defaultMessage: 'Open session' }),
@@ -104,6 +105,15 @@ export function needActions(item: NeedsYouItem): NeedAction[] {
         label: t({ id: 'board.needs.actions.merge', defaultMessage: 'Retry merge' }),
         reason: offReason(item, 'session.merge'),
       },
+      ...(session?.merge?.reason === 'gate_files_changed'
+        ? [
+            {
+              key: 'merge_anyway' as const,
+              label: t({ id: 'board.needs.actions.mergeAnyway', defaultMessage: 'Land anyway' }),
+              reason: offReason(item, 'session.merge'),
+            },
+          ]
+        : []),
       ...(item.kind === 'session.gate_failed'
         ? [
             {
@@ -152,10 +162,13 @@ export function needCommand(
   extra: { answers?: Record<string, string> } = {},
 ): { type: CommandType; input: Record<string, unknown>; revision: number | null } | null {
   const sessionId = needSession(item);
-  if (key === 'merge')
+  if (key === 'merge' || key === 'merge_anyway')
     return {
       type: 'session.merge',
-      input: { session_id: sessionId },
+      input: {
+        session_id: sessionId,
+        ...(key === 'merge_anyway' ? { allow_gate_change: true } : {}),
+      },
       revision: item.source.revision,
     };
   if (key === 'gates')

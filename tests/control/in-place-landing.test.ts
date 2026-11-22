@@ -1,6 +1,7 @@
-import { existsSync, realpathSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { chmodSync, existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { expect, it, vi } from 'vitest';
+import { expect, it, onTestFinished, vi } from 'vitest';
 import {
   credentialRole,
   type Project,
@@ -146,6 +147,106 @@ it('runs the gates of a new folder session and lands it on the current branch on
   expect(current(f, session.id)).toMatchObject({ outcome: 'merged', state: 'closed' });
   expect(head(f)).toBe(landed);
   expect(git(f.source, 'branch', '--show-current').trim()).toBe('main');
+});
+
+it('holds a folder session that changed a gate file for the user, and lands it once allowed', async () => {
+  const f = await workbenchFixture();
+  mkdirSync(path.join(f.source, 'scripts'));
+  writeFileSync(path.join(f.source, 'scripts/check.cjs'), 'process.exit(1)\n');
+  git(f.source, 'add', 'scripts/check.cjs');
+  git(f.source, 'commit', '--quiet', '-m', 'Add the check');
+  vi.spyOn(validation, 'runValidationCommand').mockResolvedValue(passed());
+  await f.call(
+    'project.gate.set',
+    {
+      project_id: f.project.id,
+      root: f.source,
+      commands: [{ name: 'check', argv: ['node', 'scripts/check.cjs'] }],
+    },
+    f.store.must<Project>('projects', f.project.id).revision,
+  );
+  const session = await folderSession(
+    f,
+    script(
+      { write: { path: 'scripts/check.cjs', text: 'process.exit(0)\n' } },
+      { commit: 'Pass the check' },
+    ),
+  );
+  await runGates(f, session.id);
+  await land(f, session.id);
+  expect(current(f, session.id)).toMatchObject({
+    state: 'open',
+    merge: { state: 'blocked', reason: 'gate_files_changed', conflicts: ['scripts/check.cjs'] },
+  });
+  await f.call<Session>(
+    'session.merge',
+    { session_id: session.id, allow_gate_change: true },
+    current(f, session.id).revision,
+  );
+  expect(current(f, session.id)).toMatchObject({ outcome: 'merged', state: 'closed' });
+});
+
+/** A folder session over a committed gate script, its gates passed on the folder HEAD after change ran. */
+async function gatedFolderSession(f: Fixture, change: () => void) {
+  mkdirSync(path.join(f.source, 'scripts'));
+  writeFileSync(path.join(f.source, 'scripts/check.cjs'), 'process.exit(1)\n');
+  git(f.source, 'add', 'scripts/check.cjs');
+  git(f.source, 'commit', '--quiet', '-m', 'Add the check');
+  vi.spyOn(validation, 'runValidationCommand').mockResolvedValue(passed());
+  await f.call(
+    'project.gate.set',
+    {
+      project_id: f.project.id,
+      root: f.source,
+      commands: [{ name: 'check', argv: ['node', 'scripts/check.cjs'] }],
+    },
+    f.store.must<Project>('projects', f.project.id).revision,
+  );
+  const session = await folderSession(f);
+  change();
+  await runGates(f, session.id);
+  return session;
+}
+
+it('holds a folder session that moved a gate file away for the user', async () => {
+  const f = await workbenchFixture();
+  const session = await gatedFolderSession(f, () => {
+    git(f.source, 'mv', 'scripts/check.cjs', 'moved.cjs');
+    git(f.source, 'commit', '--quiet', '-m', 'Move the check');
+  });
+  await land(f, session.id);
+  expect(current(f, session.id)).toMatchObject({
+    state: 'open',
+    merge: { state: 'blocked', reason: 'gate_files_changed', conflicts: ['scripts/check.cjs'] },
+  });
+});
+
+it('holds a folder session whose changed files cannot be read', async () => {
+  const f = await workbenchFixture();
+  const session = await gatedFolderSession(f, () => {
+    writeFileSync(path.join(f.source, 'scripts/check.cjs'), 'process.exit(0)\n');
+    git(f.source, 'commit', '--quiet', '-am', 'Pass the check');
+  });
+  // A git first on PATH that fails every diff between the session base and the folder HEAD.
+  const real = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
+  const bin = path.join(f.root, 'failing-git');
+  mkdirSync(bin);
+  const trigger = `${current(f, session.id).in_place!.base_sha} ${head(f)}`;
+  writeFileSync(
+    path.join(bin, 'git'),
+    `#!/bin/sh\ncase "$*" in *"${trigger}"*) exit 128;; esac\nexec '${real}' "$@"\n`,
+  );
+  chmodSync(path.join(bin, 'git'), 0o755);
+  const PATH = process.env.PATH;
+  process.env.PATH = `${bin}:${PATH}`;
+  onTestFinished(() => {
+    process.env.PATH = PATH;
+  });
+  await land(f, session.id);
+  expect(current(f, session.id)).toMatchObject({
+    state: 'open',
+    merge: { state: 'blocked', reason: expect.stringMatching(/^git_failed:/) },
+  });
 });
 
 it('commits the uncommitted files of a folder session under its title before it lands', async () => {

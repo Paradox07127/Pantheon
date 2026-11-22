@@ -56,6 +56,8 @@ export interface LandingOwner {
   progress?: { saved?: LandingProgress; save(progress: LandingProgress): void };
   /** A workflow approval may hold a gated candidate before the source moves. */
   beforeLand?(): boolean;
+  /** The user let this landing change the paths that protect the gate. */
+  allowGateChange?: boolean;
 }
 
 /** The argv of the gate commands, as a landing saves and compares them. */
@@ -271,6 +273,69 @@ async function changedTracked(candidate: string, commit: string, index: string):
   };
   await run(['read-tree', commit]);
   return run(['status', '--porcelain=v1', '--untracked-files=no']);
+}
+
+/** The repository files the gate argv names, reading each argument's words as a script's, that one of commits holds. */
+export async function gateFiles(
+  cwd: string,
+  commits: string[],
+  commands: GateCommands | undefined,
+): Promise<string[]> {
+  const words = new Set(
+    (commands ?? [])
+      .flatMap((command) => command.argv)
+      .flatMap((argument) => [
+        // Unstripped, as the gate passes it without a shell: a file name may hold spaces or quotes.
+        argument,
+        ...argument
+          .split(/\s+/)
+          .flatMap((word) =>
+            word.includes('=') ? [word, word.slice(word.indexOf('=') + 1)] : [word],
+          )
+          .map((word) => word.replace(/^['"]+|['";]+$/g, '')),
+      ])
+      .map((word) => path.posix.normalize(word))
+      .filter(
+        (word) =>
+          word !== '.' && word !== '..' && !word.startsWith('../') && !path.posix.isAbsolute(word),
+      ),
+  );
+  if (!words.size) return [];
+  const listed = await Promise.all(
+    commits.map((commit) =>
+      git(cwd, [
+        '--literal-pathspecs',
+        'ls-tree',
+        '-r',
+        '-z',
+        '--name-only',
+        commit,
+        '--',
+        ...words,
+      ]),
+    ),
+  );
+  return [
+    ...new Set(listed.flatMap((files) => files.split('\0')).filter((file) => words.has(file))),
+  ];
+}
+
+/** Of changed, the files a landing takes only with the user's leave: those the gate names and the root's protected paths. */
+export async function changedGateFiles(
+  project: Project,
+  source: string,
+  cwd: string,
+  commits: string[],
+  changed: string[],
+  commands: GateCommands | undefined,
+): Promise<string[]> {
+  const listed = project.protected_paths?.[rootOf(project, [source]) ?? ''] ?? [],
+    named = await gateFiles(cwd, commits, commands);
+  return changed.filter(
+    (file) =>
+      named.includes(file) ||
+      listed.some((entry) => within(file, entry) || path.posix.matchesGlob(file, entry)),
+  );
 }
 
 /** True when the path equals the scope entry or lies below it, compared by path segment. */
@@ -523,6 +588,8 @@ export async function checkGates(
     check_spec_hash: hash(commands),
     results,
   });
+  // A status read from before the session's last commit would show this result as stale.
+  forgetWorktreeReads(workspace.id);
   return results;
 }
 
@@ -626,6 +693,20 @@ export async function landWorkspace(
           { ...item, reason: 'protected_paths' },
           { conflicts: agentConfiguration },
         );
+      // The gate runs the candidate's own files, so a change to them waits for the user.
+      if (!owner.allowGateChange) {
+        const project = ctx.store.must<Project>('projects', owner.projectId);
+        const guarded = await changedGateFiles(
+          project,
+          item.source,
+          workspace.path,
+          [landsOn, target],
+          changed,
+          commands,
+        );
+        if (guarded.length)
+          return Object.assign({ ...item, reason: 'gate_files_changed' }, { conflicts: guarded });
+      }
       // A rebase replays a merge's parents and drops the changes made in the merge itself.
       if (onto && (await git(workspace.path, ['rev-list', '--merges', `${onto}..${target}`])))
         return { ...item, reason: 'merge_commits' };

@@ -414,12 +414,14 @@ function openProject(
 
 function gateTarget(ctx: ControlContext, p: Principal, c: Command) {
   requireThat(p.role === 'user', 'permission_denied', 'Only user can set the project gate');
-  const { project_id, commands, ...input } = inputSchemas['project.gate.set'].parse(c.input),
+  const { project_id, commands, protected_paths, ...input } = inputSchemas[
+      'project.gate.set'
+    ].parse(c.input),
     project = ctx.store.must<Project>('projects', project_id),
     root = resolvedPath(input.root);
   revision(ctx, c, project);
   requireThat(project.roots.includes(root), 'scope_violation', 'Gate root is not a project root');
-  return { project, root, commands };
+  return { project, root, commands, protected_paths };
 }
 
 /** Sets one root's gate; gitRoots holds the project roots read as git folders before the transaction. */
@@ -429,11 +431,11 @@ export function setProjectGate(
   c: Command,
   gitRoots: ReadonlySet<string>,
 ): Project {
-  const { project, root, commands } = gateTarget(ctx, p, c);
-  return writeProjectGate(ctx, project, root, commands, gitRoots, c.command_id);
+  const { project, root, commands, protected_paths } = gateTarget(ctx, p, c);
+  return writeProjectGate(ctx, project, root, commands, gitRoots, c.command_id, protected_paths);
 }
 
-/** Writes one root's gate; gitRoots as for setProjectGate. */
+/** Writes one root's gate, and its protected paths when given; gitRoots as for setProjectGate. */
 function writeProjectGate(
   ctx: ControlContext,
   project: Project,
@@ -441,18 +443,36 @@ function writeProjectGate(
   commands: NonNullable<Project['gates']>[string],
   gitRoots: ReadonlySet<string>,
   commandId: string,
+  protectedPaths?: string[],
 ): Project {
   requireThat(project.roots.includes(root), 'scope_violation', 'Gate root is not a project root');
   requireThat(gitRoots.has(root), 'invalid_input', 'Gate root is not a git folder');
   const { [root]: _previous, ...others } = project.gates ?? {};
   const gates = commands.length ? { ...others, [root]: commands } : others;
-  const { gates: _gates, ...rest } = project;
+  const { [root]: _listed, ...otherPaths } = project.protected_paths ?? {};
+  const paths =
+    protectedPaths === undefined
+      ? (project.protected_paths ?? {})
+      : protectedPaths.length
+        ? { ...otherPaths, [root]: protectedPaths }
+        : otherPaths;
+  const { gates: _gates, protected_paths: _paths, ...rest } = project;
   const next = ctx.store.update(
     'projects',
-    Object.keys(gates).length ? { ...rest, gates } : rest,
+    {
+      ...rest,
+      ...(Object.keys(gates).length ? { gates } : {}),
+      ...(Object.keys(paths).length ? { protected_paths: paths } : {}),
+    },
     project.revision,
   );
-  ctx.store.event('project.gate_set', next, project.id, { root, commands }, commandId);
+  ctx.store.event(
+    'project.gate_set',
+    next,
+    project.id,
+    { root, commands, ...(protectedPaths && { protected_paths: protectedPaths }) },
+    commandId,
+  );
   return next;
 }
 

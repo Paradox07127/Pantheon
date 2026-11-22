@@ -104,6 +104,7 @@ async function prepareBranchLanding(
       target_branch,
       workspace_id: workspace.id,
       ...(input.message === undefined ? {} : { message: input.message }),
+      ...(input.allow_gate_change ? { allow_gate_change: true } : {}),
       state: 'queued',
     });
     ctx.store.enqueue('landing.run', { landing_id: row.id });
@@ -214,6 +215,7 @@ async function landBranch(ctx: ControlContext, landingId: string, jobId: string)
       key: `land-${landingId}`,
       projectId: row.project_id,
       cancelled: () => false,
+      allowGateChange: row.allow_gate_change,
       // A gate that starts again, after the root moved, drops the results of the earlier run.
       event: (kind, payload) =>
         updateRow(ctx, landingId, {

@@ -379,7 +379,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
-| `project.gate.set` | `project_id`: string<br>`root`: string<br>`commands`: object[] |  |
+| `project.gate.set` | `project_id`: string<br>`root`: string<br>`commands`: object[]<br>`protected_paths?`: string[] |  |
 
 ### project.intro
 
@@ -392,7 +392,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
-| `project.land` | `root`: string<br>`branch`: string<br>`message?`: string |  |
+| `project.land` | `root`: string<br>`branch`: string<br>`message?`: string<br>`allow_gate_change?`: boolean |  |
 
 ### project.open
 
@@ -479,7 +479,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `session.gates.cancel` | `session_id`: string |  |
 | `session.gates.run` | `session_id`: string<br>`only_failed?`: boolean |  |
 | `session.interrupt` | `session_id`: string |  |
-| `session.merge` | `session_id?`: string<br>`project_id?`: string |  |
+| `session.merge` | `session_id?`: string<br>`project_id?`: string<br>`allow_gate_change?`: boolean |  |
 | `session.merge.cancel` | `session_id`: string |  |
 | `session.pin` | `session_id`: string<br>`pinned`: boolean |  |
 | `session.reconnect` | `session_id`: string |  |

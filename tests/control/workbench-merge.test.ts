@@ -399,6 +399,61 @@ it('blocks a session commit that changes agent configuration and never writes it
   expect(git(f.source, 'rev-parse', 'main')).toBe(theirs);
 });
 
+it.skipIf(insideSandbox).each([
+  ['named in its argv', [process.execPath, 'scripts/check.cjs']],
+  ['named in its shell script', ['sh', '-c', `'${process.execPath}' ./scripts/check.cjs && true`]],
+])(
+  'holds a session commit that changes a gate file %s for the user, and lands it once allowed',
+  async (_name, argv) => {
+    const f = await mergeFixture();
+    commit(f.source, 'scripts/check.cjs', 'process.exit(0)\n');
+    const { session, workspace } = await idleSession(f);
+    await setGate(f, [{ name: 'Checks', argv }]);
+    const head = commit(workspace.path, 'scripts/check.cjs', 'process.exit(0) // always\n');
+    const before = git(f.source, 'rev-parse', 'main');
+    await merge(f, session.id);
+    await settled(f, session.id);
+    expect(current(f, session.id).merge).toMatchObject({
+      state: 'blocked',
+      reason: 'gate_files_changed',
+      conflicts: ['scripts/check.cjs'],
+    });
+    expect(payloads(f, session.id, 'session.gate_started')).toEqual([]);
+    expect(git(f.source, 'rev-parse', 'main')).toBe(before);
+    await f.control.prefetchWorktreeReads(user, f.project.id);
+    expect(
+      f.control.needsYou(user, f.project.id).items.find((item) => item.source.id === session.id),
+    ).toMatchObject({
+      kind: 'session.merge_blocked',
+      actions: [{ command: 'session.merge', allowed: true }],
+    });
+    await f.call<Session>(
+      'session.merge',
+      { session_id: session.id, allow_gate_change: true },
+      current(f, session.id).revision,
+    );
+    await eventually(
+      () => removed(f, workspace.id),
+      () => f.control.tick(),
+    );
+    expect(git(f.source, 'rev-parse', 'main')).toBe(head);
+  },
+);
+
+it.skipIf(insideSandbox)('lands a session commit that leaves the gate files alone', async () => {
+  const f = await mergeFixture();
+  commit(f.source, 'scripts/check.cjs', 'process.exit(0)\n');
+  const { session, workspace } = await idleSession(f);
+  await setGate(f, [{ name: 'Checks', argv: [process.execPath, 'scripts/check.cjs'] }]);
+  const head = commit(workspace.path, 'answer.txt', 'gated\n');
+  await merge(f, session.id);
+  await eventually(
+    () => removed(f, workspace.id),
+    () => f.control.tick(),
+  );
+  expect(git(f.source, 'rev-parse', 'main')).toBe(head);
+});
+
 it.skipIf(insideSandbox)(
   'fails the gate when a gate command changes tracked files of the candidate',
   async () => {

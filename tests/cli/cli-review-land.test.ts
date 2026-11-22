@@ -514,6 +514,13 @@ describe('pnpm cli land', () => {
       stdout: 'blocked: rebase conflict\nconflicts:\na.txt\nb.txt\n',
       code: 1,
     },
+    {
+      name: 'changed gate files',
+      landing: { state: 'blocked', reason: 'gate_files_changed', conflicts: ['scripts/check.sh'] },
+      stdout:
+        "blocked: gate_files_changed\nconflicts:\nscripts/check.sh\nLand with the gate files changed: pantheon land 'feature' --allow-gate-change\n",
+      code: 1,
+    },
   ])('prints the result and exits $code when $name', async ({ landing, stdout, code }) => {
     const result = await cli(
       repo,
@@ -523,6 +530,39 @@ describe('pnpm cli land', () => {
     expect(sentInput().input).toEqual({ root: repo, branch: 'feature' });
     expect(result.stdout).toBe(stdout);
     expect(result.code).toBe(code);
+  });
+
+  it('lets a landing change the gate files with --allow-gate-change', async () => {
+    const result = await cli(
+      repo,
+      ['land', 'feature', '--message', "It's one", '--allow-gate-change'],
+      [
+        { body: { receipt: landingOf({ state: 'queued' }) } },
+        { body: landingOf({ state: 'landed', from_sha: '0123456789ab', to_sha: 'abcdef012345' }) },
+      ],
+    );
+    expect(sentInput().input).toEqual({
+      root: repo,
+      branch: 'feature',
+      message: "It's one",
+      allow_gate_change: true,
+    });
+    expect(result.code).toBe(0);
+  });
+
+  it('quotes the branch and message of the command that lands with the gate files changed', async () => {
+    const result = await cli(
+      repo,
+      ['land', "it's;touch x", "--message=-It's one"],
+      [
+        { body: { receipt: landingOf({ state: 'queued' }) } },
+        { body: landingOf({ state: 'blocked', reason: 'gate_files_changed' }) },
+      ],
+    );
+    expect(result.stdout).toContain(
+      `pantheon land 'it'\\''s;touch x' --message='-It'\\''s one' --allow-gate-change\n`,
+    );
+    expect(result.code).toBe(1);
   });
 
   it('prints the command that finds gate commands when the root has none', async () => {

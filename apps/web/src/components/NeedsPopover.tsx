@@ -28,6 +28,7 @@ import { visibleProjects } from '../data/projects';
 import { sessionTitle } from '../data/transcript';
 import { t } from '../i18n';
 import { holdRootFlag } from '../lib/root-flag';
+import type { SnapshotSession } from '../lib/snapshot-types';
 import { needActions, needCommand, type NeedAction } from '../data/need-actions';
 import { durationText } from '../lib/time-text';
 import { runningSince, useProjectSessions } from '../shell/TrayPopover';
@@ -186,8 +187,8 @@ const NO_PROJECTS: readonly never[] = [];
 const NO_KEYS: ReadonlySet<string> = new Set();
 
 /** Allow and deny for a request answered here; else the item's own buttons. */
-function itemActions(item: NeedsYouItem): NeedAction[] {
-  if (!answerable(item)) return needActions(item);
+function itemActions(item: NeedsYouItem, session?: SnapshotSession): NeedAction[] {
+  if (!answerable(item)) return needActions(item, session);
   return [
     {
       key: 'approve',
@@ -283,13 +284,13 @@ export function NeedsPopover({
       end: ageText(item.created_at, now),
       on: key === current,
     };
-    return { item, row };
+    return { item, row, session };
   });
   const shown = listed.filter(({ row }) => !done.has(row.key));
   const order = [...byProject(shown.map(({ row }) => row)).values()].flat().map((row) => row.key);
 
-  const rows = shown.map(({ item, row }): ListRow => {
-    const actions = itemActions(item);
+  const rows = shown.map(({ item, row, session }): ListRow => {
+    const actions = itemActions(item, session);
     const lead = primaryAction(actions, item.primary);
     const rest = actions.filter((action) => action !== lead);
     const busy = answers[row.key] === ANSWERING;

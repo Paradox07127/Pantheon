@@ -46,6 +46,7 @@
   "data.reason.workspaceOwned": "另一个操作正在使用 worktree",
   "data.reason.mergeCommits": "worktree 里有合并提交，变基会丢掉合并本身的改动",
   "data.reason.protectedPaths": "改动涉及受保护的 agent 配置文件",
+  "data.reason.gateFilesChanged": "改动涉及保护门禁的文件",
   "data.reason.dependencyFolderSkipped": "有依赖目录被跳过，没有复制进 worktree",
   "data.reason.sourceMetadataUnsupported": "源仓库的 .git 不是目录",
   "data.reason.rootInUse": "目录里还有会话未合并的工作",

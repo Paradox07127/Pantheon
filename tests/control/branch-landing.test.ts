@@ -172,6 +172,41 @@ it('blocks a branch that changes agent configuration', async () => {
   expect(git(f.source, 'rev-parse', 'main')).toBe(base);
 });
 
+it.skipIf(insideSandbox).each([
+  ['the gate argv names', 'scripts/check.cjs', undefined],
+  ['the project protects by glob', 'config/gate.json', ['config/*.json']],
+])(
+  'blocks a branch that changes a file %s without running the gate, and lands it when allowed',
+  async (_name, file, protectedPaths) => {
+    const f = await landFixture([]);
+    commit(f.source, 'scripts/check.cjs', 'process.exit(0)\n');
+    commit(f.source, 'config/gate.json', '{}\n');
+    await f.call<Project>(
+      'project.gate.set',
+      {
+        project_id: f.project.id,
+        root: f.source,
+        commands: [{ name: 'Checks', argv: [process.execPath, 'scripts/check.cjs'] }],
+        ...(protectedPaths ? { protected_paths: protectedPaths } : {}),
+      },
+      f.store.must<Project>('projects', f.project.id).revision,
+    );
+    const base = git(f.source, 'rev-parse', 'main');
+    const tip = branch(f, 'feature', [[file, '"changed"\n']]);
+    const done = await ended(f, (await land(f)).id);
+    expect(done).toMatchObject({
+      state: 'blocked',
+      reason: 'gate_files_changed',
+      conflicts: [file],
+    });
+    expect(done.gate_results).toBeUndefined();
+    expect(git(f.source, 'rev-parse', 'main')).toBe(base);
+    const allowed = await ended(f, (await land(f, { allow_gate_change: true })).id);
+    expect(allowed).toMatchObject({ state: 'landed', to_sha: tip });
+    expect(git(f.source, 'rev-parse', 'main')).toBe(tip);
+  },
+);
+
 it('blocks a landing whose root checked out another branch after the request', async () => {
   const f = await landFixture();
   const base = git(f.source, 'rev-parse', 'main');

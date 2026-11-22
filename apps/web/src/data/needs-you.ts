@@ -354,6 +354,11 @@ function knownReason(code: string): string | null {
         id: 'data.reason.protectedPaths',
         defaultMessage: 'Changes touch protected agent configuration files',
       });
+    case 'gate_files_changed':
+      return t({
+        id: 'data.reason.gateFilesChanged',
+        defaultMessage: 'Changes touch files that protect the gate',
+      });
     case 'dependency_folder_skipped':
       return t({
         id: 'data.reason.dependencyFolderSkipped',

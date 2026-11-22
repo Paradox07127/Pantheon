@@ -311,6 +311,8 @@ export interface Project extends Entity {
     string,
     { name: string; argv: string[]; timeout_ms?: number; enabled?: boolean; skippable?: boolean }[]
   >;
+  /** Repository paths or globs a landing may change only with the user's release, keyed as gates are; the files the gate argv names are protected too. */
+  protected_paths?: Record<string, string[]>;
   /** Set on every native session process and gate command; Pantheon's own variables win. */
   env?: Record<string, string>;
   /** What a new session starts on; absent follows the global value, else the composer's own default. */
@@ -538,6 +540,8 @@ export interface Landing extends Entity {
   workspace_id: string;
   /** When present, the branch's commits land as one commit with this message. */
   message?: string;
+  /** The user let the branch change protected paths. */
+  allow_gate_change?: boolean;
   state: 'queued' | 'running' | 'landed' | 'no_changes' | 'blocked';
   reason?: string;
   conflicts?: string[];
@@ -744,6 +748,8 @@ export interface Session extends Entity {
     allow_out_of_scope?: boolean;
     /** Files outside the task's scope the lead let this merge land; others are still checked. */
     allowed_files?: string[];
+    /** The user let this merge change protected paths. */
+    allow_gate_change?: boolean;
     /** How far a running merge got, saved before the source moves; a rerun resumes from it. */
     landing?: {
       stage: 'gated' | 'fast_forwarded';

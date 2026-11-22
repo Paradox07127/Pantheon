@@ -13,6 +13,7 @@
   "board.needs.actions.approve": "允许一次",
   "board.needs.actions.approveSession": "本会话允许",
   "board.needs.actions.merge": "重试合并",
+  "board.needs.actions.mergeAnyway": "仍然落地",
   "board.needs.actions.gates": "重跑门禁",
   "board.needs.actions.stopBackground": "停止后台任务",
   "board.needs.actions.continue": "继续",

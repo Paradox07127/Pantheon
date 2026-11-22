@@ -10,7 +10,7 @@ import {
   type Daemon,
 } from './review.js';
 
-export const landUsage = 'land [BRANCH] [--message TEXT]';
+export const landUsage = 'land [BRANCH] [--message TEXT] [--allow-gate-change]';
 
 const gateState = (gate: NonNullable<Landing['gate_results']>[number]) =>
   gate.state ?? (gate.exit_code === 0 ? 'passed' : 'failed');
@@ -21,10 +21,18 @@ const findGate = (projectId: string) =>
     command(USER_PRINCIPAL_ID, 'project.baseline.start', { project_id: projectId }),
   )}'`;
 
+const quote = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`;
+
+/** The line that lands the branch again, letting it change the files that protect the gate. */
+const allowGateChange = (branch: string, message: string | undefined) =>
+  `Land with the gate files changed: pantheon land ${quote(branch)}${
+    message === undefined ? '' : ` --message=${quote(message)}`
+  } --allow-gate-change`;
+
 export const land = async (
   connect: () => Daemon,
   positionals: string[],
-  values: { message?: string },
+  values: { message?: string; 'allow-gate-change'?: boolean },
 ) => {
   if (positionals.length > 1) usageError(`Usage: pantheon ${landUsage}`);
   const branch = positionals[0]
@@ -35,7 +43,12 @@ export const land = async (
   const sent = await sendCommand(
     daemon,
     'project.land',
-    { root, branch, ...(values.message === undefined ? {} : { message: values.message }) },
+    {
+      root,
+      branch,
+      ...(values.message === undefined ? {} : { message: values.message }),
+      ...(values['allow-gate-change'] ? { allow_gate_change: true } : {}),
+    },
     5000,
   );
   if (!sent.ok) {
@@ -80,5 +93,6 @@ export const land = async (
   for (const gate of result.gate_results ?? [])
     if (gateState(gate) === 'failed') console.log(`gate ${gate.name} failed:\n${gate.output}`);
   if (result.conflicts?.length) console.log(`conflicts:\n${result.conflicts.join('\n')}`);
+  if (result.reason === 'gate_files_changed') console.log(allowGateChange(branch, values.message));
   return 1;
 };

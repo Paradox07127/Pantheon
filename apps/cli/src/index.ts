@@ -30,6 +30,7 @@ try {
       runtime: { type: 'string', multiple: true },
       fallback: { type: 'string', multiple: true },
       message: { type: 'string' },
+      'allow-gate-change': { type: 'boolean' },
       note: { type: 'string' },
     },
   });

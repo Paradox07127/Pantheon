@@ -243,6 +243,60 @@ it('repeats failed and skipped steps while carrying passed results and their tes
   expect((await f.control.sessionPreflight(user, session.id)).gate.last).toBe('passed');
 });
 
+it('reports a gate that just passed on a new commit as passed on that commit', async () => {
+  const f = await workbenchFixture();
+  const { session, workspace } = await idleSession(f);
+  await setGate(f, [{ name: 'Check', argv: ['check'] }]);
+  expect(await f.control.sessionPreflight(user, session.id)).toMatchObject({
+    commit_count: 0,
+    gate: { last: 'none' },
+  });
+  const head = commit(workspace.path, 'answer.txt', 'checked\n');
+  vi.spyOn(validation, 'runValidationCommand').mockResolvedValue(validationResult());
+  await runGates(f, session.id);
+  await eventually(
+    () => !f.control.sessionGates(user, session.id).running,
+    () => f.control.tick(),
+    10000,
+  );
+  expect(payloads(f, session.id, 'session.gate_checked').at(-1)).toMatchObject({ commit: head });
+  expect(await f.control.sessionPreflight(user, session.id)).toMatchObject({
+    commit_count: 1,
+    gate: { last: 'passed' },
+  });
+});
+
+it('reports a passed gate as stale once a turn commits after it', async () => {
+  const f = await workbenchFixture();
+  const { session, workspace } = await idleSession(f);
+  await setGate(f, [{ name: 'Check', argv: ['check'] }]);
+  commit(workspace.path, 'answer.txt', 'checked\n');
+  vi.spyOn(validation, 'runValidationCommand').mockResolvedValue(validationResult());
+  await runGates(f, session.id);
+  await eventually(
+    () => !f.control.sessionGates(user, session.id).running,
+    () => f.control.tick(),
+    10000,
+  );
+  expect((await f.control.sessionPreflight(user, session.id)).gate.last).toBe('passed');
+  f.call(
+    'session.send',
+    {
+      session_id: session.id,
+      input: `fixture-script\n${JSON.stringify([{ write: { path: 'more.txt', text: 'more\n' } }, { commit: 'Add more' }])}`,
+    },
+    current(f, session.id).revision,
+  );
+  await eventually(
+    () => f.turns(session.id).length === 2 && f.turns(session.id)[1]!.state === 'completed',
+    () => f.control.tick(),
+  );
+  expect(await f.control.sessionPreflight(user, session.id)).toMatchObject({
+    commit_count: 2,
+    gate: { last: 'stale' },
+  });
+});
+
 it('reruns the passed steps before a failed one as setup in a fresh candidate clone', async () => {
   const f = await workbenchFixture();
   const { session, workspace } = await idleSession(f);
