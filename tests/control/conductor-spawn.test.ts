@@ -24,7 +24,7 @@ const row = (f: Fixture, sessionId: string) => f.store.must<Session>('sessions',
 const script = (...steps: object[]) => `fixture-script\n${JSON.stringify(steps)}`;
 const REVIEW_LINE =
   'Review it with request_review, land it with report_ready, or read it in its worktree.';
-const COMMITS_LINE = 'Read its commits with read_state.';
+const COMMITS_LINE = 'Find its branch with read_state.';
 
 const principalOf = (f: Fixture, sessionId: string, role: Principal['role']): Principal => ({
   id: `session:${sessionId}`,
@@ -386,6 +386,9 @@ it('tells the conductor of a turn the user failed by closing its reconciling ses
   await Promise.allSettled([...ctxOf(f).completions].filter((work) => !before.has(work)));
 
   expect(toldTurns(f, session_id)).toEqual([f.turns(session_id)[0]!.id, interrupted.id]);
+  const closed = trackerTurns(f, conductor.id).at(-1)!.input;
+  expect(closed).toContain('It was closed.');
+  expect(closed).not.toContain(COMMITS_LINE);
 });
 
 it('tells the conductor once it takes input again', async () => {

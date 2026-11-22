@@ -316,7 +316,7 @@ function tellSpawner(ctx: ControlContext, session: Session): void {
       ...(ended
         ? [`It was ${ended}.`]
         : [
-            'Read its commits with read_state.',
+            'Find its branch with read_state.',
             ...(turn.state === 'completed'
               ? [
                   'Review it with request_review, land it with report_ready, or read it in its worktree.',
