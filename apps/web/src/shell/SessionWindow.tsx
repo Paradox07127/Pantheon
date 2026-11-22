@@ -108,7 +108,7 @@ export function SessionWindow({
           </span>
         )}
         {parent && parentLink(parent, !!listed?.spawned_by && !listed.forked_from)}
-        {listed?.conductor && (
+        {(listed ?? board?.sessions.find((s) => s.id === session_id))?.conductor && (
           <Crown className="ic-sm sh-agent" role="img" aria-label={conductorLabel()} />
         )}
         <h1 className="sw-title">{title}</h1>

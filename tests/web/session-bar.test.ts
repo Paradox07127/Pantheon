@@ -282,6 +282,8 @@ describe('session bar', () => {
     const lead = header({ listed: listed('session-a', { conductor: true }) });
     expect(labelled(lead.value, conductor)?.props.role).toBe('img');
     expect(labelled(header().value, conductor)).toBeUndefined();
+    const unlisted = header({ session: { ...session('session-a'), conductor: true }, listed: null });
+    expect(labelled(unlisted.value, conductor)?.props.role).toBe('img');
   });
 
   it('links the session it was forked from and opens it', () => {

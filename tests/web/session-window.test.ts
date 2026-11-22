@@ -237,6 +237,10 @@ describe('a session window', () => {
     expect(mark()).toBeUndefined();
     mock.list.data = [{ ...listed, conductor: true }];
     expect(mark()?.props.role).toBe('img');
+    mock.list.data = null;
+    mock.list.error = 'list failed';
+    mock.board.board.sessions[0].conductor = true;
+    expect(mark()?.props.role).toBe('img');
   });
 
   it('draws nothing of the session until its board, list, requests and history are in, then all of it', async () => {

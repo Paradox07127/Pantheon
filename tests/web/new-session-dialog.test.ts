@@ -275,11 +275,14 @@ it('greys out the start from scratch while the main agent toggle is on, and says
 it('marks a main agent among the sessions in progress, and no other session', async () => {
   const conductor = zh('sessions.conductor.name');
   const { h } = await mount({ recent: [{ ...session(1), conductor: true }, session(2)] });
-  const rows = nodes(h.value).filter(classed('cr-sgm'));
-  const mark = (row: ReactElement<any>) => nodes(row).find(labelled(conductor));
-  expect(rows).toHaveLength(2);
-  expect(mark(rows[0]!)?.props.role).toBe('img');
-  expect(mark(rows[1]!)).toBeUndefined();
+  const row = (title: string) =>
+    nodes(h.value).find(
+      (n) => n.type === 'button' && nodes(n).some((each) => each.props.children === title),
+    )!;
+  const mark = (title: string) => nodes(row(title)).find(labelled(conductor));
+  expect(mark('Work 1')?.props.role).toBe('img');
+  expect(row('Work 2')).toBeDefined();
+  expect(mark('Work 2')).toBeUndefined();
 });
 
 it('keeps the chosen runtime, model, effort and permission mode with the draft when it opens again', async () => {
