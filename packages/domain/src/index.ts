@@ -642,6 +642,11 @@ export interface Session extends Entity {
   ready?: { turn_id: string; command_id: string };
   /** The conductor session that started this one; it gets no Pantheon tools. */
   spawned_by?: { session_id: string };
+  /**
+   * What the conductor that spawned the session gave it: what done means, the path globs it may
+   * change, and the id shared by the sessions started together on several runtimes.
+   */
+  contract?: { acceptance?: string[]; owns?: string[]; group?: string };
   /** Native history fork applied before the next input; after is a runtime message or turn id. */
   native_fork?: { session_id: string; after: string };
   baseline?: import('./planning.js').BaselineTag;

@@ -48,6 +48,9 @@ const REVIEW_MAX_ROUNDS = 3;
 export const reviewInstruction =
   'Review these changes against the task goal. Record each problem with review_finding; quote the diff exactly. End the review with one review_verdict call, pass or fail, with a summary of what you checked.';
 const rangeInstruction = `${reviewInstruction} Write each finding's location as path:line in the changed file. The checkout in your working directory may not be the reviewed head; changes.diff is the reviewed code.`;
+/** The reviewer's input part naming what to look at closely, after the goal; empty without a focus. */
+const focusPart = (focus: string | undefined) =>
+  focus === undefined ? '' : `Review focus:\n${focus}\n\n`;
 /** The file each reviewer reads the reviewed changes from, in its directory. */
 const ARTIFACT = 'changes.diff';
 /** A finding location naming a file and a line or line range. */
@@ -183,6 +186,7 @@ export function startSessionReview(
     requester?: Review['requester'];
     notify_session_id?: string;
     fallback?: string[];
+    focus?: string;
   },
 ): Review {
   // A conductor stays open after it lands; its next change gets rounds of its own.
@@ -196,7 +200,7 @@ export function startSessionReview(
   return startReview(ctx, session.project_id, runtimes, {
     round,
     cause: options.cause,
-    prompt: `${reviewInstruction}\n\nTask goal:\n${options.goal}\n\nChanges:\n${diff.toString('utf8')}`,
+    prompt: `${reviewInstruction}\n\nTask goal:\n${options.goal}\n\n${focusPart(options.focus)}Changes:\n${diff.toString('utf8')}`,
     artifact: diff,
     session_id: session.id,
     requester: options.requester,
@@ -333,7 +337,7 @@ export function prepareRangeReview(
       const review = startReview(ctx, project.id, input.runtimes ?? [reviewer!], {
         round: 1,
         cause: command.command_id,
-        prompt: `${rangeInstruction}\n\nTask goal:\n${goal}\n\n${input.focus === undefined ? '' : `Review focus:\n${input.focus}\n\n`}Changes:\n${diff.stdout.toString('utf8')}`,
+        prompt: `${rangeInstruction}\n\nTask goal:\n${goal}\n\n${focusPart(input.focus)}Changes:\n${diff.stdout.toString('utf8')}`,
         artifact: diff.stdout,
         range: { source: root, from_sha, to_sha },
         refs: { base: input.base, head, ...(input.paths ? { paths: input.paths } : {}) },

@@ -259,7 +259,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `conductor.needs_you` | — | read_needs_you (conductor) |
 | `conductor.ready` | `session_id?`: string | report_ready (conductor) |
 | `conductor.review` | `runtimes`: string[]<br>`session_id?`: string | request_review (conductor) |
-| `conductor.spawn` | `runtime`: string<br>`input`: string<br>`model?`: string<br>`effort?`: "none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max" \| "ultra"<br>`permission_mode?`: "ask" \| "auto_edit" | spawn_session (conductor) |
+| `conductor.spawn` | `runtime?`: string<br>`runtimes?`: string[]<br>`input`: string<br>`acceptance?`: string[]<br>`owns?`: string[]<br>`model?`: string<br>`effort?`: "none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max" \| "ultra"<br>`permission_mode?`: "ask" \| "auto_edit" | spawn_session (conductor) |
 | `conductor.state` | — | read_state (conductor) |
 | `conductor.stop` | `session_id`: string<br>`close?`: boolean | stop_session (conductor) |
 

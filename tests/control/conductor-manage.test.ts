@@ -1,5 +1,13 @@
 import { expect, it, vi } from 'vitest';
-import { id, type Principal, type Project, type Session, type SessionTurn } from '@pantheon/domain';
+import { FixtureAdapter } from '@pantheon/adapters';
+import {
+  id,
+  type Principal,
+  type Project,
+  type Review,
+  type Session,
+  type SessionTurn,
+} from '@pantheon/domain';
 import { awaitWorkspaceReady, eventually, settle, waitOutStatusReuse } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
@@ -445,7 +453,12 @@ it('tells a conductor the usage of each session it spawned in read_state', async
 
 type State = {
   changes: Record<string, unknown>[];
-  spawned: { session_id: string; usage: Record<string, unknown> }[];
+  spawned: {
+    session_id: string;
+    usage: Record<string, unknown>;
+    group?: string;
+    outside_owns?: string[];
+  }[];
 };
 
 it('lists a spawned session with no commits in read_state with its usage', async () => {
@@ -510,4 +523,129 @@ it('shows a session the names of the project environment variables without their
   expect(f.call<Read>('project.read', { project_id: f.project.id }).project.env).toEqual({
     API_TOKEN: 'secret-value',
   });
+});
+
+it('ends the first message of a spawned session with what done means and reviews it item by item', async () => {
+  const f = await workbenchFixture();
+  const conductor = await openConductor(f);
+  const acceptance = ['The parser keeps comments', 'Empty input gives an empty list'];
+  const input = script({ write: { path: 'parser.txt', text: 'parser\n' } }, { commit: 'Port it' });
+
+  const spawned = await spawn(f, conductor.id, input, { acceptance });
+  await settle(f, row(f, spawned));
+  const { review_id } = await asSession<Promise<{ review_id: string }>>(
+    f,
+    conductor.id,
+    'conductor.review',
+    { runtimes: [f.adapter.name], session_id: spawned },
+  );
+
+  expect(f.turns(spawned)[0]!.input).toBe(
+    `${input}\n\nDone when:\n- The parser keeps comments\n- Empty input gives an empty list`,
+  );
+  const [reviewer] = f.store.must<Review>('reviews', review_id).session_ids;
+  const prompt = f.turns(reviewer!)[0]!.input;
+  const focus = prompt.slice(prompt.indexOf('Review focus:\n'), prompt.indexOf('\nChanges:\n'));
+  expect(focus).toContain('verdict');
+  for (const item of acceptance) expect(focus).toContain(`\n- ${item}\n`);
+});
+
+it('lists the changed files of a spawned session that lie outside the paths it owns', async () => {
+  const f = await workbenchFixture();
+  const conductor = await openConductor(f);
+  const owning = await spawn(
+    f,
+    conductor.id,
+    script(
+      { write: { path: 'src/parser.txt', text: 'parser\n' } },
+      { write: { path: 'README.md', text: 'readme\n' } },
+      { commit: 'Port the parser' },
+      { write: { path: 'src/lexer.txt', text: 'lexer\n' } },
+      { write: { path: 'docs/notes.txt', text: 'notes\n' } },
+    ),
+    { owns: ['src/**'] },
+  );
+  const unbounded = await spawn(
+    f,
+    conductor.id,
+    script({ write: { path: 'README.md', text: 'readme\n' } }),
+  );
+  await settle(f, row(f, owning));
+  await settle(f, row(f, unbounded));
+
+  const state = await asSession<Promise<State>>(f, conductor.id, 'conductor.state', {});
+
+  const listed = (sessionId: string) =>
+    state.spawned.find((each) => each.session_id === sessionId)!;
+  expect([...(listed(owning).outside_owns as string[])].sort()).toEqual([
+    'README.md',
+    'docs/notes.txt',
+  ]);
+  expect(listed(unbounded)).not.toHaveProperty('outside_owns');
+});
+
+it('starts one spawned session on each named runtime in one group, only when all of them fit', async () => {
+  const f = await workbenchFixture();
+  const conductor = await openConductor(f);
+  const runtimes = [f.adapter.name, 'second-runtime', 'third-runtime'];
+  for (const name of runtimes.slice(1)) {
+    const adapter = new FixtureAdapter();
+    adapter.name = name;
+    f.control.adapters.set(name, adapter);
+  }
+  const busy = [await spawn(f, conductor.id, 'Task one'), await spawn(f, conductor.id, 'Task two')];
+  const sessions = f.store.list<Session>('sessions').length;
+  const many = (names: string[]) =>
+    asSession<Promise<{ session_ids: string[] }>>(f, conductor.id, 'conductor.spawn', {
+      runtimes: names,
+      input: 'Port the parser',
+      acceptance: ['The parser keeps comments'],
+      owns: ['src/**'],
+    });
+
+  const refused = refusal(() => many(runtimes));
+  expect(refused.code).toBe('resource_busy');
+  expect(f.store.list<Session>('sessions')).toHaveLength(sessions);
+
+  const { session_ids } = await many(runtimes.slice(1));
+  expect(session_ids.map((sessionId) => row(f, sessionId).runtime)).toEqual(runtimes.slice(1));
+  const [first, second] = session_ids.map((sessionId) => row(f, sessionId));
+  expect(first!.contract).toEqual({
+    acceptance: ['The parser keeps comments'],
+    owns: ['src/**'],
+    group: expect.any(String),
+  });
+  expect(second!.contract).toEqual(first!.contract);
+  for (const sessionId of session_ids) {
+    expect(row(f, sessionId).spawned_by).toEqual({ session_id: conductor.id });
+    expect(f.turns(sessionId)[0]!.input).toBe(
+      'Port the parser\n\nDone when:\n- The parser keeps comments',
+    );
+  }
+  for (const sessionId of [...busy, ...session_ids]) await settle(f, row(f, sessionId));
+  const state = await asSession<Promise<State>>(f, conductor.id, 'conductor.state', {});
+  const groups = new Map(state.spawned.map((each) => [each.session_id, each.group]));
+  expect(session_ids.map((sessionId) => groups.get(sessionId))).toEqual([
+    first!.contract!.group,
+    first!.contract!.group,
+  ]);
+  for (const sessionId of busy) expect(groups.get(sessionId)).toBeUndefined();
+});
+
+it.each([
+  ['both runtime and runtimes', { runtime: 'fixture', runtimes: ['fixture', 'second-runtime'] }],
+  ['neither runtime nor runtimes', {}],
+  ['the same runtime twice', { runtimes: ['fixture', 'fixture'] }],
+  ['a model with runtimes', { runtimes: ['fixture', 'second-runtime'], model: 'model' }],
+])('refuses a spawn naming %s as invalid input', async (_, named) => {
+  const f = await workbenchFixture();
+  const conductor = await openConductor(f);
+  const sessions = f.store.list<Session>('sessions').length;
+
+  const error = refusal(() =>
+    asSession(f, conductor.id, 'conductor.spawn', { input: 'Port the parser', ...named }),
+  );
+
+  expect(error.code).toBe('invalid_input');
+  expect(f.store.list<Session>('sessions')).toHaveLength(sessions);
 });

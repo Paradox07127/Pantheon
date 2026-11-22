@@ -333,11 +333,13 @@ export async function changedGateFiles(
   const listed = project.protected_paths?.[rootOf(project, [source]) ?? ''] ?? [],
     named = await gateFiles(cwd, commits, commands);
   return changed.filter(
-    (file) =>
-      named.includes(file) ||
-      listed.some((entry) => within(file, entry) || path.posix.matchesGlob(file, entry)),
+    (file) => named.includes(file) || listed.some((entry) => inScope(file, entry)),
   );
 }
+
+/** True when the path is the entry, lies below it, or matches it as a glob. */
+export const inScope = (file: string, entry: string): boolean =>
+  within(file, entry) || path.posix.matchesGlob(file, entry);
 
 /** True when the path equals the scope entry or lies below it, compared by path segment. */
 function within(file: string, entry: string): boolean {

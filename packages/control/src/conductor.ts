@@ -1,5 +1,6 @@
 import {
   DomainError,
+  id,
   requireThat,
   type NeedsYouItem,
   type Principal,
@@ -10,6 +11,7 @@ import {
 } from '@pantheon/domain';
 import { inputSchemas, type Command } from '@pantheon/protocol';
 import { projectChanges } from './changes.js';
+import { globalExcludes } from './checkpoint.js';
 import {
   projectAccess,
   revision,
@@ -19,7 +21,7 @@ import {
   type Preparers,
 } from './context.js';
 import { runGit } from './git.js';
-import { gateCommands } from './landing.js';
+import { gateCommands, inScope } from './landing.js';
 import { sessionGoal } from './landing-diff.js';
 import { executed, latestEvent, needsYou } from './needs-you.js';
 import {
@@ -43,7 +45,7 @@ import { projectOverBudget } from './workflow-policy.js';
 
 /** The instructions Pantheon adds to a conductor session after the line on where it works. */
 export const CONDUCTOR_INSTRUCTIONS =
-  "Pantheon gives this session these tools. request_review: another vendor reviews your committed changes or those of a session you spawned; the result comes back to you as a message. report_ready: committed changes go through the project's gate and land. spawn_session: another vendor's session starts in a new worktree from your current commit, in permission mode ask or auto_edit; you hear when its turn ends. message_session: a message to a session you spawned, or a steer into its running turn; at most 2 a minute to one session. stop_session: interrupts the running turn of a session you spawned, or closes that session. read_state: this project's changes, checks, landing queue and items waiting for the user, and each session you spawned with its state and what it used. read_needs_you: the items waiting for the user; only the user answers them. project_read: the project's settings, brief and memory. memory_context, memory_search, memory_related and memory_get: project memory, which Pantheon does not add to your turns. memory_propose: a memory entry; a decision stays a draft until the user confirms it. draw: a chart or diagram the user sees in this session. Plan, split work and run subagents with your own tools.";
+  "Pantheon gives this session these tools. request_review: another vendor reviews your committed changes or those of a session you spawned; the result comes back to you as a message. report_ready: committed changes go through the project's gate and land. spawn_session: another vendor's session starts in a new worktree from your current commit, in permission mode ask or auto_edit; you hear when its turn ends. Give it acceptance, what done means; its first message ends with the list, and request_review on it checks each item. Give it owns, the paths it may change; read_state lists its changed files outside them. Give runtimes, two or three, to run the same task once on each. To keep the best result, review them, land one with report_ready and close the others with stop_session close. message_session: a message to a session you spawned, or a steer into its running turn; at most 2 a minute to one session. stop_session: interrupts the running turn of a session you spawned, or closes that session. read_state: this project's changes, checks, landing queue and items waiting for the user, and each session you spawned with its state and what it used. read_needs_you: the items waiting for the user; only the user answers them. project_read: the project's settings, brief and memory. memory_context, memory_search, memory_related and memory_get: project memory, which Pantheon does not add to your turns. memory_propose: a memory entry; a decision stays a draft until the user confirms it. draw: a chart or diagram the user sees in this session. Plan, split work and run subagents with your own tools.";
 
 /** conductor.review; the session's committed range and its diff are read before the transaction. */
 function prepareConductorReview(
@@ -71,11 +73,17 @@ function prepareConductorReview(
     return (ctx: ControlContext, p: Principal, command: Command) => {
       const { input, session } = target(ctx, p, command);
       requireNoRunningReviewer(ctx, session, input.runtimes);
+      const acceptance = session.contract?.acceptance;
       const review = startSessionReview(ctx, session, input.runtimes, {
         cause: command.command_id,
         goal: sessionGoal(ctx, session),
         changes,
         notify_session_id: p.session_id!,
+        ...(acceptance
+          ? {
+              focus: `What done means for this session. Give each item a verdict, met or not met, with the evidence for it:\n${itemLines(acceptance)}`,
+            }
+          : {}),
       });
       return { review_id: review.id, runtimes: review.runtimes };
     };
@@ -194,8 +202,8 @@ function requireBudgetLeft(ctx: ControlContext, projectId: string): void {
   );
 }
 
-/** Refuses a new turn while SPAWNED_SESSION_LIMIT of the caller's spawned sessions have one to take. */
-function requireTurnSlot(ctx: ControlContext, caller: Session): void {
+/** Refuses count new turns unless they fit beside the caller's spawned sessions that have one to take. */
+function requireTurnSlot(ctx: ControlContext, caller: Session, count = 1): void {
   const busy = new Set(
     ctx.store
       .list<SessionTurn>('session_turns')
@@ -205,38 +213,66 @@ function requireTurnSlot(ctx: ControlContext, caller: Session): void {
   const taking = ctx.store
     .list<Session>('sessions')
     .filter((session) => session.spawned_by?.session_id === caller.id && busy.has(session.id));
+  const more = count > 1 ? ` ${count} new sessions do not fit beside them.` : '';
   requireThat(
-    taking.length < SPAWNED_SESSION_LIMIT,
+    taking.length + count <= SPAWNED_SESSION_LIMIT,
     'resource_busy',
     `At most ${SPAWNED_SESSION_LIMIT} spawned sessions take a turn at a time; these are taking one: ${taking
       .map((session) => `${session.id} (${session.title ?? ''})`)
-      .join(', ')}. You get a message as each turn ends.`,
+      .join(', ')}.${more} You get a message as each turn ends.`,
   );
 }
 
-/** The session.create input of a spawned session: a worktree cut from the caller's committed HEAD. */
-function spawnInput(ctx: ControlContext, p: Principal, command: Command) {
+const itemLines = (items: string[]) => items.map((item) => `- ${item}`).join('\n');
+
+/**
+ * The session.create inputs of the sessions a spawn starts, one per runtime in its order, each a
+ * worktree cut from the caller's committed HEAD, and the contract each of them keeps.
+ */
+function spawnInputs(ctx: ControlContext, p: Principal, command: Command) {
   requireThat(p.role === 'conductor', 'permission_denied', 'A conductor session only');
   projectAccess(ctx, p, p.project_id!, command.type);
-  const { runtime, input, model, effort, permission_mode } = inputSchemas['conductor.spawn'].parse(
-    command.input,
+  const { runtime, runtimes, input, acceptance, owns, model, effort, permission_mode } =
+    inputSchemas['conductor.spawn'].parse(command.input);
+  requireThat(
+    (runtime === undefined) !== (runtimes === undefined),
+    'invalid_input',
+    'Give either runtime or runtimes',
   );
+  requireThat(
+    !runtimes || new Set(runtimes).size === runtimes.length,
+    'invalid_input',
+    'Name each runtime in runtimes once',
+  );
+  requireThat(
+    !runtimes || model === undefined,
+    'invalid_input',
+    "With runtimes each session starts on its runtime's default model; give model only with runtime",
+  );
+  const names = runtimes ?? [runtime!];
   const caller = ctx.store.must<Session>('sessions', p.session_id!);
   requireBudgetLeft(ctx, caller.project_id);
-  requireTurnSlot(ctx, caller);
-  return inputSchemas['session.create'].parse({
-    project_id: caller.project_id,
-    workspace: 'worktree',
-    runtime,
-    model,
-    effort,
-    ...(permission_mode ? { permission_mode } : {}),
-    input,
-    // An in-place caller's HEAD is the project folder's, which a start without `from` reads.
-    ...(sessionWorkspaceKind(ctx, caller) === 'linked_worktree'
-      ? { from: { session_id: caller.id } }
-      : {}),
-  });
+  requireTurnSlot(ctx, caller, names.length);
+  const inputs = names.map((name) =>
+    inputSchemas['session.create'].parse({
+      project_id: caller.project_id,
+      workspace: 'worktree',
+      runtime: name,
+      model,
+      effort,
+      ...(permission_mode ? { permission_mode } : {}),
+      input: acceptance ? `${input}\n\nDone when:\n${itemLines(acceptance)}` : input,
+      // An in-place caller's HEAD is the project folder's, which a start without `from` reads.
+      ...(sessionWorkspaceKind(ctx, caller) === 'linked_worktree'
+        ? { from: { session_id: caller.id } }
+        : {}),
+    }),
+  );
+  const contract: NonNullable<Session['contract']> = {
+    ...(acceptance ? { acceptance } : {}),
+    ...(owns ? { owns } : {}),
+  };
+  return { inputs, contract };
 }
 
 /** conductor.spawn */
@@ -245,24 +281,33 @@ function prepareConductorSpawn(
   p: Principal,
   command: Command,
 ): Promise<Handler> {
-  const input = spawnInput(ctx, p, command);
-  checkWorktreeSession(ctx, input, undefined, p);
-  return readSessionOpening(ctx, input).then(
-    (opening) => (ctx: ControlContext, p: Principal, command: Command) => {
-      const opened = openWorktreeSession(
-        ctx,
-        spawnInput(ctx, p, command),
-        command.command_id,
-        opening,
-        undefined,
-        p,
-      );
-      ctx.store.update<Session>(
-        'sessions',
-        { ...opened, spawned_by: { session_id: p.session_id! } },
-        opened.revision,
-      );
-      return { session_id: opened.id };
+  const { inputs } = spawnInputs(ctx, p, command);
+  for (const input of inputs) checkWorktreeSession(ctx, input, undefined, p);
+  return Promise.all(inputs.map((input) => readSessionOpening(ctx, input))).then(
+    (openings) => (ctx: ControlContext, p: Principal, command: Command) => {
+      const { inputs, contract } = spawnInputs(ctx, p, command);
+      const terms = inputs.length > 1 ? { ...contract, group: id() } : contract;
+      const opened = inputs.map((input, index) => {
+        const session = openWorktreeSession(
+          ctx,
+          input,
+          command.command_id,
+          openings[index]!,
+          undefined,
+          p,
+        );
+        ctx.store.update<Session>(
+          'sessions',
+          {
+            ...session,
+            spawned_by: { session_id: p.session_id! },
+            ...(Object.keys(terms).length ? { contract: terms } : {}),
+          },
+          session.revision,
+        );
+        return session.id;
+      });
+      return inputs.length > 1 ? { session_ids: opened } : { session_id: opened[0]! };
     },
   );
 }
@@ -395,7 +440,12 @@ const DAY_MS = 24 * 60 * 60_000;
  * The sessions the caller spawned, without those discarded over a day ago, with what each spent:
  * the tokens its runtime reported, the turns it ran and their wall time.
  */
-function spawnedSessions(ctx: ControlContext, callerId: string, projectId: string) {
+function spawnedSessions(
+  ctx: ControlContext,
+  callerId: string,
+  projectId: string,
+  changed: Map<string, string[]>,
+) {
   const now = ctx.store.now();
   const discarded = new Map(
     ctx.store
@@ -421,12 +471,21 @@ function spawnedSessions(ctx: ControlContext, callerId: string, projectId: strin
     .map((session) => {
       const usage = session.usage,
         counted = usage && !usage.tokens_unreported;
+      const owns = session.contract?.owns;
       return {
         session_id: session.id,
         title: session.title ?? '',
         runtime: session.runtime,
         state: session.state,
         ...(session.outcome ? { outcome: session.outcome } : {}),
+        ...(session.contract?.group ? { group: session.contract.group } : {}),
+        ...(owns
+          ? {
+              outside_owns: (changed.get(session.id) ?? [])
+                .filter((file) => !owns.some((entry) => inScope(file, entry)))
+                .slice(0, OUTSIDE_OWNS_LIMIT),
+            }
+          : {}),
         usage: {
           ...(counted
             ? { input_tokens: usage.input_tokens, output_tokens: usage.output_tokens }
@@ -440,6 +499,56 @@ function spawnedSessions(ctx: ControlContext, callerId: string, projectId: strin
         },
       };
     });
+}
+
+/** The most changed files outside its owned paths read_state lists for one spawned session. */
+const OUTSIDE_OWNS_LIMIT = 50;
+
+/**
+ * The files each open session the caller spawned with owned paths changed against its worktree's
+ * base commit, committed or not, as the session list's change counts read them.
+ */
+async function ownedSessionChanges(
+  ctx: ControlContext,
+  callerId: string,
+): Promise<Map<string, string[]>> {
+  const owning = ctx.store
+    .list<Session>('sessions')
+    .filter(
+      (session) =>
+        session.spawned_by?.session_id === callerId &&
+        session.contract?.owns &&
+        session.workspace_id &&
+        !session.outcome,
+    );
+  if (!owning.length) return new Map();
+  const untracked = [
+    ...(await globalExcludes()),
+    'ls-files',
+    '--others',
+    '--exclude-standard',
+    '-z',
+  ];
+  const reads = owning.map(async (session): Promise<[string, string[]]> => {
+    const workspace = ctx.store.get<Workspace>('workspaces', session.workspace_id!);
+    if (!workspace?.base_sha) return [session.id, []];
+    const results = await Promise.all([
+      runGit(
+        workspace.path,
+        ['diff', '--name-only', '-z', '--no-ext-diff', '--find-renames', workspace.base_sha, '--'],
+        undefined,
+        true,
+      ),
+      runGit(workspace.path, untracked, undefined, true),
+    ]);
+    return [
+      session.id,
+      results.flatMap((result) =>
+        result.exit_code === 0 ? result.stdout.toString().split('\0').filter(Boolean) : [],
+      ),
+    ];
+  });
+  return new Map(await Promise.all(reads));
 }
 
 /** Per control, the callers a notice did not reach because they took no input then. */
@@ -596,7 +705,10 @@ function prepareConductorState(
   requireThat(p.role === 'conductor', 'permission_denied', 'A conductor session only');
   const projectId = p.project_id ?? '';
   projectAccess(ctx, p, projectId, command.type);
-  return atLandedCommit(ctx, p.session_id!).then((landed) => (ctx: ControlContext) => {
+  return Promise.all([
+    atLandedCommit(ctx, p.session_id!),
+    ownedSessionChanges(ctx, p.session_id!),
+  ]).then(([landed, owned]) => (ctx: ControlContext) => {
     // The conductor's access is checked above; the shared reads then run as for the user.
     const reader: Principal = { id: p.id, role: 'user' };
     const items = needsYou(ctx, reader, projectId).items;
@@ -622,7 +734,7 @@ function prepareConductorState(
         created_at: item.created_at,
       };
     });
-    return { changes, todo, spawned: spawnedSessions(ctx, p.session_id!, projectId) };
+    return { changes, todo, spawned: spawnedSessions(ctx, p.session_id!, projectId, owned) };
   });
 }
 

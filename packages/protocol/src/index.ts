@@ -1685,11 +1685,37 @@ export const inputSchemas = {
       ),
   }),
   'conductor.spawn': z.strictObject({
-    runtime: str.describe('The runtime of the new session.'),
+    runtime: str
+      .optional()
+      .describe('The runtime of the new session; give either runtime or runtimes.'),
+    runtimes: strings
+      .min(2)
+      .max(3)
+      .optional()
+      .describe(
+        "Two or three distinct runtimes; one session starts on each with the same first message, each on its runtime's default model.",
+      ),
     input: str.describe('The first message of the new session.'),
+    acceptance: z
+      .array(z.string().min(1).max(500))
+      .min(1)
+      .max(12)
+      .optional()
+      .describe(
+        'What done means, one check per item; the first message ends with them and a review of the session checks each.',
+      ),
+    owns: strings
+      .min(1)
+      .max(50)
+      .optional()
+      .describe(
+        'Path globs relative to the repository root that the session may change; read_state lists its changed files outside them.',
+      ),
     model: str
       .optional()
-      .describe("The model of the new session; absent uses the runtime's default."),
+      .describe(
+        "The model of the new session, only with runtime; absent uses the runtime's default.",
+      ),
     effort: z
       .enum(EFFORT_LEVELS)
       .optional()

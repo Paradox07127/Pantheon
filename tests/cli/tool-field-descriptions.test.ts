@@ -110,3 +110,21 @@ it('lists the tools that read the project and manage spawned sessions to a condu
       .permission_mode?.enum,
   ).toEqual(['ask', 'auto_edit']);
 });
+
+it('offers a conductor to spawn one task on several runtimes with what done means and the paths it owns', async () => {
+  const tools = Object.fromEntries((await listTools('conductor')).map((tool) => [tool.name, tool]));
+  const spawn = tools.spawn_session!;
+  const schema = spawn.inputSchema as {
+    required?: string[];
+    properties: Record<string, { minItems?: number; maxItems?: number }>;
+  };
+
+  expect(schema.required).toEqual(['input']);
+  expect(schema.properties.runtimes).toMatchObject({ minItems: 2, maxItems: 3 });
+  expect(schema.properties.acceptance).toMatchObject({ minItems: 1, maxItems: 12 });
+  expect(schema.properties.owns).toMatchObject({ minItems: 1, maxItems: 50 });
+  expect(spawn.description).toContain(
+    'review them, land one with report_ready and close the others with stop_session close',
+  );
+  expect(tools.read_state!.description).toContain('outside_owns');
+});

@@ -155,7 +155,7 @@ it('gives a conductor session exactly its tools with strict inputs', () => {
       [
         { runtime: 'codex', input: '' },
         { runtime: 'codex', input: 'Write the docs', effort: 'huge' },
-        { input: 'Write the docs' },
+        { runtime: 'codex' },
         { runtime: 'codex', input: 'Write the docs', permission_mode: 'full_access' },
         { runtime: 'codex', input: 'Write the docs', permission_mode: 'auto' },
         { runtime: 'codex', input: 'Write the docs', permission_mode: 'plan' },
@@ -165,6 +165,25 @@ it('gives a conductor session exactly its tools with strict inputs', () => {
       'conductor.spawn' as CommandType,
       { runtime: 'codex', input: 'Write the docs', permission_mode: 'auto_edit' },
       [],
+    ],
+    [
+      'conductor.spawn' as CommandType,
+      {
+        runtimes: ['codex', 'claude'],
+        input: 'Write the docs',
+        acceptance: ['The docs name every flag'],
+        owns: ['docs/**'],
+      },
+      [
+        { runtimes: ['codex'], input: 'Write the docs' },
+        { runtimes: ['codex', 'claude', 'gemini', 'dsh'], input: 'Write the docs' },
+        { runtime: 'codex', input: 'Write the docs', acceptance: [] },
+        { runtime: 'codex', input: 'Write the docs', acceptance: Array(13).fill('Done') },
+        { runtime: 'codex', input: 'Write the docs', acceptance: ['x'.repeat(501)] },
+        { runtime: 'codex', input: 'Write the docs', acceptance: [''] },
+        { runtime: 'codex', input: 'Write the docs', owns: [] },
+        { runtime: 'codex', input: 'Write the docs', owns: Array(51).fill('src/**') },
+      ],
     ],
     ['conductor.state' as CommandType, {}, [{ session_id: 'session' }]],
     [
