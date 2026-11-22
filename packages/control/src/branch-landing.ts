@@ -22,6 +22,8 @@ import {
   afterSourceLandings,
   landWorkspace,
   projectGateCommands,
+  recordGateBaseline,
+  type GateCommands,
   type LandingOwner,
 } from './landing.js';
 import { mergeBase } from './merge-preview.js';
@@ -114,20 +116,34 @@ async function prepareBranchLanding(
 
 export const branchLandingPreparers: Preparers = { 'project.land': prepareBranchLanding };
 
-/** Ends the row, marks its job done and queues the removal of its worktree, in one transaction. */
+/**
+ * Ends the row, marks its job done and queues the removal of its worktree, in one transaction; a
+ * landed row records the results of the gate commands as the baseline of the target branch.
+ */
 function finish(
   ctx: ControlContext,
   landingId: string,
   jobId: string,
   fields: Partial<Landing> & { state: 'landed' | 'no_changes' | 'blocked' },
+  commands?: GateCommands,
 ): void {
   ctx.store.transaction(() => {
     const row = ctx.store.must<Landing>('landings', landingId);
-    ctx.store.update<Landing>(
+    const next = ctx.store.update<Landing>(
       'landings',
       { ...row, ...fields, landing: undefined, finished_at: ctx.store.now() },
       row.revision,
     );
+    if (next.state === 'landed')
+      recordGateBaseline(
+        ctx,
+        next,
+        next.project_id,
+        next.root,
+        next.target_branch,
+        next.gate_results,
+        commands,
+      );
     ctx.store.mark(jobId, 'done');
     ctx.store.enqueue('workspace.remove', { workspace_id: row.workspace_id, reason: 'landing' });
   });
@@ -242,16 +258,22 @@ async function landBranch(ctx: ControlContext, landingId: string, jobId: string)
       conflicts?: string[];
       conflict_commits?: string[];
     };
-    finish(ctx, landingId, jobId, {
-      // A rebase can drop every commit, when the target already has their changes.
-      state: item.state === 'landed' && item.from_sha === item.to_sha ? 'no_changes' : item.state,
-      reason: item.reason,
-      conflicts,
-      conflict_commits,
-      gate_results: item.gate_results ?? current.gate_results,
-      from_sha: item.from_sha,
-      to_sha: item.to_sha,
-    });
+    finish(
+      ctx,
+      landingId,
+      jobId,
+      {
+        // A rebase can drop every commit, when the target already has their changes.
+        state: item.state === 'landed' && item.from_sha === item.to_sha ? 'no_changes' : item.state,
+        reason: item.reason,
+        conflicts,
+        conflict_commits,
+        gate_results: item.gate_results ?? current.gate_results,
+        from_sha: item.from_sha,
+        to_sha: item.to_sha,
+      },
+      commands,
+    );
   });
 }
 

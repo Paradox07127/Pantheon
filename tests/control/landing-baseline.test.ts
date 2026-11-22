@@ -1,9 +1,13 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
 import path from 'node:path';
 import { expect, it, onTestFinished, vi } from 'vitest';
-import type { Landing, LandingItem } from '@pantheon/domain';
+import type { LandingItem } from '@pantheon/domain';
 import { Store } from '../../packages/store/src/index.js';
-import { droppedTests } from '../../packages/control/dist/landing.js';
+import {
+  droppedTests,
+  recordGateBaseline,
+  sessionGateResults,
+} from '../../packages/control/dist/landing.js';
 import type { ControlContext } from '../../packages/control/src/context.js';
 
 type GateResult = NonNullable<LandingItem['gate_results']>[number];
@@ -19,8 +23,8 @@ const gate = (name: string, passed: number, skipped = 0): GateResult => ({
   tests: { passed, failed: 0, skipped },
 });
 
-/** A store at a clock that moves on each read, and two repository roots of one project. */
-function baselineFixture() {
+/** A store at the clock, by default one that moves on each read, and two repository roots of one project. */
+function baselineFixture(clock?: () => number) {
   const directory = mkdtempSync(
     path.join(path.resolve('node_modules/.cache'), 'landing-baseline-'),
   );
@@ -31,7 +35,7 @@ function baselineFixture() {
   mkdirSync(second);
   symlinkSync(first, path.join(directory, 'linked'));
   let time = 0;
-  const store = new Store(':memory:', () => ++time);
+  const store = new Store(':memory:', clock ?? (() => ++time));
   onTestFinished(() => store.close());
   const ctx = { store } as unknown as ControlContext;
   const roots = {
@@ -39,28 +43,34 @@ function baselineFixture() {
     second: realpathSync(second),
     linked: path.join(directory, 'linked'),
   };
+  const commands = (names: string[]) => names.map((name) => ({ name, argv: [name] }));
+  let landings = 0;
   const landed = (root: string, results: GateResult[]) =>
-    store.insert<Landing>('landings', {
-      id: `landing-${time}`,
-      revision: 1,
-      project_id: 'project',
+    recordGateBaseline(
+      ctx,
+      { id: `landing-${++landings}`, revision: 1 },
+      'project',
       root,
-      branch: 'feature',
-      target_branch: 'main',
-      workspace_id: `workspace-${time}`,
-      state: 'landed',
-      gate_results: results,
-      finished_at: store.now(),
-    });
+      'main',
+      results,
+      commands(results.map((result) => result.name)),
+    );
   const session = { id: 'session', revision: 1 };
   const checked = (commit: string, results: GateResult[]) =>
     store.event('session.gate_checked', session, 'project', { commit, results });
-  const merged = (root: string, commit: string) =>
-    store.event('session.merged', session, 'project', {
-      branch: 'main',
-      source: root,
-      to_sha: commit,
-    });
+  /** A merge of the session's newest check on the commit, with the gates of these names enabled. */
+  const merged = (root: string, commit: string, enabled?: string[]) => {
+    const results = sessionGateResults(ctx, 'project', 'session', commit);
+    recordGateBaseline(
+      ctx,
+      session,
+      'project',
+      root,
+      'main',
+      results,
+      commands(enabled ?? (results ?? []).map((result) => result.name)),
+    );
+  };
   return { store, ctx, roots, landed, checked, merged };
 }
 
@@ -117,4 +127,33 @@ it('reads only the newest matching landing, without loading the landing and merg
   );
   expect(list).not.toHaveBeenCalled();
   expect(kindEvents).not.toHaveBeenCalled();
+});
+
+it('compares each gate with the last landing that ran it', () => {
+  const f = baselineFixture();
+  f.landed(f.roots.first, [gate('unit', 10)]);
+  f.landed(f.roots.first, [gate('lint', 3)]);
+  expect(
+    droppedTests(f.ctx, 'project', f.roots.first, 'main', [gate('unit', 9), gate('lint', 3)]),
+  ).toBe('tests_dropped: unit: passed 10→9, skipped 0→0');
+});
+
+it('takes no baseline from a gate that was turned off when the branch landed', () => {
+  const f = baselineFixture();
+  f.landed(f.roots.first, [gate('unit', 10)]);
+  f.checked('merged-commit', [gate('unit', 20), gate('lint', 3)]);
+  f.merged(f.roots.first, 'merged-commit', ['lint']);
+  expect(
+    droppedTests(f.ctx, 'project', f.roots.first, 'main', [gate('unit', 9), gate('lint', 3)]),
+  ).toBe('tests_dropped: unit: passed 10→9, skipped 0→0');
+});
+
+it('takes the later of two landings recorded in the same millisecond', () => {
+  const f = baselineFixture(() => 1000);
+  f.landed(f.roots.first, [gate('unit', 10)]);
+  f.checked('merged-commit', [gate('unit', 20)]);
+  f.merged(f.roots.first, 'merged-commit');
+  expect(droppedTests(f.ctx, 'project', f.roots.first, 'main', [gate('unit', 19)])).toBe(
+    'tests_dropped: unit: passed 20→19, skipped 0→0',
+  );
 });

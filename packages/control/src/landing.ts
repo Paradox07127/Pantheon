@@ -27,7 +27,7 @@ import { workflowPolicy } from './workflow-policy.js';
 import { onDevice } from './remote-workspace.js';
 import { forgetWorktreeReads } from './workbench-session.js';
 
-type GateCommands = NonNullable<Project['gates']>[string];
+export type GateCommands = NonNullable<Project['gates']>[string];
 export type LandingProgress = NonNullable<NonNullable<Session['merge']>['landing']>;
 
 export const segments = (target: string) =>
@@ -594,19 +594,18 @@ export async function checkGates(
 
 type GateResults = NonNullable<LandingItem['gate_results']>;
 
-/** The results of the session's newest gate check on the commit before the event at `before`. */
+/** The results of the session's newest gate check on the commit. */
 export function sessionGateResults(
   ctx: ControlContext,
   projectId: string,
   sessionId: string,
   commit: string,
-  before = Number.MAX_SAFE_INTEGER,
 ): GateResults | undefined {
   const row = ctx.store
     .statement(
-      "SELECT payload->'$.results' AS results FROM events INDEXED BY events_project_kind WHERE project_id=? AND kind='session.gate_checked' AND aggregate_id=? AND payload->>'$.commit'=? AND sequence<? ORDER BY sequence DESC LIMIT 1",
+      "SELECT payload->'$.results' AS results FROM events INDEXED BY events_project_kind WHERE project_id=? AND kind='session.gate_checked' AND aggregate_id=? AND payload->>'$.commit'=? ORDER BY sequence DESC LIMIT 1",
     )
-    .get(projectId, sessionId, commit, before) as { results: string | null } | undefined;
+    .get(projectId, sessionId, commit) as { results: string | null } | undefined;
   return row?.results ? (JSON.parse(row.results) as GateResults) : undefined;
 }
 
@@ -636,37 +635,40 @@ function realRoot(root: string): string {
   }
 }
 
+/** A gate's result as a landing records it for the landings after it. */
+type BaselineResult = Pick<GateResults[number], 'name' | 'tests'>;
+
+// The newest baseline records a landing reads; a gate no landing among them ran has no baseline.
+const BASELINE_RECORDS = 50;
+
 /**
- * The gate results of the project's newest landing onto the branch of the repository at root, by
- * `pantheon land` or a session merge; a gate run after a merge does not count.
+ * Records, in the transaction that records a landing onto the branch of the repository at root,
+ * the results of the gates enabled then; the landings after it compare with them.
  */
-function landedGateResults(
+export function recordGateBaseline(
   ctx: ControlContext,
+  entity: { id: string; revision: number },
   projectId: string,
   root: string,
   branch: string,
-): GateResults | undefined {
-  const real = realRoot(root);
-  const landing = ctx.store
-    .statement(
-      "SELECT data->>'$.finished_at' AS finished_at, data->'$.gate_results' AS results FROM landings WHERE data->>'$.project_id'=? AND data->>'$.root'=? AND data->>'$.target_branch'=? AND data->>'$.state'='landed' ORDER BY data->>'$.finished_at' DESC LIMIT 1",
-    )
-    .get(projectId, real, branch) as { finished_at: number; results: string | null } | undefined;
-  const merged = ctx.store
-    .statement(
-      "SELECT sequence, aggregate_id, payload->>'$.to_sha' AS to_sha FROM events INDEXED BY events_project_kind WHERE project_id=? AND kind='session.merged' AND payload->>'$.branch'=? AND payload->>'$.source'=? AND created_at>? ORDER BY sequence DESC LIMIT 1",
-    )
-    .get(projectId, branch, real, landing?.finished_at ?? -1) as
-    { sequence: number; aggregate_id: string; to_sha: string } | undefined;
-  if (merged)
-    return sessionGateResults(ctx, projectId, merged.aggregate_id, merged.to_sha, merged.sequence);
-  return landing?.results ? (JSON.parse(landing.results) as GateResults) : undefined;
+  results: GateResults | undefined,
+  commands: GateCommands | undefined,
+): void {
+  const counted: BaselineResult[] = (results ?? [])
+    .filter((result) => commands?.some((command) => command.name === result.name))
+    .map(({ name, tests }) => (tests ? { name, tests } : { name }));
+  if (counted.length)
+    ctx.store.event('project.gate_baseline', entity, projectId, {
+      root: realRoot(root),
+      branch,
+      results: counted,
+    });
 }
 
 /**
  * The blocking reason, with both counts, when a gate passed fewer tests or skipped more than the
- * same gate did at the newest landing onto the branch; undefined when either side has no counts.
- * Gates of one name pair by their order among that name.
+ * same gate did at the newest landing onto the branch that ran it; undefined when either side has
+ * no counts. Gates of one name pair by their order among that name.
  */
 export function droppedTests(
   ctx: ControlContext,
@@ -675,10 +677,20 @@ export function droppedTests(
   branch: string | null | undefined,
   results: GateResults | undefined,
 ): string | undefined {
-  const baseline = branch && results ? landedGateResults(ctx, projectId, root, branch) : undefined;
-  for (const [index, result] of (results ?? []).entries()) {
-    const same = (gate: GateResults[number]) => gate.name === result.name;
-    const before = baseline?.filter(same)[results!.slice(0, index).filter(same).length]?.tests,
+  if (!branch || !results?.length) return;
+  const baselines = (
+    ctx.store
+      .statement(
+        "SELECT payload->'$.results' AS results FROM events INDEXED BY events_project_kind WHERE project_id=? AND kind='project.gate_baseline' AND payload->>'$.root'=? AND payload->>'$.branch'=? ORDER BY sequence DESC LIMIT ?",
+      )
+      .all(projectId, realRoot(root), branch, BASELINE_RECORDS) as { results: string }[]
+  ).map((row) => JSON.parse(row.results) as BaselineResult[]);
+  for (const [index, result] of results.entries()) {
+    const same = (gate: BaselineResult) => gate.name === result.name,
+      occurrence = results.slice(0, index).filter(same).length;
+    const before = baselines
+        .map((baseline) => baseline.filter(same)[occurrence])
+        .find((gate) => gate !== undefined)?.tests,
       after = result.tests;
     if (before && after && (after.passed < before.passed || after.skipped > before.skipped))
       return `tests_dropped: ${result.name}: passed ${before.passed}→${after.passed}, skipped ${before.skipped}→${after.skipped}`;

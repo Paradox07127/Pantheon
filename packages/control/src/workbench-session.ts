@@ -113,6 +113,7 @@ import {
   gateCommands,
   gateFailed,
   landWorkspace,
+  recordGateBaseline,
   sessionGateResults,
   type LandingOwner,
   type LandingProgress,
@@ -2999,6 +3000,16 @@ async function completeMerge(ctx: ControlContext, sessionId: string, jobId: stri
         additions: files.reduce((sum, file) => sum + (file.additions ?? 0), 0),
         deletions: files.reduce((sum, file) => sum + (file.deletions ?? 0), 0),
       });
+      // A run resumed after a restart landed on the results its earlier run saved.
+      recordGateBaseline(
+        ctx,
+        next,
+        next.project_id,
+        item.source,
+        item.branch!,
+        item.gate_results ?? sessionGateResults(ctx, next.project_id, next.id, item.to_sha!),
+        commands,
+      );
       if (current.conductor) {
         const landed = ctx.store.must<Workspace>('workspaces', workspace.id);
         ctx.store.update('workspaces', { ...landed, base_sha: item.to_sha! }, landed.revision);
@@ -3799,6 +3810,10 @@ async function prepareLand(
         );
   return (ctx) => {
     const { session } = request(ctx);
+    // A gate the user removed or turned off since that run no longer holds the landing.
+    const results = sessionGateResults(ctx, session.project_id, session.id, worktree.head)?.filter(
+      (gate) => commands?.some((command) => command.name === gate.name),
+    );
     const dropped = allowed
       ? undefined
       : droppedTests(
@@ -3806,10 +3821,7 @@ async function prepareLand(
           session.project_id,
           workspace.source!,
           reads.source(workspace)?.branch,
-          // A gate the user removed or turned off since that run no longer holds the landing.
-          sessionGateResults(ctx, session.project_id, session.id, worktree.head)?.filter((gate) =>
-            commands?.some((command) => command.name === gate.name),
-          ),
+          results,
         );
     if (leftover || gateRequired || unread || guarded.length || dropped) {
       const merge = leftover
@@ -3855,6 +3867,15 @@ async function prepareLand(
         in_place: true,
       },
       c.command_id,
+    );
+    recordGateBaseline(
+      ctx,
+      next,
+      next.project_id,
+      workspace.source!,
+      reads.source(workspace)!.branch!,
+      results,
+      commands,
     );
     if (session.conductor) {
       forgetWorktreeReads(workspace.id);
