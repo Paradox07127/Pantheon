@@ -17,7 +17,7 @@ it('accepts optional enabled and skippable gate commands and validates their typ
 });
 
 it('validates gate failure and runner policies', () => {
-  for (const gate_on_fail of ['handback', 'retry', 'stop'])
+  for (const gate_on_fail of ['retry', 'stop'])
     for (const gate_runner of ['daemon', 'session'])
       expect(
         inputSchemas['workflow.policy.set'].safeParse({
@@ -26,10 +26,11 @@ it('validates gate failure and runner policies', () => {
           gate_runner,
         }).success,
       ).toBe(true);
-  expect(
-    inputSchemas['workflow.policy.set'].safeParse({ project_id: 'project', gate_on_fail: 'ignore' })
-      .success,
-  ).toBe(false);
+  for (const gate_on_fail of ['ignore', 'handback'])
+    expect(
+      inputSchemas['workflow.policy.set'].safeParse({ project_id: 'project', gate_on_fail })
+        .success,
+    ).toBe(false);
   expect(
     inputSchemas['workflow.policy.set'].safeParse({ project_id: 'project', gate_runner: 'agent' })
       .success,

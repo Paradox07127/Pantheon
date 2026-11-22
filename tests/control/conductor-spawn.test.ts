@@ -1,9 +1,10 @@
 import { existsSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import {
   id,
   type Principal,
+  type Project,
   type Session,
   type SessionTurn,
   type Workspace,
@@ -169,6 +170,39 @@ it('tells the conductor once when a turn of the session it spawned completes', a
   expect(trackerTurns(f, conductor.id)[1]!.input).toContain('It is 1 commit ahead of main.');
 });
 
+it('counts the commits of a later turn though the list read the worktree before it', async () => {
+  const f = await workbenchFixture();
+  const conductor = await openConductor(f);
+  const { session_id } = await spawn(
+    f,
+    conductor.id,
+    script({ write: { path: 'docs.txt', text: 'docs\n' } }, { commit: 'Write the docs' }),
+  );
+  await settle(f, row(f, session_id));
+  await eventually(
+    () => trackerTurns(f, conductor.id).length === 1,
+    () => f.control.tick(),
+  );
+  await settle(f, row(f, conductor.id));
+  await f.prefetch();
+
+  f.call(
+    'session.send',
+    {
+      session_id,
+      input: script({ write: { path: 'notes.txt', text: 'notes\n' } }, { commit: 'Add notes' }),
+    },
+    row(f, session_id).revision,
+  );
+  await settle(f, row(f, session_id));
+  await eventually(
+    () => trackerTurns(f, conductor.id).length === 2,
+    () => f.control.tick(),
+  );
+
+  expect(trackerTurns(f, conductor.id)[1]!.input).toContain('It is 2 commits ahead of main.');
+});
+
 /** A conductor told of the first turn of a spawned session that committed once. */
 async function toldOnce(f: Fixture) {
   const conductor = await openConductor(f);
@@ -250,6 +284,61 @@ it('tells the conductor when a turn of the session it spawned fails', async () =
   expect(text).toContain('failed');
   expect(text).toContain('The build broke');
   expect(text).not.toContain(REVIEW_LINE);
+});
+
+it('tells the conductor when the worktree of the session it spawned fails to prepare', async () => {
+  const f = await workbenchFixture();
+  const conductor = await openConductor(f);
+  f.call(
+    'project.worktree.set',
+    {
+      project_id: f.project.id,
+      copy_paths: [],
+      command: { argv: [process.execPath, '-e', 'process.exit(7)'], timeout_ms: 5000 },
+    },
+    f.store.must<Project>('projects', f.project.id).revision,
+  );
+
+  const { session_id } = await spawn(f, conductor.id, 'Port the parser');
+  await eventually(
+    () => row(f, session_id).state === 'closed',
+    () => f.control.tick(),
+  );
+  await eventually(
+    () => trackerTurns(f, conductor.id).length === 1,
+    () => f.control.tick(),
+  );
+
+  const text = trackerTurns(f, conductor.id)[0]!.input;
+  expect(text).toContain(session_id);
+  expect(text).toContain('failed its turn');
+});
+
+it('tells the conductor when a restart fails the turn of the session it spawned', async () => {
+  const f = await workbenchFixture();
+  const conductor = await openConductor(f);
+  vi.spyOn(f.adapter, 'send').mockImplementationOnce(async (handle, turn) => {
+    handle.process_identity = { pid: 4000001, start_time_us: 1700000000123456 };
+    return { turn_id: turn.turn_id, status: 'delivered' };
+  });
+  const { session_id } = await spawn(f, conductor.id, 'Port the parser');
+  await awaitWorkspaceReady(f.control, row(f, session_id).workspace_id!);
+  await eventually(
+    () => row(f, session_id).process_identity !== undefined,
+    () => f.control.tick(),
+  );
+
+  await f.restart(() => undefined);
+  expect(f.turns(session_id)).toMatchObject([
+    { state: 'failed', delivery_reason: 'Interrupted by a daemon restart' },
+  ]);
+  await eventually(
+    () => trackerTurns(f, conductor.id).length === 1,
+    () => f.control.tick(),
+  );
+  expect(trackerTurns(f, conductor.id)[0]!.input).toContain(
+    'failed its turn: Interrupted by a daemon restart',
+  );
 });
 
 it('does not tell the conductor about a turn the user interrupted', async () => {

@@ -23,7 +23,6 @@ import type {
 } from '@pantheon/domain';
 import { command, type CommandType } from '@pantheon/protocol';
 import { ArtifactFiles, Store } from '@pantheon/store';
-import type { ExternalSource } from '../../packages/control/src/external-sources.js';
 import { user } from '../helpers.js';
 import type { LocalCommand } from '../../packages/control/src/local-command.js';
 
@@ -78,7 +77,6 @@ export async function workbenchFixture(
     delay?: number;
     /** Names the adapter claude and indexes Claude transcripts in the fixture home, so they can be adopted. */
     adoptable?: boolean;
-    externalSources?: ExternalSource[];
     localCommand?: LocalCommand;
     /** Runs the app as if built in the project's source checkout. */
     appCheckout?: boolean;
@@ -119,8 +117,6 @@ export async function workbenchFixture(
         ? { protectionPaths }
         : { workspaceRoot, protectionPaths }),
       ...(trace ? { trace } : {}),
-      // No fixture asks a real service for events.
-      externalSources: options.externalSources ?? [],
       localCommand: options.localCommand,
       ...(options.appCheckout ? { appRoot: source } : {}),
       ...(options.userConfig ? { userConfigDir: path.join(root, 'config') } : {}),

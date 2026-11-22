@@ -26,8 +26,10 @@ export const memoryFilterShape = {
     .union([tag, z.array(tag)])
     .optional()
     .describe('Keep only entries with this tag, or with any of these tags.'),
-  task_id: id.optional().describe('Keep only entries scoped to this task of the plan.'),
-  lead_session_id: id.optional().describe("Keep only entries of tasks in this lead's plan."),
+  task_id: id.optional().describe('Keep only entries scoped to the task with this id.'),
+  lead_session_id: id
+    .optional()
+    .describe('Keep only task-scoped entries whose task belongs to this session.'),
   project_only: z
     .boolean()
     .optional()
@@ -35,10 +37,8 @@ export const memoryFilterShape = {
   origin: z
     .literal('plan')
     .optional()
-    .describe("plan keeps only entries Pantheon wrote from a lead's plan decisions."),
-  milestone_id: id
-    .optional()
-    .describe('Keep only plan entries about this milestone, by its id from project_read.'),
+    .describe('plan keeps only entries Pantheon wrote from plan decisions.'),
+  milestone_id: id.optional().describe('Keep only plan entries about the milestone with this id.'),
   q: z
     .string()
     .max(200)
@@ -185,14 +185,12 @@ export const memoryInputSchemas = {
       ),
     task: z
       .strictObject({
-        lead_session_id: id.describe('The lead whose plan holds the task.'),
-        id: id.describe('The task id in that plan.'),
-        generation: z.number().int().positive().describe('The task generation project_read shows.'),
+        lead_session_id: id.describe('The session the task belongs to.'),
+        id: id.describe('The task id.'),
+        generation: z.number().int().positive().describe('The task generation.'),
       })
       .optional()
-      .describe(
-        '`lead_session_id`, `id` and `generation` of a task to scope the entry to; a task session leaves it out and gets its own task.',
-      ),
+      .describe('Leave it out: an entry scoped to a task is never current.'),
     expires_at: z
       .number()
       .int()

@@ -253,6 +253,7 @@ const callers = {
       runtime: 'fixture',
       state: 'open',
       turn_count: 0,
+      project_setup: true,
     });
     return Promise.resolve({
       token: daemon.auth.issueSession(session, 'planner'),

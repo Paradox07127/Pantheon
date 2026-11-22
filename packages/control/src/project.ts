@@ -259,8 +259,6 @@ function checkedSessionDefaults(
 
 const BUILT_IN_SETTINGS: Partial<ProjectSettingValues> = {
   workflow_policy: DEFAULT_WORKFLOW_POLICY,
-  usage_targets: {},
-  external_events: 'off',
 };
 
 /** The project's own value of the setting; undefined when it follows the global one. */
@@ -641,45 +639,6 @@ export const projectHandlers: Handlers = {
     const { session_defaults: _, ...rest } = project;
     const next = ctx.store.update('projects', rest, project.revision);
     ctx.store.event('project.session_defaults_cleared', next, project.id, {}, c.command_id);
-    return next;
-  },
-  'project.usageTargets.set': (ctx, p, c) => {
-    requireThat(p.role === 'user', 'permission_denied', 'Only user can set token targets');
-    const { project_id, targets } = c.input as ReturnType<
-      (typeof inputSchemas)['project.usageTargets.set']['parse']
-    >;
-    projectAccess(ctx, p, project_id, c.type);
-    const project = ctx.store.must<Project>('projects', project_id);
-    revision(ctx, c, project);
-    const usage_targets = { ...project.usage_targets };
-    for (const [runtime, target] of Object.entries(targets)) {
-      if (target === null) delete usage_targets[runtime];
-      else usage_targets[runtime] = target;
-    }
-    const { usage_targets: _, ...rest } = project;
-    const next = ctx.store.update(
-      'projects',
-      Object.keys(usage_targets).length ? { ...rest, usage_targets } : rest,
-      project.revision,
-    );
-    ctx.store.event('project.usage_targets_set', next, project.id, { targets }, c.command_id);
-    return next;
-  },
-  'project.externalEvents.set': (ctx, p, c) => {
-    requireThat(
-      p.role === 'user',
-      'permission_denied',
-      'Only user can set how a project takes external events',
-    );
-    const { project_id, mode } = inputSchemas['project.externalEvents.set'].parse(c.input),
-      project = ctx.store.must<Project>('projects', project_id);
-    revision(ctx, c, project);
-    const next = ctx.store.update(
-      'projects',
-      { ...project, external_events: mode },
-      project.revision,
-    );
-    ctx.store.event('project.external_events_set', next, project.id, { mode }, c.command_id);
     return next;
   },
   'project.defaults.set': (ctx, p, c) => {

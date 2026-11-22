@@ -17,6 +17,7 @@ function planner(f: Awaited<ReturnType<typeof fixture>>) {
     device_id: 'local',
     state: 'open',
     turn_count: 0,
+    project_setup: true,
   });
   return {
     id: `session:${session.id}`,

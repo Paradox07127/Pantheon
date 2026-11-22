@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   isTruncated,
   orchestrationDetail,
+  orchestrationLabel,
   orchestrationResult,
   toolGroupLabel,
   toolLabel,
@@ -266,6 +267,32 @@ describe('orchestration results', () => {
     expect(orchestrationResult(name, receipt(value), true)).toBe(expected);
   });
 
+  it('sums up the receipts of the conductor tools', () => {
+    expect(
+      orchestrationResult(
+        'request_review',
+        receipt({ review_id: 'r-1', runtimes: ['codex'] }),
+        true,
+      ),
+    ).toBe(tc('review.running'));
+    expect(orchestrationResult('spawn_session', receipt({ session_id: 's-9' }), true)).toBe(
+      '已开 s-9',
+    );
+    expect(
+      orchestrationResult(
+        'report_ready',
+        receipt({ session_id: 's-9', next: 'The gate runs now' }),
+        true,
+      ),
+    ).toBe(tc('ready.gating'));
+    expect(
+      orchestrationResult('report_ready', receipt({ next: 'The gate and landing start' }), true),
+    ).toBe(tc('ready.afterTurn'));
+    expect(
+      orchestrationResult('read_state', receipt({ changes: [{}, {}], todo: [{}] }), true),
+    ).toBe('2 项改动，1 项等你处理');
+  });
+
   it('reads a receipt from the text of a Codex MCP result', () => {
     const output = {
       result: { content: [{ type: 'text', text: '{"receipt":{"state":"completed"}}' }] },
@@ -306,7 +333,52 @@ describe('orchestration details', () => {
   it('lists the reviewers', () => {
     expect(
       orchestrationDetail('request_review', { session_id: 's-3', runtimes: ['codex', 'claude'] }),
-    ).toEqual([{ name: tc('reviewEntry'), code: 'codex, claude' }]);
+    ).toEqual([
+      { name: tc('reviewEntry'), code: 'codex, claude' },
+      { name: tc('sessionEntry'), code: 's-3' },
+    ]);
+    expect(orchestrationDetail('request_review', { runtimes: ['codex'] })).toEqual([
+      { name: tc('reviewEntry'), code: 'codex' },
+    ]);
+  });
+
+  it('gives the conductor tools their own rows', () => {
+    expect(orchestrationLabel('spawn_session', { runtime: 'codex', input: 'Fix it' })).toEqual({
+      title: tc('action.spawnSession'),
+      detail: 'codex',
+    });
+    expect(orchestrationLabel('report_ready', { session_id: 's-9' })).toEqual({
+      title: tc('action.reportReady'),
+      detail: 's-9',
+    });
+    expect(orchestrationLabel('read_state', {})).toEqual({
+      title: tc('action.readState'),
+      detail: '',
+    });
+  });
+
+  it('folds out what each conductor tool was given or returned', () => {
+    expect(
+      orchestrationDetail('spawn_session', { runtime: 'codex', input: 'Fix the importer' }),
+    ).toEqual([
+      { name: tc('runtimeEntry'), code: 'codex' },
+      { name: tc('inputEntry'), code: 'Fix the importer', prose: true },
+    ]);
+    expect(orchestrationDetail('report_ready', { session_id: 's-9' })).toEqual([
+      { name: tc('sessionEntry'), code: 's-9' },
+    ]);
+    expect(
+      orchestrationDetail('read_state', {}, receipt({ changes: [{}, {}], todo: [{}] })),
+    ).toEqual([
+      { name: tc('changesEntry'), code: '2' },
+      { name: tc('todoEntry'), code: '1' },
+    ]);
+  });
+
+  it('has nothing to fold out without arguments or a receipt to show', () => {
+    expect(orchestrationDetail('report_ready', {})).toEqual([]);
+    expect(orchestrationDetail('read_state', {})).toEqual([]);
+    expect(orchestrationDetail('spawn_session', {})).toEqual([]);
   });
 
   it('has no structure for other calls', () => {

@@ -101,8 +101,6 @@ async function deviceFixture(options: ControlOptions = {}) {
       name: 'build-box',
       ssh: 'builder@build-box',
       labels: [],
-      resources: {},
-      max_sessions: 1,
       online: true,
       checked_at: new Date().toISOString(),
       home,
@@ -198,7 +196,6 @@ async function twoSessions() {
   const f = await deviceFixture();
   // The fixture outlives each test; afterAll removes it.
   const cleanup = cleanups.pop()!;
-  f.probed({ max_sessions: 2 });
   const session = await f.create(script({ say: 'Ready' }));
   await f.settle(session);
   const other = await f.create(script({ say: 'Ready' }));
@@ -330,34 +327,6 @@ it('lets the device runtime write its worktree, temporary directory, repository 
   ]);
   // Git names the worktree's metadata folder after the worktree directory.
   expect(existsSync(path.join(f.deviceRepo, 'worktrees', id, 'HEAD'))).toBe(true);
-});
-
-it('keeps a device task session from reading the other device worktrees and the native session records there', async () => {
-  const { f, session, other } = await sharedSessions();
-  const local = f.local(session),
-    base = { cwd: local, workspace: { id: session.workspace_id!, path: local } } as SessionSpec;
-  const unreadable = [
-    f.deviceWork(other),
-    path.join(f.home, '.claude/projects'),
-    path.join(f.home, '.codex/sessions'),
-    path.join(f.home, '.codex/archived_sessions'),
-    path.join(f.home, '.codex/session_index.jsonl'),
-  ].map((target) => ({ path: target, deny: 'read_write' }));
-
-  const task = remoteSessionSpec(
-    f.ctx,
-    { ...f.current(session.id), task: { lead_session_id: 'lead', id: 'task' } },
-    base,
-  );
-  const direct = remoteSessionSpec(f.ctx, f.current(session.id), base);
-
-  expect(task.sandbox!.protected_entries).toEqual(expect.arrayContaining(unreadable));
-  expect(task.sandbox!.protected_entries).not.toContainEqual(
-    expect.objectContaining({ path: f.deviceWork(session) }),
-  );
-  expect(direct.sandbox!.protected_entries.filter((entry) => entry.deny === 'read_write')).toEqual(
-    [],
-  );
 });
 
 it('points the device runtime at the forwarded session tools socket only when there are tools', async () => {
@@ -1117,7 +1086,6 @@ it('refuses reconnect for a local session and lists its pull as not needed', asy
 
 it('lists a direct device session with its identity and opening time until it ends', async () => {
   const f = await deviceFixture();
-  f.probed({ resources: { gpu: 1, 'test-db': 2 } });
   const session = await f.create(script({ say: 'Ready' }));
   await f.settle(session);
   const listed = (await f.control.listDevices(user)).find((device) => device.id === 'build-box')!;
@@ -1215,7 +1183,6 @@ it('gives up a device command that does not finish', async () => {
 
 it('prepares two device sessions of one project one after the other on a device without its repository', async () => {
   const f = await deviceFixture();
-  f.probed({ max_sessions: 2 });
   const sessions = [await f.create(script({ say: 'Ready' }))];
   await f.settle(sessions[0]!);
   sessions.push(await f.create(script({ say: 'Ready' })));

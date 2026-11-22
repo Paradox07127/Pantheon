@@ -242,7 +242,6 @@ export function cardinalityMarks(
 // Sequences.
 
 export const CARD = { min: 96, one: 32, two: 44, gap: 48, icon: 28, plain: 12 } as const;
-const ROW = 40;
 const SEGMENT_HEAD = 28;
 const NOTE_PAD = 8;
 const BAR = 8;

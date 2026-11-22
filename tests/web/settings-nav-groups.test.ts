@@ -65,9 +65,7 @@ describe('settings navigation groups', () => {
         'about',
       ]),
     );
-    expect(labels('global')).toEqual(
-      pages(['defaults', 'usage', 'external', 'permissions', 'projects']),
-    );
+    expect(labels('global')).toEqual(pages(['defaults', 'permissions', 'projects']));
     expect(labels('project')).toEqual(pages(['gates', 'worktrees', 'extensions', 'project']));
     const nav = renderToStaticMarkup(createElement(SettingsNav, { page: 'general' }));
     const shown = [...nav.matchAll(/class="ps-page"[^>]*>.*?<\/span>([^<]*)</g)].map((m) => m[1]);

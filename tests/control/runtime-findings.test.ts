@@ -143,7 +143,7 @@ it('pairs lifecycle timestamps, distinguishes tool timing sources and gives refl
     expect(JSON.stringify(page)).not.toContain('SECRET_TOOL_TEXT');
     expect(
       f.call('trace.evidence', { project_id: project, view: 'workflow' }, null, analysisPrincipal),
-    ).toEqual({ policy: { policy_version: expect.any(Number), pinned: [] } });
+    ).toEqual({ policy: { policy_version: expect.any(Number) } });
     const report = {
       project_id: project,
       summary: 'Approval wait',

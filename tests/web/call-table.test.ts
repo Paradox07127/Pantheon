@@ -95,6 +95,7 @@ const waiting = {
   kind: 'approval' as const,
   summary: 'pnpm db:migrate',
   approval_id: 'approval-1',
+  revision: 1,
   since: T0 + 30_000,
 };
 
@@ -104,7 +105,12 @@ const SESSIONS = [
     state: 'waiting',
     waiting: 1,
     waiting_kind: 'approval',
-    waiting_request: { id: waiting.approval_id, tool: 'Bash', detail: waiting.summary },
+    waiting_request: {
+      id: waiting.approval_id,
+      revision: waiting.revision,
+      tool: 'Bash',
+      detail: waiting.summary,
+    },
     run: {
       phase: 'waiting_approval',
       since: waiting.since,

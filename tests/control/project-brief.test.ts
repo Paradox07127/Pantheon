@@ -1,7 +1,16 @@
 import { expect, it, vi } from 'vitest';
-import type { AgentEvent, Approval, Principal, Session, Workspace } from '@pantheon/domain';
+import type {
+  AgentEvent,
+  Approval,
+  Landing,
+  Principal,
+  Session,
+  Workspace,
+} from '@pantheon/domain';
 import type { ControlContext } from '../../packages/control/dist/context.js';
 import { agentEvent } from '../../packages/control/dist/agent.js';
+import { proseItems } from '../../packages/control/dist/project-brief.js';
+import { briefFacts } from '../../packages/control/dist/project-brief-prose.js';
 import { awaitWorkspaceReady, eventually, settle, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
@@ -129,6 +138,45 @@ it('leaves out what happened before since', async () => {
   expect(brief.since).toBe(since);
   expect(brief.items).toEqual([
     expect.objectContaining({ kind: 'merge', ref: { kind: 'merge', id: worker.id } }),
+  ]);
+});
+
+it('lists a branch landed after the cursor as a merge that names its branches', async () => {
+  const f = await workbenchFixture();
+  const seen = f.call<{ project_id: string; at: number }>('project.seen', {
+    project_id: f.project.id,
+  });
+  const landing = (id: string, state: Landing['state'], finished_at: number) =>
+    f.store.insert<Landing>('landings', {
+      id,
+      revision: 1,
+      project_id: f.project.id,
+      root: f.project.roots[0]!,
+      branch: 'feature',
+      target_branch: 'main',
+      workspace_id: 'landing-workspace',
+      state,
+      finished_at,
+    });
+  landing('landed-before', 'landed', seen.at);
+  landing('landed-after', 'landed', seen.at + 1);
+  landing('blocked-after', 'blocked', seen.at + 1);
+  const { items } = f.control.projectBrief(user, f.project.id);
+  expect(items).toEqual([
+    { kind: 'merge', ref: { kind: 'landing', id: 'landed-after' }, at: seen.at + 1 },
+  ]);
+  expect(
+    briefFacts(
+      (f.control as unknown as { ctx: ControlContext }).ctx,
+      f.project.id,
+      proseItems(items),
+    ),
+  ).toEqual([
+    {
+      key: 'landing:landed-after',
+      ref: { kind: 'landing', id: 'landed-after' },
+      text: 'Branch "feature" landed on "main".',
+    },
   ]);
 });
 

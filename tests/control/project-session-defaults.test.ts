@@ -223,31 +223,6 @@ it('stores writer and reviewer choices and a fallback for each role', async () =
   ).toEqual(next.session_defaults);
 });
 
-it('sets, returns and clears runtime token targets without changing other targets', async () => {
-  const f = await defaultsFixture();
-  let project = f.call<Project>(
-    'project.usageTargets.set',
-    { project_id: f.project.id, targets: { claude: 10000, codex: 0 } },
-    f.project.revision,
-  );
-  expect((f.control.projectRead(user, f.project.id) as ProjectRead).project.usage_targets).toEqual({
-    claude: 10000,
-    codex: 0,
-  });
-  project = f.call<Project>(
-    'project.usageTargets.set',
-    { project_id: f.project.id, targets: { claude: null } },
-    project.revision,
-  );
-  expect(project.usage_targets).toEqual({ codex: 0 });
-  project = f.call<Project>(
-    'project.usageTargets.set',
-    { project_id: f.project.id, targets: { codex: null } },
-    project.revision,
-  );
-  expect(project).not.toHaveProperty('usage_targets');
-});
-
 it('opens a main session on its fallback when the default runtime fails admission', async () => {
   const f = await defaultsFixture(true);
   const backup = new FixtureAdapter();

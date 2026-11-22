@@ -3,8 +3,6 @@ import type { Session, SessionTurn } from '@pantheon/domain';
 import type { ControlContext } from './context.js';
 import { startTurn, stopConversations } from './session.js';
 import { isRuntimeHeld } from './runtime-status.js';
-import { fireDueTimers } from './timers.js';
-import { tickExternalSources } from './external-sources.js';
 import {
   deliverPermissionAnswer,
   recordAnswerDelivery,
@@ -61,9 +59,7 @@ export async function tick(ctx: ControlContext): Promise<void> {
       // A kind no handler takes any more would stay pending for good; the loop below sends permission.answer.
       else if (out.kind !== 'permission.answer') ctx.store.mark(out.id, 'done');
     }
-    fireDueTimers(ctx);
     tickMemory(ctx);
-    tickExternalSources(ctx);
     for (const out of ctx.store.pending().filter((out) => out.kind === 'permission.answer')) {
       const payload = JSON.parse(out.payload) as PermissionAnswer;
       ctx.store.mark(out.id, 'sent');

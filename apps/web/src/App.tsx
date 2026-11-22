@@ -405,15 +405,6 @@ function MainWindow({ kind }: { kind: 'main' | 'project' }) {
             ),
             ...(current
               ? [
-                  action(
-                    'draw-chart',
-                    t({ id: 'app.palette.drawChart', defaultMessage: 'Draw a chart' }),
-                    startNewSession,
-                  ),
-                ]
-              : []),
-            ...(current
-              ? [
                   action('recent-activity', recentActivityTitle(), () => {
                     setTraceTab('activity');
                     setScreen('trace');

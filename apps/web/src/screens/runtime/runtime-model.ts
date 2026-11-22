@@ -64,6 +64,7 @@ export function sessionFacts(
               kind: s.waiting_request?.tool === 'AskUserQuestion' ? 'input' : 'approval',
               summary: (s.waiting_request?.detail ?? s.waiting_request?.tool ?? '').slice(0, 140),
               approval_id: asked,
+              revision: s.waiting_request!.revision,
               since: s.run?.wait?.since ?? Date.parse(s.last_activity_at),
             }
           : undefined,

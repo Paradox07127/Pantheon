@@ -636,8 +636,9 @@ const TIME_GROUPS = [
   },
 ] as const;
 
-/** The session this one was forked from. */
-export const parentOf = (s: WorkbenchSession): string | undefined => s.forked_from?.session_id;
+/** The session this one was forked from, or the one that spawned it. */
+export const parentOf = (s: WorkbenchSession): string | undefined =>
+  s.forked_from?.session_id ?? s.spawned_by?.session_id;
 
 const FINISHED: ReadonlySet<WorkbenchSession['state']> = new Set(['merged', 'discarded', 'done']);
 

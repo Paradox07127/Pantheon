@@ -113,8 +113,7 @@ export function sessionItems(
                 ? 'merge_stuck'
                 : row?.gate?.state === 'failed'
                   ? 'session.gate_failed'
-                  : row?.merge?.state === 'blocked' &&
-                      !['cancelled', 'workflow_approval'].includes(row.merge.reason ?? '')
+                  : row?.merge?.state === 'blocked' && row.merge.reason !== 'cancelled'
                     ? 'session.merge_blocked'
                     : limitHit?.error_code === 'usage_limit'
                       ? 'usage_limit_reached'

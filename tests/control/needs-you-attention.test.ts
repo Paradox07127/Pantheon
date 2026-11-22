@@ -4,7 +4,6 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 import {
   hash,
   type Approval,
-  type BoardPlan,
   type Principal,
   type Project,
   type ProjectBaseline,
@@ -463,7 +462,7 @@ it('escalates an unanswered permission request and records a stuck merge in a pr
   const f = await workbenchFixture();
   const session = await idleSession(f);
   const advance = skewedClock(f);
-  expect(f.store.list<BoardPlan>('board_plans')).toEqual([]);
+  expect(f.store.list('board_plans')).toEqual([]);
   f.store.insert<Approval>('approvals', {
     id: 'unanswered-request',
     revision: 1,

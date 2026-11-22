@@ -3,7 +3,11 @@ import path from 'node:path';
 import { expect, it, vi } from 'vitest';
 import { workbenchFixture } from './workbench-fixture.js';
 import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
-import { MEMORY_INSTRUCTIONS, syncMemoryFiles } from '../../packages/control/src/memory.js';
+import {
+  MEMORY_INSTRUCTIONS,
+  prepareMemoryDelivery,
+  syncMemoryFiles,
+} from '../../packages/control/src/memory.js';
 
 /** A project setup session, whose planner tools include memory and which project memory is delivered to. */
 const withTools = (f: Awaited<ReturnType<typeof workbenchFixture>>) =>
@@ -559,6 +563,49 @@ it('exposes delivery capability, stale packages and the records delivered for a 
   expect(
     f.control.memoryRead(user, f.project.id).sessions.find((x) => x.id === s.id)?.memory_tool,
   ).toBe(false);
+});
+
+it('reports no memory delivery for a plain session or a conductor', async () => {
+  const f = await workbenchFixture();
+  const draft = f.call<any>('memory.propose', {
+    project_id: f.project.id,
+    key: 'plain-note',
+    kind: 'note',
+    text: 'Plain evidence',
+  });
+  f.call('memory.commit', { memory_id: draft.id }, draft.revision);
+  const plain = await f.call<Promise<any>>('session.create', {
+    project_id: f.project.id,
+    runtime: f.adapter.name,
+    input: 'Plain question',
+  });
+  const tool = (id: string) =>
+    f.control.memoryRead(user, f.project.id).sessions.find((x) => x.id === id)?.memory_tool;
+  expect(tool(plain.id)).toBe(false);
+  const fresh = f.store.must<any>('sessions', plain.id);
+  f.store.update('sessions', { ...fresh, conductor: true }, fresh.revision);
+  expect(tool(plain.id)).toBe(false);
+});
+
+it('prepares no memory packet for a baseline session, whose tools have no memory', async () => {
+  const f = await workbenchFixture();
+  const draft = f.call<any>('memory.propose', {
+    project_id: f.project.id,
+    key: 'baseline-note',
+    kind: 'note',
+    text: 'Baseline evidence',
+  });
+  f.call('memory.commit', { memory_id: draft.id }, draft.revision);
+  const s = await withTools(f);
+  const fresh = f.store.must<any>('sessions', s.id);
+  const baseline = f.store.update<any>(
+    'sessions',
+    { ...fresh, project_setup: undefined, baseline: { baseline_id: 'baseline-run' } },
+    fresh.revision,
+  );
+  expect(
+    f.store.transaction(() => prepareMemoryDelivery(f.control['ctx'], baseline, 'baseline-turn')),
+  ).toBeUndefined();
 });
 
 it('reads memory counts for a session in turn order using the latest delivery of each turn', async () => {

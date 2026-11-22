@@ -285,8 +285,8 @@ describe('project table row', () => {
   const byKind = (tree: any) => byLabel(cells(tree)[4], zh('projects.row.byKind'));
 
   it("shows the daemon's first item and what waits by kind, the largest kind first", () => {
-    const tree = row(waits(0, { question: 1, repeated_failure: 2 }), [
-      need('repeated_failure', 'gate-1', {
+    const tree = row(waits(0, { question: 1, permission: 2 }), [
+      need('permission', 'gate-1', {
         source: { table: 'sessions', id: 'gate-1', revision: 1 },
         kind: 'session.gate_failed',
         reason: 'gate_failed',
@@ -296,7 +296,7 @@ describe('project table row', () => {
     const group = byKind(tree);
     expect(group.props.role).toBe('group');
     expect(buttons(group).map((b) => b.props['aria-label'])).toEqual([
-      zhf('projects.row.kindWaiting', { kind: kindName('repeatedFailure'), count: 2 }),
+      zhf('projects.row.kindWaiting', { kind: kindName('permission'), count: 2 }),
       zhf('projects.row.kindWaiting', { kind: kindName('question'), count: 1 }),
     ]);
     const needs = text(cells(tree)[4]);
@@ -307,26 +307,36 @@ describe('project table row', () => {
     expect(mock.shell.openSessionGroup).toHaveBeenCalledWith('inbox');
   });
 
-  it('shows the four kinds it names, folds other into one count and leaves out kinds it does not offer', () => {
+  it('shows the kinds it names, folds other into one count and leaves out kinds it does not offer', () => {
     const tree = row(
       waits(0, {
         budget: 6,
         question: 5,
-        repeated_failure: 4,
+        agent_proposal: 4,
         permission: 3,
-        improvement: 2,
         other: 1,
-      }),
+      } as never),
     );
     const labels = buttons(byKind(tree)).map((b) => b.props['aria-label']);
     expect(labels).toEqual([
+      zhf('projects.row.kindWaiting', { kind: kindName('budget'), count: 6 }),
       zhf('projects.row.kindWaiting', { kind: kindName('question'), count: 5 }),
-      zhf('projects.row.kindWaiting', { kind: kindName('repeatedFailure'), count: 4 }),
       zhf('projects.row.kindWaiting', { kind: kindName('permission'), count: 3 }),
-      zhf('projects.row.kindWaiting', { kind: kindName('improvement'), count: 2 }),
       undefined,
     ]);
-    expect(text(buttons(byKind(tree))[4])).toBe(zhf('projects.row.other', { count: 1 }));
+    expect(text(buttons(byKind(tree))[3])).toBe(zhf('projects.row.other', { count: 1 }));
+  });
+
+  it('draws an icon for a project over its budget as the first item', () => {
+    const tree = row(waits(0, { budget: 1 }), [
+      need('budget', 'project-b', {
+        source: { table: 'workflow_policies', id: 'project-b', revision: 2 },
+        kind: 'project.over_budget',
+        reason: 'project_over_budget',
+      }),
+    ]);
+    expect(nodes(cells(tree)[4]).filter((n) => n.type === undefined)).toEqual([]);
+    expect(text(cells(tree)[4])).toContain(zh('data.reason.projectOverBudget'));
   });
 
   it('leaves the wait out until the oldest item has waited a minute', () => {
@@ -363,7 +373,7 @@ describe('project region', () => {
     needs_you: 5,
     brief: 'The refund audit log merged.',
     waiting: {
-      by_decision: { question: 1, repeated_failure: 3, permission: 1 },
+      by_decision: { question: 1, budget: 3, permission: 1 },
       longest_wait_ms: 25 * MINUTE,
     },
   });
@@ -398,7 +408,7 @@ describe('project region', () => {
   it('splits the decisions by kind, the most first, with the longest wait', () => {
     const tree = row(asking);
     expect(buttons(byKind(tree)).map((b) => b.props['aria-label'])).toEqual([
-      kindWaiting('repeatedFailure', 3),
+      kindWaiting('budget', 3),
       kindWaiting('question', 1),
       kindWaiting('permission', 1),
     ]);

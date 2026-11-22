@@ -1,7 +1,7 @@
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, it, vi } from 'vitest';
-import type { Approval, Principal, Project, Session, Workspace } from '@pantheon/domain';
+import type { Approval, Landing, Principal, Project, Session, Workspace } from '@pantheon/domain';
 import { briefItemsKey, type SeenCursor } from '../../packages/control/dist/project-brief.js';
 import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
@@ -136,6 +136,7 @@ it('summarizes two projects and limits a planner to its own project', async () =
     runtime: f.adapter.name,
     state: 'open',
     turn_count: 0,
+    project_setup: true,
   });
   const planner: Principal = {
     id: `session:${plannerSession.id}`,
@@ -248,4 +249,29 @@ it('counts merged sessions since local midnight using the board clock', async ()
   }
   const summary = f.control.projectsSummary(user).projects[0]!;
   expect(summary.merged_today).toBe(2);
+});
+
+it('counts branches landed since local midnight as merged today', async () => {
+  const f = await workbenchFixture();
+  const now = new Date(2027, 2, 16, 12).getTime();
+  vi.spyOn(f.store, 'now').mockReturnValue(now);
+  const midnight = new Date(2027, 2, 16).getTime();
+  for (const [id, state, finished_at, project_id] of [
+    ['landed-before-midnight', 'landed', midnight - 1, f.project.id],
+    ['landed-at-midnight', 'landed', midnight, f.project.id],
+    ['blocked-today', 'blocked', midnight + 1, f.project.id],
+    ['landed-other-project', 'landed', midnight + 1, 'other-project'],
+  ] as const)
+    f.store.insert<Landing>('landings', {
+      id,
+      revision: 1,
+      project_id,
+      root: f.project.roots[0]!,
+      branch: 'feature',
+      target_branch: 'main',
+      workspace_id: 'landing-workspace',
+      state,
+      finished_at,
+    });
+  expect(f.control.projectsSummary(user).projects[0]!.merged_today).toBe(1);
 });

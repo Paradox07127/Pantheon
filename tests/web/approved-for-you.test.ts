@@ -76,8 +76,6 @@ beforeEach(() => {
     openProjectSession: vi.fn(),
     openProject: vi.fn(),
     openProjectApproved: vi.fn(),
-    approvedType: null,
-    approvedSince: null,
   };
 });
 afterEach(() => {
@@ -125,16 +123,14 @@ describe('approved for you', () => {
     });
   });
 
-  it('names the columns with the reason before the rule', async () => {
+  it('names the columns', async () => {
     const h = await page();
     expect(columns(h.value)).toEqual([
       zh('trace.approved.column.action'),
       zh('trace.approved.column.by'),
-      zh('trace.approved.column.reason'),
       zh('trace.approved.column.rule'),
       zh('trace.approved.column.task'),
       zh('trace.approved.column.when'),
-      '',
     ]);
   });
 
@@ -145,7 +141,6 @@ describe('approved for you', () => {
     const row = rowOf(h.value, 'pnpm test');
     expect(text(row)).toContain(zh('trace.approved.by.rule'));
     expect(text(cell(h.value, row, zh('trace.approved.column.rule')))).toBe('Bash(pnpm test:*)');
-    expect(text(cell(h.value, row, zh('trace.approved.column.reason')))).toBe('');
     expect(icons(cell(h.value, row, zh('trace.approved.column.by'))).map((n) => n.type)).toEqual([
       ScrollText,
     ]);
@@ -178,128 +173,6 @@ describe('approved for you', () => {
     expect(query).toHaveBeenLastCalledWith('project.decisions', {
       project_id: 'alpha',
       since: String(dayStart(6)),
-    });
-  });
-
-  describe('the type filter', () => {
-    const filter = (tree: unknown) =>
-      find(
-        tree as ReactElement,
-        (n) => n.props.role !== 'radio' && n.props['aria-label'] === zh('trace.approved.type'),
-      );
-    const segments = (tree: unknown) =>
-      nodes(filter(tree).props.children).filter((n) => n.props.value !== undefined);
-    const pick = (h: Awaited<ReturnType<typeof page>>, type: string) => {
-      filter(h.value).props.onValueChange(type);
-      h.render();
-    };
-    const actions = (tree: unknown) =>
-      rows(tree).map((r) => text(nodes(r).find((n) => n.props.role === 'cell')!));
-
-    it('names each type with its count in the range read', async () => {
-      const h = await page();
-      expect(segments(h.value).map((s) => s.props['aria-label'])).toEqual([
-        zhf('trace.approved.type.count', { type: zh('trace.approved.type.all'), count: 2 }),
-        zhf('trace.approved.type.count', { type: zh('trace.approved.type.permission'), count: 2 }),
-      ]);
-      expect(query).toHaveBeenCalledTimes(1);
-    });
-
-    it('is the same arrow-key radio group as the time range', async () => {
-      const h = await page();
-      const range = find(
-        h.value,
-        (n) => n.props.role !== 'radio' && n.props['aria-label'] === zh('trace.approved.range'),
-      );
-      expect(filter(h.value).type).toBe(range.type);
-      expect(segments(h.value).map((s) => s.type)).toEqual(
-        Array(2).fill(segments(h.value)[0]!.type),
-      );
-      expect(filter(h.value).props.value).toBe('all');
-    });
-
-    it('shows its segments without counts while the rows load', async () => {
-      query.mockImplementation(() => new Promise(() => {}));
-      const h = mount(() => ApprovedForYou({ projectId: 'never-read', tabs: null }));
-      await h.flush();
-      expect(filter(h.value).props['aria-busy']).toBe(true);
-      expect(segments(h.value).map((s) => [s.props['aria-label'], text(s)])).toEqual(
-        ['all', 'permission'].map((k) => [
-          zh(`trace.approved.type.${k}`),
-          zh(`trace.approved.type.${k}`),
-        ]),
-      );
-    });
-
-    it.each([
-      ['permissions', 'permission', 2, ['pnpm test', zh('trace.approved.prompt')]],
-      ['all', 'all', 2, ['pnpm test', zh('trace.approved.prompt')]],
-    ])('narrows the table to %s', async (_name, type, count, words) => {
-      const h = await page();
-      pick(h, type);
-      const shown = actions(h.value);
-      expect(shown).toHaveLength(count);
-      for (const word of words) expect(shown.some((a) => a.includes(word))).toBe(true);
-    });
-
-    it('keeps a type with no rows selectable and shows the empty state', async () => {
-      decisions.alpha = [];
-      const h = await page();
-      expect(segments(h.value)[1]!.props['aria-label']).toBe(
-        zhf('trace.approved.type.count', { type: zh('trace.approved.type.permission'), count: 0 }),
-      );
-      expect(filter(h.value).props.disabled).toBe(false);
-      pick(h, 'permission');
-      expect(text(h.value)).toContain(zh('trace.approved.empty'));
-      expect(() => table(h.value)).toThrow();
-    });
-
-    it('opens on the type another page asked for, once', async () => {
-      mock.shell.approvedType = 'permission';
-      const h = await page();
-      h.render();
-      expect(filter(h.value).props.value).toBe('permission');
-      expect(mock.shell.approvedType).toBeNull();
-      pick(h, 'all');
-      expect(filter(h.value).props.value).toBe('all');
-    });
-
-    it.each([
-      ['today', 0],
-      ['week', 3],
-      ['month', 12],
-      ['month', 90],
-    ] as const)(
-      'opens on %s when the asking page counted from %i days ago',
-      async (range, days) => {
-        mock.shell.approvedType = 'permission';
-        mock.shell.approvedSince = Date.now() - days * 86_400_000;
-        const h = await page();
-        h.render();
-        expect(
-          find(
-            h.value,
-            (n) => n.props.role !== 'radio' && n.props['aria-label'] === zh('trace.approved.range'),
-          ).props.value,
-        ).toBe(range);
-        expect(mock.shell.approvedSince).toBeNull();
-      },
-    );
-
-    it('keeps the picked type when the range changes', async () => {
-      const h = await page();
-      pick(h, 'permission');
-      find(
-        h.value,
-        (n) => n.props.role !== 'radio' && n.props['aria-label'] === zh('trace.approved.range'),
-      ).props.onValueChange('week');
-      h.render();
-      await h.flush();
-      expect(filter(h.value).props.value).toBe('permission');
-      expect(actions(h.value)).toEqual([
-        expect.stringContaining('pnpm test'),
-        expect.stringContaining(zh('trace.approved.prompt')),
-      ]);
     });
   });
 

@@ -27,7 +27,7 @@ describe.each(languages)('settings search in %s', (_name, load) => {
 
   it.each([
     ['finds zoom by its English name', 'zoom', 'appearance.zoom'],
-    ['finds the runtime quota threshold for quota', 'quota', 'usage.runtimeQuotaThreshold'],
+    ['finds the project budget for budget', 'budget', 'project.budget'],
   ])('%s', (_name, query, id) => {
     load();
     expect(ids(query)).toContain(id);

@@ -108,7 +108,7 @@
   grid-column: 1 / -1;
 }
 
-/* What a failed gate does, with the handback count beside handing back. */
+/* What a failed gate does. */
 .gt-fail {
   display: flex;
   align-items: center;

@@ -90,8 +90,7 @@ export function projectChanges(
   const rows: ChangeRow[] = [];
   for (const listed of sessionList(ctx, reader, projectId, 'cached')) {
     const session = ctx.store.must<Session>('sessions', listed.id);
-    if (!listed.workspace_id || session.review_id || session.runtime_review || session.resident)
-      continue;
+    if (!listed.workspace_id || session.review_id || session.runtime_review) continue;
     const status = sessionStatus(listed, waiting, landed);
     if (!status) continue;
     const review = reviews.findLast((each) => each.session_id === listed.id);

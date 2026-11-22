@@ -46,7 +46,7 @@ apps/daemon ──> packages/control ─> packages/adapters, packages/store, pac
 - 交互终端:`terminals.ts`(懒加载 node-pty、用户 login shell、内存输出回放、会话结束与无连接超时清理；daemon 的独立 WebSocket 只传输出)
 - 入口与上下文:`index.ts`(`Control`)、`commands.ts`(处理函数表)、`context.ts`(`ControlContext`、会话角色的命令范围、daemon 自建会话的提示词)
 - 会话:`workbench-session.ts`(`session.create`、列表、diff、门禁、合并、丢弃、改名、置顶、归档、删除、权限模式、`session.fork`、`session.setConnectors`)、`session.ts`(回合队列、发送、插话、打断、停止后台任务、`session.compact`、`session.resolve`)、`native-session.ts`、`checkpoint.ts`(每回合前的隐藏 ref checkpoint、`session.rollback` 按 `scope` 退文件、对话或两者)、`agent.ts`、`session-recap.ts`(每个回合结束和进入等待时写一次会话 recap,记用量、查项目预算)、`approvals.ts`(权限请求和提问，回答送回原生会话)、`session-wake.ts`(`notifySession`、`queueTurn`:给会话排一个回合)、`admission.ts`、`process.ts`、`child-processes.ts`、`non-writer-audit.ts`(只读类会话的写入审计)
-- 工作区与隔离:`workspace.ts`、`provisioning.ts`、`workspace-removal.ts`、`git.ts`、`git-config-cache.ts`(按仓库缓存 `runGit` 要中和的 filter 和 merge driver 名单，配置文件、include 目标或仓库目录的签名一变就重查)、`protection.ts`(保护清单；`worktreeSandbox`:工作树会话只能写自己的工作树、源仓库的 objects 和自己的 worktree 元数据目录)、`dependency-folders.ts`、`files.ts`、`in-place-session.ts`(`session.adopt`:外部原生会话在原目录续接，工作区 kind 为 `in_place`)、`native-liveness.ts`(原生会话是否被 Pantheon 之外的进程占着)、`workspace-stale.ts`(陈旧工作树、全部工作树的磁盘占用)、`repository-insights.ts`(后台读各会话工作树改了哪些文件、合进目标分支会不会冲突；读取本身不起 git)、`workspace-files.ts`(`files.read`、`symbols.search`:读文件、按名字找代码声明，范围是会话 worktree 或项目第一个文件夹)
+- 工作区与隔离:`workspace.ts`、`provisioning.ts`、`workspace-removal.ts`、`git.ts`、`git-config-cache.ts`(按仓库缓存 `runGit` 要中和的 filter 和 merge driver 名单，配置文件、include 目标或仓库目录的签名一变就重查)、`protection.ts`(保护清单；`worktreeSandbox`:工作树会话只能写自己的工作树、源仓库的 objects 和自己的 worktree 元数据目录)、`dependency-folders.ts`、`files.ts`、`in-place-session.ts`(`session.adopt`:外部原生会话在原目录续接，工作区 kind 为 `in_place`)、`native-liveness.ts`(原生会话是否被 Pantheon 之外的进程占着)、`workspace-stale.ts`(陈旧工作树、全部工作树的磁盘占用)、`workspace-files.ts`(`files.read`、`symbols.search`:读文件、按名字找代码声明，范围是会话 worktree 或项目第一个文件夹)
 - 合并与门禁:`landing.ts`(改了 `AGENT_CONFIGURATION` 里 agent 配置路径的合并被挡，原因 `protected_paths`)、
   `landing-diff.ts`、`source-git.ts`、`merge-preview.ts`(合并预检和预测冲突共用的 `git merge-tree`)、`validation-executor.ts`(不套沙箱，在候选目录里起一条门禁命令，记退出码、输出和测试数，超时或取消时停掉整个进程组)、`gate-test-counts.ts`(从门禁输出逐行数测试的通过、失败、跳过数)、`environment-check.ts`(`project.environment.verify`、`project.environment.checks`:在一份新 worktree 里按会话拿到的方式准备，再跑门禁命令或基线提议的命令，结果记为 passed、failed 或 inconclusive;基线的检查第一次失败时交回基线会话修一次，门禁失败的信号在那个根目录的 HEAD 上复查一次)、`branch-landing.ts`(`project.land`、`project.landing.read`:用户给项目根和一个不属于会话的分支，在一份新 worktree 里把它 rebase 到根当前检出的分支上、跑这个根的门禁，通过后快进;给了 `message` 先把分支的提交压成一个提交;和同一个根的会话合并排队，一个接一个)。`landing.ts` 跳过关掉的门禁命令，能跳过的命令失败记 `skipped`,按流程参数 `gate_on_fail` 重跑失败的命令，按 `gate_runner` 在候选 clone 或会话 worktree 里跑，环境和用户开的会话一样(`native-session.ts` 的 `inheritedEnvAllowlist`)
 - 审查与解读:`review.ts`(交叉审查；`review.range` 由用户给项目根和 base、head 两个 ref,审 merge-base 到 head 的提交，不挂会话,位置不是 `path:line` 的发现不阻塞;`review.read` 读结果)、`review-removal.ts`、`change-story.ts`、`change-story-brief.ts`、`change-story-check.ts`、`change-story-evidence.ts`(验收与门禁执行证据)
@@ -59,9 +59,8 @@ apps/daemon ──> packages/control ─> packages/adapters, packages/store, pac
 - 流程参数与预算:`workflow-policy.ts`(流程参数、项目预算、`workflow.policy.set`、`projectBudgetUse` 算项目从设预算起的用量)
 - 读模型:`snapshot.ts`、`run-state.ts`(每个会话的运行阶段、当前工具、等待原因)、`session-tasks.ts`(`session.tasks`:按会话折叠子 agent 与后台任务事件，用后台列表对账)、`needs-you.ts`(把下面三处的条目合成一个列表)、`needs-you-approvals.ts`(待批的权限请求和提问)、`needs-you-sessions.ts`(会话失败、卡住的合并、运行中回合的提醒、长时间的后台任务)、`needs-you-workflow.ts`(超出预算的项目、放不进记忆决定预算而留作 note 的计划决定)、`turn-usage.ts`(项目里一段时间内结束的回合的输入 token,项目预算用量由它算)、`usage-report.ts`、`projects-summary.ts`、`trace-index.ts`、`trace-view.ts`、`step-diff.ts`(`session.step_diff`:从记下的工具输入还原一步的改动)、`session-search.ts`(`session.search` 的派生全文索引，后台补建)。审查执行覆盖由 `review.ts` 的只读投影计算，独立于 Review 的结算状态。
 - 设备:`devices.ts`(用户配置的执行设备和本机的标签、命名资源、会话位；经 SSH 探测系统、runtime 版本和登录状态；`sshDeviceLink` 给出设备命令、git 地址和带 socket 转发的 transport)、`remote-workspace.ts`(设备上的 worktree 副本：建仓库和工作树、每回合经 git 推送和取回、设备上的沙箱可写目录、本机 worktree 删除后清理设备副本)、`remote-tools.ts`(本机 Unix socket 中继，设备上的 runtime 经它调用会话工具)
-- 调度与恢复:`scheduler.ts`、`timers.ts`、`recovery.ts`
+- 调度与恢复:`scheduler.ts`、`recovery.ts`
 - 本机工具与 GitHub:`local-command.ts`(跑本机的连接检查和 `gh` 命令)、`connections-status.ts`(GitHub、Hugging Face、Cloudflare 的登录)、`mcp-status.ts`(MCP server 的连接状态与重连、`mcp.app.resource` 读 MCP Apps 界面 HTML、`mcp.app.tool_call` 让界面经 Codex 调可见性含 app 的工具)、`github.ts`(`github.items`、消息里 PR 和 issue 引用的正文、`github.pr.create`)、`browser.ts`(`BrowserRelay`:会话的浏览器工具调用交给连着的桌面窗口，等它回答)、`wsl-mount.ts`(WSL 里 Windows 盘的挂载根，取 `/etc/wsl.conf` 的 `[automount]`;`git.ts` 和 `git-config-cache.ts` 靠它认出挂载盘上的路径)
-- 外部事件:`external-sources.ts`(来源接口、到期轮询、每个来源的状态；来源由 `ControlOptions.externalSources` 注册)、`github-notifications.ts`(GitHub 来源：通知的条件轮询，只为设了 `external_events` 的项目跑；经 `gh api`)、`external-events.ts`(来源报来的事件落 `external_events` 表，同一次发生只存一条；只存不处理)
 
 
 ## web
@@ -80,7 +79,6 @@ Trace 屏的“替你批准的”页(`screens/trace/ApprovedForYou.tsx`)按日�
 - `HarnessPage.tsx`(应用级页面):本机找到的 harness 和它们的可用模型。
 - `DevicesPage.tsx`(应用级页面):本机和已配置设备的在线状态、工具、登录状态、会话位和资源占用；能加设备、改标签/资源/会话位、删除(可撤销)、重新探测，发 `device.save` 和 `device.remove`;数据由 `data/devices.ts` 读 `device.list`。
 - `ProjectSettingsScreen.tsx`:项目设置，扩展页逐个打开用户级 MCP、skill 和账号连接器。
-- `ExternalPage.tsx`(项目级页面):外部请求。每个来源的状态和项目接请求的档位(发 `project.externalEvents.set`);数据由 `data/external-requests.ts` 读 `external.read`。
 
 `components/RuntimeGlyph.tsx` 是 runtime 身份表：界面里每个 runtime 的名字、颜色、图形和排序都从这里取；表外的 runtime 用通用图形，名字就是 runtime 名。`RuntimeGlyph` 和 `ModelMark` 默认 16px。
 

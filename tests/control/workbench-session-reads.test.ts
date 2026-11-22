@@ -69,7 +69,9 @@ it('counts no lines of an untracked path that is a named pipe', async () => {
   });
   vi.spyOn(gitModule, 'runGit').mockImplementation((cwd, args, input, asynchronous, options) => {
     const result = original(cwd, args, input, asynchronous, options);
-    if (args.join(' ') !== 'ls-files --others --exclude-standard -z') return result;
+    // The user's global excludes come first as an optional -c option.
+    const listing = args[0] === '-c' ? args.slice(2) : args;
+    if (listing.join(' ') !== 'ls-files --others --exclude-standard -z') return result;
     return result instanceof Promise ? result.then(withPipe) : withPipe(result);
   });
   const row = () =>

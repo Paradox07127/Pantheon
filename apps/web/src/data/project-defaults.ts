@@ -124,12 +124,3 @@ export const effectiveSessionDefaults = (
   read: ProjectDefaultsRead | null,
 ): Project['session_defaults'] =>
   project?.session_defaults ?? settingOf(read, 'session_defaults')?.global;
-
-/** The project's token targets over the global ones, by runtime. */
-export const effectiveUsageTargets = (
-  project: Pick<Project, 'usage_targets'> | undefined,
-  read: ProjectDefaultsRead | null,
-): Record<string, number> => ({
-  ...settingOf(read, 'usage_targets')?.global,
-  ...project?.usage_targets,
-});

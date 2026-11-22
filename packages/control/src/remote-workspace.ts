@@ -99,36 +99,6 @@ export function remoteSessionSpec(
     sandbox: {
       writable_roots: [paths.work, paths.tmp, path.posix.join(paths.repo, 'objects'), metadata],
       protected_entries: [
-        // A task session reads neither the other worktrees on the device nor its native session records.
-        ...(session.task
-          ? deny('read_write', [
-              ...ctx.store
-                .list<Session>('sessions')
-                .filter(
-                  (other) =>
-                    other.device_id === session.device_id &&
-                    other.workspace_id !== undefined &&
-                    other.workspace_id !== session.workspace_id &&
-                    ctx.store.get<Workspace>('workspaces', other.workspace_id)?.removed_at ===
-                      undefined,
-                )
-                .map((other) =>
-                  path.posix.join(
-                    device.home!,
-                    '.pantheon/remote',
-                    other.project_id,
-                    'w',
-                    other.workspace_id!,
-                  ),
-                ),
-              ...[
-                '.claude/projects',
-                '.codex/sessions',
-                '.codex/archived_sessions',
-                '.codex/session_index.jsonl',
-              ].map((name) => path.posix.join(device.home!, name)),
-            ])
-          : []),
         ...deny(
           'write',
           ['.claude', '.codex', '.mcp.json'].map((name) => path.posix.join(paths.work, name)),

@@ -22,11 +22,9 @@ type PolicySettings = Omit<
 >;
 type InheritedParam = NonNullable<WorkflowPolicy['overridden']>[number];
 
-export const DEFAULT_WORKFLOW_POLICY: PolicySettings & { runtime_quota_threshold: number } = {
-  runtime_quota_threshold: 90,
-  gate_on_fail: 'handback',
+export const DEFAULT_WORKFLOW_POLICY: PolicySettings = {
+  gate_on_fail: 'stop',
   gate_runner: 'daemon',
-  pinned: [],
 };
 
 /** The settings a project follows from the global values unless it sets them itself. */
@@ -35,21 +33,22 @@ const SETTINGS: (keyof PolicySettings)[] = [...INHERITED, 'project_budget'];
 
 /**
  * The settings the stored policy sets itself; one stored before global values sets each it holds.
- * A setting no longer in use is left out.
+ * A setting no longer in use is left out, and a stored `handback` reads as `stop`.
  */
 export function ownPolicySettings(stored: WorkflowPolicy | undefined): Partial<PolicySettings> {
   if (!stored) return {};
   return Object.fromEntries(
     (stored.overridden ?? INHERITED)
       .filter((param) => INHERITED.includes(param) && stored[param] !== undefined)
-      .map((param) => [param, stored[param]]),
+      .map((param) => [param, readSetting(param, stored[param])]),
   );
 }
 
+const readSetting = (param: InheritedParam, value: unknown) =>
+  param === 'gate_on_fail' && value === 'handback' ? 'stop' : value;
+
 /** The built-in defaults under the global values, which a project follows where it sets nothing. */
-export function inheritedPolicy(
-  ctx: ControlContext,
-): PolicySettings & { runtime_quota_threshold: number } {
+export function inheritedPolicy(ctx: ControlContext): PolicySettings {
   return {
     ...structuredClone(DEFAULT_WORKFLOW_POLICY),
     ...structuredClone(projectDefaults(ctx.userConfigDir).workflow_policy),
@@ -57,10 +56,7 @@ export function inheritedPolicy(
 }
 
 /** The project's own settings over the inherited ones, at version 0 when it has no stored policy. */
-export function workflowPolicy(
-  ctx: ControlContext,
-  projectId: string,
-): WorkflowPolicy & { runtime_quota_threshold: number } {
+export function workflowPolicy(ctx: ControlContext, projectId: string): WorkflowPolicy {
   const stored = ctx.store.get<WorkflowPolicy>('workflow_policies', projectId);
   const settings = { ...inheritedPolicy(ctx), ...ownPolicySettings(stored) };
   if (stored)
@@ -95,14 +91,6 @@ function changedParams(
 }
 
 function checkPolicy(policy: WorkflowPolicy): void {
-  requireThat(
-    policy.runtime_quota_threshold === undefined ||
-      (Number.isFinite(policy.runtime_quota_threshold) &&
-        policy.runtime_quota_threshold >= 0 &&
-        policy.runtime_quota_threshold <= 100),
-    'invalid_input',
-    'runtime_quota_threshold must be a percentage from 0 to 100',
-  );
   requireThat(
     policy.project_budget === undefined ||
       (Number.isInteger(policy.project_budget.input_tokens) &&

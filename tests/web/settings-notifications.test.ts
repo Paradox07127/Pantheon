@@ -109,8 +109,6 @@ const settingsWith = (
   brief_prose: true,
   attention_delivery: { ...DEFAULT_ATTENTION_DELIVERY, ...delivery },
   ...(quiet_hours && { quiet_hours }),
-  baseline_rounds: 5,
-  baseline_visuals: true,
 });
 
 let notify: ReturnType<typeof vi.fn>;
@@ -358,7 +356,7 @@ describe('the preferences an earlier version stored', () => {
     await load();
     expect(saved()).toEqual([
       {
-        attention_delivery: { permission: 'now', question: 'brief', repeated_failure: 'brief' },
+        attention_delivery: { permission: 'now', question: 'brief' },
         quiet_hours: { from: '21:00', to: '07:00' },
       },
     ]);
@@ -392,7 +390,6 @@ describe('the preferences an earlier version stored', () => {
         attention_delivery: {
           permission: 'now',
           question: 'now',
-          repeated_failure: 'now',
           ...expected,
         },
       },
@@ -436,13 +433,12 @@ describe('the notifications page', () => {
     groups(tree).find((g) => g.props['aria-label'] === label)!;
 
   it('lists each kind of decision and merges by name with the stored choice chosen, then the locked row', async () => {
-    settings = settingsWith({ question: 'brief', improvement: 'never' });
+    settings = settingsWith({ question: 'brief', permission: 'never' });
     const all = groups((await page()).value);
     expect(all.map((g) => [g.props['aria-label'], g.props.value])).toEqual([
       [say('question'), 'brief'],
-      [say('repeatedFailure'), 'now'],
-      [say('permission'), 'now'],
-      [say('improvement'), 'never'],
+      [say('permission'), 'never'],
+      [say('budget'), 'now'],
       [say('other'), 'now'],
       [say('merged'), 'brief'],
       [say('overdueQuestion'), 'now'],
@@ -481,7 +477,7 @@ describe('the notifications page', () => {
   it('stands every choice empty and disabled until the settings are read', () => {
     const host = mount(() => NotificationsPage());
     expect(groups(host.value).map((g) => [g.props.value, g.props.disabled])).toEqual([
-      ...Array.from({ length: 6 }, () => [null, true]),
+      ...Array.from({ length: 5 }, () => [null, true]),
       ['now', true],
     ]);
   });

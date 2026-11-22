@@ -1,8 +1,7 @@
 import { expect, it, vi } from 'vitest';
 import { FixtureAdapter } from '@pantheon/adapters';
-import type { Session, WorkflowPolicy } from '@pantheon/domain';
+import type { Session } from '@pantheon/domain';
 import type { ControlContext } from '../../packages/control/src/context.js';
-import { workflowPolicy } from '../../packages/control/dist/workflow-policy.js';
 import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
@@ -121,30 +120,4 @@ it('shares the latest quota across sessions and retains it through a runtime sta
     expect.objectContaining({ runtime: 'droid' }),
     expect.objectContaining({ runtime: 'qoder' }),
   ]);
-});
-
-it('defaults the quota threshold for stored policies and validates user changes as percentages', async () => {
-  const f = await setup();
-  expect(workflowPolicy(f.ctx, f.project.id)).toHaveProperty('runtime_quota_threshold', 90);
-  f.call('workflow.policy.set', { project_id: f.project.id, runtime_quota_threshold: 90 }, null);
-  let policy = f.store.must<WorkflowPolicy>('workflow_policies', f.project.id);
-  const { runtime_quota_threshold: _, ...old } = policy;
-  f.store.update('workflow_policies', old, policy.revision);
-  expect(workflowPolicy(f.ctx, f.project.id)).toHaveProperty('runtime_quota_threshold', 90);
-  policy = f.store.must<WorkflowPolicy>('workflow_policies', f.project.id);
-  f.call(
-    'workflow.policy.set',
-    { project_id: f.project.id, runtime_quota_threshold: 80 },
-    policy.revision,
-  );
-  expect(workflowPolicy(f.ctx, f.project.id)).toHaveProperty('runtime_quota_threshold', 80);
-  policy = f.store.must<WorkflowPolicy>('workflow_policies', f.project.id);
-  for (const value of [-1, 101])
-    expect(() =>
-      f.call(
-        'workflow.policy.set',
-        { project_id: f.project.id, runtime_quota_threshold: value },
-        policy.revision,
-      ),
-    ).toThrow(expect.objectContaining({ code: 'invalid_input' }));
 });

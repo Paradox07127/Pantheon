@@ -45,7 +45,6 @@ const policy = (patch: Partial<WorkflowPolicy> = {}): WorkflowPolicy => ({
   revision: 2,
   project_id: 'alpha',
   policy_version: 2,
-  pinned: [],
   ...patch,
 });
 
@@ -334,9 +333,9 @@ describe('what a failed gate does and where the gates run', () => {
     [
       'sends what follows a failed gate',
       ON_FAIL,
-      [gate('onFail.handback'), gate('onFail.retry'), gate('onFail.stop')],
-      'handback',
-      { gate_on_fail: 'stop' },
+      [gate('onFail.retry'), gate('onFail.stop')],
+      'stop',
+      { gate_on_fail: 'retry' },
     ],
     [
       'sends where the gates run',
@@ -355,11 +354,10 @@ describe('what a failed gate does and where the gates run', () => {
     expect(bridge.commands.map((c) => c.input)).toEqual([{ project_id: 'alpha', ...input }]);
   });
 
-  it('sends only the choice for each of the three', async () => {
+  it('sends only the choice for each of the two', async () => {
     for (const [from, to] of [
-      ['handback', 'retry'],
-      ['retry', 'handback'],
-      ['handback', 'stop'],
+      ['stop', 'retry'],
+      ['retry', 'stop'],
     ] as const) {
       bridge.answers['workflow.policy'] = policy({ gate_on_fail: from });
       bridge.commands = [];

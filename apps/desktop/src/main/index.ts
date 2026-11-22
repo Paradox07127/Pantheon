@@ -101,7 +101,7 @@ import { browserRoots, scanBrowsers } from './browsers.js';
 import { visualHosts, VisualPages } from './visual.js';
 import { AppPages } from './mcp-app.js';
 import { shellPath } from './shell-env.js';
-import { installCli } from './cli-install.js';
+import { cliInstallOffered, installCli } from './cli-install.js';
 import { readVoiceLocale, VoiceRecognizer, type VoiceEvent } from './voice.js';
 import {
   chooseTerminal,
@@ -2137,7 +2137,8 @@ const applyMenu = (): void => {
         zoom: zoomFromMenu,
         newWindow,
         openLogs: () => shell.showItemInFolder(path.dirname(logFile)),
-        ...(resources && process.platform !== 'win32' && { installCli: installCliFromMenu }),
+        ...(resources &&
+          cliInstallOffered(process.platform, process.env) && { installCli: installCliFromMenu }),
         about: () => app.showAboutPanel(),
         mini: miniItem(),
         accelerators: menuAccelerators,

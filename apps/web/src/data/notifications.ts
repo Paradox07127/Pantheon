@@ -174,23 +174,13 @@ export const sessionNoticeNow = (
 const defineMessage = (message: Message): Message => message;
 
 /** Each kind's name, in the order the settings list them. */
-export const DECISION_NAME: Record<
-  Exclude<AttentionKind, 'plan_change' | 'milestone_accept' | 'budget' | 'external'>,
-  Message
-> = {
+export const DECISION_NAME: Record<AttentionKind, Message> = {
   question: defineMessage({ id: 'settings.notifications.question', defaultMessage: 'Question' }),
-  repeated_failure: defineMessage({
-    id: 'settings.notifications.repeatedFailure',
-    defaultMessage: 'Failed twice',
-  }),
   permission: defineMessage({
     id: 'settings.notifications.permission',
     defaultMessage: 'Permission request',
   }),
-  improvement: defineMessage({
-    id: 'settings.notifications.improvement',
-    defaultMessage: 'Improvement',
-  }),
+  budget: defineMessage({ id: 'settings.notifications.budget', defaultMessage: 'Budget' }),
   other: defineMessage({ id: 'settings.notifications.other', defaultMessage: 'Other' }),
   merged: defineMessage({ id: 'settings.notifications.merged', defaultMessage: 'Merged' }),
 };
@@ -229,7 +219,6 @@ export function earlierRules(raw: string): AppSettingsPatch {
     attention_delivery: {
       permission: rule(on('approval_requested')),
       question: rule(on('question_asked')),
-      repeated_failure: rule(on('gate_failed') || on('turn_failed')),
       ...(!on('merged') && { merged: 'brief' as const }),
       ...(!on('turn_completed') && !on('ready_for_review') && { other: 'brief' as const }),
     },

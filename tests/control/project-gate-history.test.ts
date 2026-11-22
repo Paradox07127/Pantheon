@@ -205,6 +205,7 @@ it('refuses access to another project principal', async () => {
     runtime: f.adapter.name,
     state: 'open',
     turn_count: 0,
+    project_setup: true,
   });
   const otherPrincipal = {
     id: `session:${session.id}`,

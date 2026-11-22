@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Tip } from '../../components/Tip';
 import { sendProjectCommand, type Receipt } from '../../data/project-read';
 import { currentLocale, t } from '../../i18n';
@@ -81,13 +81,4 @@ export function Button(props: {
     </button>
   );
   return props.state?.reason ? <Tip content={props.state.reason}>{element}</Tip> : element;
-}
-
-export function Field(props: { label: string; children: ReactNode; wide?: boolean }) {
-  return (
-    <label className={props.wide ? 'pj-fd hm-wide' : 'pj-fd'}>
-      <span>{props.label}</span>
-      {props.children}
-    </label>
-  );
 }

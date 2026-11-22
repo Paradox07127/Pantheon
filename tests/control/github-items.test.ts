@@ -33,7 +33,7 @@ async function setup(remote = 'git@github.com:owner/project.git') {
           exit_code: 0,
         },
   );
-  const f = await fixture({ controlOptions: { localCommand: run, externalSources: [] } });
+  const f = await fixture({ controlOptions: { localCommand: run } });
   cleanups.push(() => f.close());
   execFileSync('git', ['init', '-q'], { cwd: f.projectRoot });
   if (remote) execFileSync('git', ['remote', 'add', 'origin', remote], { cwd: f.projectRoot });
@@ -187,7 +187,7 @@ it.each(['missing', 'timeout', 'signed_out'] as const)(
       missing: state === 'missing',
       timed_out: state === 'timeout',
     });
-    const f = await fixture({ controlOptions: { localCommand: run, externalSources: [] } });
+    const f = await fixture({ controlOptions: { localCommand: run } });
     cleanups.push(() => f.close());
     execFileSync('git', ['init', '-q'], { cwd: f.projectRoot });
     execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/owner/project.git'], {

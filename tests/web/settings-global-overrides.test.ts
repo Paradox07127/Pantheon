@@ -8,7 +8,6 @@ vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
   (await import('./web-live-stores.js')).liveStores(actual as never),
 );
 import { useBoard } from '@/data/board';
-import { effectiveUsageTargets } from '@/data/project-defaults';
 import { forgetQuery } from '@/data/query-cache';
 import { t } from '@/i18n';
 import { GlobalPermissions } from '@/screens/settings/PermissionsPage';
@@ -49,12 +48,9 @@ const defaults = (patch: Partial<ProjectDefaultsRead> = {}): ProjectDefaultsRead
         builtin,
         overrides: [{ project_id: 'beta', name: 'Beta api', value: { max_parallel: 5 } }],
       },
-      { key: 'session_defaults', overrides: [] },
-      { key: 'usage_targets', global: { codex: 700 }, builtin: {}, overrides: [] },
       {
-        key: 'external_events',
-        builtin: 'off',
-        overrides: [{ project_id: 'beta', name: 'Beta api', value: 'auto' }],
+        key: 'session_defaults',
+        overrides: [{ project_id: 'beta', name: 'Beta api', value: { runtime: 'codex' } }],
       },
     ],
     projects: [
@@ -144,18 +140,18 @@ describe('the projects page', () => {
     const h = mount(() => (detail.type as (props: unknown) => ReactNode)(detail.props));
     await h.flush();
     const own = find(h.value, (n) => n.props.title === zh('settings.projectList.own'));
-    const external = zh('settings.pages.external');
+    const defaults = zh('settings.pages.defaults');
     expect(
       nodes(own)
         .filter((n) => n.props.label !== undefined)
         .map((n) => n.props.label),
-    ).toEqual([zh('settings.pages.workflow'), external]);
-    button(own, zhf('settings.projectList.clearNamed', { setting: external })).props.onClick();
+    ).toEqual([zh('settings.pages.workflow'), defaults]);
+    button(own, zhf('settings.projectList.clearNamed', { setting: defaults })).props.onClick();
     await h.flush();
     expect(sent()).toEqual([
       {
         type: 'project.override.clear',
-        input: { project_id: 'beta', key: 'external_events' },
+        input: { project_id: 'beta', key: 'session_defaults' },
         expected_revision: 7,
       },
     ]);
@@ -192,15 +188,5 @@ describe('global permission rules', () => {
       { type: 'permission.globalRule.add', input: { rule: 'Bash(ls)' }, expected_revision: null },
     ]);
     expect(field().props.value).toBe('');
-  });
-});
-
-describe('values a project follows', () => {
-  it('reads token targets from the project, then the global ones', () => {
-    expect(effectiveUsageTargets({ usage_targets: { claude: 500 } }, defaults())).toEqual({
-      codex: 700,
-      claude: 500,
-    });
-    expect(effectiveUsageTargets(undefined, defaults())).toEqual({ codex: 700 });
   });
 });

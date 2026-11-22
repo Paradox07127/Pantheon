@@ -463,7 +463,7 @@ export function SessionCard(props: {
                   title={file.path}
                   onClick={() => {
                     showChangedFile(props.sessionId, file.path);
-                    props.onTab('changes');
+                    props.onTab('diff');
                   }}
                 >
                   <FileText className="ov-ic" aria-hidden="true" />
@@ -632,7 +632,7 @@ export function SessionCard(props: {
             listed={props.listed}
             head={diff.data?.head_sha ?? null}
             feedback={feedback}
-            direct={!!props.session?.direct_task}
+            direct={!!props.session?.conductor}
           />
         </div>
       )}
@@ -1130,7 +1130,7 @@ export function SessionInspector(props: {
               listed={props.listed}
               head={diff.data?.head_sha ?? null}
               feedback={feedback}
-              direct={!!props.session?.direct_task}
+              direct={!!props.session?.conductor}
             />
           </>
         )}

@@ -283,7 +283,7 @@ export function SessionHeader({
     <header className="sh-bar">
       {listed && <SessionStateIcon session={listed} place="header" />}
       {listed && <LastTurn session={listed} />}
-      {parent && parentLink(parent)}
+      {parent && parentLink(parent, !!listed?.spawned_by && !listed.forked_from)}
       {editing ? (
         <input
           ref={titleInput}
@@ -612,18 +612,25 @@ function RunClock({ since }: { since: number }) {
   return <span className="sh-clock">{durationText(Date.now() - since)}</span>;
 }
 
-/** The session this one was forked from, before the title; it opens that session. */
-export function parentLink(parent: WorkbenchSession) {
+/** The session this one was forked from or spawned by, before the title; it opens that session. */
+export function parentLink(parent: WorkbenchSession, spawned = false) {
   const title = sessionRow(parent).title;
   return (
     <>
       <button
         type="button"
         className="sh-lead"
-        aria-label={t(
-          { id: 'sessions.header.forkedFrom', defaultMessage: 'Forked from {title}' },
-          { title },
-        )}
+        aria-label={
+          spawned
+            ? t(
+                { id: 'sessions.header.spawnedBy', defaultMessage: 'Spawned by {title}' },
+                { title },
+              )
+            : t(
+                { id: 'sessions.header.forkedFrom', defaultMessage: 'Forked from {title}' },
+                { title },
+              )
+        }
         onClick={() => useShell.getState().openSession(parent.id)}
       >
         <GitFork className="sh-fork" aria-hidden="true" />

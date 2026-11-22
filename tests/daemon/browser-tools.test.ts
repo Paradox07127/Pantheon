@@ -42,6 +42,7 @@ async function sessionTools(extra: Partial<Session> = {}) {
     runtime: 'fixture',
     state: 'open',
     turn_count: 0,
+    project_setup: true,
     ...extra,
   });
   const ctx = (daemon.control as unknown as { ctx: ControlContext }).ctx;

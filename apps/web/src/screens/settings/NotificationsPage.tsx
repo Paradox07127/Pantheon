@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
-import type { AppSettings, AttentionDelivery, AttentionKind } from '@pantheon/protocol';
+import type { AppSettings, AttentionDelivery } from '@pantheon/protocol';
 import { useAppSettings } from '../../data/app-settings';
 import {
   DECISION_NAME,

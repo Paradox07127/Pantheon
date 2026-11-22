@@ -29,6 +29,8 @@ export interface SessionWaiting {
   /** The request input, at most 140 characters. */
   summary: string;
   approval_id: string;
+  /** The approval's revision, which approval.respond expects. */
+  revision: number;
   /** Epoch milliseconds. */
   since: number;
 }

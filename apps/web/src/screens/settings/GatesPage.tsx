@@ -411,7 +411,7 @@ type GatePolicyPatch = Pick<PolicyPatch, 'gate_on_fail' | 'gate_runner'>;
 
 /** The gate fields of a policy; those it stores none of read as the daemon's defaults. */
 const gatePolicyOf = (policy: WorkflowPolicy): Required<GatePolicyPatch> => ({
-  gate_on_fail: policy.gate_on_fail ?? 'handback',
+  gate_on_fail: policy.gate_on_fail ?? 'stop',
   gate_runner: policy.gate_runner ?? 'daemon',
 });
 
@@ -514,10 +514,6 @@ export function GatePolicy({ project }: { project: Project }) {
               label: onFail,
               value: current.gate_on_fail,
               choices: [
-                [
-                  'handback',
-                  t({ id: 'settings.gate.onFail.handback', defaultMessage: 'Hand back to fix' }),
-                ],
                 [
                   'retry',
                   t({ id: 'settings.gate.onFail.retry', defaultMessage: 'Rerun once first' }),

@@ -9,12 +9,6 @@ export interface TreeCell {
   h: number;
 }
 
-/** The mermaid blocks of an introduction body, still fenced, for `Markdown` to draw. */
-export const mermaidBlocks = (body: string): string =>
-  [...body.matchAll(/^ {0,3}(`{3,}|~{3,})[ \t]*mermaid[ \t]*\n[\s\S]*?\n {0,3}\1[ \t]*$/gm)]
-    .map((block) => block[0].trim())
-    .join('\n\n');
-
 type Item = { index: number; area: number };
 
 const sum = (row: readonly Item[]) => row.reduce((total, item) => total + item.area, 0);

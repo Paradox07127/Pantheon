@@ -74,7 +74,7 @@ describe('sessionFacts', () => {
     const facts = sessionFacts([
       listed('asking', {
         waiting_kind: 'approval',
-        waiting_request: { id: 'approval-old', tool: 'Bash', detail: 'pnpm test' },
+        waiting_request: { id: 'approval-old', revision: 4, tool: 'Bash', detail: 'pnpm test' },
         run: { phase: 'waiting_approval', since: 5, wait: { reason: 'approval', since: 7 } },
         context: { used_tokens: 10, window_tokens: 100 },
         forked_from: { session_id: 'origin' },
@@ -84,7 +84,13 @@ describe('sessionFacts', () => {
     expect(facts.get('asking')).toEqual({
       context: { used_tokens: 10, window_tokens: 100 },
       forked: true,
-      waiting: { kind: 'approval', summary: 'pnpm test', approval_id: 'approval-old', since: 7 },
+      waiting: {
+        kind: 'approval',
+        summary: 'pnpm test',
+        approval_id: 'approval-old',
+        revision: 4,
+        since: 7,
+      },
     });
     expect(facts.get('quiet')).toEqual({ context: undefined, forked: false, waiting: undefined });
   });
@@ -96,13 +102,14 @@ describe('sessionFacts', () => {
     const asking = listed('asking', {
       waiting: 2,
       waiting_kind,
-      waiting_request: { id: 'ask', tool: 'AskUserQuestion' },
+      waiting_request: { id: 'ask', revision: 1, tool: 'AskUserQuestion' },
       last_activity_at: iso(NOW),
     });
     expect(sessionFacts([asking]).get('asking')?.waiting).toEqual({
       kind: 'input',
       summary: 'AskUserQuestion',
       approval_id: 'ask',
+      revision: 1,
       since: NOW,
     });
   });

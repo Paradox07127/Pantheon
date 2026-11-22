@@ -539,14 +539,6 @@ export function ThreadTurn(props: {
   const compaction = turn.origin === 'compaction';
   // Every origin is Pantheon writing to the session.
   const from = turn.origin ? 'pantheon' : null;
-  // In the baseline's own session a baseline turn carries the user's answers to a round; 0 elsewhere.
-  const answersRound = useBoard((s) =>
-    turn.origin === 'baseline' && s.board?.sessions.find((k) => k.id === turn.session_id)?.baseline
-      ? (s.board.session_turns ?? [])
-          .filter((k) => k.session_id === turn.session_id && k.origin === 'baseline')
-          .findIndex((k) => k.id === turn.id) + 1
-      : 0,
-  );
   const sent = view.at === null ? null : clockText(view.at);
   const entering = props.fresh.has(`turn:${turn.id}`) ? ' tr-in' : '';
   const expanded = useLook().transcript === 'expanded';
@@ -598,32 +590,7 @@ export function ThreadTurn(props: {
                     <b>Pantheon</b>
                     {sent && <span>{sent}</span>}
                   </div>
-                  {turn.origin === 'baseline' ? (
-                    <Collapsible.Root className="ss-hof">
-                      <Collapsible.Trigger className="ss-hoft">
-                        <ChevronRight aria-hidden="true" />
-                        {answersRound
-                          ? t(
-                              {
-                                id: 'sessions.thread.baselineAnswers',
-                                defaultMessage: 'Your answers, round {round}',
-                              },
-                              { round: answersRound },
-                            )
-                          : t({
-                              id: 'sessions.thread.confirmedBaseline',
-                              defaultMessage: 'Confirmed baseline',
-                            })}
-                      </Collapsible.Trigger>
-                      <Collapsible.Panel className="ss-hofp">
-                        <div className="ss-hofx" data-find="input">
-                          {shownInput(turn)}
-                        </div>
-                      </Collapsible.Panel>
-                    </Collapsible.Root>
-                  ) : (
-                    <span data-find="input">{shownInput(turn)}</span>
-                  )}
+                  <span data-find="input">{shownInput(turn)}</span>
                 </div>
               </div>
             ) : (

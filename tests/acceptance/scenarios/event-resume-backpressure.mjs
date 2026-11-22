@@ -185,12 +185,12 @@ export async function run({ workspace, evidenceDir }) {
       { session_id: streaming.id, title: 'Token stream' },
       streamed.revision,
     );
-    const milestone = await call('milestone.create', {
-      project_id: projectId,
-      title: 'Stream delivered',
-      required_sessions: [streaming.id],
-      criteria: ['Every control event reaches every client'],
-    });
+    const gateRoot = project.roots[0];
+    const gateSet = await call(
+      'project.gate.set',
+      { project_id: projectId, root: gateRoot, commands: [{ name: 'Stream', argv: ['true'] }] },
+      (await snapshot()).projects.find((row) => row.id === projectId).revision,
+    );
     target = await latest();
     await clients.A.caughtUp(target, 'client A to follow the stream');
 
@@ -278,14 +278,13 @@ export async function run({ workspace, evidenceDir }) {
     clients.stale.state.projection.snapshot(fresh);
     const restarted = await clients.stale.connect(fresh.cursor);
     await call(
-      'milestone.revise',
+      'project.gate.set',
       {
-        milestone_id: milestone.id,
-        title: 'Stream delivered after the snapshot',
-        required_sessions: [streaming.id],
-        criteria: ['Every control event reaches every client'],
+        project_id: projectId,
+        root: gateRoot,
+        commands: [{ name: 'Stream after the snapshot', argv: ['true'] }],
       },
-      milestone.revision,
+      gateSet.revision,
     );
     const later = (await get('events', { after: String(target), project_id: projectId })).events;
     const after = later.at(-1)?.sequence ?? target;
@@ -354,9 +353,10 @@ export async function run({ workspace, evidenceDir }) {
             sessions: state.projection
               .inspect()
               .board.sessions.map(({ id, revision, state: status }) => ({ id, revision, status })),
-            milestones: (state.projection.inspect().board.milestones ?? []).map(
-              ({ id, revision }) => ({ id, revision }),
-            ),
+            projects: (state.projection.inspect().board.projects ?? []).map(({ id, revision }) => ({
+              id,
+              revision,
+            })),
           },
         },
       ]),

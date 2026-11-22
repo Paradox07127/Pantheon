@@ -44,7 +44,6 @@ import {
   type SessionHandle,
   type SessionSpec,
   type SessionTurn,
-  type Timer,
   type TurnAttachment,
   type Visual,
   type Workspace,
@@ -103,7 +102,6 @@ import {
 } from './source-git.js';
 import { runGit, type GitResult } from './git.js';
 import { mergePreview } from './merge-preview.js';
-import { repositoryInsights } from './repository-insights.js';
 import {
   overlaps,
   afterSourceLandings,
@@ -130,10 +128,10 @@ import {
   personalAgentFolder,
   queuedTurn,
   releaseIdleConversation,
-  reviewsRoots,
   stopTurn,
   unsnooze,
 } from './session.js';
+import { requireNoBlockingReview } from './review.js';
 import { notifySession } from './session-wake.js';
 import { backendProfile, homeRuntime, readUserConfig, sessionDefaults } from './user-config.js';
 import {
@@ -165,9 +163,6 @@ export function workbenchSessionSpec(ctx: ControlContext, session: Session): Ses
           .list<Workspace>('workspaces')
           .filter((other) => other.id !== workspace.id && other.kind !== 'in_place')
           .map((other) => other.path),
-        hiddenChecksDirs: reviewsRoots(ctx).map((reviews) =>
-          path.join(path.dirname(reviews), 'checks'),
-        ),
       })
     : undefined;
   const pantheonTools = usesPantheonTools(ctx, session);
@@ -411,7 +406,12 @@ async function prefetchedChanges(
   base: string,
 ): Promise<{ changes: WorkbenchSession['changes']; paths?: string[] }> {
   const tracked = await runGit(directory, trackedDiff(base, '--numstat', '-z'), undefined, true),
-    untracked = await runGit(directory, UNTRACKED, undefined, true);
+    untracked = await runGit(
+      directory,
+      [...(await globalExcludes()), ...UNTRACKED],
+      undefined,
+      true,
+    );
   if (tracked.exit_code !== 0 || untracked.exit_code !== 0) return { changes: null };
   const untrackedFiles = untrackedOf(untracked);
   let untrackedAdditions = 0;
@@ -489,6 +489,7 @@ function branchStatus(result: GitResult) {
 type SessionGitFacts = Pick<WorkbenchSession, 'branch' | 'ahead' | 'behind'> & {
   clean: boolean;
   head: string;
+  unmerged: boolean;
 };
 
 function sessionGitFacts(status: GitResult, distance?: GitResult): SessionGitFacts | null {
@@ -499,6 +500,7 @@ function sessionGitFacts(status: GitResult, distance?: GitResult): SessionGitFac
     branch: current.branch,
     head: current.head,
     clean: current.uncommitted === 0,
+    unmerged: current.unmerged > 0,
     ...(distance?.exit_code === 0 ? { ahead: ahead!, behind: behind! } : {}),
   };
 }
@@ -835,6 +837,8 @@ function sessionActivity(
     'session.gate_step_checked',
     'session.gate_run_cancelled',
     'session.gate_run_failed',
+    'session.discarded',
+    'session.closed',
     'turn.running',
     ...TURN_ENDS,
   ];
@@ -986,7 +990,7 @@ type GitStep = { read: 'changes'; directory: string; base: string } | { read: 'f
 
 interface ListedGit {
   changes: WorkbenchSession['changes'];
-  worktree: { clean: boolean; head: string } | null;
+  worktree: { clean: boolean; head: string; unmerged: boolean } | null;
   head: string | undefined;
 }
 
@@ -1011,6 +1015,10 @@ function stateWorktree(
 const commitsOnMerge = (ctx: ControlContext, session: Session) =>
   !session.in_place && (!usesPantheonTools(ctx, session) || !!session.conductor);
 
+/** Whether landing or merging commits the session's uncommitted files first. */
+const commitsOnLand = (ctx: ControlContext, session: Session) =>
+  !!session.in_place || commitsOnMerge(ctx, session);
+
 /** Commits on the base and nothing uncommitted, or uncommitted files the merge commits. */
 const listsReady = (
   ctx: ControlContext,
@@ -1019,9 +1027,10 @@ const listsReady = (
   worktree: ListedGit['worktree'],
 ) =>
   !!worktree &&
+  !worktree.unmerged &&
   (worktree.clean
     ? worktree.head !== sessionBase(session, workspace)
-    : commitsOnMerge(ctx, session));
+    : commitsOnLand(ctx, session));
 
 /** What the list shows of the worktree from the cached reads, or the next read the cache lacks. */
 function listedGit(ctx: ControlContext, p: Principal, listed: ListedRead): ListedGit | GitStep {
@@ -1204,7 +1213,6 @@ export function sessionList(
   action = 'project.read',
 ): WorkbenchSession[] {
   const listed = listedSessions(ctx, p, projectId, readChanges !== false, action);
-  const predictions = repositoryInsights(ctx, projectId).predictions;
   // Free text is read as JSON and parsed here: ->> would not keep a lone surrogate.
   type ListedTurn = Pick<SessionTurn, 'id' | 'session_id' | 'kind' | 'state'> & {
     delivery_reason: string | null;
@@ -1348,6 +1356,7 @@ export function sessionList(
         ? {
             waiting_request: {
               id: request.id,
+              revision: request.revision,
               tool: request.tool ?? '',
               ...(request.input_summary ? { detail: request.input_summary } : {}),
             },
@@ -1441,9 +1450,6 @@ export function sessionList(
         : {}),
       ...(gitFacts
         ? { branch: gitFacts.branch, ahead: gitFacts.ahead, behind: gitFacts.behind }
-        : {}),
-      ...(predictions.has(session.id)
-        ? { predicted_conflicts: predictions.get(session.id)!.value }
         : {}),
       ...(gate
         ? {
@@ -1635,11 +1641,12 @@ async function worktreeDiff(
   failed: () => never,
   base: string,
 ): Promise<Pick<SessionDiff, 'files' | 'patch' | 'truncated'> & { head: string }> {
-  const bound = { max_buffer: 4 * PATCH_BOUND, timeout_ms: TIME_BOUND };
+  const bound = { max_buffer: 4 * PATCH_BOUND, timeout_ms: TIME_BOUND },
+    excludes = await globalExcludes();
   const [head, numstat, untracked] = await Promise.all([
     run(['rev-parse', 'HEAD'], { max_buffer: 4096, timeout_ms: TIME_BOUND }),
     run(trackedDiff(base, '--numstat', '-z'), bound),
-    run(UNTRACKED, bound),
+    run([...excludes, ...UNTRACKED], bound),
   ]);
   if (head.exit_code !== 0 || numstat.exit_code !== 0 || untracked.exit_code !== 0) failed();
   const files: SessionDiff['files'] = numstatFiles(numstat.stdout).map((file) => ({
@@ -2154,7 +2161,9 @@ function deleteSessionRows(
   for (const approval of ctx.store.list<Approval>('approvals'))
     if (ids.has(approval.session_id ?? ''))
       ctx.store.remove('approvals', approval.id, approval.revision);
-  for (const timer of ctx.store.list<Timer>('timers'))
+  for (const timer of ctx.store.list<{ id: string; revision: number; subject_id: string }>(
+    'timers',
+  ))
     if (ids.has(timer.subject_id)) ctx.store.remove('timers', timer.id, timer.revision);
   for (const comment of ctx.store.list<SessionComment>('session_comments'))
     if (ids.has(comment.session_id))
@@ -2605,9 +2614,10 @@ export function projectTimeline(
         } else if (event.kind === 'session.merge_started') merging = true;
         else if (event.kind === 'session.merge_blocked' || event.kind === 'session.merge_cancelled')
           merging = false;
-        // A lead's direct task merge leaves its session open for the next task.
+        // A conductor's landing leaves its session open for its next work; older rows marked it direct.
         else if (event.kind === 'session.merged')
-          if ((event.payload as { direct?: boolean }).direct) merging = false;
+          if (session.conductor || (event.payload as { direct?: boolean }).direct)
+            merging = ready = false;
           else outcome = 'merged';
         else if (event.kind === 'session.discarded') outcome = 'discarded';
         else if (event.kind === 'session.closed') sessionState = 'closed';
@@ -2701,7 +2711,7 @@ export async function sessionPreflight(
   requireThat(sourceState, 'workspace_read_failed', 'Source repository status could not be read');
   const { branch: targetBranch, clean: sourceClean } = sourceState;
   // The merge commits these files first, so the commit it merges and gates is not made yet.
-  const committing = !worktree.clean && commitsOnMerge(ctx, started);
+  const committing = !worktree.clean && commitsOnLand(ctx, started);
   const [commits, files, edited, untracked, merge] = await Promise.all([
     runGit(workspace.path, ['rev-list', '--count', `${base}..${worktree.head}`], undefined, true),
     runGit(workspace.path, ['diff', '--name-only', '-z', base!, worktree.head], undefined, true),
@@ -3358,9 +3368,6 @@ export function admitMerge(
       gate_run: undefined,
       merge: {
         state: 'running' as const,
-        ...(session.merge?.reason === 'workflow_approval' && session.merge.landing
-          ? { landing: session.merge.landing }
-          : {}),
         ...(allowGateChange ? { allow_gate_change: true } : {}),
       },
     },
@@ -3633,6 +3640,8 @@ export function prepareReadyMerge(
       'Only an unfinished worktree session can be merged',
     );
     refuseAdopted(ctx, session, NO_MERGE_GATE);
+    // A review can end with blocking findings between the declaration and this merge.
+    requireNoBlockingReview(ctx, session.id);
     return {
       session,
       admit: (reads) => admitMerge(ctx, session, c.command_id, undefined, reads),
@@ -3730,7 +3739,7 @@ async function commitUncommitted(session: Session, workspace: Workspace): Promis
 /**
  * Lands a session opened in the project folder on its current branch without moving it: commits
  * the uncommitted files under the session title first, which moves HEAD off the commit the gates
- * passed on, so that land stops until the gates pass on the new commit.
+ * passed on, so with gate commands that land stops until the gates pass on the new commit.
  */
 async function prepareLand(
   ctx: ControlContext,
@@ -3754,7 +3763,12 @@ async function prepareLand(
     files = numstat.exit_code === 0 ? numstatFiles(numstat.stdout) : [];
   const allowed =
     c.type === 'session.merge' && inputSchemas['session.merge'].parse(c.input).allow_gate_change;
-  const project = ctx.store.must<Project>('projects', session.project_id);
+  const project = ctx.store.must<Project>('projects', session.project_id),
+    commands = gateCommands(ctx, project, workspace, session),
+    // Without gate commands the new commit lands as it is.
+    gateRequired = committed && !!commands?.length,
+    // A commit hook can leave files the commit did not take.
+    leftover = committed && !worktree.clean;
   // Both paths of a rename, so a gate file moved away counts as changed.
   const changed = allowed
     ? undefined
@@ -3778,16 +3792,18 @@ async function prepareLand(
           workspace.path,
           [base, worktree.head],
           changed.stdout.toString().split('\0').filter(Boolean),
-          gateCommands(ctx, project, workspace, session),
+          commands,
         );
   return (ctx) => {
     const { session } = request(ctx);
-    if (committed || unread || guarded.length) {
-      const merge = committed
-        ? { state: 'blocked' as const, reason: 'gate_required' }
-        : unread
-          ? { state: 'blocked' as const, reason: unread }
-          : { state: 'blocked' as const, reason: 'gate_files_changed', conflicts: guarded };
+    if (leftover || gateRequired || unread || guarded.length) {
+      const merge = leftover
+        ? { state: 'blocked' as const, reason: UNCOMMITTED.code }
+        : gateRequired
+          ? { state: 'blocked' as const, reason: 'gate_required' }
+          : unread
+            ? { state: 'blocked' as const, reason: unread }
+            : { state: 'blocked' as const, reason: 'gate_files_changed', conflicts: guarded };
       const next = ctx.store.update('sessions', { ...session, merge }, session.revision);
       ctx.store.event('session.merge_blocked', next, next.project_id, next.merge, c.command_id);
       unsnooze(ctx, session.id, 'merge_blocked', c.command_id);
@@ -3849,13 +3865,13 @@ async function prepareLand(
   };
 }
 
-/** After a turn of a session declared ready completes normally, merges it; see mergeReadyAfterTurn. */
-export function autoMergeAfterTurn(ctx: ControlContext, sessionId: string, turnId: string): void {
+/** After a ready session's last queued turn completes normally, merges it; see mergeReadyAfterTurn. */
+export function autoMergeAfterTurn(ctx: ControlContext, sessionId: string): void {
   if (ctx.closing) return;
   let reading = autoMergeReads.get(ctx);
   if (!reading) autoMergeReads.set(ctx, (reading = new Set()));
   if (ctx.store.must<Session>('sessions', sessionId).ready)
-    mergeReadyAfterTurn(ctx, sessionId, turnId, reading);
+    mergeReadyAfterTurn(ctx, sessionId, reading);
 }
 
 // The automatic merges after turns that still read their repository states.
@@ -3867,13 +3883,13 @@ export async function autoMergesRead(ctx: ControlContext): Promise<void> {
 }
 
 /**
- * Merges a conductor's own work as the user's merge does once the turn that declared it ready
- * completes; any other turn only drops the declaration. A refused merge is told to the conductor.
+ * Merges a conductor's own work as the user's merge does once the turns queued behind the turn
+ * that declared it ready have ended too; a declaring turn that did not complete only drops the
+ * declaration. A refused merge is told to the conductor.
  */
 function mergeReadyAfterTurn(
   ctx: ControlContext,
   sessionId: string,
-  turnId: string,
   reading: Set<Promise<void>>,
 ): void {
   const ready = ctx.store.must<Session>('sessions', sessionId).ready!;
@@ -3881,7 +3897,7 @@ function mergeReadyAfterTurn(
     const declared = ctx.store.must<Session>('sessions', sessionId);
     return ctx.store.update('sessions', { ...declared, ready: undefined }, declared.revision);
   });
-  if (ready.turn_id !== turnId) return;
+  if (ctx.store.get<SessionTurn>('session_turns', ready.turn_id)?.state !== 'completed') return;
   const c: Command = {
     protocol_version: PROTOCOL_VERSION,
     command_id: ready.command_id,

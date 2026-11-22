@@ -227,6 +227,8 @@ it.each([
       env: {},
       enabled: true,
       default_tools_approval_mode: 'approve',
+      // As long as the Pantheon tool bridge waits for a landing command.
+      tool_timeout_sec: 250,
       ...extra,
     });
   },
@@ -2581,6 +2583,7 @@ describe('Codex sessions the user opened directly', () => {
           env: {},
           enabled: true,
           default_tools_approval_mode: 'approve',
+          tool_timeout_sec: 250,
         },
       });
       expect(config).not.toHaveProperty('features');

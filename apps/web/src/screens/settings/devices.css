@@ -240,18 +240,6 @@
 .dv-lbl {
   gap: 4px;
 }
-.dv-lbl:has(.dv-rm) {
-  padding-right: 4px;
-}
-.dv-res {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-right: 10px;
-}
-.dv-res .mono {
-  font-size: var(--fs-xs);
-}
 .dv-runs {
   flex-direction: column;
   align-items: stretch;
@@ -290,64 +278,6 @@ button.dv-run:hover {
   font-size: var(--fs-xs);
   color: var(--mu);
   font-variant-numeric: tabular-nums;
-}
-.dv-rm {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  padding: 0;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--mu);
-  transition: color var(--dur-1) var(--ease-std);
-}
-.dv-rm svg {
-  width: 12px;
-  height: 12px;
-}
-.dv-rm:hover {
-  color: var(--tx);
-}
-.dv-rm:focus-visible {
-  outline: 3px solid var(--focus-ring);
-}
-.dv-x .dv-plus {
-  width: 24px;
-  height: 24px;
-}
-.dv-x .dv-plus:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-.dv-in,
-.dv-max {
-  height: var(--h-ctl);
-  padding: 0 8px;
-  border: var(--hair) solid var(--bd);
-  border-radius: var(--r-sm);
-  background: var(--sf);
-  color: var(--tx);
-  font-family: var(--font-mono);
-  font-size: inherit;
-}
-.dv-in {
-  width: 120px;
-}
-.dv-in-n {
-  width: 56px;
-  font-variant-numeric: tabular-nums;
-}
-.dv-x .dv-max {
-  width: 48px;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-}
-.dv-in:focus-visible,
-.dv-max:focus-visible {
-  outline: 3px solid var(--focus-ring);
 }
 .dv-v > .dv-end {
   margin-left: auto;

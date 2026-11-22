@@ -115,8 +115,7 @@ export type RuntimeFindingKind =
   | 'tool_failure'
   | 'turn_failure'
   | 'context_compaction'
-  | 'background_task'
-  | 'workflow_step';
+  | 'background_task';
 
 export interface RuntimeFinding {
   id: string;

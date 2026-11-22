@@ -9,5 +9,6 @@
   "trayPopover.quota.label": "{runtime} 订阅额度",
   "trayPopover.empty": "现在没有要你处理的",
   "trayPopover.newSession": "新会话",
-  "trayPopover.openPantheon": "打开 Pantheon"
+  "trayPopover.openPantheon": "打开 Pantheon",
+  "trayPopover.waiting.question": "{session}：{question}"
 }

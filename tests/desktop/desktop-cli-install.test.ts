@@ -2,7 +2,11 @@ import { afterEach, expect, it } from 'vitest';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { CLI_MARKER, installCli } from '../../apps/desktop/src/main/cli-install.js';
+import {
+  CLI_MARKER,
+  cliInstallOffered,
+  installCli,
+} from '../../apps/desktop/src/main/cli-install.js';
 
 const homes: string[] = [];
 const tempHome = () => {
@@ -55,4 +59,12 @@ it('gives the shell line to add when the folder is not on PATH', () => {
     file: path.join(home, '.local/bin/pantheon'),
     pathLine: 'export PATH="$HOME/.local/bin:$PATH"',
   });
+});
+
+it('offers the launcher on macOS and Linux, but not on Windows or from a Linux AppImage', () => {
+  expect(cliInstallOffered('darwin', {})).toBe(true);
+  expect(cliInstallOffered('linux', {})).toBe(true);
+  expect(cliInstallOffered('win32', {})).toBe(false);
+  // An AppImage mounts its resources at a new path on every launch.
+  expect(cliInstallOffered('linux', { APPIMAGE: '/home/user/Pantheon.AppImage' })).toBe(false);
 });

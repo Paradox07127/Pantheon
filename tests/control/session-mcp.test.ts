@@ -196,9 +196,9 @@ it('describes project_read facts without promising feedback', async () => {
   const client = await connect(f.spec);
   const tool = (await client.listTools()).tools.find((tool) => tool.name === 'project_read');
   expect(tool).toBeDefined();
-  for (const fact of ['details', 'brief', "every lead's board plan"])
+  for (const fact of ['settings', 'brief', 'project memory'])
     expect(tool!.description).toContain(fact);
-  expect(tool!.description).toContain("each task's state and sessions");
+  expect(tool!.description).not.toMatch(/board|plan_version|task/);
   expect(tool!.description).not.toMatch(/feedback/i);
 });
 

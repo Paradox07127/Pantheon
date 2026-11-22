@@ -6,8 +6,6 @@ import { ThemeSwitch } from '../../components/ThemeSwitch';
 import {
   ACCENTS,
   CODE_SIZE,
-  DRAWER,
-  drawerMax,
   INSPECTOR,
   READING_WIDTHS,
   saveLayout,
@@ -22,7 +20,6 @@ import {
   useLayout,
   useLook,
   useSystemAccent,
-  useViewportWidth,
   type Accent,
   type CodeFamily,
   type Density,
@@ -45,7 +42,6 @@ export function AppearancePage() {
   const appearance = useAppearance();
   const look = useLook();
   const layout = useLayout();
-  const viewport = useViewportWidth();
   // Stays null without the desktop app, which alone can zoom the page.
   const [zoom, setZoom] = useState<number | null>(null);
   const askZoom = (factor?: number) =>
@@ -113,7 +109,6 @@ export function AppearancePage() {
     id: 'settings.appearance.inspectorWidth',
     defaultMessage: 'Inspector width',
   });
-  const drawerWidth = t({ id: 'settings.appearance.drawerWidth', defaultMessage: 'Drawer width' });
   const accent = useAccent();
   const systemAccent = useSystemAccent();
   const accentTitle = t({ id: 'settings.appearance.accent', defaultMessage: 'Accent colour' });
@@ -393,22 +388,6 @@ export function AppearancePage() {
               min={INSPECTOR.min}
               max={INSPECTOR.max}
               onSave={(inspector) => keepLayout({ inspector })}
-            />
-          </Row>
-          <Row
-            label={drawerWidth}
-            hint={t({
-              id: 'settings.appearance.drawerWidthHint',
-              defaultMessage: 'The task drawer on the board',
-            })}
-            settingId="appearance.drawerWidth"
-          >
-            <PxInput
-              label={drawerWidth}
-              value={layout.drawer}
-              min={DRAWER.min}
-              max={drawerMax(viewport)}
-              onSave={(drawer) => keepLayout({ drawer })}
             />
           </Row>
         </div>

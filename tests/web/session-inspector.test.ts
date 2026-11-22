@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { ChangeStory, ProjectFacts, Session } from '@pantheon/domain';
+import type { ChangeStory, ProjectFacts, ReviewFinding, Session } from '@pantheon/domain';
 import type { LandingDiff, SessionDiff, SessionGates, WorkbenchSession } from '@pantheon/protocol';
 import type { SessionTurn } from '@/data/transcript';
 import { zh, zhf } from './i18n-setup.js';
@@ -63,7 +63,12 @@ import { runCommand } from '@/data/commands';
 import { withFeedback } from '@/data/feedback';
 import { t } from '@/i18n';
 import { GateResults } from '@/screens/sessions/GateResults';
-import { panelOf, type Panel, type PanelTab } from '@/screens/sessions/inspector-model';
+import {
+  findingOpen,
+  panelOf,
+  type Panel,
+  type PanelTab,
+} from '@/screens/sessions/inspector-model';
 import { checkItem } from '@/screens/sessions/model';
 import { ChecksTab, PlanTab } from '@/screens/sessions/panel';
 import { SessionInspector, SessionsScreen } from '@/screens/sessions/SessionsScreen';
@@ -633,4 +638,19 @@ it('shows the turns of the session in the thread', () => {
     }),
   );
   expect(html).toContain('Write the release notes');
+});
+
+it('opens the diff of the changes panel for a link to a file', () => {
+  expect(panelOf('diff')).toEqual({ panel: 'changes', view: 'diff' });
+});
+
+it('leaves a stale finding without a resolution open to resolve', () => {
+  const finding = { status: 'stale' } as ReviewFinding;
+  expect(findingOpen(finding)).toBe(true);
+  expect(
+    findingOpen({
+      ...finding,
+      resolution: { outcome: 'fixed', resolved_at: 1, resolved_by: 'user' },
+    }),
+  ).toBe(false);
 });

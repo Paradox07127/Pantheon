@@ -89,11 +89,10 @@ describe('search finds the new settings', () => {
   const ids = (query: string) => searchSettings(query).map((h) => h.id);
 
   it.each([
-    ['finds the drawer width and the diff page in zh-CN', 'zh-CN', '抽屉', '差异'],
-    ['finds them by their English names', 'en', 'drawer', 'diff'],
-  ] as const)('%s', (_name, locale, drawer, diff) => {
+    ['finds the diff page in zh-CN', 'zh-CN', '差异'],
+    ['finds it by its English name', 'en', 'diff'],
+  ] as const)('%s', (_name, locale, diff) => {
     if (locale === 'en') setLocaleSync('en', {});
-    expect(ids(drawer)).toContain('appearance.drawerWidth');
     expect(ids(diff)).toContain('diff.page');
   });
 });

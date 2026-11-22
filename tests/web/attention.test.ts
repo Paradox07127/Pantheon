@@ -49,7 +49,7 @@ const gate = need({
   status: 'failed',
   created_at: NOW - 25 * MINUTE,
   reason: 'gate_failed',
-  decision: 'repeated_failure',
+  decision: 'other',
   primary: 'session.merge',
   actions: [
     { command: 'session.merge', allowed: true },
@@ -113,7 +113,7 @@ describe('what needs you, by the decision it asks', () => {
   it('lists the items, the longest wait first, with what to decide', () => {
     const h = open([gate, asked, allowed]);
     const [first, second, third] = rows(h.value);
-    expect(text(first)).toContain(zh('data.attention.decision.repeatedFailure'));
+    expect(text(first)).toContain(zh('data.reason.gateFailed'));
     expect(text(second)).toContain(zh('data.attention.decision.permission'));
     expect(text(buttons(third!)[0])).toBe(`${zh('data.attention.decision.permission')}Fix login`);
   });

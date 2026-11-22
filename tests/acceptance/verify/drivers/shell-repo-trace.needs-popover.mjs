@@ -10,9 +10,8 @@ const check = (what, ok, got) => result.checks.push({ what, ok: Boolean(ok), got
 // The row title each decision kind gets (data/attention.ts, zh-CN/attention.json).
 const DECISION = {
   question: '问题',
-  repeated_failure: '失败两次',
   permission: '权限',
-  improvement: '改进',
+  budget: '预算',
 };
 
 // The title bar counts every project's waits: settle what earlier drivers left waiting anywhere,

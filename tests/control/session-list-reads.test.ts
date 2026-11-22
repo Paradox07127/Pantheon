@@ -80,9 +80,6 @@ async function sessionsOfEachRead() {
     },
   );
   const folder = await f.adopt();
-  await eventually(
-    () => f.list().find((row) => row.id === committed.id)?.predicted_conflicts !== undefined,
-  );
   return { ...listed, committed, checked, folder };
 }
 

@@ -1,9 +1,8 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
 import { Tabs } from '@base-ui/react/tabs';
 import { Bell, KeyRound, ScrollText, X } from 'lucide-react';
-import type { DecisionType } from '@pantheon/protocol';
 import { Clip } from '../../components/Clip';
 import { EmptyState } from '../../components/EmptyState';
 import { TopBar } from '../../components/TopBar';
@@ -11,7 +10,6 @@ import { useAppSettings } from '../../data/app-settings';
 import { useBoard } from '../../data/board';
 import {
   decisionRow,
-  rangeSince,
   useDecisionsForUser,
   type DecisionRange,
 } from '../../data/decisions-for-user';
@@ -46,23 +44,6 @@ const RANGES: { range: DecisionRange; label: string }[] = [
   },
 ];
 
-type TypeFilter = DecisionType | 'all';
-
-const TYPES: { type: TypeFilter; label: string }[] = [
-  {
-    type: 'all',
-    get label() {
-      return t({ id: 'trace.approved.type.all', defaultMessage: 'All' });
-    },
-  },
-  {
-    type: 'permission',
-    get label() {
-      return t({ id: 'trace.approved.type.permission', defaultMessage: 'Permissions' });
-    },
-  },
-];
-
 /** The delivery rules by decision, as the notifications settings page has them. */
 function DeliveryRules() {
   const { settings, save } = useAppSettings();
@@ -75,25 +56,10 @@ function DeliveryRules() {
  */
 export function ApprovedForYou({ projectId, tabs }: { projectId: string | null; tabs: ReactNode }) {
   const [range, setRange] = useState<DecisionRange>('today');
-  const [type, setType] = useState<TypeFilter>('all');
-  // The type another page opened the list on, taken once.
-  const asked = useShell((s) => s.approvedType);
-  const askedSince = useShell((s) => s.approvedSince);
-  useEffect(() => {
-    if (!asked) return;
-    if (asked === 'permission') setType(asked);
-    // The shortest range that reaches back to the time the asking page counted from.
-    if (askedSince !== null)
-      setRange(
-        RANGES.find(({ range }) => rangeSince(range, Date.now()) <= askedSince)?.range ?? 'month',
-      );
-    useShell.setState({ approvedType: null, approvedSince: null });
-  }, [asked, askedSince]);
   const [notifying, setNotifying] = useState(false);
   const read = useDecisionsForUser(projectId, range);
   const board = useBoard((s) => s.board);
   const items = read.read?.items ?? null;
-  const counts = items && { all: items.length, permission: items.length };
   const rows = items?.map(decisionRow) ?? null;
   const now = Date.now();
   const titleOf = (sessionId: string) => {
@@ -133,32 +99,6 @@ export function ApprovedForYou({ projectId, tabs }: { projectId: string | null; 
       <main className="trc">
         <Tabs.Panel className="trc-body" value="approved">
           <div className="trc-main afy">
-            <RadioGroup<TypeFilter>
-              className="tb-seg afy-type"
-              aria-label={t({ id: 'trace.approved.type', defaultMessage: 'Type' })}
-              aria-busy={counts === null || undefined}
-              disabled={counts === null}
-              value={type}
-              onValueChange={(value) => setType(value)}
-            >
-              {TYPES.map((k) => (
-                <Radio.Root
-                  key={k.type}
-                  value={k.type}
-                  aria-label={
-                    counts
-                      ? t(
-                          { id: 'trace.approved.type.count', defaultMessage: '{type}: {count}' },
-                          { type: k.label, count: counts[k.type] },
-                        )
-                      : k.label
-                  }
-                >
-                  {k.label}
-                  {counts && <span className="tb-ct">{counts[k.type]}</span>}
-                </Radio.Root>
-              ))}
-            </RadioGroup>
             {read.error && <Failure error={read.error} onRetry={read.reload} />}
             {rows === null ? (
               !read.error && <Skeleton />
@@ -180,9 +120,6 @@ export function ApprovedForYou({ projectId, tabs }: { projectId: string | null; 
                     {t({ id: 'trace.approved.column.by', defaultMessage: 'Approved by' })}
                   </span>
                   <span role="columnheader">
-                    {t({ id: 'trace.approved.column.reason', defaultMessage: 'Reason' })}
-                  </span>
-                  <span role="columnheader">
                     {t({ id: 'trace.approved.column.rule', defaultMessage: 'Rule' })}
                   </span>
                   <span role="columnheader">
@@ -191,7 +128,6 @@ export function ApprovedForYou({ projectId, tabs }: { projectId: string | null; 
                   <span role="columnheader">
                     {t({ id: 'trace.approved.column.when', defaultMessage: 'When' })}
                   </span>
-                  <span role="columnheader" />
                 </div>
                 {rows.map((row) => (
                   <div key={row.key} className="afy-r" role="row">
@@ -205,7 +141,6 @@ export function ApprovedForYou({ projectId, tabs }: { projectId: string | null; 
                       <ScrollText className="ic-sm" aria-hidden="true" />
                       {row.by}
                     </span>
-                    <span role="cell" className="afy-c" />
                     <span role="cell" className="afy-c">
                       {row.rule !== null && <Clip text={row.rule} className="mono" />}
                     </span>
@@ -223,7 +158,6 @@ export function ApprovedForYou({ projectId, tabs }: { projectId: string | null; 
                     <span role="cell" className="afy-when">
                       {dayText(row.at, now, { time: true })}
                     </span>
-                    <span role="cell" className="afy-x"></span>
                   </div>
                 ))}
               </div>

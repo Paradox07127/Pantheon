@@ -62,6 +62,7 @@ describe('refetch trigger', () => {
     'session.merge_stuck',
     'session.discard_failed',
     'session.turn_stalled',
+    'workflow.policy_changed',
   ])('refreshes attention after %s', (kind) => {
     expect(touchesNeedsYou(kind)).toBe(true);
   });
@@ -120,6 +121,7 @@ describe('reason text', () => {
         revision_conflict: 'revisionConflict',
         artifact_commit_missing: 'artifactCommitMissing',
         daemon_restart: 'daemonRestart',
+        gate_required: 'gateRequired',
       },
     ],
     [

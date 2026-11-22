@@ -15,7 +15,7 @@ import { readQuery, useQuery, useRefetchTick } from './workbench-sessions';
 
 type TraceSpan = SessionTrace['spans'][number];
 
-// Session states, turns, approvals, tool calls, usage, compactions and workflow steps.
+// Session states, turns, approvals, tool calls, usage, and compactions.
 const TRACE_PREFIXES = ['session.', 'turn.', 'approval.'];
 const TRACE_KINDS: ReadonlySet<string> = new Set([
   'agent.session.started',
@@ -25,7 +25,6 @@ const TRACE_KINDS: ReadonlySet<string> = new Set([
   'agent.quota.updated',
   'agent.context.compacted',
   'agent.background.changed',
-  'workflow.step_changed',
 ]);
 
 /** Whether an event of this kind can change a trace read. */

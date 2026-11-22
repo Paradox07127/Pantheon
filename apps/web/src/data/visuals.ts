@@ -145,16 +145,6 @@ const drawsInProject = (event: DaemonEvent, projectId: string) =>
 export const usePinnedVisuals = (projectId: string | null): VisualRead<Visual[]> =>
   useVisualRead('visual.list', projectId, pinnedInput, acceptList, drawsInProject);
 
-/** The visuals one session of the project drew; read again when it draws. */
-export const useSessionVisuals = (projectId: string, sessionId: string | null) =>
-  useVisualRead(
-    'visual.list',
-    sessionId,
-    (session_id) => ({ project_id: projectId, session_id }),
-    acceptList,
-    (event, session_id) => event.kind === 'visual.drawn' && event.aggregate_id === session_id,
-  );
-
 /** Sends a visual write; null when it landed, else why it did not. */
 async function write(type: CommandType, input: Record<string, unknown>): Promise<string | null> {
   const result = await runCommand(type, input, null);

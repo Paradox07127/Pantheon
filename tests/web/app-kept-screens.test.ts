@@ -91,7 +91,7 @@ import { useCurrentProject } from '@/data/current-project';
 import { groupWorkbenchSessions } from '@/screens/sessions/model';
 import { useShell } from '@/store';
 import { FakeDocument, FakeElement, type FakeNode } from './web-fake-dom.js';
-import { zh } from './i18n-setup.js';
+import './i18n-setup.js';
 
 const doc = new FakeDocument();
 const win = {
@@ -233,20 +233,6 @@ it('builds the palette items only while the palette is open', async () => {
   expect(ids).not.toContain('screen-board');
   expect(ids).not.toContain('screen-insights');
   expect(ids).not.toContain('screen-automations');
-});
-
-it('asks for a chart from the palette the way the empty canvas does, with a new session', async () => {
-  const items = seen.palette.at(-1)!.items as { id: string; label: string; run: () => void }[];
-  const draw = items.find((i) => i.id === 'draw-chart')!;
-  expect(draw.label).toBe(zh('app.palette.drawChart'));
-  const opened = useShell.getState().sessionOpened;
-  await act(() => draw.run());
-  expect(useShell.getState()).toMatchObject({
-    screen: 'sessions',
-    sessionId: '',
-    sessionOpened: opened + 1,
-  });
-  await go('projects');
 });
 
 it('opens recent activity as the trace page on its activity tab', async () => {

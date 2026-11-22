@@ -2594,6 +2594,8 @@ export class CodexAdapter implements HarnessAdapter {
             ...server,
             enabled: true,
             default_tools_approval_mode: 'approve',
+            // Codex otherwise gives up on a tool call after 60 s, while a landing command commits through the user's hooks first.
+            tool_timeout_sec: 250,
             ...(ask_tools?.length ? { tools: promptTools(ask_tools) } : {}),
           },
         };

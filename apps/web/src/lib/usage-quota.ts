@@ -1,8 +1,6 @@
 import type { QuotaWindow } from '@pantheon/domain';
 import { t } from '../i18n';
 
-export const RING_RUNTIMES = ['claude', 'codex'] as const;
-
 /* Subscription quota */
 
 export const quotaWindowName = (window: string) => {
@@ -36,16 +34,4 @@ export function quotaWindowText(w: QuotaWindow, now: number): string {
         { id: 'insights.quota.window', defaultMessage: '{window} window' },
         { window: quotaWindowName(w.window) },
       );
-}
-
-/* Usage targets */
-
-export type UsageTargets = Partial<Record<string, number>>;
-
-/** A typed target: null when empty, undefined when not a whole positive number. */
-export function parseUsageTarget(text: string): number | null | undefined {
-  const value = text.trim();
-  if (!value) return null;
-  const target = Number(value);
-  return /^\d+$/.test(value) && Number.isSafeInteger(target) && target > 0 ? target : undefined;
 }

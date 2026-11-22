@@ -206,6 +206,42 @@ it('returns a blocking finding to the conductor once, as a message without a pla
   expect(planRows()).toBe(0);
 });
 
+it('returns a blocking finding that went stale before the review ended', async () => {
+  const { f, reviewer, request, ready, settled, messages } = await conductorFixture();
+  const { review_id } = await request();
+  await ready();
+  reviewer.emit({
+    kind: 'tool.started',
+    name: 'review.finding',
+    tool_call_id: 'finding',
+    input: {
+      blocking: true,
+      location: 'answer.txt:1',
+      quote: 'reviewed answer',
+      evidence: 'The committed answer has no value',
+      impact: 'Readers cannot use it',
+      reproduction: 'cat answer.txt',
+    },
+  });
+  await eventually(
+    () => f.store.must<Review>('reviews', review_id).findings.length === 1,
+    () => f.control.tick(),
+  );
+  // The conductor's next commit drops the quoted line while the reviewer still works.
+  const row = f.store.must<Review>('reviews', review_id);
+  f.store.update<Review>(
+    'reviews',
+    { ...row, findings: row.findings.map((each) => ({ ...each, status: 'stale' as const })) },
+    row.revision,
+  );
+  reviewer.emit({ kind: 'turn.completed', status: 'completed' });
+  await settled(review_id);
+  const sent = messages();
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).toContain('answer.txt:1');
+  expect(sent[0]!.trimEnd().endsWith(BLOCKING_TAIL)).toBe(true);
+});
+
 it('leaves the blocking sentence out of a passing review', async () => {
   const { f, reviewer, request, ready, settled, messages } = await conductorFixture();
   const { review_id } = await request();

@@ -939,9 +939,15 @@ const BLOCKED: Record<string, string> = {
   get invalid_state() {
     return t({ id: 'sessions.panel.blocked.notReady', defaultMessage: 'The session is not ready' });
   },
+  get gate_required() {
+    return t({
+      id: 'sessions.panel.blocked.gateRequired',
+      defaultMessage: 'The gates have not passed on this commit',
+    });
+  },
 };
 export const blockedText = (reason: string | undefined): string =>
-  reason ? (BLOCKED[reason] ?? reason) : BLOCKED.invalid_state!;
+  reason ? (BLOCKED[reason] ?? reasonText(reason)) : BLOCKED.invalid_state!;
 
 export const GATE = {
   running: {

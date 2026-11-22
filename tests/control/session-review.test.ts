@@ -11,7 +11,8 @@ import type {
   SessionSpec,
   UserTurn,
 } from '@pantheon/domain';
-import { REVIEWER_BASE } from '../../packages/control/dist/context.js';
+import { REVIEWER_BASE, type ControlContext } from '../../packages/control/dist/context.js';
+import { reviewerRuntime } from '../../packages/control/dist/review.js';
 import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
@@ -326,4 +327,17 @@ it('keeps the directories of a running session review and finishes a premature r
     state: 'done',
   });
   expect(w.store.events().some((event) => event.kind === 'review.directories_removed')).toBe(false);
+});
+
+it('picks an installed reviewer runtime over one whose version could not be read', async () => {
+  const w = await workbenchFixture();
+  const missing = new FixtureAdapter(0);
+  missing.name = 'missing-reviewer';
+  missing.report = { ...missing.report, version: 'unprobed' };
+  const installed = new FixtureAdapter(0);
+  installed.name = 'installed-reviewer';
+  w.control.adapters.set(missing.name, missing);
+  w.control.adapters.set(installed.name, installed);
+  const ctx = (w.control as unknown as { ctx: ControlContext }).ctx;
+  expect(reviewerRuntime(ctx, w.project.id, w.adapter.name)).toBe(installed.name);
 });

@@ -12,33 +12,6 @@
   line-height: var(--lh-sm);
   overflow-wrap: anywhere;
 }
-.qc-src {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  min-width: 0;
-  color: var(--mu);
-  font-size: var(--fs-xs);
-  line-height: var(--lh-xs);
-}
-.qc-who {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--tx2);
-  font-weight: 500;
-}
-.qc-task {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.qc-age {
-  flex: none;
-  margin-left: auto;
-  font-variant-numeric: tabular-nums;
-}
 .qc-ask {
   display: flex;
   flex-direction: column;

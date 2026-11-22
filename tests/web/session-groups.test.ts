@@ -15,6 +15,7 @@ vi.mock('@/store', () => ({
   }),
 }));
 import { groupWorkbenchSessions, sessionMenu } from '@/screens/sessions/model';
+import { parentOf, sidebarGroups } from '@/screens/sessions/session-groups';
 import { SessionListRow, shownSessionId } from '@/screens/sessions/SessionsScreen';
 
 const AT = '2026-01-01T00:00:00.000Z';
@@ -203,5 +204,21 @@ describe('snooze menu item', () => {
       .map((entry) => entry.label);
     expect(labels).not.toContain(snooze);
     expect(labels).not.toContain(unsnooze);
+  });
+});
+
+describe('session parents', () => {
+  it('nests a session under the session that spawned it', () => {
+    const lead = session('lead', 'idle');
+    const worker = session('worker', 'running', { spawned_by: { session_id: 'lead' } });
+    expect(parentOf(worker)).toBe('lead');
+    const rows = sidebarGroups([lead, worker], {
+      grouping: 'lead',
+      sort: 'activity',
+      archived: false,
+    }).flatMap((group) => group.rows);
+    expect(rows.map((row) => [row.session.id, row.children.map((child) => child.id)])).toEqual([
+      ['lead', ['worker']],
+    ]);
   });
 });

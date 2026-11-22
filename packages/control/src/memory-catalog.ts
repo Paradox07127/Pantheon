@@ -20,7 +20,13 @@ import {
   memoryGraphSchema,
   type MemorySessionTurnsResult,
 } from '@pantheon/protocol';
-import { inside, purposeSessionTools, userOnly, type ControlContext } from './context.js';
+import {
+  inside,
+  purposeSessionTools,
+  usesPantheonTools,
+  userOnly,
+  type ControlContext,
+} from './context.js';
 import { memoryContents } from './memory.js';
 import {
   body,
@@ -420,7 +426,11 @@ export function memoryRead(
         title: s.title,
         delivered: s.memory_delivery?.delivered_signature === selected.signature,
         prepared: s.memory_delivery?.prepared_signature === selected.signature,
-        memory_tool: purposeSessionTools(s)?.includes('memory.context') ?? true,
+        // Matches the sessions a turn delivers memory to.
+        memory_tool:
+          usesPantheonTools(ctx, s) &&
+          !s.conductor &&
+          (purposeSessionTools(s)?.includes('memory.context') ?? true),
         stale:
           !!s.memory_delivery?.delivered_signature &&
           s.memory_delivery.delivered_signature !== selected.signature,

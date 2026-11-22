@@ -102,10 +102,15 @@ const KIND_LABEL: Record<SessionKind, string> = {
 };
 
 /**
- * Whether sessions reach the runtime: not connected after a failed check, with its reason when it
- * has one, else the sign-in when it stops them, else connected.
+ * Whether sessions reach the runtime: no answer to the ACP handshake, else not connected after a
+ * failed check, with its reason when it has one, else the sign-in when it stops them, else connected.
  */
 export function connectionState(s: RuntimeStatus): { s: string; text: string } {
+  if (s.handshake === false)
+    return {
+      s: 'bad',
+      text: t({ id: 'settings.runtimes.noHandshake', defaultMessage: 'Did not answer' }),
+    };
   if (s.connection?.connected === false)
     return {
       s: 'bad',
@@ -158,8 +163,10 @@ export function HarnessPage({ projectId }: { projectId: string | null }) {
   const [args, setArgs] = useState<Record<string, string>>({});
   const [savedArgs, setSavedArgs] = useState<Record<string, string>>({});
   const now = useNow(30_000);
-  const statuses = read.state === 'ready' ? read.statuses.filter(listedRuntime) : [];
-  const installed = statuses.filter((s) => s.enabled && s.installed).map((s) => s.runtime);
+  const statuses = read.state === 'ready' ? read.statuses : [];
+  const installed = statuses
+    .filter((s) => s.enabled && s.installed && listedRuntime(s))
+    .map((s) => s.runtime);
   const listed = useRuntimeModels(projectId, installed);
   const backends = useBackends();
   /** The runtimes whose account email the user chose to show. */

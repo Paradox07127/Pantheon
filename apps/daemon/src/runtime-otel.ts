@@ -8,14 +8,11 @@ const MAX_RETRY_MS = 30_000;
 const BATCH = 128;
 const KINDS = new Set<string>([
   ...RUNTIME_EVENT_KINDS,
-  'task.dispatch_failed',
-  'task.stop_requested',
   'approval.delivered',
   'approval.delivery_failed',
   'session.gate_run_requested',
   'session.gate_run_completed',
   'session.gate_run_failed',
-  'retrospective.recorded',
   'trace.evidence_read',
   'session.runtime_reported',
   'session.runtime_report_evaluated',

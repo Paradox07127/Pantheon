@@ -13,13 +13,11 @@ export type SettingsPage =
   | 'connections'
   | 'notifications'
   | 'shortcuts'
-  | 'usage'
   | 'data'
   | 'about'
   | 'gates'
   | 'worktrees'
   | 'permissions'
-  | 'external'
   | 'defaults'
   | 'project'
   | 'extensions'
@@ -124,20 +122,6 @@ export const SETTINGS_PAGES: {
     key: 'defaults',
     get label() {
       return t({ id: 'settings.pages.defaults', defaultMessage: 'Default model' });
-    },
-    group: 'global',
-  },
-  {
-    key: 'usage',
-    get label() {
-      return t({ id: 'settings.pages.usage', defaultMessage: 'Usage' });
-    },
-    group: 'global',
-  },
-  {
-    key: 'external',
-    get label() {
-      return t({ id: 'settings.pages.external', defaultMessage: 'External requests' });
     },
     group: 'global',
   },

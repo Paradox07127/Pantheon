@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { DecisionType, WorkbenchSession } from '@pantheon/protocol';
+import type { WorkbenchSession } from '@pantheon/protocol';
 import { useBoard } from './data/board';
 import {
   currentProject,
@@ -129,10 +129,6 @@ interface ShellState {
   // The one session the trace's runs tab shows; null shows them all.
   runsSession: string | null;
   runsView: 'now' | 'history';
-  /** The type the approved-for-you list opens filtered by, once; null keeps its own. */
-  approvedType: DecisionType | null;
-  /** The time the asking page counted from, Unix milliseconds; the list opens on a range that reaches it. */
-  approvedSince: number | null;
   // Opens the trace's runs tab on the session, or on every session for null.
   showRuns: (sessionId: string | null) => void;
   setTraceTab: (tab: TraceTab) => void;
@@ -155,8 +151,8 @@ interface ShellState {
   openProjectSessions: (projectId: string) => void;
   // Makes the project current and opens one tab of its memory, in one switch.
   openProjectMemory: (projectId: string, tab: MemoryTab) => void;
-  // Makes the project current and opens the trace's list of what was approved for the user, of one type when given.
-  openProjectApproved: (projectId: string, type?: DecisionType, since?: number) => void;
+  // Makes the project current and opens the trace's list of what was approved for the user.
+  openProjectApproved: (projectId: string) => void;
   back: () => void;
   forward: () => void;
   // Drops a restored session the project's list no longer has.
@@ -285,8 +281,6 @@ export const useShell = create<ShellState>((set) => ({
   memoryTab: 'overview',
   runsSession: null,
   runsView: 'now',
-  approvedType: null,
-  approvedSince: null,
   showRuns: (runsSession) =>
     navigate({
       screen: 'trace',
@@ -387,13 +381,11 @@ export const useShell = create<ShellState>((set) => ({
       },
       projectId,
     ),
-  openProjectApproved: (projectId, type, since) =>
+  openProjectApproved: (projectId) =>
     navigate(
       {
         screen: 'trace',
         traceTab: 'approved',
-        approvedType: type ?? null,
-        approvedSince: since ?? null,
         sessionTab: null,
         sessionRun: null,
         sessionGroup: null,

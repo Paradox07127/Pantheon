@@ -12,7 +12,6 @@ import { inputSchemas, type Command, type StaleWorkspaces } from '@pantheon/prot
 import { projectAccess, type ControlContext, type Handler } from './context.js';
 import { runGit } from './git.js';
 import { removeWorkspace } from './workspace-removal.js';
-import { repositoryInsights } from './repository-insights.js';
 
 /** A worktree is measured again at most this often, in milliseconds. */
 export const DISK_REFRESH_MS = 300_000;
@@ -117,14 +116,12 @@ export function workspaceStale(
       if (entry.size_bytes === undefined) staleUnmeasured++;
     }
   }
-  const { shared_files } = repositoryInsights(ctx, projectId);
   return {
     count: stale.length,
     ...(staleUnmeasured ? {} : { size_bytes: staleBytes }),
     ...(workspaces.length
       ? { worktree_disk: { count: workspaces.length, size_bytes: bytes, unmeasured } }
       : {}),
-    ...(shared_files === undefined ? {} : { shared_files }),
     ...(ctx.workspaceRoot ? { worktree_root: ctx.workspaceRoot } : {}),
   };
 }

@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ApprovalQuestion, GateFailureClass } from '@pantheon/domain';
 import type { BridgeResult, DesktopBridge } from '@pantheon/protocol';
-import { currentLocale, t } from '../i18n';
+import { t } from '../i18n';
 import { useBoard } from './board';
 import type { DaemonEvent } from './sync';
 
 /** One item of GET /v1/needs_you.list, as the daemon's domain package defines it. */
 export interface NeedsYouItem {
   source: {
-    table: 'approvals' | 'sessions';
+    table: 'approvals' | 'sessions' | 'workflow_policies' | 'memory_records';
     id: string;
     revision: number;
   };
@@ -17,7 +17,9 @@ export interface NeedsYouItem {
     | 'session.reconciling'
     | 'session.failed'
     | 'session.gate_failed'
-    | 'session.merge_blocked';
+    | 'session.merge_blocked'
+    | 'project.over_budget'
+    | 'memory.decision_budget';
   project_id: string;
   /** The approval's session; absent on session items, whose source is the session. */
   session_id?: string;
@@ -41,9 +43,11 @@ export interface NeedsYouItem {
     | 'stop_unconfirmed'
     | 'usage_limit_reached'
     | 'session_turn_stalled'
-    | 'background_task_long';
+    | 'background_task_long'
+    | 'project_over_budget'
+    | 'plan_decisions_over_budget';
   /** What the user decides. */
-  decision?: 'question' | 'repeated_failure' | 'permission' | 'improvement' | 'other';
+  decision?: 'question' | 'permission' | 'budget' | 'other';
   /** The command of the item's one primary action. */
   primary?: string;
   actions: {
@@ -139,6 +143,7 @@ export function touchesNeedsYou(kind: string): boolean {
       'turn.failed',
       'turn.cancelled',
       'session.turn_stalled',
+      'workflow.policy_changed',
     ].includes(kind)
   );
 }
@@ -157,6 +162,11 @@ function knownReason(code: string): string | null {
       return t({
         id: 'data.reason.daemonRestart',
         defaultMessage: 'A daemon restart interrupted it',
+      });
+    case 'gate_required':
+      return t({
+        id: 'data.reason.gateRequired',
+        defaultMessage: 'The gates have not passed on this commit',
       });
     case 'approval_not_pending':
       return t({
@@ -288,6 +298,16 @@ function knownReason(code: string): string | null {
       return t({
         id: 'data.reason.backgroundTaskLong',
         defaultMessage: 'A background task has run for 30 minutes',
+      });
+    case 'project_over_budget':
+      return t({
+        id: 'data.reason.projectOverBudget',
+        defaultMessage: 'The project used up its token budget',
+      });
+    case 'plan_decisions_over_budget':
+      return t({
+        id: 'data.reason.planDecisionsOverBudget',
+        defaultMessage: 'Plan decisions did not fit the memory budget and were kept as notes',
       });
     case 'artifact_commit_missing':
       return t({
@@ -473,33 +493,6 @@ export function failureText(error: { code: string; message: string }): string {
         { id: 'data.failure.reasonMessage', defaultMessage: '{reason} ({message})' },
         { reason: text, message: error.message },
       );
-}
-
-/** Interface text of the class of a gate failure; an unknown class shows as it is. */
-export function failureClassText(code: string): string {
-  switch (code) {
-    case 'environment':
-      return t({
-        id: 'data.failureClass.environment',
-        defaultMessage: 'The gate failed in its environment, not in the code',
-      });
-    case 'code':
-      return t({ id: 'data.failureClass.code', defaultMessage: 'The code failed the gate' });
-    default:
-      return code;
-  }
-}
-
-/** When a session waiting for its usage limit resumes, in local time; with the day unless it is today. */
-export function resetsText(at: number, now: number): string {
-  const today = new Date(at).toDateString() === new Date(now).toDateString();
-  const time = new Intl.DateTimeFormat(currentLocale(), {
-    ...(today ? {} : { month: 'short', day: 'numeric' }),
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  }).format(at);
-  return t({ id: 'data.needs.resetsAt', defaultMessage: 'Resumes at {time}' }, { time });
 }
 
 const MINUTE = 60_000;

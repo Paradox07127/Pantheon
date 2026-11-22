@@ -1,4 +1,4 @@
-import type { Approval, Principal, Session } from '@pantheon/domain';
+import type { Approval, Landing, Principal, Session } from '@pantheon/domain';
 import { inputSchemas, type ProjectBriefProse, type ProjectBriefRef } from '@pantheon/protocol';
 import { readAppSettings } from './app-settings.js';
 import { userOnly, type ControlContext, type Handlers } from './context.js';
@@ -48,10 +48,13 @@ export function briefFacts(
   items: ReturnType<typeof proseItems>,
 ): BriefFact[] {
   return items.map((item) => {
-    const title = refTitle(ctx, item.ref);
+    const title = item.ref.kind === 'landing' ? undefined : refTitle(ctx, item.ref);
     const named = title ? `"${title}"` : undefined;
-    const text =
-      item.kind === 'decisions'
+    const landed =
+      item.ref.kind === 'landing' ? ctx.store.get<Landing>('landings', item.ref.id) : undefined;
+    const text = landed
+      ? `Branch "${landed.branch}" landed on "${landed.target_branch}".`
+      : item.kind === 'decisions'
         ? `${item.count} decisions wait on the user, ${item.new} of them new; the first is ${item.top.reason}${named ? ` on ${named}` : ''}.`
         : item.kind === 'merge'
           ? `${named ?? 'An untitled session'} merged.`

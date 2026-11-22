@@ -25,6 +25,7 @@ import { NeedsPopover, SessionsPopover } from '@/components/NeedsPopover';
 import { GateMark, StateGlyph } from '@/components/SessionStateIcon';
 import { runCommand } from '@/data/commands';
 import { reasonText } from '@/data/needs-you';
+import { useSettingsView } from '@/screens/settings/view';
 import { zh } from './i18n-setup.js';
 
 const NOW = Date.now();
@@ -77,7 +78,7 @@ beforeEach(() => {
     events: [],
     resync: 0,
   };
-  mock.shell = { openProjectSession: vi.fn(), openProject: vi.fn() };
+  mock.shell = { openProjectSession: vi.fn(), openProject: vi.fn(), openSettings: vi.fn() };
   vi.mocked(runCommand).mockClear();
   // The open list reads what was approved today.
   vi.stubGlobal('window', {
@@ -227,6 +228,28 @@ describe('needs-you list', () => {
         .filter((n) => !!n.props.onClick && retries.includes(text(n)))
         .map(text),
     ).toEqual(retries);
+  });
+
+  it("names a project over its budget and opens the project's settings from its button", async () => {
+    const budget = item({
+      source: { table: 'workflow_policies', id: 'alpha', revision: 2 },
+      kind: 'project.over_budget',
+      status: 'over_budget',
+      reason: 'project_over_budget',
+      decision: 'budget',
+      primary: 'workflow.policy.set',
+      actions: [{ command: 'workflow.policy.set', allowed: true }],
+    });
+    const h = mount(() => NeedsPopover({ items: [budget], trigger }));
+    root(h.value).props.onOpenChange(true);
+    h.render();
+    expect(text(h.value)).toContain(zh('data.attention.decision.budget'));
+    expect(text(h.value)).toContain(zh('data.reason.projectOverBudget'));
+    await button(h.value, zh('board.needs.actions.projectSettings')).props.onClick();
+    expect(useSettingsView.getState()).toMatchObject({ page: 'project', detail: 'alpha' });
+    expect(mock.shell.openSettings).toHaveBeenCalledWith('alpha');
+    expect(mock.shell.openProject).not.toHaveBeenCalled();
+    expect(runCommand).not.toHaveBeenCalled();
   });
 
   it.each([

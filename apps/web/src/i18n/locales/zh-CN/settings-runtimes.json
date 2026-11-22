@@ -14,5 +14,6 @@
   "settings.runtimes.showEmail": "显示邮箱",
   "settings.runtimes.hideEmail": "隐藏 {email}",
   "settings.runtimes.unverifiedIsolation": "未验证隔离也允许使用",
-  "settings.runtimes.unverifiedIsolationHint": "即使没有验证它只在自己的工作树内读写，也在这个运行时上启动写代码、审查和文本会话"
+  "settings.runtimes.unverifiedIsolationHint": "即使没有验证它只在自己的工作树内读写，也在这个运行时上启动写代码、审查和文本会话",
+  "settings.runtimes.noHandshake": "没有应答"
 }

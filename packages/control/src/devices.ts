@@ -143,18 +143,6 @@ export function parseDeviceProbe(output: string): DeviceProbe {
   return found;
 }
 
-/** Whether the device has the label; `os=…` and `arch=…` name its system and architecture. */
-export function deviceHasLabel(
-  device: Pick<DeviceStatus, 'labels' | 'os' | 'arch'>,
-  label: string,
-): boolean {
-  return (
-    device.labels.includes(label) ||
-    (device.os !== undefined && label === `os=${device.os}`) ||
-    (device.arch !== undefined && label === `arch=${device.arch}`)
-  );
-}
-
 /** Runs the probe script through the transport; a failed or timed-out run is an offline device. */
 export function probeDevice(transport: string[]): Promise<DeviceProbeResult> {
   const [command, ...args] = transport;
@@ -194,8 +182,6 @@ function localDevice(): DeviceStatus {
     id: 'local',
     name: os.hostname(),
     labels: [],
-    resources: {},
-    max_sessions: cpus,
     online: true,
     checked_at: new Date().toISOString(),
     ...(platform && { os: platform }),
@@ -215,18 +201,9 @@ function deviceStatus(
   found: DeviceProbeResult,
   checkedAt: string,
 ): DeviceStatus {
-  const { name = id, labels = [], resources = {}, max_sessions, ...described } = config;
+  const { name = id, labels: _, resources: __, max_sessions: ___, ...described } = config;
   const probed = found.online ? found : { ...found, labels: [], runtimes: {}, tools: {} };
-  return {
-    id,
-    name,
-    ...described,
-    ...probed,
-    labels: [...new Set([...labels, ...probed.labels])],
-    resources,
-    max_sessions: max_sessions ?? (found.online ? found.cpus : undefined) ?? 1,
-    checked_at: checkedAt,
-  };
+  return { id, name, ...described, ...probed, checked_at: checkedAt };
 }
 
 function probeAndKeep(
@@ -369,15 +346,8 @@ export function listDevices(ctx: ControlContext): DeviceStatus[] {
   const config = readUserConfig(ctx.userConfigDir),
     devices = config.devices ?? {};
   const now = new Date(ctx.store.now()).toISOString();
-  const local = localDevice(),
-    { labels = [], resources = {}, max_sessions } = config.local_device ?? {};
   return [
-    {
-      ...local,
-      labels: [...new Set([...local.labels, ...labels])],
-      resources,
-      ...(max_sessions === undefined ? {} : { max_sessions }),
-    },
+    localDevice(),
     ...Object.keys(devices)
       .sort()
       .map((id) => {

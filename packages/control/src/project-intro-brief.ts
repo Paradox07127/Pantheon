@@ -1,4 +1,4 @@
-import type { CodeDependencies, Project, ProjectBaseline, ProjectIntro } from '@pantheon/domain';
+import type { CodeDependencies, Project, ProjectIntro } from '@pantheon/domain';
 import type { collectTextCounts } from './baseline-facts.js';
 import { renderCodeDeps } from './code-deps.js';
 
@@ -15,7 +15,6 @@ export const introInstructions = [
 export function renderIntroBrief(
   project: Project,
   counts: Awaited<ReturnType<typeof collectTextCounts>>,
-  baseline: ProjectBaseline | undefined,
   previous: ProjectIntro | undefined,
   deps: (CodeDependencies | undefined)[] = [],
 ): string {
@@ -24,6 +23,8 @@ export function renderIntroBrief(
     `Project: ${project.name}`,
     'Sources: file:<path>, file:<path>:<line> or commit:<sha>. Module paths and entry files are relative to the same project root. When a path exists in several roots, the first matching root in the list below is used.',
   ];
+  if (project.worktree?.command)
+    lines.push(`Worktree setup: ${JSON.stringify(project.worktree.command.argv)}`);
   for (const [index, folder] of counts.entries()) {
     const directories = new Map<string, number>();
     for (const file of folder.files) {
@@ -33,11 +34,11 @@ export function renderIntroBrief(
     }
     lines.push('', `## Root ${folder.root}`, 'Top-level directories (measured lines):');
     for (const [directory, count] of directories) lines.push(`- ${directory}: ${count}`);
-    const confirmed = baseline?.result?.folders.find((entry) => entry.root === folder.root);
-    if (confirmed) {
-      if (confirmed.setup) lines.push(`Confirmed setup: ${JSON.stringify(confirmed.setup)}`);
-      lines.push(`Confirmed gate: ${JSON.stringify(confirmed.gate)}`);
-    }
+    const gate = (project.gates?.[folder.root] ?? []).filter(
+      (command) => command.enabled !== false,
+    );
+    if (gate.length)
+      lines.push(`Gate: ${JSON.stringify(gate.map(({ name, argv }) => ({ name, argv })))}`);
     const measured = renderCodeDeps(deps[index]);
     if (measured.length) lines.push('', '### Measured code dependencies', ...measured);
   }

@@ -240,6 +240,22 @@ it('starts a read-only introduction session with baseline runtime selection, fac
     },
     baseline.revision,
   );
+  // The user changed the proposal at confirmation; the brief shows what the project runs now.
+  const project = f.store.must<Project>('projects', f.project.id);
+  f.store.update<Project>(
+    'projects',
+    {
+      ...project,
+      gates: {
+        [realpathSync(f.projectRoot)]: [
+          { name: 'check', argv: ['pnpm', 'check'] },
+          { name: 'lint', argv: ['pnpm', 'lint'], enabled: false },
+        ],
+      },
+      worktree: { copy_paths: [], command: { argv: ['pnpm', 'install', '--offline'] } },
+    },
+    project.revision,
+  );
   f.end();
   f.write('lib/store.ts', 'export const store = 1;\n');
   f.write('src/cli.ts', "import { store } from '../lib/store.js';\nread();\nwrite();");
@@ -275,13 +291,20 @@ it('starts a read-only introduction session with baseline runtime selection, fac
     f.projectRoot,
     'src',
     '4',
-    `Confirmed setup: ${JSON.stringify(confirmedSetup)}\nConfirmed gate: ${JSON.stringify(gate)}\n`,
+    'Worktree setup: ["pnpm","install","--offline"]\n',
+    'Gate: [{"name":"check","argv":["pnpm","check"]}]\n',
     'Reads and writes notes.',
     'file:',
     '### Measured code dependencies\nPantheon measured these from manifests and import statements, without a model.\nModule edges, most imports first:\n- src -> lib: 1 imports (file:src/cli.ts:1)\n',
   ])
     expect(brief).toContain(text);
-  for (const retired of ['Confirmed stack', 'Confirmed commands'])
+  for (const retired of [
+    'Confirmed stack',
+    'Confirmed commands',
+    'Confirmed',
+    JSON.stringify(confirmedSetup.argv),
+    '"lint"',
+  ])
     expect(brief).not.toContain(retired);
   await eventually(
     () => starts.mock.calls.length > 0,
@@ -414,7 +437,6 @@ it('shows each root its measured code dependencies, at most 30 module edges', ()
   const brief = renderIntroBrief(
     { name: 'fixture' } as Project,
     [{ root: '/repo', files: [{ path: 'core/main.ts', lines: 1, language: 'TypeScript' }] }],
-    undefined,
     undefined,
     [
       {

@@ -11,7 +11,6 @@ const policy: WorkflowPolicy = {
   revision: 2,
   project_id: 'alpha',
   policy_version: 2,
-  pinned: [],
 };
 const status: RuntimeStatus = {
   runtime: 'codex',
@@ -45,8 +44,6 @@ vi.mock('@/data/project-defaults', async (actual) => ({
       settings: [
         { key: 'workflow_policy', builtin: policy, overrides: [] },
         { key: 'session_defaults', overrides: [] },
-        { key: 'usage_targets', builtin: {}, overrides: [] },
-        { key: 'external_events', builtin: 'off', overrides: [] },
       ],
       projects: [{ project_id: 'alpha', name: 'Alpha app', overridden: 0 }],
       permission_rules: [],
@@ -126,8 +123,6 @@ const AFTER_MOUNT = [
   'general.autoArchiveMerged',
   'general.sessionRecap',
   'general.autoGitInit',
-  'general.baselineRounds',
-  'general.baselineVisuals',
   'editor.browser',
 ];
 // Shown only for a runtime that has them: Claude, verified kinds, a quota.

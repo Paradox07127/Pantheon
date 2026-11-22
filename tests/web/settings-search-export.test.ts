@@ -177,7 +177,6 @@ describe('personal settings export and import', () => {
     setLayout({
       sidebar: { collapsed: false, width: 300 },
       inspector: 500,
-      drawer: 600,
       collapse_sidebar_at_start: true,
     });
     const layout = getLayout();
@@ -185,7 +184,7 @@ describe('personal settings export and import', () => {
     expect(file).toMatchObject({
       accent: 'lapis',
       theme: 'dark',
-      layout: { inspector: 500, drawer: 600, collapse_sidebar_at_start: true },
+      layout: { inspector: 500, collapse_sidebar_at_start: true },
       locale: 'system',
     });
     resetStores();

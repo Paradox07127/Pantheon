@@ -7,12 +7,10 @@ export function decisionText(decision: NeedsYouItem['decision']): string | null 
   switch (decision) {
     case 'question':
       return t({ id: 'data.attention.decision.question', defaultMessage: 'Question' });
-    case 'repeated_failure':
-      return t({ id: 'data.attention.decision.repeatedFailure', defaultMessage: 'Failed twice' });
     case 'permission':
       return t({ id: 'data.attention.decision.permission', defaultMessage: 'Permission' });
-    case 'improvement':
-      return t({ id: 'data.attention.decision.improvement', defaultMessage: 'Improvement' });
+    case 'budget':
+      return t({ id: 'data.attention.decision.budget', defaultMessage: 'Budget' });
     default:
       return null;
   }

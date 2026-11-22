@@ -14,7 +14,6 @@ import { PARAM_LABEL } from '../../data/workflow-policy';
 import { t } from '../../i18n';
 import { listText } from '../../lib/list-text';
 import { ExtensionsPage } from './ExtensionsPage';
-import { MODE_LABEL } from './ExternalPage';
 import { ProjectGate } from './GatesPage';
 import {
   failureText,
@@ -35,8 +34,6 @@ type Project = BoardSnapshot['projects'][number];
 const SETTING_NAME: Record<ProjectSettingKey, () => string> = {
   workflow_policy: () => t({ id: 'settings.pages.workflow', defaultMessage: 'Workflow' }),
   session_defaults: () => t({ id: 'settings.pages.defaults', defaultMessage: 'Default model' }),
-  usage_targets: () => t({ id: 'settings.usage.targets', defaultMessage: 'Token targets' }),
-  external_events: () => t({ id: 'settings.pages.external', defaultMessage: 'External requests' }),
 };
 
 /** What a project sets itself for one setting, in a few words. */
@@ -47,17 +44,8 @@ function ownText(key: ProjectSettingKey, value: ProjectSettingValues[ProjectSett
         param in PARAM_LABEL ? PARAM_LABEL[param as keyof typeof PARAM_LABEL] : param,
       ),
     );
-  if (key === 'session_defaults') {
-    const defaults = value as ProjectSettingValues['session_defaults'];
-    return listText(runtimeName(defaults.runtime), defaults.model);
-  }
-  if (key === 'usage_targets')
-    return listText(
-      ...Object.entries(value as ProjectSettingValues['usage_targets']).map(
-        ([runtime, target]) => `${runtimeName(runtime)} ${target}`,
-      ),
-    );
-  return MODE_LABEL[value as ProjectSettingValues['external_events']]();
+  const defaults = value as ProjectSettingValues['session_defaults'];
+  return listText(runtimeName(defaults.runtime), defaults.model);
 }
 
 export const ownCount = (count: number) =>
@@ -175,7 +163,7 @@ function ProjectDetail({ project }: { project: Project }) {
       </div>
       <WorktreesPage project={project} />
       <Section>
-        <UsagePage project={project} only="project_budget" />
+        <UsagePage project={project} />
       </Section>
       <ExtensionsPage project={project} />
       <ProjectEnvironment project={project} />

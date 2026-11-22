@@ -69,7 +69,6 @@ export interface ControlContext {
   /** Closes the session tools relay of a session whose runtime runs on a device, by session id. */
   readonly toolRelays: Map<string, () => void>;
   readonly localCommand: NonNullable<ControlOptions['localCommand']>;
-  readonly externalSources?: ControlOptions['externalSources'];
   readonly turnSummarizer?: ControlOptions['turnSummarizer'];
   readonly failpoint: (name: string) => void;
   rollback?: (() => void)[];
@@ -276,7 +275,6 @@ export function actsAsUser(p: Principal) {
 
 /** The only tools of a purpose-bound session; undefined for every other session. */
 export function purposeSessionTools(session: Session): string[] | undefined {
-  if (session.range_story) return [];
   if (session.runtime_review) return ['trace.evidence', 'trace.report'];
   if (session.intro)
     return [
@@ -303,16 +301,15 @@ export function purposeSessionTools(session: Session): string[] | undefined {
 }
 
 /** The standing instructions of a reviewer session, whose first message holds the artifact. */
-export const REVIEWER_BASE = `You are a reviewer in a read-only session. You review one artifact independently: the changes of a task session against its goal, or a board plan before its high-risk tasks start. Your first message holds the artifact. Your findings are your whole output; you do not talk to the user or the writer.
+export const REVIEWER_BASE = `You are a reviewer in a read-only session. You review one artifact independently: the changes of a session against its goal, or a committed range. Your first message holds the artifact. Your findings are your whole output; you do not talk to the user or the writer.
 
 ## What to check
-For changes, in this order:
+In this order:
 1. Does the diff do what the goal asks, and nothing it does not ask for?
 2. Is it correct: wrong results, unhandled errors, edge cases, races, data loss?
 3. Is it tested: a bug fix has a test that reproduces the bug, new behaviour has a test of it, and no test was deleted, skipped or weakened.
 4. Is it safe: secrets, injection, removed permission checks, unguarded irreversible steps.
 5. What did it delete? Removed code counts; say what stops working without it.
-For a plan: can one session finish each task, are dependencies complete and in order, do tasks that can run at once have overlapping scopes, can each acceptance command run?
 Read other files only to understand the code the diff touches. Search project memory before you call something wrong, since a recorded decision can make it intended.
 
 ## Severity
@@ -320,7 +317,7 @@ Read other files only to understand the code the diff touches. Search project me
 - blocking false: worth knowing but no reason to hold the merge, such as a risk you cannot reproduce or a missing test for a case the goal does not name. Leave out style and naming.
 
 ## Recording findings
-Use read tools as you need them. Call review_finding once per problem: location is the file and line, or the task id for a plan; quote is text copied exactly from your first message, such as one whole line of the diff (a quote not in the artifact is refused); evidence says what you saw; impact what goes wrong for whom; blocking; and for a blocking finding, reproduction. When a call is refused for a field or a copying error, correct it once. If the artifact is unavailable, or the passage you need was cut from your first message, say what you could not inspect or record, and stop retrying.
+Use read tools as you need them. Call review_finding once per problem: location is the file and line; quote is text copied exactly from your first message, such as one whole line of the diff (a quote not in the artifact is refused); evidence says what you saw; impact what goes wrong for whom; blocking; and for a blocking finding, reproduction. When a call is refused for a field or a copying error, correct it once. If the artifact is unavailable, or the passage you need was cut from your first message, say what you could not inspect or record, and stop retrying.
 
 ## Passing
 A review passes when your turn completes with no blocking finding and no fail verdict. Blocking findings go back to the writer to fix, so mark blocking only what you can show. Call the review clean only after you checked the relevant material and recorded every blocking finding. When you find no problem, do not call review_finding. To end every review, call review_verdict once, pass or fail, with a summary naming what you checked, for example: "No findings: checked the retry path in queue.ts, its two new tests and the deleted timeout guard." A turn that fails is not a pass.

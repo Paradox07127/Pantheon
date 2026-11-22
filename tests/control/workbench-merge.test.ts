@@ -2,14 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, it, onTestFinished, vi } from 'vitest';
-import type {
-  BoardPlan,
-  Principal,
-  Project,
-  Session,
-  SessionTurn,
-  Workspace,
-} from '@pantheon/domain';
+import type { Principal, Project, Session, SessionTurn, Workspace } from '@pantheon/domain';
 import { readProcessIdentity } from '../../packages/adapters/dist/index.js';
 import type { ControlContext } from '../../packages/control/src/context.js';
 import { insideSandbox, awaitWorkspaceReady, eventually, heldIndexLock, user } from '../helpers.js';

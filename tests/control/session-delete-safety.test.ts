@@ -3,9 +3,7 @@ import path from 'node:path';
 import { expect, it, vi } from 'vitest';
 import { id } from '@pantheon/domain';
 import type {
-  BoardPlan,
   HarnessAdapter,
-  Milestone,
   Principal,
   Session,
   SessionHandle,

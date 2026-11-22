@@ -45,24 +45,20 @@ export function queueTurn(
   input: string,
   origin: NonNullable<SessionTurn['origin']>,
   cause: string,
-  extras?: Pick<
-    SessionTurn,
-    | 'attachments'
-    | 'skills'
-    | 'refs'
-    | 'reference_context'
-    | 'handoff'
-    | 'causal_depth'
-    | 'lead_note_ids'
-    | 'wake'
-  >,
+  extras?: Pick<SessionTurn, 'attachments' | 'skills' | 'refs' | 'reference_context' | 'handoff'>,
 ): SessionTurn {
   const turn: SessionTurn = { ...queuedTurn(session, input, 'send', extras), origin };
   if (session.state !== 'running') {
     const { archived_at, ...rest } = session;
     const next = ctx.store.update(
       'sessions',
-      { ...rest, state: 'running' as const, turn_count: session.turn_count + 1, merge: undefined },
+      {
+        ...rest,
+        state: 'running' as const,
+        turn_count: session.turn_count + 1,
+        // A blocked merge waits for the user, and the notice of the block itself starts a turn here.
+        merge: session.merge?.state === 'blocked' ? session.merge : undefined,
+      },
       session.revision,
     );
     if (archived_at) ctx.store.event('session.unarchived', next, next.project_id, {}, cause);

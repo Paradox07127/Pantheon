@@ -48,12 +48,6 @@ export const REPOSITORY_KINDS: ReadonlySet<string> = new Set([
   'turn.completed',
 ]);
 
-/** REPOSITORY_KINDS plus finished tool calls, which can write an in-place session's checkout mid-turn. */
-export const WORKTREE_KINDS: ReadonlySet<string> = new Set([
-  ...REPOSITORY_KINDS,
-  'agent.tool.completed',
-]);
-
 /** Sequence of the newest event of the project whose kind is one of `kinds`; 0 when none. */
 function newestOf(
   events: readonly DaemonEvent[],

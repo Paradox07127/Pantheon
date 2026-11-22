@@ -33,19 +33,6 @@ export const MarkdownBaseProvider = MarkdownBase.Provider;
 const MarkdownFiles = createContext<((ref: FileRef) => boolean) | undefined>(undefined);
 export const MarkdownFilesProvider = MarkdownFiles.Provider;
 
-/** The base path and the in-app opener for the links of the Markdown inside. */
-export function MarkdownLinks(props: {
-  base: string | undefined;
-  show: (ref: FileRef) => boolean;
-  children: ReactNode;
-}) {
-  return (
-    <MarkdownBaseProvider value={props.base}>
-      <MarkdownFilesProvider value={props.show}>{props.children}</MarkdownFilesProvider>
-    </MarkdownBaseProvider>
-  );
-}
-
 // Getters, so each text is read in the language loaded by then.
 const OPEN_ERRORS: Record<string, string> = {
   get file_not_found() {

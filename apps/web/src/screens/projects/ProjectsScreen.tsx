@@ -5,11 +5,10 @@ import {
   CircleDot,
   Ellipsis,
   Folder,
+  Gauge,
   Import,
-  Lightbulb,
   MessageSquare,
   ShieldCheck,
-  TriangleAlert,
   type LucideIcon,
 } from 'lucide-react';
 import type { BoardSnapshot, ProjectSummary, WorkbenchSession } from '@pantheon/protocol';
@@ -87,9 +86,8 @@ const COUNTS: readonly {
 // The icon of each decision the user makes on what waits.
 const KIND_ICONS: Record<NonNullable<NeedsYouItem['decision']>, LucideIcon> = {
   question: MessageSquare,
-  repeated_failure: TriangleAlert,
   permission: ShieldCheck,
-  improvement: Lightbulb,
+  budget: Gauge,
   other: CircleDot,
 };
 

@@ -121,7 +121,7 @@ const needsItem = {
   status: 'gate_failed',
   created_at: 1000,
   reason: 'gate_failed',
-  decision: 'repeated_failure',
+  decision: 'other',
   blocks: 1,
   actions: [{ command: 'session.retry', allowed: true }],
 };

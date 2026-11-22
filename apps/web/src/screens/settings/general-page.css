@@ -67,18 +67,3 @@
 .gp-err {
   padding: 0 16px 8px;
 }
-/* The rounds between their two steps, as one control. */
-.gp-stp {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-}
-.gp-stp .ib[aria-disabled='true'] {
-  opacity: 0.45;
-}
-.gp-stp output {
-  min-width: 24px;
-  text-align: center;
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-}

@@ -50,6 +50,7 @@ import {
 } from '@pantheon/protocol';
 import { runGit } from './git.js';
 import {
+  purposeSessionTools,
   revision,
   userOnly,
   type ControlContext,
@@ -606,8 +607,8 @@ export function prepareMemoryDelivery(
   session: Session,
   turnId: string,
 ): MemoryContext | undefined {
-  // Purpose-bound trace diagnosis deliberately has no memory authority or tools.
-  if (session.runtime_review) return;
+  // A purpose-bound session without the memory tools, such as a baseline or trace diagnosis, gets no memory.
+  if (!(purposeSessionTools(session)?.includes('memory.context') ?? true)) return;
   // Skips the task-graph scan on every turn for a project without memory.
   if (!session.memory_delivery && !state(ctx, session.project_id)?.epoch) return;
   const packet = memoryContext(ctx, session.project_id, session);

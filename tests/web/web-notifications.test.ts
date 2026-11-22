@@ -330,7 +330,7 @@ describe('decision notices', () => {
       decisionNotices(
         seen,
         [
-          { ...stalled, decision: 'repeated_failure' },
+          { ...stalled, decision: 'budget' },
           { ...session('alpha-other', 'session_turn_stalled'), project_id: 'alpha' },
         ],
         board,
@@ -338,7 +338,7 @@ describe('decision notices', () => {
         rules(delivery),
       ).notices.map((n) => n.title);
     expect(sent({})).toEqual(['Beta app', 'Alpha app']);
-    expect(sent({ repeated_failure: 'never' })).toEqual(['Alpha app']);
+    expect(sent({ budget: 'never' })).toEqual(['Alpha app']);
   });
 
   it('notifies a stalled session turn once while listed, opening the session; a usage limit gives none', () => {

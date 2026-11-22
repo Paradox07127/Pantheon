@@ -2,7 +2,7 @@ import type { Principal, Project } from '@pantheon/domain';
 import type { ProjectSummary } from '@pantheon/protocol';
 import { projectAccess, type ControlContext } from './context.js';
 import { needsYou } from './needs-you.js';
-import { cursorId, projectBrief, type SeenCursor } from './project-brief.js';
+import { cursorId, landedSince, projectBrief, type SeenCursor } from './project-brief.js';
 import { sessionList } from './workbench-session.js';
 
 /** Local midnight `days` days after the day of `at`. */
@@ -64,11 +64,9 @@ export function projectsSummary(
         project_id: project.id,
         name: project.name,
         counts,
-        merged_today: ctx.store.kindEventsSince(
-          project.id,
-          ['session.merged'],
-          midnight(ctx.store.now()),
-        ).length,
+        merged_today:
+          ctx.store.kindEventsSince(project.id, ['session.merged'], midnight(ctx.store.now()))
+            .length + landedSince(ctx, project.id, midnight(ctx.store.now())).length,
         needs_you: needs.length,
         ...(brief ? { brief } : {}),
         ...(needs.length

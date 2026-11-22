@@ -7,16 +7,14 @@ vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMoc
 vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
   (await import('./web-live-stores.js')).liveStores(actual as never),
 );
-import { RuntimeGlyph } from '@/components/RuntimeGlyph';
 import { useBoard } from '@/data/board';
-import { Section } from '@/screens/settings/ProjectSettingsScreen';
 import { searchSettings } from '@/screens/settings/settings-search';
 import { UsagePage } from '@/screens/settings/UsagePage';
 import { t } from '@/i18n';
 import { zh } from './i18n-setup.js';
 
 type Command = { type: string; input: Record<string, unknown>; expected_revision: number | null };
-type Project = NonNullable<Parameters<typeof UsagePage>[0]['project']>;
+type Project = Parameters<typeof UsagePage>[0]['project'];
 
 // A fresh project id per test, so a save left in the page's store shows nowhere else.
 let made = 0;
@@ -43,17 +41,11 @@ const policy = (patch: Partial<WorkflowPolicy> = {}): WorkflowPolicy => ({
   revision: 2,
   project_id: project.id,
   policy_version: 2,
-  pinned: [],
   ...patch,
 });
 
-const [budget, quota] = [zh('settings.usage.projectBudget'), zh('settings.usage.quotaThreshold')];
+const budget = zh('settings.usage.projectBudget');
 const budgetParam = zh('data.workflowPolicy.param.projectBudget');
-const quotaParam = zh('data.workflowPolicy.param.runtimeQuotaThreshold');
-const target = (runtime: string) =>
-  t({ id: 'settings.usage.targetField', defaultMessage: '{runtime} token target' }, { runtime });
-const pinQuota = () =>
-  t({ id: 'settings.usage.pin', defaultMessage: 'Pin {param}' }, { param: quota });
 
 async function mount(body: () => unknown = () => UsagePage({ project })) {
   const h = host(body);
@@ -63,10 +55,6 @@ async function mount(body: () => unknown = () => UsagePage({ project })) {
 const tree = (h: HookHost<any>) => h.value as ReactNode;
 const labelled = (t: ReactNode, label: string) => find(t, (n) => n.props['aria-label'] === label);
 const inputOf = (t: ReactNode, row: string) => find(labelled(t, row), (n) => n.type === 'input');
-const alerts = (t: ReactNode) =>
-  nodes(t)
-    .filter((n) => n.props.role === 'alert')
-    .map((n) => text(n));
 async function type(h: HookHost<any>, input: () => { props: any }, value: string) {
   input().props.onChange({ target: { value } });
   await h.flush();
@@ -93,60 +81,7 @@ afterEach(() => {
   useBoard.setState({ board: null });
 });
 
-describe('usage page token targets', () => {
-  it('gives each runtime a row with its glyph and name, empty for no target', async () => {
-    project = { ...project, usage_targets: { claude: 20_000_000 } };
-    const h = await mount();
-    const section = find(
-      tree(h),
-      (n) => n.type === Section && n.props.title === zh('settings.usage.targets'),
-    );
-    const rows = nodes(section).filter((n) => n.props.role === 'group');
-    expect(rows.map((r) => r.props['aria-label'])).toEqual(['Claude', 'Codex']);
-    for (const row of rows) expect(nodes(row).some((n) => n.type === RuntimeGlyph)).toBe(true);
-    expect(labelled(tree(h), target('Claude')).props.value).toBe('20000000');
-    const codex = labelled(tree(h), target('Codex'));
-    expect(codex.props.value).toBe('');
-    expect(codex.props.placeholder).toBe(zh('settings.usage.noTarget'));
-    expect(text(rows[1])).toContain('token');
-  });
-
-  it('sets a typed target on the project for its runtime alone and clears it with null when emptied', async () => {
-    project = { ...project, usage_targets: { claude: 20_000_000 } };
-    const h = await mount();
-    const codex = () => labelled(tree(h), target('Codex'));
-    await type(h, codex, '5000000');
-    expect(codex().props.value).toBe('5000000');
-    await type(h, codex, '5M');
-    expect(codex().props['aria-invalid']).toBe(true);
-    await type(h, codex, '');
-    expect(bridge.commands).toEqual([
-      expect.objectContaining({
-        type: 'project.usageTargets.set',
-        input: { project_id: project.id, targets: { codex: 5_000_000 } },
-        expected_revision: 1,
-      }),
-      expect.objectContaining({
-        type: 'project.usageTargets.set',
-        input: { project_id: project.id, targets: { codex: null } },
-        expected_revision: 2,
-      }),
-    ]);
-    expect(codex().props.value).toBe('');
-  });
-
-  it('shows a refused target in the row that made it', async () => {
-    bridge.commandAnswers = [
-      { ok: false, error: { code: 'invalid_input', message: 'target refused' } },
-    ];
-    const h = await mount();
-    await type(h, () => labelled(tree(h), target('Codex')), '5000000');
-    expect(text(labelled(tree(h), 'Codex'))).toContain('target refused');
-    expect(text(labelled(tree(h), 'Claude'))).not.toContain('target refused');
-  });
-});
-
-describe('usage page budget and quota', () => {
+describe('usage page budget', () => {
   it('sets the project budget with workflow.policy.set and clears it when emptied', async () => {
     bridge.answers['workflow.policy'] = policy({ project_budget: { input_tokens: 100, since: 1 } });
     const h = await mount();
@@ -181,52 +116,13 @@ describe('usage page budget and quota', () => {
     );
   });
 
-  it('sets the quota threshold from 0 to 100 and shows another value in its row', async () => {
-    const h = await mount();
-    const input = () => inputOf(tree(h), quota);
-    expect(input().props['aria-label']).toBe(quotaParam);
-    expect(input().props.value).toBe('90');
-    await type(h, input, '150');
-    expect(sent()).toEqual([]);
-    expect(text(labelled(tree(h), quota))).toContain(
-      t(
-        { id: 'settings.usage.percent', defaultMessage: '{param} must be from 0 to 100' },
-        { param: quotaParam },
-      ),
-    );
-    await type(h, input, '80');
-    expect(sent()).toEqual([{ project_id: project.id, runtime_quota_threshold: 80 }]);
-    expect(alerts(tree(h))).toEqual([]);
-  });
-
-  it('shows a refused save in the row that made it', async () => {
+  it('shows a refused save in its row', async () => {
     bridge.commandAnswers = [
-      { ok: false, error: { code: 'invalid_input', message: 'threshold refused' } },
+      { ok: false, error: { code: 'invalid_input', message: 'budget refused' } },
     ];
     const h = await mount();
-    await type(h, () => inputOf(tree(h), quota), '70');
-    expect(text(labelled(tree(h), quota))).toContain('threshold refused');
-    expect(text(labelled(tree(h), budget))).not.toContain('threshold refused');
-  });
-
-  it('pins and unpins the quota threshold', async () => {
-    const h = await mount();
-    const pin = () => labelled(tree(h), pinQuota());
-    expect(pin().props['aria-pressed']).toBe(false);
-    pin().props.onClick();
-    await h.flush();
-    bridge.answers['workflow.policy'] = policy({
-      pinned: ['runtime_quota_threshold'],
-      policy_version: 3,
-    });
-    const after = await mount();
-    expect(labelled(tree(after), pinQuota()).props['aria-pressed']).toBe(true);
-    labelled(tree(after), pinQuota()).props.onClick();
-    await after.flush();
-    expect(sent()).toEqual([
-      { project_id: project.id, pinned: ['runtime_quota_threshold'] },
-      { project_id: project.id, pinned: [] },
-    ]);
+    await type(h, () => inputOf(tree(h), budget), '70');
+    expect(text(labelled(tree(h), budget))).toContain('budget refused');
   });
 });
 
@@ -243,6 +139,8 @@ describe('budget and quota search', () => {
     expect(hits.find((hit) => hit.id === 'project.budget')?.page).toBe('project');
     expect(hits.map((hit) => hit.id)).not.toContain('workflow.projectBudget');
     expect(searchSettings('项目预算')[0]?.id).toBe('project.budget');
-    expect(searchSettings('额度阈值')[0]?.id).toBe('usage.runtimeQuotaThreshold');
+    expect(searchSettings('额度阈值').map((hit) => hit.id)).not.toContain(
+      'usage.runtimeQuotaThreshold',
+    );
   });
 });

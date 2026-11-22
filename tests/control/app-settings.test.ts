@@ -91,13 +91,18 @@ it('reads and saves settings over a config that still holds the commit range exp
   expect(saved).not.toHaveProperty('baseline_range_story');
 });
 
-it('reads and saves settings over a config whose delivery rules still name agent proposals', async () => {
+it('reads and saves settings over a config whose delivery rules still name retired kinds', async () => {
   const userConfigDir = mkdtempSync(path.join(os.tmpdir(), 'pantheon-app-settings-'));
   writeFileSync(
     path.join(userConfigDir, 'config.json'),
     JSON.stringify({
       version: 1,
-      attention_delivery: { agent_proposal: 'never', question: 'brief' },
+      attention_delivery: {
+        agent_proposal: 'never',
+        repeated_failure: 'brief',
+        improvement: 'never',
+        question: 'brief',
+      },
     }),
   );
   const f = await fixture({ controlOptions: { userConfigDir } });
@@ -107,6 +112,8 @@ it('reads and saves settings over a config whose delivery rules still name agent
   });
   const read = f.control.appSettings({ id: 'user', role: 'user' });
   expect(read.attention_delivery).not.toHaveProperty('agent_proposal');
+  expect(read.attention_delivery).not.toHaveProperty('repeated_failure');
+  expect(read.attention_delivery).not.toHaveProperty('improvement');
   expect(read.attention_delivery.question).toBe('brief');
   const saved = f.call<AppSettings>('app.settings.set', {
     session_recap: false,

@@ -156,14 +156,11 @@ it('reads devices as written', () => {
   );
 });
 
-it('reads and writes the labels, resources and session limit of this machine', () => {
+it('accepts the labels, resources and session limit this machine no longer reads', () => {
   const dir = directory(JSON.stringify({ version: 1 }));
-  const local_device = { labels: ['display'], resources: { display: 1 }, max_sessions: 2 };
+  const local_device = { labels: ['display'], resources: { display: 1 }, max_sessions: 0 };
   writeUserConfig(dir, { local_device });
   expect(readUserConfig(dir).local_device).toEqual(local_device);
-  expect(() => writeUserConfig(dir, { local_device: { max_sessions: 0 } })).toThrow(
-    expect.objectContaining({ code: 'invalid_user_config' }),
-  );
 });
 
 it('rejects a device with the id local', () => {
@@ -172,12 +169,9 @@ it('rejects a device with the id local', () => {
   ).toThrow(expect.objectContaining({ code: 'invalid_user_config' }));
 });
 
-it('rejects a device with no sessions allowed', () => {
-  expect(() =>
-    readUserConfig(
-      directory(
-        JSON.stringify({ version: 1, devices: { 'build-box': { ...buildBox, max_sessions: 0 } } }),
-      ),
-    ),
-  ).toThrow(expect.objectContaining({ code: 'invalid_user_config' }));
+it('accepts a device session limit that is no longer read', () => {
+  const devices = { 'build-box': { ...buildBox, max_sessions: 0 } };
+  expect(readUserConfig(directory(JSON.stringify({ version: 1, devices }))).devices).toEqual(
+    devices,
+  );
 });

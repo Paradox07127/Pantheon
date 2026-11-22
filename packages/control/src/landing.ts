@@ -9,7 +9,6 @@ import {
   DomainError,
   hash,
   requireThat,
-  type BoardPlan,
   type GateFailureClass,
   type Project,
   type LandingItem,

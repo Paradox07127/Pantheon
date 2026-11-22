@@ -9,6 +9,12 @@ export type CliInstall =
 
 const quote = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`;
 
+/** Whether the menu offers the launcher; an AppImage's resources move on every launch, so the launcher would break. */
+export const cliInstallOffered = (
+  platform: NodeJS.Platform,
+  env: Record<string, string | undefined>,
+): boolean => platform !== 'win32' && !env.APPIMAGE;
+
 /** Writes ~/.local/bin/pantheon, which runs the packaged app's CLI with the node it bundles. */
 export function installCli(resources: string, home: string, PATH: string | undefined): CliInstall {
   const bin = path.join(home, '.local/bin');

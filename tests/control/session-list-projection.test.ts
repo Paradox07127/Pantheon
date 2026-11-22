@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import {
   hash,
   type Approval,
@@ -151,6 +151,7 @@ it('shows the oldest unanswered request with the same detail as needs-you', asyn
     waiting: 2,
     waiting_request: {
       id: 'oldest-request',
+      revision: f.store.must<Approval>('approvals', 'oldest-request').revision,
       tool: 'Bash',
       detail: 'command=run the migration on staging',
     },
@@ -161,8 +162,12 @@ it('shows the oldest unanswered request with the same detail as needs-you', asyn
   expect(listed(f, session.id).waiting_request?.detail).toBe(item.binding?.input_summary);
   const oldest = f.store.must<Approval>('approvals', 'oldest-request');
   f.store.update('approvals', { ...oldest, state: 'approved' }, oldest.revision);
-  expect(listed(f, session.id).waiting_request).toEqual({ id: 'newer-request', tool: 'Edit' });
   const newer = f.store.must<Approval>('approvals', 'newer-request');
+  expect(listed(f, session.id).waiting_request).toEqual({
+    id: 'newer-request',
+    revision: newer.revision,
+    tool: 'Edit',
+  });
   f.store.update('approvals', { ...newer, state: 'approved' }, newer.revision);
   expect(listed(f, session.id)).not.toHaveProperty('waiting_request');
 });
@@ -413,6 +418,19 @@ it('moves the last activity time when a turn ends', async () => {
     )
     .at(-1)!;
   expect(after).toBe(new Date(turnEnd.created_at).toISOString());
+});
+
+it('moves the last activity time to the discard of a session', async () => {
+  const f = await workbenchFixture();
+  const session = await idleSession(f);
+  const later = f.store.now() + 60 * 60 * 1000;
+  vi.spyOn(f.store, 'now').mockReturnValue(later);
+  f.call('session.discard', { session_id: session.id }, current(f, session.id).revision);
+  await eventually(
+    () => current(f, session.id).outcome === 'discarded',
+    () => f.control.tick(),
+  );
+  expect(listed(f, session.id).last_activity_at).toBe(new Date(later).toISOString());
 });
 
 it('projects a recoverable failed turn without closing its idle session', async () => {

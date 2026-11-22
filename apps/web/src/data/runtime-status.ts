@@ -108,7 +108,7 @@ const NONE: Readonly<Record<string, string>> = {};
 
 const NO_RUNTIMES: readonly string[] = [];
 
-/** Whether the runtimes page and the runtime pickers list it: an ACP runtime only once its handshake answered. */
+/** Whether the runtime pickers list it: an ACP runtime only once its handshake answered. */
 export const listedRuntime = (status: RuntimeStatus): boolean => status.handshake !== false;
 
 const installedOf = (statuses: readonly RuntimeStatus[]) =>

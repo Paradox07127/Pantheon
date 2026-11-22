@@ -12,7 +12,7 @@ import { runtimeName } from '../components/RuntimeGlyph';
 import { StateGlyph } from '../components/SessionStateIcon';
 import { useBoard } from '../data/board';
 import { runCommand } from '../data/commands';
-import { failureText, reasonText, useNeedsYou, useNow, type NeedsYouItem } from '../data/needs-you';
+import { failureText, useNeedsYou, useNow, type NeedsYouItem } from '../data/needs-you';
 import { visibleProjects } from '../data/projects';
 import { useRuntimeStatus } from '../data/runtime-status';
 import type { DaemonEvent } from '../data/sync';
@@ -239,9 +239,17 @@ export function TrayPopover() {
           onClick={() => open(item.project_id, item.session_id)}
         >
           <span className="tp-ic" aria-hidden="true">
-            <StateGlyph name="approval" />
+            <StateGlyph name="question" />
           </span>
-          <span className="tp-nm">{reasonText(item.reason)}</span>
+          <span className="tp-nm">
+            {t(
+              { id: 'trayPopover.waiting.question', defaultMessage: '{session}: {question}' },
+              {
+                session: nameOf(item.project_id, item.session_id),
+                question: item.questions![0]!.question,
+              },
+            )}
+          </span>
           <span className="tp-ct">{waited}</span>
         </button>
       );

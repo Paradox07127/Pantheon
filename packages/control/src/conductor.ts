@@ -2,7 +2,7 @@ import {
   DomainError,
   requireThat,
   type Principal,
-  type Review,
+  type Project,
   type Session,
   type SessionTurn,
   type Workspace,
@@ -18,10 +18,12 @@ import {
   type Preparers,
 } from './context.js';
 import { runGit } from './git.js';
+import { gateCommands } from './landing.js';
 import { sessionGoal } from './landing-diff.js';
 import { latestEvent, needsYou } from './needs-you.js';
 import {
   requireCrossReview,
+  requireNoBlockingReview,
   requireNoRunningReviewer,
   sessionChanges,
   startSessionReview,
@@ -92,20 +94,12 @@ function prepareConductorReady(
     'permission_denied',
     'Name a session you spawned',
   );
-  const review = ctx.store
-    .list<Review>('reviews')
-    .findLast((each) => each.session_id === target.id && each.state !== 'running');
-  // A finding goes stale when its quoted line changes, which says nothing of whether it was fixed.
   requireThat(
-    !review?.findings.some(
-      (finding) =>
-        finding.blocking &&
-        (finding.status === 'open' || finding.status === 'stale') &&
-        !finding.resolution,
-    ),
-    'review_blocking_open',
-    'The latest review of this work has open blocking findings; fix them and request another review first',
+    !target.in_place,
+    'invalid_state',
+    'This session works in the project folder; report_ready does not land it, the user lands it in the app',
   );
+  requireNoBlockingReview(ctx, target.id);
   if (input.session_id) {
     requireThat(
       target.state !== 'running',
@@ -120,7 +114,9 @@ function prepareConductorReady(
       admit(ctx);
       return {
         session_id: target.id,
-        next: 'The gate runs now; the result comes back to you as a message.',
+        next: gated(ctx, target)
+          ? 'The gate runs now; the result comes back to you as a message.'
+          : 'This project has no gate commands, so the work lands without a gate; the result comes back to you as a message.',
       };
     });
   }
@@ -135,10 +131,52 @@ function prepareConductorReady(
       { ...session, ready: { turn_id: turn.id, command_id: command.command_id } },
       session.revision,
     );
+    const when = ctx.store
+      .list<SessionTurn>('session_turns')
+      .some((each) => each.session_id === session.id && each.state === 'queued')
+      ? 'once this turn and the turns queued after it end'
+      : 'when this turn ends';
     return {
-      next: 'The gate and landing start when this turn ends; the result comes back to you as a message.',
+      next: gated(ctx, session)
+        ? `The gate and landing start ${when}; the result comes back to you as a message.`
+        : `This project has no gate commands, so the work lands without a gate ${when}; the result comes back to you as a message.`,
     };
   };
+}
+
+/**
+ * Drops the session's ready declaration once a turn after the one that declared it failed or was
+ * cancelled, and tells the session; that turn's work was not what was declared ready.
+ */
+export function dropReadyAfterEndedTurn(ctx: ControlContext, sessionId: string): void {
+  const ready = ctx.store.get<Session>('sessions', sessionId)?.ready;
+  // A turn the daemon's shutdown ends says nothing of the work.
+  if (!ready || ctx.closing) return;
+  const turns = ctx.store
+    .list<SessionTurn>('session_turns')
+    .filter((each) => each.session_id === sessionId);
+  const declaring = turns.findIndex((each) => each.id === ready.turn_id);
+  const ended = turns
+    .slice(declaring + 1)
+    .find((each) => each.state === 'failed' || each.state === 'cancelled');
+  if (declaring < 0 || turns[declaring]!.state !== 'completed' || !ended) return;
+  ctx.store.transaction(() => {
+    const session = ctx.store.must<Session>('sessions', sessionId);
+    ctx.store.update('sessions', { ...session, ready: undefined }, session.revision);
+    notifySession(
+      ctx,
+      sessionId,
+      `[Pantheon] Your work did not land: a turn after the one that called report_ready ${ended.state === 'failed' ? 'failed' : 'was cancelled'}. Call report_ready again once the work is ready.`,
+      ready.command_id,
+    );
+  });
+}
+
+/** Whether the project's gate has commands for the session's worktree; without any, a landing runs no gate. */
+function gated(ctx: ControlContext, session: Session): boolean {
+  const project = ctx.store.must<Project>('projects', session.project_id),
+    workspace = ctx.store.must<Workspace>('workspaces', session.workspace_id!);
+  return !!gateCommands(ctx, project, workspace, session)?.length;
 }
 
 /** An upper bound on what one conductor can spend through the sessions it starts. */
@@ -280,8 +318,8 @@ export function afterSpawnedTurn(ctx: ControlContext, sessionId: string): void {
       );
     });
   };
-  if (listed?.ahead !== undefined || !target || !workspace) return tell(listed?.ahead);
-  // The list counts only a worktree something has read since it last moved.
+  if (!target || !workspace) return tell(undefined);
+  // The list's count can be from a read before the turn's last commit.
   const counting: Promise<void> = runGit(
     workspace.path,
     ['rev-list', '--count', `refs/heads/${target}..HEAD`, '--'],

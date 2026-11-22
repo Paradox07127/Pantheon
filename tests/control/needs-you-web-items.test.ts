@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from 'vitest';
-import type { Approval, ApprovalQuestion, Retrospective } from '@pantheon/domain';
+import type { Approval, ApprovalQuestion, Entity } from '@pantheon/domain';
 import { fixture, insertSession, user } from '../helpers.js';
 
 type Fixture = Awaited<ReturnType<typeof fixture>>;
@@ -59,7 +59,7 @@ it('gives a question item its questions and options', async () => {
 function withRetrospectives(f: Fixture) {
   insertSession(f, { id: 'lead', turn_count: 1 });
   for (const index of [1, 2])
-    f.store.insert<Retrospective>('retrospectives', {
+    f.store.insert<Entity & Record<string, unknown>>('retrospectives', {
       id: `retrospective-${index}`,
       revision: 1,
       project_id: f.project.id,

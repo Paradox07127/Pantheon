@@ -7,7 +7,6 @@ import { ArtifactFiles, Store } from '@pantheon/store';
 import type { Principal } from '@pantheon/protocol';
 import type { ControlContext } from '../../packages/control/src/context.js';
 import {
-  deviceHasLabel,
   deviceTransport,
   listDevices,
   parseDeviceProbe,
@@ -173,22 +172,21 @@ it('saves a device, lists it after this machine and removes it', async () => {
   const saved = await saveDevice(
     ctx,
     user,
-    { id: 'build-box', ssh: 'build-box', labels: ['cuda'], resources: { gpu: 2 } },
+    { id: 'build-box', ssh: 'build-box', note: 'GPU box' },
     unreachable,
   );
   expect(saved).toMatchObject({ online: false, error: 'ssh: connect to host build-box' });
   const config = JSON.parse(readFileSync(path.join(ctx.userConfigDir!, 'config.json'), 'utf8'));
   expect(config.devices).toEqual({
-    'build-box': { ssh: 'build-box', labels: ['cuda'], resources: { gpu: 2 } },
+    'build-box': { ssh: 'build-box', note: 'GPU box' },
   });
   const listed = listDevices(ctx);
   expect(listed.map((device) => device.id)).toEqual(['local', 'build-box']);
   expect(listed[1]).toMatchObject({
     name: 'build-box',
     ssh: 'build-box',
-    labels: ['cuda'],
-    resources: { gpu: 2 },
-    max_sessions: 1,
+    note: 'GPU box',
+    labels: [],
     online: false,
   });
   removeDevice(ctx, user, 'build-box');
@@ -223,7 +221,7 @@ it('refuses to remove a device or change its SSH target while a session keeps a 
   expect(() =>
     saveDevice(ctx, user, { id: 'build-box', ssh: 'builder@other-box' }, unreachable),
   ).toThrow(busy);
-  await saveDevice(ctx, user, { id: 'build-box', ssh: 'build-box', labels: ['cuda'] }, unreachable);
+  await saveDevice(ctx, user, { id: 'build-box', ssh: 'build-box', note: 'GPU box' }, unreachable);
 
   ctx.store.update('workspaces', { id: 'w1', revision: 1, path: '/w1', removed_at: 1 }, 1);
   removeDevice(ctx, user, 'build-box');
@@ -248,6 +246,8 @@ it('lists each device with its configuration entry and what holds it now', async
     expect(listed.map((device) => device.id)).toEqual(['local', 'build-box']);
     expect(listed[0]).not.toHaveProperty('config');
     expect(listed[1]!.config).toEqual(entry);
+    expect(listed[1]).toMatchObject({ labels: [] });
+    for (const key of ['resources', 'max_sessions']) expect(listed[1]).not.toHaveProperty(key);
     for (const device of listed) expect(device.load).toEqual({ active_sessions: [] });
   } finally {
     await f.close();
@@ -309,11 +309,11 @@ it('keeps the last successful probe through an offline probe and a store restart
   await restarted.shutdown();
 });
 
-it('keeps the limit a save probed over the one an older refresh probed later', async () => {
+it('keeps the name a save probed over the one an older refresh probed later', async () => {
   const ctx = context();
   writeFileSync(
     path.join(ctx.userConfigDir!, 'config.json'),
-    JSON.stringify({ version: 1, devices: { 'build-box': { ssh: 'build-box', max_sessions: 8 } } }),
+    JSON.stringify({ version: 1, devices: { 'build-box': { ssh: 'build-box', name: 'Old box' } } }),
   );
   const probe = (delay: number) => () => [
     '/bin/sh',
@@ -321,26 +321,17 @@ it('keeps the limit a save probed over the one an older refresh probed later', a
     `sleep ${delay}; printf "home=/home/builder\\ncpus=4\\n" #`,
   ];
   const refresh = refreshDevices(ctx, probe(1));
-  await saveDevice(ctx, user, { id: 'build-box', ssh: 'build-box', max_sessions: 1 }, probe(0));
+  await saveDevice(ctx, user, { id: 'build-box', ssh: 'build-box', name: 'New box' }, probe(0));
   await refresh;
 
-  expect(listDevices(ctx)[1]).toMatchObject({ id: 'build-box', online: true, max_sessions: 1 });
-  expect(ctx.devices!.get('build-box')!.max_sessions).toBe(1);
+  expect(listDevices(ctx)[1]).toMatchObject({ id: 'build-box', online: true, name: 'New box' });
+  expect(ctx.devices!.get('build-box')!.name).toBe('New box');
 });
 
 it('names this machine by its system fields, not by os and arch labels', () => {
   const local = listDevices(context())[0]!;
   expect(local.arch).toBe(os.machine());
   expect(local.labels).toEqual([]);
-});
-
-it('matches os= and arch= needs against the system fields and the rest against the labels', () => {
-  const device = { labels: ['cuda'], os: 'linux' as const, arch: 'x86_64' };
-  expect(deviceHasLabel(device, 'os=linux')).toBe(true);
-  expect(deviceHasLabel(device, 'arch=x86_64')).toBe(true);
-  expect(deviceHasLabel(device, 'cuda')).toBe(true);
-  expect(deviceHasLabel(device, 'os=macos')).toBe(false);
-  expect(deviceHasLabel({ labels: [] }, 'os=undefined')).toBe(false);
 });
 
 it('probes only the one device it names', async () => {

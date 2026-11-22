@@ -2,7 +2,6 @@ import type {
   Approval,
   Event,
   Session,
-  StepRun,
   RuntimeDiagnostics,
   RuntimeFinding,
   RuntimeFindingKind,
@@ -39,7 +38,6 @@ export const RUNTIME_EVENT_KINDS = [
   'agent.tool.completed',
   'agent.context.compacted',
   'agent.background.changed',
-  'workflow.step_changed',
 ] as const;
 type Finding = Omit<RuntimeFinding, 'at' | 'id' | 'evidence_ids' | 'evidence'>;
 type NativeLane = { lane: { key: string }; spans: TraceSpan[] };
@@ -53,7 +51,6 @@ const MIN_MS: Partial<Record<RuntimeFindingKind, number>> = {
   gate: 10 * SECOND,
   slow_tool: SLOW_TOOL_MS,
   background_task: 30 * SECOND,
-  workflow_step: 5 * SECOND,
 };
 const END_TURN = new Set(['turn.completed', 'turn.failed', 'turn.cancelled']);
 const pairKey = (a: string, b: string) => JSON.stringify([a, b]);
@@ -122,7 +119,7 @@ export function runtimeDiagnostics(
   );
   const add = (eventId: string, at: number, finding: Finding, evidence: string[]) => {
     if (at < from || at > to) return;
-    if (finding.kind !== 'workflow_step' && !inScope(finding.lane_key, finding.turn_id)) return;
+    if (!inScope(finding.lane_key, finding.turn_id)) return;
     if (finding.kind === 'approval' && !finding.ongoing) pairedApprovals++;
     if (finding.kind === 'context_compaction') compactionCount++;
     if ((finding.duration_ms ?? 0) < (MIN_MS[finding.kind] ?? 0)) return;
@@ -378,20 +375,6 @@ export function runtimeDiagnostics(
       }
     } else if (event.kind === 'agent.background.changed') {
       if (inScope(id, text(p.turn_id))) background.set(id, event);
-    } else if (event.kind === 'workflow.step_changed') {
-      const key = pairKey('step', id);
-      if (p.state !== 'running') end(key, event);
-      else {
-        const step = ctx.store.get<StepRun>('workflow_step_runs', id);
-        if (!step) continue;
-        begin(key, event, {
-          ...base,
-          layer: 'harness',
-          kind: 'workflow_step',
-          lane_key: step.session_id ?? step.lead_session_id,
-          task_id: step.task_id,
-        });
-      }
     } else if (event.kind === 'agent.context.compacted') {
       if (!inScope(id, text(p.turn_id))) continue;
       const times = compactions.get(id) ?? [];
@@ -458,9 +441,7 @@ export function runtimeDiagnostics(
             ? session?.gate_run?.state === 'running' &&
                 session.gate_run.id === payloadOf(event).run_id
             : session?.merge?.state === 'running';
-        })()) ||
-      (kind === 'workflow_step' &&
-        ctx.store.get<StepRun>('workflow_step_runs', event.aggregate_id)?.state === 'running');
+        })());
     if (open)
       add(
         event.event_id,

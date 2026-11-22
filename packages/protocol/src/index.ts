@@ -6,64 +6,42 @@ export type {
   MemorySessionTurnsResult,
 } from './memory.js';
 import { z } from 'zod';
-import { changeStoryInputSchemas, type LandingDiff } from './change-story.js';
+import { changeStoryInputSchemas } from './change-story.js';
 import type { ProjectWaiting } from './project-waiting.js';
 import { reviewerTools, workflowInputSchemas } from './workflow-tools.js';
 import type {
-  AgentToolGroup,
-  ApprovalQuestion,
   GraphColor,
   GraphIcon,
   GraphStatus,
-  BoardPlan,
   EffortLevel,
-  FlowPath,
-  LaneDepth,
   McpServerStatus,
   NeedsYouItem,
-  TaskRungName,
-  MilestoneVerification,
-  MilestoneView,
-  PendingPlanEdit,
   PermissionMode,
-  PlanProposalView,
   ProjectFacts,
   ProjectIntro,
   QuotaWindow,
-  Retrospective,
-  Review,
   CapabilityReport,
   RuntimeStatus as PreflightRuntimeStatus,
   Session,
   SessionRecap,
   SessionRole,
   SessionTask,
-  StepRun,
-  TaskKind,
   TestCounts,
   RuntimeDiagnostics,
   RuntimeReviewHistory,
   TraceLane,
   TraceSpan,
   WorkflowPolicy,
-  WorkflowParam,
-  WorkflowStep,
 } from '@pantheon/domain';
 export type {
-  AgentFields,
-  AgentProfile,
   GraphColor,
   GraphIcon,
   GraphStatus,
-  AgentRoutineInput,
-  AgentToolGroup,
   ApprovalQuestion,
   EffortLevel,
   Principal,
   PermissionMode,
   RuntimeModel,
-  SignalIssue,
-  SignalSource,
 } from '@pantheon/domain';
 /** Every registered, configured or ACP-profile runtime, with configuration and known preflight fields. */
 export type RuntimeStatus = PreflightRuntimeStatus & {
@@ -196,34 +174,6 @@ export const EFFORT_LEVELS = [
 // Fails to compile when EFFORT_LEVELS misses a level of EffortLevel.
 const effortLevelsComplete: [EffortLevel] extends [(typeof EFFORT_LEVELS)[number]] ? true : false =
   true;
-// The values of domain's TASK_DOMAINS and TASK_TIERS, kept here for the same reason as sessionRole.
-const taskDomains = [
-  'review',
-  'frontend-ui',
-  'script-infra',
-  'backend-logic',
-  'docs-chore',
-] as const satisfies readonly TaskKind['domain'][];
-const taskTiers = ['t1', 't2', 't3'] as const satisfies readonly TaskKind['tier'][];
-// The values of domain's FLOW_PATHS, kept here for the same reason as sessionRole.
-const flowPaths = [
-  'direct',
-  'dispatch',
-  'review_loop',
-  'parallel',
-] as const satisfies readonly FlowPath[];
-// Fails to compile when flowPaths misses a value of FlowPath.
-const flowPathsComplete: [FlowPath] extends [(typeof flowPaths)[number]] ? true : false = true;
-// The values of domain's LANE_DEPTHS, kept here for the same reason as sessionRole.
-const laneDepths = ['just_do', 'plan_first', 'spec_first'] as const satisfies readonly LaneDepth[];
-// Fails to compile when laneDepths misses a value of LaneDepth.
-const laneDepthsComplete: [LaneDepth] extends [(typeof laneDepths)[number]] ? true : false = true;
-// Fails to compile when either list misses a value of TaskKind.
-const taskKindComplete: [TaskKind] extends [
-  { domain: (typeof taskDomains)[number]; tier: (typeof taskTiers)[number] },
-]
-  ? true
-  : false = true;
 
 const memoryTools = {
   memory_context: 'memory.context',
@@ -341,253 +291,12 @@ const browserPage = z.strictObject({
 /** What a browser tool returns about the session's browser panel page. */
 export type BrowserPage = z.infer<typeof browserPage>;
 const boardText = z.string().min(1).max(400);
-/** One part of a parallel task: its part number from 1, or the id of its session. */
-const partSelector = z.union([z.number().int().min(1).max(4), z.string().min(1)]).optional();
-const planIdPattern = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$/;
-const planId = z.string().regex(planIdPattern);
-const RECORDED_ONLY = 'Recorded only; Pantheon does not act on it yet.';
-const planAssumption = z.strictObject({
-  text: boardText.describe('The decision, at most 400 characters.'),
-  id: planId
-    .optional()
-    .describe(
-      'Optional short id, unique among the assumptions; the user can refute only an assumption with an id.',
-    ),
-  affects: z
-    .array(planId)
-    .max(16)
-    .optional()
-    .describe(
-      'Optional: up to 16 ids of the tasks that rest on it; they show a pending edit while a refute of it waits for you.',
-    ),
-  milestone: planId
-    .optional()
-    .describe(`Optional: the id of the milestone that rests on it. ${RECORDED_ONLY}`),
-});
-const planRisk = z.strictObject({
-  text: boardText.describe('What could go wrong, and its effect, at most 400 characters.'),
-  id: planId
-    .optional()
-    .describe(
-      'Optional short id, unique among the risks; once you drop the risk from the plan, project memory records it as closed.',
-    ),
-  milestone: planId.optional().describe('Optional: the id of the milestone the risk threatens.'),
-});
 const planTitle = z.string().min(1).max(80);
-const taskPriority = z.enum(['high', 'normal', 'low']);
 const runtimeChoice = z.strictObject({
   runtime: str,
   model: str.optional(),
   effort: z.enum(EFFORT_LEVELS).optional(),
 });
-const taskKind = z
-  .strictObject({
-    domain: z
-      .enum(taskDomains)
-      .describe('review, frontend-ui, script-infra, backend-logic or docs-chore.'),
-    tier: z.enum(taskTiers).describe('t1, t2 or t3; Pantheon may raise it from the scope.'),
-  })
-  .describe(
-    '`domain` (review, frontend-ui, script-infra, backend-logic, docs-chore) and `tier` (t1, t2, t3). Pantheon may raise the tier from the scope.',
-  );
-const calendarDay = z.iso.date();
-const planIterations = z
-  .array(
-    z
-      .strictObject({
-        id: z.string().describe('Short id that tasks name in `iteration`.'),
-        title: z.string().describe('The iteration name shown on the board.'),
-        starts_on: calendarDay.describe('First day, YYYY-MM-DD.'),
-        ends_on: calendarDay.describe('Last day, YYYY-MM-DD, not before starts_on.'),
-      })
-      .refine((iteration) => iteration.starts_on <= iteration.ends_on, {
-        message: 'starts_on must be on or before ends_on',
-      }),
-  )
-  .refine(
-    (iterations) => new Set(iterations.map((iteration) => iteration.id)).size === iterations.length,
-    { message: 'Iteration ids must be unique' },
-  );
-const planTask = z
-  .strictObject({
-    id: planId.describe(
-      'Stable id (letters, digits, `_.-`, at most 40); keep it when the task stays, since sessions and history hang on it.',
-    ),
-    title: planTitle.describe('At most 80 characters; what the task delivers.'),
-    goal: boardText.describe(
-      'At most 400 characters: what to change and why, and how to tell it is done. The task session sees only this task, so put what does not fit in `brief`.',
-    ),
-    /** What the goal has no room for: purpose, known cause, files and limits. */
-    brief: z
-      .string()
-      .min(1)
-      .max(2000)
-      .optional()
-      .describe(
-        'Optional, up to 2000 characters: what the goal has no room for, such as the purpose, the files, symbols or symptoms you found, the known cause and what not to touch. Write your own conclusions; the session cannot read your conversation.',
-      ),
-    lane: planId.describe('The id of its lane.'),
-    milestone: planId.optional().describe('The id of the milestone it counts toward.'),
-    iteration: z.string().optional().describe('The id of an iteration in `iterations`.'),
-    estimate: z
-      .number()
-      .int()
-      .min(1)
-      .max(13)
-      .optional()
-      .describe('Optional size estimate, 1-13, shown on the board.'),
-    depends_on: z
-      .array(planId)
-      .max(16)
-      .describe('Ids of tasks that must be done before this one opens, at most 16.'),
-    /** Verbatim quotes of the user's messages to the lead, or of text the user wrote in an external event. */
-    source: z
-      .array(boardText)
-      .max(4)
-      .describe(
-        "1-4 excerpts copied verbatim from the user's messages; a quote no user message contains is refused. May be empty only when `external_source` is given.",
-      ),
-    /** Verbatim quotes of what other people wrote in an external event. */
-    external_source: z
-      .array(boardText)
-      .max(4)
-      .optional()
-      .describe(
-        'Up to 4 verbatim excerpts of what other people wrote in an external request; the task session reads them as information, not instructions.',
-      ),
-    /** The subject key of the external request, such as github:owner/repo#12, the task was planned for. */
-    external_subject: str
-      .optional()
-      .describe(
-        'The subject key of the external request the task serves, such as github:owner/repo#12, as its board update names it.',
-      ),
-    /** Repository-relative paths or directories the task may change. */
-    scope: z
-      .array(z.string().min(1).max(200))
-      .max(16)
-      .describe(
-        'Repository-relative paths or directories the task may change, 1-16 (may be empty for done_when report). List test, build or CI configuration files by exact path when the task must change them.',
-      ),
-    /** Shell commands that must pass before the task is done. */
-    acceptance: z
-      .array(z.string().min(1).max(400))
-      .max(8)
-      .describe(
-        '1-8 shell commands that must pass (may be empty for done_when report). They run in a fresh clone with dependency folders but no build output; start with the build step a command needs.',
-      ),
-    /** The runtime, model and effort of the session Pantheon opens for the task. */
-    runtime: str
-      .optional()
-      .describe(
-        "The runtime of the task's session; absent means the project's writer default when one is set, else its default runtime.",
-      ),
-    model: str
-      .optional()
-      .describe("The model of the task's session; absent means the default for its runtime."),
-    effort: z
-      .enum(EFFORT_LEVELS)
-      .optional()
-      .describe("The reasoning effort of the task's session; absent means the default."),
-    kind: taskKind.optional(),
-    task_type: z
-      .enum(['feature', 'fix', 'research', 'infra', 'docs'])
-      .optional()
-      .describe('feature, fix, research, infra or docs; shown on the board.'),
-    /** Tokens; stored for display without enforcing the budget. */
-    token_budget: z
-      .number()
-      .int()
-      .positive()
-      .optional()
-      .describe('Tokens, shown on the board; not enforced.'),
-    /** Why the runtime, model or effort differs from the project's defaults. */
-    route_reason: boardText
-      .optional()
-      .describe("One sentence on why runtime, model or effort differ from the project's defaults."),
-    /** The device id the task's session runs on; absent means this machine. */
-    device: str
-      .optional()
-      .describe('The device id from lead.devices the session runs on; absent means this machine.'),
-    /** Why the task runs on the device. */
-    device_reason: boardText.optional().describe('One sentence on why it runs there.'),
-    /** Labels the device must have. */
-    needs: z
-      .array(z.string().min(1).max(64))
-      .max(8)
-      .optional()
-      .describe(
-        'Labels the device must have: os=<system>, arch=<architecture> and device labels as lead.devices gives them; at most 8.',
-      ),
-    /** Named resources of the device the session holds while it runs, and how many of each. */
-    uses: z
-      .record(str, z.number().int().positive())
-      .optional()
-      .describe(
-        'Resources the session holds while it runs, name to amount, such as {"postgres": 1}; only names lead.devices lists for that device, at most the listed amount.',
-      ),
-    /** The flow path the task takes; absent means the one the workflow policy gives its tier. */
-    path: z
-      .enum(flowPaths)
-      .optional()
-      .describe(
-        'direct, dispatch, review_loop or parallel; absent means lead.workflow.path for its tier.',
-      ),
-    /** Retired; a stored value is accepted and ignored. */
-    workflow_id: str.optional().meta({ retired: true }),
-    parallel: z
-      .array(
-        z.strictObject({
-          title: planTitle.describe('At most 80 characters; what this part delivers.'),
-          goal: boardText.describe(
-            "At most 400 characters: this part's own goal; its session sees only this part.",
-          ),
-          scope: z
-            .array(z.string().min(1).max(200))
-            .min(1)
-            .max(16)
-            .describe(
-              'The paths this part may change, 1-16; keep them apart from the other parts.',
-            ),
-          acceptance: z
-            .array(z.string().min(1).max(400))
-            .min(1)
-            .max(8)
-            .describe('1-8 shell commands that must pass for this part.'),
-        }),
-      )
-      .min(2)
-      .max(4)
-      .optional()
-      .describe(
-        'For path parallel: 2-4 parts, each with its own `title`, `goal`, `scope` and `acceptance`; one session opens per part.',
-      ),
-    /** Why the task takes a different flow path from the one its kind is given. */
-    flow_reason: boardText
-      .optional()
-      .describe('One sentence on why `path` differs from the suggested one.'),
-    /** A report task is done when the lead accepts its done report; it may have no scope or acceptance. */
-    done_when: z
-      .enum(['merged', 'report'])
-      .optional()
-      .describe(
-        'merged (default): done when its session merges. report: done when you accept its done report; for research or a document reply.',
-      ),
-    /** Absent means normal. */
-    priority: taskPriority.optional().describe('high, normal (default) or low.'),
-  })
-  .refine(
-    (task) => task.done_when === 'report' || (task.scope.length > 0 && task.acceptance.length > 0),
-    {
-      message:
-        'A task that is done when merged needs at least one scope path and acceptance command',
-    },
-  );
-const planLane = z.strictObject({
-  id: planId.describe('Short id (letters, digits, `_.-`) that tasks name in `lane`.'),
-  title: planTitle.describe('At most 80 characters.'),
-});
-/** The plan version a write was based on; a write based on an older one is refused. */
-const baseVersion = z.number().int().nonnegative();
 const argv = z.array(str.refine((value) => !value.includes('\0'))).min(1);
 const gateCommand = z.strictObject({
   name: str.describe('The name the gate shows for the command.'),
@@ -729,18 +438,13 @@ export const deviceConfigSchema = z.strictObject({
   name: str.optional(),
   /** The user's description of the device, for the model choosing where a task runs. */
   note: str.optional(),
-  labels: strings.optional(),
-  /** Named resources and how many of each the device has. */
-  resources: z.record(str, z.number().int().positive()).optional(),
-  max_sessions: z.number().int().positive().optional(),
 });
-const workflowParam = z.enum([
-  'runtime_quota_threshold',
-] as const satisfies readonly WorkflowParam[]);
-// Fails to compile when workflowParam misses a value of WorkflowParam.
-const workflowParamComplete: [WorkflowParam] extends [z.infer<typeof workflowParam>]
-  ? true
-  : false = true;
+/** A device as a configuration file may still hold it; labels, resources and max_sessions are not read. */
+const storedDeviceConfigSchema = deviceConfigSchema.extend({
+  labels: z.unknown().optional(),
+  resources: z.unknown().optional(),
+  max_sessions: z.unknown().optional(),
+});
 const sessionDefaults = {
   runtime: str,
   permission_mode: z.enum(['ask', 'auto_edit', 'plan', 'auto', 'full_access']),
@@ -759,10 +463,8 @@ const sessionDefaults = {
 };
 /** Workflow policy settings as a policy stores them; the project budget belongs to each project alone. */
 const workflowPolicySettings = z.strictObject({
-  runtime_quota_threshold: z.number().optional(),
-  gate_on_fail: z.enum(['handback', 'retry', 'stop']).optional(),
+  gate_on_fail: z.enum(['retry', 'stop']).optional(),
   gate_runner: z.enum(['daemon', 'session']).optional(),
-  pinned: z.array(workflowParam).max(7).optional(),
 });
 /** Global workflow settings a configuration file may still hold; not read. */
 export const RETIRED_POLICY_SETTINGS = [
@@ -780,37 +482,31 @@ export const RETIRED_POLICY_SETTINGS = [
   'handback_limit',
   'task_size_hint',
   'budget',
+  'runtime_quota_threshold',
+  'pinned',
 ] as const;
-const storedWorkflowPolicySettings = workflowPolicySettings.extend(
-  Object.fromEntries(RETIRED_POLICY_SETTINGS.map((key) => [key, z.unknown().optional()])) as Record<
-    (typeof RETIRED_POLICY_SETTINGS)[number],
-    z.ZodOptional<z.ZodUnknown>
-  >,
-);
-const externalEventsMode = z.enum(['off', 'approve', 'auto']);
+/** A stored `handback` reads as `stop`. */
+const storedWorkflowPolicySettings = workflowPolicySettings
+  .extend({ gate_on_fail: z.enum(['handback', 'retry', 'stop']).optional() })
+  .extend(
+    Object.fromEntries(
+      RETIRED_POLICY_SETTINGS.map((key) => [key, z.unknown().optional()]),
+    ) as Record<(typeof RETIRED_POLICY_SETTINGS)[number], z.ZodOptional<z.ZodUnknown>>,
+  );
 /** The project settings that have a global value; each is stored under the same key on a project. */
-export const PROJECT_SETTING_KEYS = [
-  'workflow_policy',
-  'session_defaults',
-  'usage_targets',
-  'external_events',
-] as const;
+export const PROJECT_SETTING_KEYS = ['workflow_policy', 'session_defaults'] as const;
 export type ProjectSettingKey = (typeof PROJECT_SETTING_KEYS)[number];
 const projectSettingValues = {
   workflow_policy: workflowPolicySettings,
   session_defaults: z.strictObject(sessionDefaults),
-  usage_targets: z.record(z.string(), z.number().int().nonnegative()),
-  external_events: externalEventsMode,
 };
 export type ProjectSettingValues = {
   [K in ProjectSettingKey]: z.infer<(typeof projectSettingValues)[K]>;
 };
 const decisionKinds = {
   question: true,
-  repeated_failure: true,
   permission: true,
   budget: true,
-  improvement: true,
   other: true,
 } satisfies Record<NeedsYouItem['decision'], true>;
 /** Every `NeedsYouItem.decision`. */
@@ -854,7 +550,15 @@ const attentionDelivery = z.partialRecord(
 );
 /** Retired kinds' stored rules are accepted and not read. */
 const storedAttentionDelivery = z.partialRecord(
-  z.enum([...ATTENTION_KINDS, 'agent_proposal', 'plan_change', 'milestone_accept', 'external']),
+  z.enum([
+    ...ATTENTION_KINDS,
+    'agent_proposal',
+    'plan_change',
+    'milestone_accept',
+    'external',
+    'repeated_failure',
+    'improvement',
+  ]),
   z.enum(['now', 'brief', 'never']),
 );
 const quietHours = z.strictObject({
@@ -878,9 +582,9 @@ export const userConfigSchema = z
     attention_delivery: storedAttentionDelivery.optional(),
     /** Local HH:MM range, possibly across midnight, in which now waits for the brief. */
     quiet_hours: quietHours.optional(),
-    /** The most question rounds of a baseline; absent is 5. */
-    baseline_rounds: z.number().int().min(1).max(5).optional(),
-    /** The baseline session draws explanation charts, pinned to the board on confirm; absent is on. */
+    /** Retired; a stored value is accepted and ignored. */
+    baseline_rounds: z.number().optional(),
+    /** Retired; a stored value is accepted and ignored. */
     baseline_visuals: z.boolean().optional(),
     /** Retired; a stored value is accepted and ignored. */
     baseline_range_story: z.boolean().optional(),
@@ -902,22 +606,18 @@ export const userConfigSchema = z
       )
       .optional(),
     /** The user's execution devices besides this machine, by device id. */
-    devices: z.record(deviceId, deviceConfigSchema).optional(),
-    /** This machine's labels and resources besides the ones found; without max_sessions its task sessions have no limit. */
-    local_device: z
-      .strictObject({
-        labels: deviceConfigSchema.shape.labels,
-        resources: deviceConfigSchema.shape.resources,
-        max_sessions: deviceConfigSchema.shape.max_sessions,
-      })
-      .optional(),
+    devices: z.record(deviceId, storedDeviceConfigSchema).optional(),
+    /** Not read. */
+    local_device: z.unknown().optional(),
     /** What every project follows where it has no value of its own. */
     project_defaults: z
       .strictObject({
         workflow_policy: storedWorkflowPolicySettings.optional(),
         session_defaults: projectSettingValues.session_defaults.optional(),
-        usage_targets: projectSettingValues.usage_targets.optional(),
-        external_events: projectSettingValues.external_events.optional(),
+        /** Not read. */
+        usage_targets: z.unknown().optional(),
+        /** Not read. */
+        external_events: z.unknown().optional(),
         /** Not read. */
         auto_merge: z.boolean().optional(),
         /** Answer matching permission requests in every project, besides each project's own rules. */
@@ -932,139 +632,6 @@ export const userConfigSchema = z
   );
 export type BackendProfile = z.infer<typeof backendProfileSchema>;
 export type UserConfig = z.infer<typeof userConfigSchema>;
-const triggerEvent = str
-  .optional()
-  .describe(
-    "Optional: the event of the replan note this change answers, from the note's event attribute.",
-  );
-// MCP tools omit bound fields; the daemon checks references on the complete plan.
-export const boardPlanInputSchema = z.strictObject({
-  project_id: str,
-  base_version: baseVersion.describe(
-    'The plan_version of your current plan from project_read; 0 before your first plan. A different number is refused with the current one.',
-  ),
-  trigger_event: triggerEvent,
-  headline: planTitle.describe("The plan's title on the board, at most 80 characters."),
-  lanes: z
-    .array(
-      planLane.extend({
-        fanout_reason: boardText
-          .optional()
-          .describe('One sentence on why tasks of this lane run at the same time.'),
-        depth: z
-          .enum(laneDepths)
-          .optional()
-          .describe(
-            `Optional: just_do to start its tasks at once, plan_first to plan before they start, spec_first to write a spec first. Shown to the user beside the lane; a lane with a t3 task waits for the user's plan approval whatever depth you give.`,
-          ),
-        stops: z
-          .array(
-            z
-              .union([
-                z.literal('plan'),
-                z.string().regex(new RegExp(`^milestone:${planIdPattern.source.slice(1)}`)),
-              ])
-              .describe('`plan`, or `milestone:` and the id of a milestone of this plan.'),
-          )
-          .max(4)
-          .optional()
-          .describe(`Optional: up to 4 points where the lane waits for the user. ${RECORDED_ONLY}`),
-        depth_reason: boardText
-          .optional()
-          .describe(
-            `Optional: one sentence on why the lane has this depth. Shown to the user beside the lane; a lane with a t3 task waits for the user's plan approval whatever depth you give.`,
-          ),
-      }),
-    )
-    .min(1)
-    .max(16)
-    .describe('1-16 lanes; give each request its own lane.'),
-  iterations: planIterations
-    .default([])
-    .describe(
-      'Optional time boxes: `id`, `title`, `starts_on` and `ends_on` as YYYY-MM-DD, start not after end.',
-    ),
-  tasks: z
-    .array(planTask)
-    .max(64)
-    .describe('Up to 64 tasks. Leaving out a task that exists removes it.'),
-  milestones: z
-    .array(
-      z.strictObject({
-        id: planId.describe('Short id that tasks name in `milestone`.'),
-        title: planTitle.describe('At most 80 characters.'),
-        criteria: z
-          .array(boardText)
-          .min(1)
-          .max(12)
-          .describe('1-12 checkable statements of what must hold.'),
-        tasks: z.array(planId).min(1).max(64).describe('The ids of its tasks.'),
-        due_on: calendarDay.optional().describe('Optional due day, YYYY-MM-DD.'),
-        goal: z
-          .string()
-          .min(1)
-          .max(64)
-          .nullable()
-          .optional()
-          .describe(
-            'Optional: the id of a goal in project_read.goals that this milestone serves; null removes the link; left out keeps it.',
-          ),
-        replan_if: z
-          .array(
-            z.discriminatedUnion('type', [
-              z.strictObject({
-                type: z
-                  .literal('handbacks')
-                  .describe('handbacks: after this many tasks of the milestone are handed back.'),
-                count: z.number().int().min(1).max(10).describe('1-10 handbacks.'),
-              }),
-              z.strictObject({
-                type: z
-                  .literal('budget_ratio')
-                  .describe(
-                    "budget_ratio: once the milestone's tasks spend this share of their token budget.",
-                  ),
-                at: z
-                  .number()
-                  .gt(0)
-                  .max(2)
-                  .describe('Tokens spent over budgeted, above 0 and at most 2.'),
-              }),
-              z.strictObject({
-                type: z
-                  .literal('stall')
-                  .describe('stall: when the milestone stops making progress.'),
-              }),
-              z.strictObject({
-                type: z
-                  .literal('assumption_false')
-                  .describe('assumption_false: when the named assumption turns out false.'),
-                assumption_id: planId.describe('The id of an assumption of this plan.'),
-              }),
-            ]),
-          )
-          .max(4)
-          .optional()
-          .describe(
-            'Optional: up to 4 conditions on which you re-plan the milestone. When a task of the milestone meets handbacks, budget_ratio or stall, Pantheon sends you a replan note once per task generation; for assumption_false, once you apply an edit of the user that says the assumption is wrong.',
-          ),
-      }),
-    )
-    .max(16)
-    .describe('Up to 16 milestones.'),
-  risks: z
-    .array(planRisk)
-    .max(16)
-    .describe(
-      'Up to 16 `{ text }`, each at most 400 characters: what could go wrong, and its effect.',
-    ),
-  assumptions: z
-    .array(planAssumption)
-    .max(16)
-    .describe(
-      'Up to 16 `{ text }`: each decision you made for the user on an open point, so they can correct it.',
-    ),
-});
 
 const visualSize = z.enum(['S', 'M', 'L']);
 const visualTime = z.union([
@@ -1694,15 +1261,13 @@ export const inputSchemas = {
   /** Changes the given workflow policy parameters of a project; the user only. */
   'workflow.policy.set': z.strictObject({
     project_id: str,
-    runtime_quota_threshold: z.number().optional(),
-    gate_on_fail: z.enum(['handback', 'retry', 'stop']).optional(),
+    gate_on_fail: z.enum(['retry', 'stop']).optional(),
     gate_runner: z.enum(['daemon', 'session']).optional(),
     /** The project's input token budget; a first one counts from now, null clears it. */
     project_budget: z
       .strictObject({ input_tokens: z.number().int().positive() })
       .nullable()
       .optional(),
-    pinned: z.array(workflowParam).max(7).optional(),
   }),
   'project.baseline.start': z.strictObject({
     project_id: str,
@@ -1816,13 +1381,7 @@ export const inputSchemas = {
   }),
   /** Removes the project's own session defaults, so it follows the global ones. */
   'project.sessionDefaults.clear': z.strictObject({ project_id: str }),
-  /** Merges runtime token targets; null removes the project's own target, so the global one applies. */
-  'project.usageTargets.set': z.strictObject({
-    project_id: str,
-    targets: z.record(z.string(), z.number().int().nonnegative().nullable()),
-  }),
   'project.sessionDefaults.set': z.strictObject({ project_id: str, ...sessionDefaults }),
-  'project.externalEvents.set': z.strictObject({ project_id: str, mode: externalEventsMode }),
   /** Sets the value of one setting that every project follows where it has none of its own; the user only. */
   'project.defaults.set': z.discriminatedUnion('key', [
     z.strictObject({
@@ -1832,11 +1391,6 @@ export const inputSchemas = {
     z.strictObject({
       key: z.literal('session_defaults'),
       value: projectSettingValues.session_defaults,
-    }),
-    z.strictObject({ key: z.literal('usage_targets'), value: projectSettingValues.usage_targets }),
-    z.strictObject({
-      key: z.literal('external_events'),
-      value: projectSettingValues.external_events,
     }),
   ]),
   /** Removes a global value, so projects without their own follow the built-in default; the user only. */
@@ -1962,7 +1516,6 @@ export const inputSchemas = {
         'turn_failure',
         'context_compaction',
         'background_task',
-        'workflow_step',
       ])
       .optional(),
     offset: z.number().int().min(0).max(120).default(0),
@@ -2163,8 +1716,6 @@ export const inputSchemas = {
     attention_delivery: attentionDelivery.optional(),
     /** Null clears them. */
     quiet_hours: quietHours.nullable().optional(),
-    baseline_rounds: z.number().int().min(1).max(5).optional(),
-    baseline_visuals: z.boolean().optional(),
   }),
   /** The user only; replaces the device of this id in `~/.pantheon/config.json`. */
   'device.save': z.strictObject({ id: deviceId, ...deviceConfigSchema.shape }),
@@ -2229,8 +1780,6 @@ export const querySchemas = {
     q: z.string(),
   }),
   'needs_you.list': z.strictObject({ project_id: str.optional() }),
-  /** The user only; returns ExternalRead. */
-  'external.read': z.strictObject({ project_id: str }),
   'projects.summary': z.strictObject({}),
   /** ProjectBrief; what happened in the project after since, by default after the caller's seen cursor. */
   'project.brief': z.strictObject({
@@ -2381,8 +1930,6 @@ export interface AppSettings {
   attention_delivery: Record<AttentionKind, AttentionDelivery>;
   /** Local HH:MM; inside it now waits for the brief. */
   quiet_hours?: { from: string; to: string };
-  baseline_rounds: number;
-  baseline_visuals: boolean;
 }
 /** GET /v1/device.list; this machine (id `local`) or a configured device, with what its last probe found. */
 export interface DeviceStatus {
@@ -2391,10 +1938,8 @@ export interface DeviceStatus {
   /** Absent for this machine. */
   ssh?: string;
   note?: string;
-  /** The configured labels, then the ones the probe found. */
+  /** The labels the probe found. */
   labels: string[];
-  resources: Record<string, number>;
-  max_sessions: number;
   online: boolean;
   error?: string;
   /** ISO time of the probe. */
@@ -2490,9 +2035,9 @@ export interface ProjectSummary {
   /** Absent when nothing waits for the user. */
   waiting?: ProjectWaiting;
 }
-/** What a brief item links to; a merge is the merged session's id, decided the project's id. */
+/** What a brief item links to; a merge is the merged session's id, a landing the `pantheon land` row's id, decided the project's id. */
 export interface ProjectBriefRef {
-  kind: 'merge' | 'approval' | 'event' | 'decided';
+  kind: 'merge' | 'landing' | 'approval' | 'event' | 'decided';
   id: string;
 }
 /** One thing that happened after the brief's since; times are Unix milliseconds. */
@@ -2585,8 +2130,6 @@ export interface WorkbenchSession {
   branch?: string | null;
   ahead?: number;
   behind?: number;
-  /** Merge preview against the target head; absent until computed or without commits ahead. */
-  predicted_conflicts?: { files: string[]; total: number };
   /** The first user input, with its ISO time. */
   goal?: { text: string; at: string };
   model: string | null;
@@ -2636,8 +2179,8 @@ export interface WorkbenchSession {
    * baseline_review: the project's newest baseline awaits review; approval otherwise.
    */
   waiting_kind?: 'approval' | 'question' | 'baseline_review';
-  /** The oldest unanswered permission request, id its approval; absent when waiting is zero. */
-  waiting_request?: { id: string; tool: string; detail?: string };
+  /** The oldest unanswered permission request, id and revision its approval's; absent when waiting is zero. */
+  waiting_request?: { id: string; revision: number; tool: string; detail?: string };
   /** The newest turn reporting context tokens, only when it also reports the window. */
   context?: { used_tokens: number; window_tokens: number };
   /** The session is reconciling its native process after a restart; state shows its listed state. */
@@ -2741,19 +2284,6 @@ export interface AttachmentMeta {
   /** Bytes. */
   size: number;
 }
-/** A pending permission request; input is an AskUserQuestion request. */
-export interface BoardWaiting {
-  kind: 'approval' | 'input';
-  /** At most 6 single-select labels of at most 60 characters, for one question. */
-  options?: string[];
-  /** The request input, at most 140 characters. */
-  summary: string;
-  approval_id: string;
-  /** Epoch milliseconds. */
-  since: number;
-  /** The full questions of an AskUserQuestion request. */
-  questions?: ApprovalQuestion[];
-}
 /** What a board task's newest session not discarded is doing now. */
 export interface BoardActivity {
   phase:
@@ -2774,7 +2304,6 @@ export interface BoardActivity {
     /** A command, path or the like from its input, at most 80 characters. */
     target?: string;
   };
-  waiting?: BoardWaiting;
   /** The error of the newest turn when it failed, at most 200 characters. */
   turn_error?: string;
   /** The newest failed attempt has the same failed gate steps or turn error code as its predecessor. */
@@ -2788,36 +2317,6 @@ export interface BoardActivity {
   attempt: number;
   /** The merge problems Pantheon handed back to the session to fix. */
   handed_back?: string[];
-  /** Daemon turns in a row since the task's last verified progress that led to the session's newest turn; absent: 0. */
-  causal_depth?: number;
-}
-/**
- * Who acts next on a board task with a problem. retry: Pantheon gives the session another turn
- * with the failure, or opens it again; switch: the task moved to another runtime; lead: the lead
- * was told and owns the next move; user: it waits for the user.
- */
-export interface BoardTaskRung {
-  rung: TaskRungName;
-  by: 'pantheon' | 'lead' | 'user';
-  /** A merge problem, review_findings, dispatch_failed, a needs-you reason such as workflow_approval, a tracked state, stalled, looping or runtime_changed. */
-  reason: string;
-  /** Tries of reason used so far: hand-backs, review rounds or attempts to open the session. */
-  used?: number;
-  limit?: number;
-  /** The retry waits for the usage limit to reset or for the user to raise the project budget. */
-  held?: 'usage_limit' | 'project_budget';
-  /** When the fact behind the rung was recorded, epoch milliseconds. */
-  since: number;
-  /** The runtime changes of the task's current sessions, oldest first. */
-  switches: { from: string; to: string; at: number; by: 'pantheon' | 'lead' }[];
-}
-/**
- * The tasks whose newest retrospective was recorded within a range, and how many of them passed
- * their first gate run; absent without such tasks.
- */
-export interface GateFirstPass {
-  tasks: number;
-  passed: number;
 }
 /** GET /v1/project.intro.read; the saved introduction and current writing session. */
 export interface ProjectIntroRead {
@@ -3203,36 +2702,6 @@ export interface SessionActivity {
   /** 12 buckets, oldest first; the last bucket ends at the query time. */
   tools_completed: number[];
 }
-/**
- * What a task timeline entry records: lead_message is a task.messaged turn, report a
- * task.reported note, handback a turn the tracker queued on a task session, gate_passed and
- * gate_failed a session.gate_checked run, merge_blocked a blocked, skipped or cancelled merge,
- * user_edit a user's plan edit note, merge_retried a merge started again after a user's gate
- * run passed.
- */
-export type TaskTraceKind =
-  | 'start_requested'
-  | 'dispatched'
-  | 'lead_message'
-  | 'report'
-  | 'handback'
-  | 'accepted'
-  | 'gate_passed'
-  | 'gate_failed'
-  | 'merge_started'
-  | 'merge_retried'
-  | 'merge_blocked'
-  | 'merged'
-  | 'discarded'
-  | 'user_edit';
-/** GET /v1/task.trace returns these in event order; text is cut at 2000 characters. */
-export interface TaskTraceEntry {
-  /** Unix epoch milliseconds. */
-  at: number;
-  kind: TaskTraceKind;
-  session_id?: string;
-  text?: string;
-}
 /** GET /v1/project.defaults: one entry per setting, the projects with their own value in project order. */
 export type ProjectSettingOverview = {
   [K in ProjectSettingKey]: {
@@ -3295,8 +2764,6 @@ export interface StaleWorkspaces {
   size_bytes?: number;
   /** Existing linked worktrees, absent without one; unmeasured worktrees contribute no bytes. */
   worktree_disk?: { count: number; size_bytes: number; unmeasured: number };
-  /** Paths changed by multiple unfinished sessions, at most fifty; absent until computed. */
-  shared_files?: { files: { path: string; session_ids: string[] }[]; total: number };
   /** Managed worktree folder; absent when the daemon has none configured. */
   worktree_root?: string;
 }

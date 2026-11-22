@@ -503,7 +503,7 @@ describe('session overview', () => {
     expect(open.type).toBe('button');
     expect(text(open)).toBe('bug-list.md');
     open.props.onClick();
-    expect(onTab).toHaveBeenCalledExactlyOnceWith('changes');
+    expect(onTab).toHaveBeenCalledExactlyOnceWith('diff');
     expect(mock.shell.openSession).not.toHaveBeenCalled();
     expect(labelled(shown, 'src/verify.ts')).toBeTruthy();
   });
@@ -534,13 +534,13 @@ describe('session overview', () => {
     const onTab = vi.fn();
     const outputs = (row: WorkbenchSession) => region(card(row, onTab).value, title.outputs);
     labelled(outputs(listed()), 'src/gone.ts')!.props.onClick();
-    expect(onTab.mock.calls).toEqual([['changes']]);
+    expect(onTab.mock.calls).toEqual([['diff']]);
     expect(mock.shell.openSession).not.toHaveBeenCalled();
     labelled(outputs(listed({ state: 'merged' })), 'src/verify.ts')!.props.onClick();
-    expect(onTab.mock.calls).toEqual([['changes'], ['changes']]);
+    expect(onTab.mock.calls).toEqual([['diff'], ['diff']]);
     expect(mock.shell.openSession).not.toHaveBeenCalled();
     labelled(outputs(listed()), 'src/verify.ts')!.props.onClick();
-    expect(onTab.mock.calls).toEqual([['changes'], ['changes'], ['changes']]);
+    expect(onTab.mock.calls).toEqual([['diff'], ['diff'], ['diff']]);
     expect(mock.shell.openSession).not.toHaveBeenCalled();
   });
 

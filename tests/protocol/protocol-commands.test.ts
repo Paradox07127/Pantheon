@@ -29,7 +29,6 @@ it('defines a strict input schema for each unimplemented command and the queries
     'device.probe',
     'device.ssh_hosts',
     'extensions.inventory',
-    'external.read',
     'files.read',
     'files.search',
     'github.items',
@@ -229,13 +228,10 @@ it('defines strict device list, probe, SSH host, save and remove inputs', () => 
   expect(querySchemas['device.ssh_hosts'].parse({})).toEqual({});
   expect(querySchemas['device.ssh_hosts'].safeParse({ path: '/etc/ssh' }).success).toBe(false);
   const save = inputSchemas['device.save'];
-  expect(
-    save.safeParse({ id: 'build-box', ssh: 'build-box', resources: { gpu: 2 }, max_sessions: 4 })
-      .success,
-  ).toBe(true);
+  expect(save.safeParse({ id: 'build-box', ssh: 'build-box', note: 'GPU box' }).success).toBe(true);
   expect(save.safeParse({ id: 'local', ssh: 'build-box' }).success).toBe(false);
   expect(save.safeParse({ id: 'build-box', ssh: '' }).success).toBe(false);
-  expect(save.safeParse({ id: 'build-box', ssh: 'build-box', max_sessions: 0 }).success).toBe(
+  expect(save.safeParse({ id: 'build-box', ssh: 'build-box', max_sessions: 4 }).success).toBe(
     false,
   );
   expect(inputSchemas['device.remove'].safeParse({ id: 'build-box' }).success).toBe(true);

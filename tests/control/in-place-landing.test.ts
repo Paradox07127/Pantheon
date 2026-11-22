@@ -268,6 +268,92 @@ it('commits the uncommitted files of a folder session under its title before it 
   expect(current(f, session.id).outcome).toBe('merged');
 });
 
+it('lands the uncommitted files of a folder session at once when the project has no gate', async () => {
+  const f = await workbenchFixture();
+  const session = await folderSession(f, script({ write: { path: 'draft.txt', text: 'draft\n' } }));
+  await land(f, session.id);
+  expect(git(f.source, 'status', '--porcelain').trim()).toBe('');
+  expect(current(f, session.id)).toMatchObject({ outcome: 'merged', state: 'closed' });
+});
+
+it('lists a folder session with uncommitted files as ready and counts them in its preflight', async () => {
+  const f = await workbenchFixture();
+  const session = await folderSession(f, script({ write: { path: 'draft.txt', text: 'draft\n' } }));
+  await f.prefetch();
+  expect(f.list().find((row) => row.id === session.id)?.state).toBe('ready');
+  expect(await f.control.sessionPreflight(user, session.id)).toMatchObject({
+    files_changed: 1,
+    can_merge: true,
+  });
+});
+
+it('leaves files the global ignore rules of the user ignore out of the changes of a folder session', async () => {
+  const f = await workbenchFixture();
+  const session = await folderSession(f);
+  const home = path.join(f.root, 'git-home'),
+    saved = {
+      HOME: process.env.HOME,
+      XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
+      GIT_CONFIG_GLOBAL: process.env.GIT_CONFIG_GLOBAL,
+    };
+  mkdirSync(home, { recursive: true });
+  writeFileSync(path.join(home, 'global-ignore'), '.DS_Store\n');
+  writeFileSync(
+    path.join(home, '.gitconfig'),
+    `[core]\n\texcludesFile = ${path.join(home, 'global-ignore')}\n`,
+  );
+  process.env.HOME = home;
+  delete process.env.XDG_CONFIG_HOME;
+  delete process.env.GIT_CONFIG_GLOBAL;
+  onTestFinished(() => {
+    for (const [key, value] of Object.entries(saved))
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+  });
+  writeFileSync(path.join(f.source, '.DS_Store'), 'finder\n');
+  await f.prefetch();
+  expect(f.list().find((row) => row.id === session.id)?.changes).toMatchObject({ files: 1 });
+  const diff = await f.control.sessionDiff(user, session.id);
+  expect(diff.files.map((file) => file.path)).toEqual(['notes.txt']);
+});
+
+it('does not list a folder session whose index holds unresolved conflicts as ready', async () => {
+  const f = await workbenchFixture();
+  const session = await folderSession(f);
+  git(f.source, 'checkout', '--quiet', '-b', 'side', 'HEAD~1');
+  writeFileSync(path.join(f.source, 'answer.txt'), 'side\n');
+  git(f.source, 'commit', '--quiet', '-am', 'Side answer');
+  git(f.source, 'checkout', '--quiet', 'main');
+  writeFileSync(path.join(f.source, 'answer.txt'), 'main\n');
+  git(f.source, 'commit', '--quiet', '-am', 'Main answer');
+  expect(() => git(f.source, 'merge', '--quiet', 'side')).toThrow();
+  expect(git(f.source, 'ls-files', '--unmerged')).toContain('answer.txt');
+  await f.prefetch();
+  expect(f.list().find((row) => row.id === session.id)?.state).not.toBe('ready');
+  expect(await f.control.sessionPreflight(user, session.id)).toMatchObject({
+    can_merge: false,
+    blocked_reason: 'unresolved_conflicts',
+  });
+});
+
+it('keeps a folder session open when its commit leaves files uncommitted and the project has no gate', async () => {
+  const f = await workbenchFixture();
+  const session = await folderSession(f, script({ write: { path: 'draft.txt', text: 'draft\n' } }));
+  writeFileSync(
+    path.join(f.source, '.git/hooks/pre-commit'),
+    "#!/bin/sh\nprintf 'left\\n' > leftover.txt\n",
+    { mode: 0o755 },
+  );
+  await land(f, session.id);
+  expect(git(f.source, 'log', '-1', '--format=%s').trim()).toBe(session.title);
+  expect(git(f.source, 'status', '--porcelain').trim()).toBe('?? leftover.txt');
+  expect(current(f, session.id)).toMatchObject({
+    state: 'open',
+    merge: { state: 'blocked', reason: 'uncommitted_changes' },
+  });
+  expect(current(f, session.id).outcome).toBeUndefined();
+});
+
 it('discards a new folder session without touching its files', async () => {
   const f = await workbenchFixture();
   const session = await folderSession(f, script({ write: { path: 'kept.txt', text: 'kept\n' } }));

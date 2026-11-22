@@ -26,11 +26,12 @@ vi.mock('@/data/trace', () => ({
   useProjectTrace: () => ({ data: null, loading: false, stale: false, error: null, reload() {} }),
   useTraceTick: () => 0,
 }));
-vi.mock('@/data/commands', () => ({ runCommand: async () => ({ ok: true, value: null }) }));
+vi.mock('@/data/commands', () => ({ runCommand: vi.fn(async () => ({ ok: true, value: null })) }));
 vi.mock('@/store', () => {
   const state = { openSession: (id: string) => mock.openSession(id) };
   return { useShell: Object.assign((selector: any) => selector(state), { getState: () => state }) };
 });
+import { runCommand } from '@/data/commands';
 import { callRows } from '@/screens/runtime/call-rows';
 import { RunsView } from '@/screens/runtime/RuntimeScreen';
 
@@ -258,6 +259,27 @@ describe('runs controls', () => {
     expect(
       find(h.value, (n) => n.props['aria-label'] === zh('runs.page.followLabel')).props.checked,
     ).toBe(true);
+  });
+
+  it("answers an approval at the approval's revision", async () => {
+    sessions = [
+      listed('lead-1', {
+        state: 'waiting',
+        waiting: 1,
+        waiting_kind: 'approval',
+        waiting_request: { id: 'approval-1', revision: 3, tool: 'Bash', detail: 'pnpm test' },
+      }),
+    ];
+    mock.snapshot = [];
+    const h = runs();
+    table(h.value).props.onRespond('approval-1', 'approve');
+    await vi.waitFor(() =>
+      expect(runCommand).toHaveBeenCalledWith(
+        'approval.respond',
+        { approval_id: 'approval-1', decision: 'approve' },
+        3,
+      ),
+    );
   });
 });
 

@@ -15,14 +15,3 @@ it('accepts role choices and fallbacks and rejects an unknown role', () => {
   ).toBe(true);
   expect(schema.safeParse({ ...base, fallbacks: { observer: choice } }).success).toBe(false);
 });
-
-it('accepts whole token targets and clears and rejects negative or fractional targets', () => {
-  const schema = inputSchemas['project.usageTargets.set'];
-  expect(
-    schema.safeParse({ project_id: 'project', targets: { claude: 0, codex: null } }).success,
-  ).toBe(true);
-  for (const value of [-1, 1.5])
-    expect(schema.safeParse({ project_id: 'project', targets: { claude: value } }).success).toBe(
-      false,
-    );
-});

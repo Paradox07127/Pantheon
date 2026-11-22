@@ -42,20 +42,18 @@ it('reads the default policy at version 0 when the project has none', async () =
   expect(policyOf(f)).toMatchObject({
     project_id: f.project.id,
     policy_version: 0,
-    runtime_quota_threshold: 90,
-    gate_on_fail: 'handback',
+    gate_on_fail: 'stop',
     gate_runner: 'daemon',
-    pinned: [],
   });
   expect(f.store.get('workflow_policies', f.project.id)).toBeUndefined();
 });
 
 it('stores a user change to gate_on_fail at version 1 and records what changed', async () => {
   const f = await opened();
-  set(f, { gate_on_fail: 'stop' });
-  expect(policyOf(f)).toMatchObject({ gate_on_fail: 'stop', policy_version: 1 });
+  set(f, { gate_on_fail: 'retry' });
+  expect(policyOf(f)).toMatchObject({ gate_on_fail: 'retry', policy_version: 1 });
   expect(changes(f).map((event) => event.payload)).toEqual([
-    { param: 'gate_on_fail', from: 'handback', to: 'stop', by: 'user', policy_version: 1 },
+    { param: 'gate_on_fail', from: 'stop', to: 'retry', by: 'user', policy_version: 1 },
   ]);
 });
 
@@ -68,7 +66,7 @@ it('records one change per parameter but raises the version once', async () => {
     policy_version: 1,
   });
   expect(changes(f).map((event) => event.payload)).toEqual([
-    { param: 'gate_on_fail', from: 'handback', to: 'retry', by: 'user', policy_version: 1 },
+    { param: 'gate_on_fail', from: 'stop', to: 'retry', by: 'user', policy_version: 1 },
     { param: 'gate_runner', from: 'daemon', to: 'session', by: 'user', policy_version: 1 },
   ]);
 });
@@ -84,13 +82,13 @@ it('leaves the version and events alone when the input matches the project setti
 
 it('stores a value equal to the one it follows as the project setting', async () => {
   const f = await opened();
-  set(f, { gate_on_fail: 'handback', gate_runner: 'daemon' });
+  set(f, { gate_on_fail: 'stop', gate_runner: 'daemon' });
   expect(f.store.get<WorkflowPolicy>('workflow_policies', f.project.id)?.overridden).toEqual([
     'gate_on_fail',
     'gate_runner',
   ]);
   expect(changes(f).map((event) => event.payload)).toMatchObject([
-    { param: 'gate_on_fail', from: 'handback', to: 'handback' },
+    { param: 'gate_on_fail', from: 'stop', to: 'stop' },
     { param: 'gate_runner', from: 'daemon', to: 'daemon' },
   ]);
 });
@@ -162,12 +160,30 @@ it('refuses a writer session that tries to change the policy', async () => {
   expect(f.store.get('workflow_policies', f.project.id)).toBeUndefined();
 });
 
-it('stores and reads back the pinned parameters', async () => {
+it('refuses hand back, the quota threshold and pins, which a policy no longer sets', async () => {
   const f = await opened();
-  set(f, { pinned: ['runtime_quota_threshold'] });
-  expect(policyOf(f).pinned).toEqual(['runtime_quota_threshold']);
-  set(f, { pinned: [] });
-  expect(policyOf(f)).toMatchObject({ pinned: [], policy_version: 2 });
+  for (const input of [
+    { gate_on_fail: 'handback' },
+    { runtime_quota_threshold: 80 },
+    { pinned: [] },
+  ])
+    expect(() => set(f, input)).toThrow(expect.objectContaining({ name: 'ZodError' }));
+  expect(f.store.get('workflow_policies', f.project.id)).toBeUndefined();
+});
+
+it('reads a stored hand back as stop', async () => {
+  const f = await opened();
+  f.store.transaction(() =>
+    f.store.insert<WorkflowPolicy>('workflow_policies', {
+      id: f.project.id,
+      revision: 1,
+      project_id: f.project.id,
+      policy_version: 1,
+      gate_on_fail: 'handback',
+      overridden: ['gate_on_fail'],
+    } as unknown as WorkflowPolicy),
+  );
+  expect(policyOf(f).gate_on_fail).toBe('stop');
 });
 
 it('resets a changed policy to the defaults exposed by the query at the current revision', async () => {
@@ -175,9 +191,8 @@ it('resets a changed policy to the defaults exposed by the query at the current 
   const initial = f.control.workflowPolicy(user, f.project.id);
   expect(initial.gate_on_fail).toBe(initial.defaults.gate_on_fail);
   set(f, {
-    gate_on_fail: 'stop',
+    gate_on_fail: 'retry',
     project_budget: { input_tokens: 1000 },
-    pinned: ['runtime_quota_threshold'],
   });
   const changed = f.control.workflowPolicy(user, f.project.id);
   expect(changed.gate_on_fail).not.toBe(changed.defaults.gate_on_fail);

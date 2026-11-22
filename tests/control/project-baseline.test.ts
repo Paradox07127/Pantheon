@@ -18,7 +18,6 @@ import { FixtureAdapter } from '@pantheon/adapters';
 import { command, pantheonConfigSchema, type Command } from '@pantheon/protocol';
 import type {
   BaselineFacts,
-  BoardPlan,
   EnvironmentCheck,
   Principal,
   Project,

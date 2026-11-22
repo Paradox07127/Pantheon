@@ -286,10 +286,11 @@ export function RunsView({
     answering.current.add(approvalId);
     setResponding(new Set(answering.current));
     setRespondFailure(null);
+    const asked = [...facts.values()].find((f) => f.waiting?.approval_id === approvalId)?.waiting;
     const result = await runCommand(
       'approval.respond',
       { approval_id: approvalId, decision },
-      null,
+      asked?.revision ?? null,
     );
     answering.current.delete(approvalId);
     setResponding(new Set(answering.current));

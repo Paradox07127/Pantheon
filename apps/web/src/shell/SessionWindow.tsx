@@ -107,7 +107,7 @@ export function SessionWindow({
             {project.name}
           </span>
         )}
-        {parent && parentLink(parent)}
+        {parent && parentLink(parent, !!listed?.spawned_by && !listed.forked_from)}
         <h1 className="sw-title">{title}</h1>
         {listed && (
           <span className="sw-state">

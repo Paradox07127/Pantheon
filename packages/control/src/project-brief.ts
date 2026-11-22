@@ -1,6 +1,7 @@
 import {
   hash,
   type Entity,
+  type Landing,
   type NeedsYouItem,
   type Principal,
   type Project,
@@ -48,6 +49,14 @@ const FAILURES: NeedsYouItem['kind'][] = [
 ];
 const BRIEF_EVENTS = ['session.merged'];
 
+/** The project's branches that `pantheon land` landed at or after from. */
+export const landedSince = (ctx: ControlContext, projectId: string, from: number) =>
+  ctx.store
+    .list<Landing>('landings')
+    .filter(
+      (l) => l.project_id === projectId && l.state === 'landed' && (l.finished_at ?? 0) >= from,
+    );
+
 /** What a needs-you item links to: its approval, else its source's latest event. */
 function itemRef(ctx: ControlContext, item: NeedsYouItem): ProjectBriefRef {
   const { table, id } = item.source;
@@ -93,6 +102,12 @@ export function projectBrief(
         ref: { kind: 'merge', id: event.aggregate_id },
         at: event.created_at,
       });
+  for (const landing of landedSince(ctx, projectId, after + 1))
+    items.push({
+      kind: 'merge',
+      ref: { kind: 'landing', id: landing.id },
+      at: landing.finished_at!,
+    });
   for (const item of arrived)
     if (FAILURES.includes(item.kind))
       items.push({

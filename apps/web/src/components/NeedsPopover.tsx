@@ -31,6 +31,7 @@ import { holdRootFlag } from '../lib/root-flag';
 import type { SnapshotSession } from '../lib/snapshot-types';
 import { needActions, needCommand, type NeedAction } from '../data/need-actions';
 import { durationText } from '../lib/time-text';
+import { openSettingsPage } from '../screens/settings/settings-jump';
 import { runningSince, useProjectSessions } from '../shell/TrayPopover';
 import { useShell } from '../store';
 import { DiffCounts } from './DiffCounts';
@@ -271,6 +272,9 @@ export function NeedsPopover({
       key,
       projectId: item.project_id,
       sessionId,
+      ...(item.kind === 'project.over_budget' && {
+        open: () => openSettingsPage(item.project_id, 'project'),
+      }),
       since: item.created_at,
       icon: needsGlyph(item),
       title: kind ?? named ?? reason,

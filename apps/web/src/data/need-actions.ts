@@ -16,6 +16,7 @@ export type NeedActionKey =
   | 'gates'
   | 'continue'
   | 'stop_background'
+  | 'usage'
   | 'open';
 
 export interface NeedAction {
@@ -125,6 +126,17 @@ export function needActions(item: NeedsYouItem, session?: SnapshotSession): Need
         : []),
       open,
     ];
+  if (item.kind === 'project.over_budget')
+    return [
+      {
+        key: 'usage',
+        label: t({
+          id: 'board.needs.actions.projectSettings',
+          defaultMessage: 'Open project settings',
+        }),
+        reason: null,
+      },
+    ];
   const has = (command: string) => item.actions.some((a) => a.command === command);
   return [
     ...(item.background && has('session.background.stop')
@@ -207,24 +219,3 @@ export function needCommand(
 /** The session the item is about. */
 export const needSession = (item: Pick<NeedsYouItem, 'source' | 'session_id'>): string | null =>
   item.source.table === 'sessions' ? item.source.id : (item.session_id ?? null);
-
-const reasonDetail = (reason: string, detail: string) =>
-  t({ id: 'board.needs.reasonDetail', defaultMessage: '{reason}: {detail}' }, { reason, detail });
-
-/** What the user is asked to do. */
-export function needWhat(item: NeedsYouItem, session?: SnapshotSession): string {
-  const blocked = item.kind === 'session.merge_blocked' ? session?.merge?.reason : undefined;
-  if (blocked) return reasonDetail(reasonText(item.reason), reasonText(blocked));
-  if (item.background) return reasonDetail(reasonText(item.reason), item.background.description);
-  if (item.kind !== 'permission' || item.reason !== 'permission_requested')
-    return reasonText(item.reason);
-  if (asksQuestion(item))
-    return t({ id: 'board.needs.answerQuestion', defaultMessage: 'Answer the question' });
-  return t(
-    { id: 'board.needs.approveAction', defaultMessage: 'Approve {action}' },
-    {
-      action:
-        item.binding?.action || t({ id: 'board.needs.toolFallback', defaultMessage: 'a tool' }),
-    },
-  );
-}

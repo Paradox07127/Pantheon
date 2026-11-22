@@ -290,6 +290,15 @@ describe('session bar', () => {
     expect(mock.shell.openSession).toHaveBeenCalledWith('session-lead');
   });
 
+  it('links the session that spawned it as the one it was spawned by', () => {
+    const h = header({
+      listed: listed('session-a', { spawned_by: { session_id: 'session-lead' } }),
+      parent: listed('session-lead', { title: 'Lead plan' }),
+    });
+    const link = find(h.value, (n) => n.type === 'button' && text(n).includes('Lead plan'));
+    expect(link.props['aria-label']).toBe(zhf('sessions.header.spawnedBy', { title: 'Lead plan' }));
+  });
+
   it('labels the plan strip with its steps, done steps and the current one', () => {
     const h = header({ plan: ['completed', 'completed', 'in_progress', 'pending'] });
     const strip = find(

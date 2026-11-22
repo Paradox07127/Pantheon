@@ -231,16 +231,30 @@ describe('session preview', () => {
     const waiting = (request: WorkbenchSession['waiting_request']) =>
       session('a', 'waiting', { waiting: 1, waiting_kind: 'approval', waiting_request: request });
     expect(
-      render(waiting({ id: 'migrate', tool: 'Bash', detail: 'run the migration on staging' })),
+      render(
+        waiting({
+          id: 'migrate',
+          revision: 1,
+          tool: 'Bash',
+          detail: 'run the migration on staging',
+        }),
+      ),
     ).toContain(
       `<span class="ss-hc-mu ss-hc-cut" title="${approval('run the migration on staging')}">${approval('run the migration on staging')}</span>`,
     );
-    expect(render(waiting({ id: 'bash', tool: 'Bash' }))).toContain(`>${approval('Bash')}</span>`);
+    expect(render(waiting({ id: 'bash', revision: 1, tool: 'Bash' }))).toContain(
+      `>${approval('Bash')}</span>`,
+    );
     const question = render(
       session('b', 'waiting', {
         waiting: 1,
         waiting_kind: 'question',
-        waiting_request: { id: 'ask', tool: 'AskUserQuestion', detail: 'Which branch?' },
+        waiting_request: {
+          id: 'ask',
+          revision: 1,
+          tool: 'AskUserQuestion',
+          detail: 'Which branch?',
+        },
       }),
     );
     expect(question).toContain(zh('components.sessionState.question'));

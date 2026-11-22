@@ -31,6 +31,7 @@ async function eventFixture() {
         runtime: 'fixture',
         state: 'open',
         turn_count: 0,
+        project_setup: true,
       }),
       'planner',
     );
@@ -137,6 +138,7 @@ it('reads only the events of one session: its own, its turns and its approvals',
         runtime: 'fixture',
         state: 'open',
         turn_count: 0,
+        project_setup: true,
       });
       const turn = f.daemon.store.insert('session_turns', {
         id: `${session}-turn`,

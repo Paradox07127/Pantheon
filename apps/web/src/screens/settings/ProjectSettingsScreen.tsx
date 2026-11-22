@@ -28,14 +28,12 @@ import {
 import { HarnessPage } from './HarnessPage';
 import { NotificationsPage } from './NotificationsPage';
 import { GlobalPermissions } from './PermissionsPage';
-import { GlobalExternal } from './ExternalPage';
 import { ProjectListPage } from './ProjectListPage';
 import { SearchResults } from './SearchResults';
 import { SessionDefaults } from './SessionDefaultsPage';
 import { SessionDisplayPage } from './SessionDisplayPage';
 import { pageHeader } from './settings-header';
 import { SettingsNav } from './SettingsNav';
-import { UsagePage } from './UsagePage';
 import { navPage, SETTINGS_PAGES, useSettingsView, type SettingsPage } from './view';
 import { scrimFlag } from '../../lib/root-flag';
 import './settings-frame.css';
@@ -129,8 +127,6 @@ export function ProjectSettingsScreen() {
 /** The pages of the settings every project follows unless it sets its own. */
 function GlobalPage({ page }: { page: SettingsPage }) {
   if (page === 'defaults') return <SessionDefaults project={null} />;
-  if (page === 'usage') return <UsagePage project={null} />;
-  if (page === 'external') return <GlobalExternal />;
   if (page === 'permissions') return <GlobalPermissions />;
   return null;
 }

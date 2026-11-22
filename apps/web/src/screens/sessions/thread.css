@@ -86,13 +86,6 @@
   stroke-width: 1.5;
   color: var(--mu);
 }
-.ss-gmile {
-  width: 8px;
-  height: 8px;
-  border-radius: 1.5px;
-  background: currentColor;
-  transform: rotate(45deg);
-}
 /* Waiting for you: a dot in a breathing ring. */
 .ss-gwait {
   position: relative;
@@ -222,68 +215,6 @@
 .ss-markt {
   flex: none;
   font-variant-numeric: tabular-nums;
-}
-/* How a rotated session's handoff note changed, in a popover over its chapter mark. */
-.ss-hop {
-  display: flex;
-  flex-direction: column;
-  width: min(656px, calc(100vw - 48px));
-  max-height: 60vh;
-}
-.ss-hoh {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: var(--sp-2);
-  height: var(--bar);
-  padding: 0 var(--sp-1) 0 var(--sp-3);
-  border-bottom: var(--hair) solid var(--bd2);
-  font-size: var(--fs-sm);
-  font-weight: 500;
-}
-.ss-hoh > :first-child {
-  flex: 1;
-  min-width: 0;
-}
-.ss-hoc {
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  font-weight: 400;
-}
-.ss-hod {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-1);
-  min-height: 0;
-  padding: var(--sp-2) 0;
-  overflow-y: auto;
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  line-height: var(--lh-xs);
-  user-select: text;
-}
-.ss-hod > div {
-  display: grid;
-  grid-template-columns: 16px minmax(0, 1fr);
-  gap: var(--sp-1);
-  padding: 0 var(--sp-3);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.ss-hod > .skel {
-  margin: 0 var(--sp-3);
-}
-.ss-hod > [data-kind='add'] {
-  background: color-mix(in srgb, var(--add) 11%, transparent);
-}
-.ss-hod > [data-kind='del'] {
-  background: color-mix(in srgb, var(--del) 11%, transparent);
-}
-.ss-hod > [data-kind='add'] > :first-child {
-  color: var(--add);
-}
-.ss-hod > [data-kind='del'] > :first-child {
-  color: var(--del);
 }
 .tip.ss-rip {
   max-width: 320px;
@@ -573,6 +504,14 @@
 .ss-otg .ss-tchev {
   width: 16px;
 }
+/* A row with nothing to fold out keeps the chevron's width and gap before its title. */
+.ss-otb {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 22px;
+  padding-left: 24px;
+}
 .ss-otg[data-panel-open] .ss-tchev {
   transform: rotate(90deg);
 }
@@ -600,10 +539,19 @@
   min-width: 0;
   min-height: 22px;
 }
+/* The name sits on the baseline of the text's first line. */
+.ss-olist > li[data-prose] {
+  align-items: baseline;
+}
 .ss-on {
   flex: none;
   color: var(--tx);
   white-space: nowrap;
+}
+.ss-op {
+  flex: 1;
+  color: var(--tx2);
+  user-select: text;
 }
 .ss-ox {
   min-width: 0;
@@ -1182,120 +1130,4 @@
   color: var(--tx);
   text-decoration: underline 2px var(--ink);
   text-underline-offset: 3px;
-}
-/* What waited when the personal agent read it, by project; each row opens the item in its project. */
-.pn {
-  display: flex;
-  flex-direction: column;
-  padding: var(--sp-1);
-  border: var(--hair) solid var(--bd);
-  border-radius: var(--r-md);
-  font-size: var(--fs-xs);
-  line-height: var(--lh-xs);
-}
-.pn-h {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  height: var(--h-ctl);
-  padding: 0 var(--sp-2);
-  color: var(--mu);
-}
-.pn-h > time {
-  margin-left: auto;
-  font-variant-numeric: tabular-nums;
-}
-.pn-sep {
-  margin: var(--sp-1) var(--sp-2);
-  border: 0;
-  border-top: var(--hair) solid var(--bd2);
-}
-.pn-g {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  height: var(--h-ctl);
-  padding: 0 var(--sp-2);
-}
-.pn-g > b {
-  min-width: 0;
-  font-weight: 500;
-  overflow-wrap: anywhere;
-}
-.pn-n {
-  color: var(--mu);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.pn-r {
-  display: grid;
-  grid-template-columns: 16px 120px minmax(0, 1fr) 88px 48px;
-  align-items: center;
-  column-gap: var(--sp-2);
-  width: 100%;
-  min-height: var(--row);
-  padding: 0 var(--sp-2);
-  border: 0;
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: var(--tx2);
-  font: inherit;
-  text-align: left;
-  transition: background-color var(--dur-1) var(--ease-std);
-}
-.pn-r:hover {
-  background: var(--sel);
-}
-.pn-r:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
-}
-.pn-r > :last-child {
-  text-align: right;
-}
-.pn-k {
-  display: inline-flex;
-}
-.pn-kd {
-  color: var(--tx);
-  font-weight: 500;
-}
-.pn-more {
-  grid-column: 2 / -1;
-  color: var(--mu);
-}
-/* A request the personal agent sent: to which agent, in which project, both links. */
-.pn-sent {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  min-width: 0;
-  color: var(--tx2);
-  font-size: var(--fs-xs);
-  line-height: var(--lh-xs);
-}
-.pn-sent > svg {
-  flex: none;
-  color: var(--mu);
-}
-.pn-sent > span:first-of-type {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.pn-ref {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--tx);
-  font: inherit;
-  text-decoration: underline;
-  text-decoration-color: var(--bd3);
-  text-underline-offset: 3px;
-}
-.pn-ref:hover {
-  text-decoration-color: var(--tx);
-}
-.pn-ref:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 1px;
 }

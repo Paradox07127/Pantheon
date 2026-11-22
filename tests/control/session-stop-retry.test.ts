@@ -1,5 +1,4 @@
 import { expect, it, vi } from 'vitest';
-import { timerHandlers } from '@pantheon/control';
 import { FixtureAdapter } from '@pantheon/adapters';
 import type {
   AgentEvent,
@@ -10,7 +9,6 @@ import type {
   SessionHandle,
   SessionSpec,
   SessionTurn,
-  Timer,
   UserTurn,
 } from '@pantheon/domain';
 import { eventually, fixture } from '../helpers.js';
@@ -235,16 +233,6 @@ it('schedules other work during one stop retry and waits for it on shutdown', as
       return stub.receipt(true, deadline);
     });
     const next = send(f, open(f));
-    const timer = f.store.insert<Timer>('timers', {
-      id: 'pending-stop-reminder',
-      revision: 1,
-      project_id: f.project.id,
-      kind: 'pending-stop-reminder',
-      subject_id: f.project.id,
-      state: 'pending',
-      due_at: now,
-    });
-    timerHandlers.set(timer.kind, () => {});
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     let tickFinished = false;
     retryTick = f.control.tick().then(() => {
@@ -256,7 +244,6 @@ it('schedules other work during one stop retry and waits for it on shutdown', as
       () => vi.advanceTimersByTimeAsync(0),
     );
     expect(tickFinished).toBe(true);
-    expect(f.store.must<Timer>('timers', timer.id).state).toBe('fired');
     expect(f.store.must<SessionTurn>('session_turns', next.id).state).toBe('running');
     expect(f.control.handles.has(second.id)).toBe(false);
     for (let i = 0; i < 5; i++) {
@@ -286,7 +273,6 @@ it('schedules other work during one stop retry and waits for it on shutdown', as
     await retryTick;
     await shutdown;
     vi.useRealTimers();
-    timerHandlers.delete('pending-stop-reminder');
     await f.close();
   }
 });

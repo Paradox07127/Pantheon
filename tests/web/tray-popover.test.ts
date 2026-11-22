@@ -223,7 +223,7 @@ describe('tray popover waiting group', () => {
     expect(body).toContain('Callback signatures');
     expect(body).toContain('18 分');
     expect(body).toContain('pnpm db:migrate --env staging');
-    expect(body).toContain(zh('data.reason.permissionRequested'));
+    expect(body).toContain('Split the partial refund?');
     expect(body).not.toContain(zh('data.reason.sessionFailed'));
   });
 
@@ -294,7 +294,10 @@ describe('tray popover waiting group', () => {
       project_id: 'alpha',
       session_id: 'session-a',
     });
-    button(waiting, zh('data.reason.permissionRequested')).props.onClick();
+    const asked = button(waiting, 'Split the partial refund?');
+    expect(text(asked.props.children)).toContain('lead');
+    expect(text(asked.props.children)).not.toContain(zh('data.reason.permissionRequested'));
+    asked.props.onClick();
     expect(bridge.showInMainWindow).toHaveBeenLastCalledWith({
       project_id: 'beta',
       session_id: 'lead-1',

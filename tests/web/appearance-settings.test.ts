@@ -281,17 +281,15 @@ describe('the Appearance page', () => {
         'sidebarWidth',
         'collapseSidebarAtStart',
         'inspectorWidth',
-        'drawerWidth',
       ].map(appearance),
     );
   });
 
-  it('says what density and the drawer width change', async () => {
+  it('says what density changes', async () => {
     const h = await page();
     const hint = (settingId: string) =>
       nodes(h.value).find((n) => n.props.settingId === settingId)!.props.hint;
     expect(hint('appearance.density')).toBe(appearance('densityHint'));
-    expect(hint('appearance.drawerWidth')).toBe(appearance('drawerWidthHint'));
   });
 
   it('sets each text size from a slider or a whole px value in its range', async () => {

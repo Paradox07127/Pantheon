@@ -36,7 +36,7 @@ export const RUNTIME_REVIEW_CONTRACT = [
 interface EvidenceSnapshot {
   diagnostics: RuntimeDiagnostics;
   workflow: {
-    policy: { policy_version: number; pinned: string[] };
+    policy: { policy_version: number };
   };
 }
 
@@ -213,10 +213,7 @@ export const runtimeReviewHandlers: Handlers = {
     const value: EvidenceSnapshot = {
       diagnostics,
       workflow: {
-        policy: {
-          policy_version: policy.policy_version,
-          pinned: policy.pinned.slice(0, 12),
-        },
+        policy: { policy_version: policy.policy_version },
       },
     };
     while (

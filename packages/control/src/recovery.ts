@@ -18,6 +18,7 @@ import { failWorkbenchTurns, workspaceReady } from './provisioning.js';
 import { discardStopped, recoverGateRuns, rollbackTransaction } from './workbench-session.js';
 import { finishRollback, restoreCheckpoint } from './checkpoint.js';
 import { recoverQueuedHandoff, unsnooze } from './session.js';
+import { afterSpawnedTurn } from './conductor.js';
 import { recoverEnvironmentChecks } from './environment-check.js';
 import { reconciledStates } from './non-writer-audit.js';
 
@@ -98,6 +99,39 @@ function closableReviewers(ctx: ControlContext): string[] {
     });
 }
 
+/** Ends what an older version left in flight that nothing runs now: range story sessions and turns from a lead or a continuation. */
+function retireLegacyRows(ctx: ControlContext): void {
+  const error = 'Retired by an upgrade';
+  for (const turn of ctx.store.list<SessionTurn>('session_turns')) {
+    const story = ctx.store.get<Session>('sessions', turn.session_id)?.range_story;
+    if (
+      ['queued', 'running'].includes(turn.state) &&
+      (story ||
+        (turn.state === 'queued' && (turn.origin === 'lead' || turn.origin === 'continuation')))
+    ) {
+      const failed = turnDelivery(
+        ctx,
+        turn,
+        turn.delivery === 'delivered' ? turn.delivery : 'failed',
+        error,
+        'failed',
+      );
+      ctx.store.event('turn.failed', failed, failed.project_id, { error });
+    }
+  }
+  for (const session of ctx.store
+    .list<Session>('sessions')
+    .filter((s) => s.range_story && s.state !== 'closed')) {
+    const next = ctx.store.update(
+      'sessions',
+      { ...session, state: 'closed' as const, stop_pending: false, process_identity: undefined },
+      session.revision,
+    );
+    ctx.store.event('session.closed', next, next.project_id, { reason: 'retired' });
+    unsnooze(ctx, next.id, 'session_ended');
+  }
+}
+
 export async function recover(ctx: ControlContext): Promise<void> {
   const reconciled = await reconciledStates(ctx, closableReviewers(ctx));
   rollbackTransaction(ctx, () => {
@@ -114,6 +148,7 @@ export async function recover(ctx: ControlContext): Promise<void> {
       );
     recoverArtifacts(ctx);
     recoverApprovals(ctx);
+    retireLegacyRows(ctx);
     // A stop whose old process may still run finishes in reconcile, once its termination is confirmed.
     for (const session of ctx.store
       .list<Session>('sessions')
@@ -178,10 +213,8 @@ export async function recover(ctx: ControlContext): Promise<void> {
           continue;
         }
       }
-      // A retired range story session is closed below rather than started.
-      if (s.range_story) reconcilingSessions.add(s.id);
       // Review, baseline and change-story sessions open running with only a queued first turn.
-      else if (sessionRole(s) !== 'main' && !s.process_identity && !s.native_id) {
+      if (sessionRole(s) !== 'main' && !s.process_identity && !s.native_id) {
         const turns = ctx.store
           .list<SessionTurn>('session_turns')
           .filter((turn) => turn.session_id === s.id && ['queued', 'running'].includes(turn.state));
@@ -330,6 +363,7 @@ export async function reconcile(ctx: ControlContext): Promise<void> {
         if (!interrupted.length) return;
         unsnooze(ctx, next.id, 'turn_ended');
       });
+      if (session.spawned_by) afterSpawnedTurn(ctx, session.id);
     }
   } finally {
     ctx.busy = false;

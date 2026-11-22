@@ -1,5 +1,6 @@
-import type { GateFailureClass } from './board.js';
 import type { Entity } from './index.js';
+/** Whether a failed gate failed because of the machine it ran on or because of the change. */
+export type GateFailureClass = 'environment' | 'code';
 /** One run of a project root's commands in a throwaway worktree provisioned as a worker's is. */
 export interface EnvironmentCheck extends Entity {
   project_id: string;

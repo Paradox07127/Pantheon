@@ -175,7 +175,9 @@ describe('orchestration rows in the thread', () => {
     expect(text(find(h.value, (n) => n.props.className === 'ss-ta'))).toBe('codex');
     expect(nodes(h.value).some((n) => (n.type as any)?.name === 'StateMark')).toBe(true);
     const panel = find(h.value, (n) => n.props.className === 'ss-olist');
-    expect(text(panel)).toBe(`${zh('data.toolCalls.reviewEntry')}codex`);
+    expect(text(panel)).toBe(
+      `${zh('data.toolCalls.reviewEntry')}codex${zh('data.toolCalls.sessionEntry')}s-3`,
+    );
   });
 
   it('shows the first sentence of a refusal on the row', () => {
@@ -206,5 +208,45 @@ describe('orchestration rows in the thread', () => {
     expect(text(find(h.value, (n) => n.props.className === 'ss-ts'))).toBe(
       zhf('data.toolCalls.refused', { reason: 'A review is already running' }),
     );
+  });
+
+  it('draws no fold-out for a call with nothing to show', () => {
+    const h = mount(() =>
+      OrchestrationRow({
+        item: call('c', 'mcp__pantheon__report_ready', {}, { ok: true, output: 'queued' }),
+        state: 'ok',
+        depth: 0,
+        open: false,
+        enter: '',
+      }),
+    );
+    // The title sits in a box that keeps the chevron's place, so it lines up with folding rows.
+    const title = find(h.value, (n) => n.props.className === 'ss-otb');
+    expect(text(find(title, (n) => n.props.className === 'ss-tn'))).toBe(action('reportReady'));
+    expect(nodes(h.value).some((n) => n.props.className === 'ss-otg')).toBe(false);
+    expect(nodes(h.value).some((n) => n.props.className === 'ss-olist')).toBe(false);
+  });
+
+  it('cuts the input of a spawned session through Clip', () => {
+    const prompt = 'Fix the importer and add a test for empty rows';
+    const h = mount(() =>
+      OrchestrationRow({
+        item: call('d', 'spawn_session', { runtime: 'codex', input: prompt }),
+        state: 'running',
+        depth: 0,
+        open: true,
+        enter: '',
+      }),
+    );
+    const clip = find(h.value, (n) => (n.type as any)?.name === 'Clip');
+    expect(clip.props.text).toBe(prompt);
+    expect(clip.props.lines).toBeGreaterThan(1);
+    const codes = nodes(h.value).filter((n) => n.props.className === 'ss-ox mono');
+    expect(codes.map((n) => text(n))).toEqual(['codex']);
+    // Only the prose line aligns its name with the first line of the text.
+    const lines = nodes(find(h.value, (n) => n.props.className === 'ss-olist')).filter(
+      (n) => n.type === 'li',
+    );
+    expect(lines.map((n) => n.props['data-prose'])).toEqual([undefined, true]);
   });
 });

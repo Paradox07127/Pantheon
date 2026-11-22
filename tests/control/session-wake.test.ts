@@ -30,6 +30,19 @@ it('starts a turn of its own on an idle session without a plan', async () => {
   expect(planRows(f)).toBe(0);
 });
 
+it('keeps the blocked merge of an idle session its notice starts a turn on', async () => {
+  const f = await workbenchFixture();
+  const session = await f.create('Rename the answer file');
+  await settle(f, session);
+  const row = sessionOf(f, session.id);
+  const merge = { state: 'blocked' as const, reason: 'gate_failed' };
+  f.store.update<Session>('sessions', { ...row, merge }, row.revision);
+
+  notifySession(ctxOf(f), session.id, 'Your work did not land: gate_failed.', 'cause-1');
+
+  expect(sessionOf(f, session.id)).toMatchObject({ state: 'running', merge });
+});
+
 it('folds a second text into the queued turn of a running session', async () => {
   const f = await workbenchFixture({ delay: 3000 });
   const session = await f.create('Rename the answer file');

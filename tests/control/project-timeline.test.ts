@@ -378,6 +378,69 @@ it.each([
   ]);
 });
 
+it('keeps a conductor lane open after it lands', async () => {
+  const f = await timelineFixture();
+  const opened = f.session('conductor');
+  const session = f.store.update<Session>(
+    'sessions',
+    { ...opened.session, conductor: true },
+    opened.session.revision,
+  );
+  const next = f.turn(session, 'next-turn');
+  f.record(1, 'workspace.ready', opened.workspace);
+  f.record(2, 'session.merge_started', session);
+  f.record(3, 'session.merged', session);
+  f.record(4, 'turn.running', next);
+  f.now.mockReturnValue(base + 10_000);
+
+  expect(f.control.projectTimeline(user, f.project.id, iso(1)).sessions[0]!.intervals).toEqual([
+    { state: 'idle', from: iso(1), to: iso(2) },
+    { state: 'merging', from: iso(2), to: iso(3) },
+    { state: 'idle', from: iso(3), to: iso(4) },
+    { state: 'running', from: iso(4), to: null },
+  ]);
+});
+
+it('shows a conductor idle, not ready, after it lands the work of a completed turn', async () => {
+  const f = await timelineFixture();
+  const opened = f.session('conductor');
+  const session = f.store.update<Session>(
+    'sessions',
+    { ...opened.session, conductor: true },
+    opened.session.revision,
+  );
+  const done = f.turn(session, 'done-turn');
+  f.record(1, 'workspace.ready', opened.workspace);
+  f.record(2, 'turn.running', done);
+  f.record(3, 'turn.completed', done);
+  f.record(4, 'session.merge_started', session);
+  f.record(5, 'session.merged', session);
+  f.now.mockReturnValue(base + 10_000);
+
+  expect(f.control.projectTimeline(user, f.project.id, iso(1)).sessions[0]!.intervals).toEqual([
+    { state: 'idle', from: iso(1), to: iso(2) },
+    { state: 'running', from: iso(2), to: iso(3) },
+    { state: 'ready', from: iso(3), to: iso(4) },
+    { state: 'merging', from: iso(4), to: iso(5) },
+    { state: 'idle', from: iso(5), to: null },
+  ]);
+});
+
+it('keeps the lane of an older session open after a merge recorded as direct', async () => {
+  const f = await timelineFixture();
+  const { session, workspace } = f.session('older');
+  f.record(1, 'workspace.ready', workspace);
+  f.record(2, 'session.merge_started', session);
+  f.record(3, 'session.merged', session, { direct: true });
+  f.now.mockReturnValue(base + 10_000);
+
+  expect(f.control.projectTimeline(user, f.project.id, iso(1)).sessions[0]!.intervals).toEqual([
+    { state: 'idle', from: iso(1), to: iso(2) },
+    { state: 'merging', from: iso(2), to: iso(3) },
+    { state: 'idle', from: iso(3), to: null },
+  ]);
+});
+
 it('returns to idle after a blocked merge and after failed or cancelled turns', async () => {
   const f = await timelineFixture();
   const { session, workspace } = f.session('retry');

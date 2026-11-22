@@ -236,6 +236,7 @@ it('keeps a session credential in its project and drops it when revoked', async 
       runtime: 'fixture',
       state: 'open',
       turn_count: 0,
+      project_setup: true,
     });
     const headers = { Authorization: `Bearer ${f.daemon.auth.issueSession(session, 'planner')}` };
     expect((await fetch(f.daemon.url + '/v1/board', { headers })).status).toBe(403);
@@ -346,6 +347,7 @@ it('closes an event subscription once its session credential is revoked', async 
       runtime: 'fixture',
       state: 'open',
       turn_count: 0,
+      project_setup: true,
     });
     const credential = f.daemon.auth.issueSession(session, 'planner');
     const ws = new WebSocket(f.daemon.url.replace('http:', 'ws:') + '/v1/events/ws');
@@ -387,6 +389,7 @@ it('uses the injected clock for session credential expiry', async () => {
       runtime: 'fixture',
       state: 'open',
       turn_count: 0,
+      project_setup: true,
     });
     const headers = { Authorization: `Bearer ${f.daemon.auth.issueSession(session, 'planner')}` };
     expect(f.daemon.store.now()).toBe(clock.now());
@@ -585,6 +588,7 @@ it('serves needs-you queries with strict params and only the user deciding appro
       runtime: adapter.name,
       state: 'running',
       turn_count: 1,
+      project_setup: true,
     };
     f.daemon.store.insert('sessions', session);
     const approval: Approval = {

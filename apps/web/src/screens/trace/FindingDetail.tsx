@@ -9,7 +9,6 @@ import {
   ShieldCheck,
   SquareTerminal,
   TriangleAlert,
-  Workflow,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -39,8 +38,6 @@ const KINDS: Record<Kind, () => string> = {
   turn_failure: () => t({ id: 'trace.diagnose.kind.turnFailure', defaultMessage: 'Turn failure' }),
   background_task: () =>
     t({ id: 'trace.diagnose.kind.background', defaultMessage: 'Background task' }),
-  workflow_step: () =>
-    t({ id: 'trace.diagnose.kind.workflowStep', defaultMessage: 'Slow workflow step' }),
   context_compaction: () =>
     t({ id: 'trace.diagnose.kind.compaction', defaultMessage: 'Context compaction' }),
 };
@@ -56,7 +53,6 @@ export const FINDING_ICONS: Record<Kind, LucideIcon> = {
   tool_failure: TriangleAlert,
   turn_failure: TriangleAlert,
   background_task: Layers,
-  workflow_step: Workflow,
   context_compaction: Gauge,
 };
 
@@ -98,7 +94,7 @@ function summary(finding: RuntimeFinding, slowToolMs: number | undefined): strin
           {
             id: 'trace.diagnose.detail.took',
             defaultMessage:
-              '{kind, select, approval {Waited {duration} for your approval.} permission_delivery {The decision took {duration} to reach the runtime.} turn_queue {The turn waited {duration} in the queue.} turn_prepare {The turn took {duration} to start.} gate {Gates ran for {duration}.} slow_tool {A tool call ran for {duration}.} tool_failure {A tool call failed after {duration}.} turn_failure {The turn failed after {duration}.} background_task {A background task ran for {duration}.} workflow_step {A workflow step took {duration}.} context_compaction {Compacting the context took {duration}.} other {It took {duration}.}}',
+              '{kind, select, approval {Waited {duration} for your approval.} permission_delivery {The decision took {duration} to reach the runtime.} turn_queue {The turn waited {duration} in the queue.} turn_prepare {The turn took {duration} to start.} gate {Gates ran for {duration}.} slow_tool {A tool call ran for {duration}.} tool_failure {A tool call failed after {duration}.} turn_failure {The turn failed after {duration}.} background_task {A background task ran for {duration}.} context_compaction {Compacting the context took {duration}.} other {It took {duration}.}}',
           },
           { kind: finding.kind, duration: durationText(finding.duration_ms) },
         );

@@ -27,7 +27,6 @@ import { sessionDefaults } from './user-config.js';
 import { assertNativeSessionFree } from './native-liveness.js';
 import { inheritedEnvAllowlist, managedSessionSpec, sessionExtensions } from './native-session.js';
 import { inPlaceSandbox } from './protection.js';
-import { reviewsRoots } from './session.js';
 import { registerInPlaceWorkspace } from './workspace.js';
 import { CONDUCTOR_INSTRUCTIONS } from './conductor.js';
 import { checkPermissionMode } from './workbench-session.js';
@@ -103,9 +102,6 @@ export async function inPlaceSessionSpec(
       .list<Workspace>('workspaces')
       .filter((other) => other.project_id === project.id && other.kind === 'linked_worktree')
       .map((other) => other.path),
-    hiddenChecksDirs: reviewsRoots(ctx).map((reviews) =>
-      path.join(path.dirname(reviews), 'checks'),
-    ),
   });
   const questionTool = sessionAdapter(ctx, session)?.questionTool;
   const saved = project.extension_overrides?.[session.runtime];

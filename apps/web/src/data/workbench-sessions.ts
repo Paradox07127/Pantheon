@@ -441,11 +441,8 @@ export function sessionScope(
     aggregate;
   if (listed.some((session) => session.id === owner)) return [owner];
   const known = board?.sessions.find((session) => session.id === owner);
-  // The list holds these kinds of session, resident ones without a workspace among them.
-  if (known)
-    return known.workspace_id || known.baseline || known.runtime_review || known.resident
-      ? [owner]
-      : [];
+  // The list holds these kinds of session.
+  if (known) return known.workspace_id || known.baseline || known.runtime_review ? [owner] : [];
   return SESSION_PREFIXES.some((prefix) => event.kind.startsWith(prefix)) ? null : [];
 }
 

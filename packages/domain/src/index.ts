@@ -1,19 +1,8 @@
 export * from './planning.js';
-export * from './board.js';
 export * from './workflow.js';
-import type {
-  BoardPlanView,
-  FlowPath,
-  GateFailureClass,
-  LeadNote,
-  LeadQuestion,
-  ProjectBrief,
-  TaskKind,
-} from './board.js';
+import type { GateFailureClass } from './planning.js';
 export type * from './change-story.js';
 export type * from './trace.js';
-export type * from './task-thread.js';
-export type * from './playbook.js';
 import { createHash, randomUUID } from 'node:crypto';
 
 export const id = (): string => randomUUID();
@@ -317,12 +306,12 @@ export interface Project extends Entity {
   env?: Record<string, string>;
   /** What a new session starts on; absent follows the global value, else the composer's own default. */
   session_defaults?: SessionDefaults;
-  /** Token targets by runtime; a runtime without one follows the global target. */
-  usage_targets?: Record<string, number>;
+  /** Not read. */
+  usage_targets?: unknown;
   /** Not read. */
   auto_merge?: boolean;
-  /** Takes events from outside the app: approve starts no task before the user agrees, auto also starts work on an issue the user alone wrote; absent follows the global value, else off. */
-  external_events?: 'off' | 'approve' | 'auto';
+  /** Not read. */
+  external_events?: unknown;
   /** Hidden from project lists while its history is kept; reopening the root clears it. */
   removed_at?: number;
   /** The personal agent's home: no roots, in no project list, refuses project commands. */
@@ -413,8 +402,7 @@ export interface NeedsYouItem {
     | 'session.failed'
     | 'session.gate_failed'
     | 'session.merge_blocked'
-    | 'project.over_budget'
-    | 'memory.decision_budget';
+    | 'project.over_budget';
   project_id: string;
   /**
    * The approval's session, or the lead of a plan or milestone item; absent on session items,
@@ -444,10 +432,9 @@ export interface NeedsYouItem {
     | 'usage_limit_reached'
     | 'session_turn_stalled'
     | 'background_task_long'
-    | 'project_over_budget'
-    | 'plan_decisions_over_budget';
+    | 'project_over_budget';
   /** What the user decides. */
-  decision: 'question' | 'repeated_failure' | 'permission' | 'budget' | 'improvement' | 'other';
+  decision: 'question' | 'permission' | 'budget' | 'other';
   /** The command of the item's one primary action. */
   primary?: string;
   actions: {
@@ -459,20 +446,16 @@ export interface NeedsYouItem {
   task_title?: string;
   /** The title of the lane a `board.lane.approval` item holds; no other item has it. */
   lane_title?: string;
-  question?: LeadQuestion;
   /** The headline of the plan a `lead.question` item belongs to; session_id is its lead. */
   plan_title?: string;
   /** When the recommended answer of a `lead.question` item applies unless the user answers first, in Unix milliseconds. */
   default_at?: number;
-  blocked?: LeadNote;
   /** When a session that waits for its used-up usage limit resumes, in Unix milliseconds. */
   resets_at?: number;
   /** The background task that has run too long; session.background.stop takes its id. */
   background?: BackgroundTask;
   /** The input tokens a project over its budget spent since the budget was set, and the budget. */
   project_budget?: { used_input_tokens: number; input_tokens: number };
-  /** The current plan decisions kept as notes because the decisions did not fit the memory budget. */
-  memory_notes?: { count: number; memory_ids: string[] };
   /** The upstream task, `<lead session id>:<task id>`, that keeps a queued task waiting, and why it does not go on. */
   upstream?: { task_id: string; stuck: 'merge_blocked' | 'stopped' | 'never_started' };
   /** How long a permission request has waited for an answer, in milliseconds; set once it is escalated. */
@@ -651,8 +634,6 @@ export interface Session extends Entity {
   forked_from?: { session_id: string; before_turn_id?: string; before_span_id?: string };
   /** A session starting a project from an empty folder with the setup guide. */
   project_setup?: true;
-  /** Not read. */
-  lead?: unknown;
   /** A native session with only the four conductor tools. */
   conductor?: true;
   /** The conductor's turn that declared its work ready, by command command_id; it merges once that turn completes. */
@@ -771,14 +752,8 @@ export interface Session extends Entity {
   };
   /** A rollback whose files may have moved but whose record is not written yet; input waits for it. */
   rollback_pending?: { checkpoint: string; turn_id: string; scope?: 'files' | 'both' };
-  /** Not read. */
+  /** Read only to keep the name of a task session an older version stored. */
   task?: unknown;
-  /** Not read. */
-  resident?: unknown;
-  /** Not read. */
-  rotation?: unknown;
-  /** Not read. */
-  direct_task?: unknown;
   /** ISO time the user pinned the session in the session list. */
   pinned_at?: string;
   /** ISO time the user archived the ended session. */
@@ -800,90 +775,6 @@ export interface SessionRecap {
   turn_id?: string;
   at: number;
   model?: string;
-}
-/** A group of lead tools an agent profile turns on as a whole. */
-export type AgentToolGroup =
-  | 'board'
-  | 'dispatch'
-  | 'memory'
-  | 'browser'
-  | 'app'
-  | 'sessions'
-  | 'github'
-  | 'always_on'
-  | 'agents'
-  | 'signals';
-/** A prompt an agent runs on its own, every every_ms or daily at at (HH:MM local time). */
-export interface AgentRoutine {
-  id: string;
-  prompt: string;
-  every_ms?: number;
-  at?: string;
-  /** Local HH:MM times the routine may run between. */
-  active_hours?: { from: string; to: string };
-  enabled: boolean;
-  /** A command that must exit 0 in the project folder before each run wakes the agent. */
-  precheck?: { argv: string[]; timeout_ms?: number };
-}
-/** The lasting record behind a resident session: its role prompt, tools and model. */
-export interface AgentProfile extends Entity {
-  project_id: string;
-  /** assistant and triage are one per project; the others may repeat; personal lives only in the personal home. */
-  template: 'assistant' | 'triage' | 'ideas' | 'goals' | 'custom' | 'personal';
-  name: string;
-  /** A label of two to four characters. */
-  role: string;
-  /** The user's own instructions for this agent; its turns get them after its template's built-in role prompt. */
-  instructions?: string;
-  /** Why it was created. */
-  brief?: string;
-  runtime?: string;
-  model?: string;
-  effort?: EffortLevel;
-  /** Absent: the groups of its template, which gains groups as tools are added. */
-  tools?: AgentToolGroup[];
-  routines: AgentRoutine[];
-  /** Absent: the event sources of its template. */
-  listens?: ('github' | SignalSource)[];
-  /** Limits on when its wakes may reach the user; absent: none. */
-  contract?: AgentContract;
-  /** The personal key the personal agent reads with. */
-  personal_key_id?: string;
-  created_by: { kind: 'user' } | { kind: 'agent'; session_id: string };
-  created_at: number;
-  archived_at?: number;
-}
-/** An agent's limits: input tokens a week, the loudest way it may reach the user, local HH:MM quiet hours. */
-export interface AgentContract {
-  weekly_input_tokens?: number;
-  loudest?: 'feed' | 'notify' | 'ask';
-  quiet_hours?: { from: string; to: string };
-}
-/** A routine as agent.create and agent.update take it: every_minutes or daily at a local HH:MM. */
-export interface AgentRoutineInput {
-  id?: string;
-  prompt: string;
-  every_minutes?: number;
-  at?: string;
-  active_hours?: { from: string; to: string };
-  enabled: boolean;
-  precheck?: { argv: string[]; timeout_seconds?: number };
-}
-/** The fields agent.create takes besides the project. */
-export interface AgentFields {
-  template: AgentProfile['template'];
-  name: string;
-  role: string;
-  /** Required for a custom agent, which has no built-in role. */
-  instructions?: string;
-  brief?: string;
-  tools?: AgentToolGroup[];
-  listens?: NonNullable<AgentProfile['listens']>;
-  runtime?: string;
-  model?: string;
-  effort?: EffortLevel;
-  routines?: AgentRoutineInput[];
-  contract?: AgentContract;
 }
 /** A message an agent leaves for the user. */
 export interface AgentMessage extends Entity {
@@ -910,7 +801,7 @@ export function credentialRole(
     | 'baseline'
     | 'change_story'
     | 'intro'
-    | 'workspace_id'
+    | 'runtime_review'
     | 'conductor'
     | 'project_setup'
   >,
@@ -922,7 +813,7 @@ export function credentialRole(
     session.change_story ||
     session.intro ||
     session.project_setup ||
-    !session.workspace_id
+    session.runtime_review
   )
     return 'planner';
 }
@@ -967,10 +858,6 @@ export interface SessionTurn extends Entity {
   delivery: 'pending' | 'delivered' | 'queued' | 'failed';
   delivery_reason?: string;
   state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
-  /** Inbox notes carried by this turn, including notes folded into its digest. */
-  lead_note_ids?: string[];
-  /** Set only on a turn Pantheon queued to deliver notes: their kinds and routine ids; absent on a user turn. */
-  wake?: { causes: LeadNote['kind'][]; routine_ids?: string[] };
   /** The MCP server whose interface sent this input. */
   app?: { server: string };
   /** The user's personal agent sent this request with the key of this id; the words are still the user's. */
@@ -992,11 +879,6 @@ export interface SessionTurn extends Entity {
     | 'reflection'
     | 'external'
     | 'compaction';
-  /**
-   * On a turn the daemon queued: the depth of the turn or event it follows from plus 1, counted
-   * from the task's last verified progress. Absent on a person's turn, which is depth 0.
-   */
-  causal_depth?: number;
   /** The turn started read-only, as its UserTurn told the runtime; absent when it could write. */
   read_only?: boolean;
   /** What a resident did with the user's turn, from the events it caused on its plan; set when the turn completed. */
@@ -1127,99 +1009,6 @@ export interface ReviewMetrics {
   unresolved: number;
   /** Findings rejected on recording, such as a quote not found in the artifact. */
   invalid: number;
-}
-export interface Timer {
-  id: string;
-  revision: number;
-  project_id: string;
-  kind: string;
-  subject_id: string;
-  due_at: number;
-  state: 'pending' | 'fired' | 'cancelled';
-  fired_at?: number;
-  /** The text an agent follow-up wakes its resident with. */
-  note?: string;
-}
-/** One thing that happened outside the app, as a source adapter reports it. */
-export interface ExternalEvent {
-  /** The project id and the source's key for this one occurrence; a second report of it has the same id. */
-  id: string;
-  revision: number;
-  project_id: string;
-  /** The adapter that reported it, such as github. */
-  source: string;
-  /** What the event is about, with its full namespace, such as github:owner/repo#123. */
-  subject_key: string;
-  kind: string;
-  actor: string;
-  /** Who caused the event: the user, someone who may write to the repository, anyone else, or a bot. */
-  actor_trust: 'self' | 'write' | 'other' | 'bot';
-  title: string;
-  /** The page a person opens to see the subject. */
-  url: string;
-  /** What the subject says, oldest first; own marks text the user wrote. */
-  texts: { author: string; own: boolean; text: string }[];
-  /** The lead session the event was handed to. */
-  session_id?: string;
-  received_at: number;
-  /** dropped: its actor may not start work. handled: a lead session has it. failed: no lead could start. */
-  state: 'pending' | 'dropped' | 'handled' | 'failed';
-  /** Why no lead could start for a failed event. */
-  error?: string;
-}
-/** A kind of system signal the app records and an agent may listen to. */
-export type SignalSource =
-  'gate_failures' | 'flaky_tests' | 'app_errors' | 'session_failures' | 'trace_findings';
-/** Disused: a signal_issues row of an older database; nothing records issues any more. */
-export interface SignalIssue extends Entity {
-  project_id: string;
-  source: SignalSource;
-  /** Unique per project and source. */
-  fingerprint: string;
-  /** At most 200 characters. */
-  title: string;
-  /** holding: a new issue waits to see whether it resolves on its own. */
-  state: 'new' | 'ongoing' | 'escalating' | 'regressed' | 'holding' | 'resolved' | 'muted';
-  /** interrupt wakes its listeners soon, digest comes in their hourly digest, record is only kept. */
-  priority: 'interrupt' | 'digest' | 'record';
-  count: number;
-  first_seen: number;
-  last_seen: number;
-  /** The newest samples, at most 3, each at most 2000 characters. */
-  samples: string[];
-  /** Times of the newest signals, as many as the source's escalation threshold. */
-  recent: number[];
-  /** The open issue that mutes this one. */
-  muted_by?: string;
-  muted_by_user?: boolean;
-  /** The issues this one mutes while it is open. */
-  inhibits?: { source: SignalSource; fingerprint_prefix: string }[];
-  /** Deliveries to agents, the newest 20; via says whether it woke the agent or came in its digest. */
-  routed: {
-    agent_id: string;
-    at: number;
-    state: SignalIssue['state'];
-    via: 'interrupt' | 'digest';
-  }[];
-  /** State changes, the newest 20. */
-  history: { at: number; state: SignalIssue['state']; text: string }[];
-  resolved_at?: number;
-  /** default_branch: a check failed on the branch tasks merge into; kept once set. */
-  scope?: 'default_branch';
-}
-/** One place events come from, such as github, as the settings show it. */
-export interface ExternalSourceStatus {
-  id: string;
-  /** When the source last answered; absent before its first answer. */
-  polled_at?: number;
-  /** Why the latest poll failed; absent after a poll that worked. */
-  error?: string;
-}
-/** GET /v1/external.read: how the project takes events, each source, and the project's 50 latest events, newest first. */
-export interface ExternalRead {
-  mode?: Project['external_events'];
-  sources: ExternalSourceStatus[];
-  events: ExternalEvent[];
 }
 export interface Event {
   sequence: number;
@@ -1808,74 +1597,13 @@ export interface McpToolResult {
   _meta?: Record<string, unknown>;
 }
 
-type RetrospectiveTokens = Pick<
-  Usage,
-  'input_tokens' | 'cached_input_tokens' | 'cache_write_input_tokens' | 'output_tokens'
->;
-/** What the daemon recorded about one task when it merged, was accepted, failed or was removed. */
-export interface Retrospective extends Entity {
+export interface ProjectBrief extends Entity {
   project_id: string;
-  lead_session_id: string;
-  task_id: string;
-  session_ids: string[];
-  outcome: 'merged' | 'accepted' | 'failed' | 'removed';
-  /** Who stopped the last session; only on a failed row, and absent when no one stopped it. */
-  stopped_by?: 'user' | 'lead';
-  /** Unix epoch milliseconds. */
-  recorded_at: number;
-  /** The kind the plan gave the task; absent when it gave none. */
-  planned_kind?: TaskKind;
-  path?: FlowPath;
-  runtime?: string;
-  /** The full model id the runtime reported. */
-  model?: string;
-  effort?: EffortLevel;
-  /** Each time the task was handed back, in order. */
-  handbacks?: { reason: string }[];
-  /** Which gate run passed, counting from 1; absent when none passed. */
-  gate_passed_on_attempt?: number;
-  /** The class of each failed gate run, in order. */
-  gate_failures?: GateFailureClass[];
-  /** The name of the first failed check of each failed gate run, in order. */
-  gate_failed_checks?: string[];
-  scope_violations?: number;
-  stalls?: number;
-  loops?: number;
-  /** Runtime evidence captured when this retrospective was recorded. */
-  runtime_findings?: import('./trace.js').RuntimeFinding[];
-  /** Total time spent waiting for approvals, in milliseconds. */
-  approval_wait_ms?: number;
-  /** The error code of each failed turn, such as modelNotFound. */
-  turn_failure_codes?: string[];
-  /** How many times the lead was woken for the task. */
-  lead_wakes?: number;
-  /** How many of those wakes ended without a decision written. */
-  lead_wakes_without_decision?: number;
-  /** Tokens the lead session spent on the task, in tokens. */
-  lead_usage?: RetrospectiveTokens;
-  /** Tokens the task sessions spent, in tokens. */
-  task_usage?: RetrospectiveTokens;
-  /** Wall-clock time in each stage, in milliseconds; a stage the task never reached is absent. */
-  stage_ms?: {
-    planning?: number;
-    dispatch_wait?: number;
-    execution?: number;
-    gate_and_merge?: number;
-    merge_to_acceptance?: number;
-    /** Waiting for the user on workflow approval steps, taken out of the stage it fell in. */
-    step_approval?: number;
-  };
-  /** The larger of the task's input token and wall-clock ratios to its cell's budget; absent without a budget. */
-  budget_ratio?: number;
-  /** When this generation of the task was first dispatched or claimed, Unix epoch milliseconds; absent when it never was. */
-  started_at?: number;
-  /** The policy version in force when the task started. */
-  policy_version?: number;
-  /**
-   * What the row records: a task of a lead's plan, or a session the user opened that landed its
-   * work, whose lead_session_id is the session's own id and task_id 'session'. Absent means plan_task.
-   */
-  origin?: 'plan_task' | 'session';
+  goal: string;
+  goals: string[];
+  non_goals: string[];
+  created_at: number;
+  updated_by: string;
 }
 export interface ProjectRead {
   memory?: import('./memory.js').MemoryContext;

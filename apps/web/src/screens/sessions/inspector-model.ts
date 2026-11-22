@@ -200,8 +200,8 @@ export const conflictItem = (block: { text: string; request: string }): Feedback
 
 /** A column of the session's panel dock. */
 export type Panel = 'changes' | 'checks' | 'plan' | 'browser' | 'trace' | 'monitor';
-/** What a link into a session opens: a panel, or the review or change story of the changes panel. */
-export type PanelTab = Panel | 'review' | 'story';
+/** What a link into a session opens: a panel, or the diff, review or change story of the changes panel. */
+export type PanelTab = Panel | 'diff' | 'review' | 'story';
 /** What the changes panel shows. */
 export type ChangesView = 'diff' | 'review' | 'story';
 
@@ -228,7 +228,9 @@ export const inspectorTabs = (session: WorkbenchSession | null): readonly Panel[
 
 /** The panel, and the view of the changes panel, that a link to `tab` opens. */
 export function panelOf(tab: PanelTab): { panel: Panel; view?: ChangesView } {
-  return tab === 'review' || tab === 'story' ? { panel: 'changes', view: tab } : { panel: tab };
+  return tab === 'diff' || tab === 'review' || tab === 'story'
+    ? { panel: 'changes', view: tab }
+    : { panel: tab };
 }
 
 /** What the panels of one session last showed; absent fields were never chosen. */
@@ -438,7 +440,7 @@ export const reviewFindings = (reviews: readonly Review[]): ReviewFinding[] =>
     .flatMap((review) => review.findings.filter((finding) => finding.status !== 'rejected'));
 
 export const findingOpen = (finding: ReviewFinding): boolean =>
-  finding.status === 'open' && !finding.resolution;
+  (finding.status === 'open' || finding.status === 'stale') && !finding.resolution;
 
 /** The diff line a finding's `path:line` names, when that line is shown and contains the quote's first line. */
 export function anchorFinding(

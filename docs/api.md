@@ -11,7 +11,7 @@ daemon 只监听 `127.0.0.1`。客户端有桌面端(`apps/desktop`,经 preload 
 - 带 `Origin` 头的请求只接受 daemon 启动时配置的来源，否则 403 `origin_denied`。
 - 会话凭证：daemon 给挂 Pantheon MCP 的会话发凭证，24 小时到期，daemon 重启后失效。
 - 个人密钥：`personal.key.create {label}` 返回 `{key_id, token_file}`,daemon 把 token 写进状态目录下的 `personal-keys/<key_id>`(权限 0600)。对应的 principal 是 `personal:<key_id>`(role `personal`),不过期,daemon 重启后仍有效；`personal.key.revoke {key_id}` 立即吊销。`personal.key.list` 列出密钥，不含 token。
-- 个人 principal 只能用 `POST /v1/commands` 和四个查询(`projects.summary`、`needs_you.list`、`project.brief`、`project.decisions`),命令只限 `request.send`、`project.seen`、`lead.question.answer`、`board.plan.proposal.resolve`、`milestone.accept`;其余返回 403 `permission_denied`。三种回答命令只放行 `app.settings.set` 的 `personal_answers` 列出的种类(省略时一种都不放行),转来的任务会话提问和超预算时的计划变更只由用户回答。每次写操作记一条 `personal.called` 事件。
+- 个人 principal 只能用 `POST /v1/commands` 和四个查询(`projects.summary`、`needs_you.list`、`project.brief`、`project.decisions`),命令只限 `project.seen`;其余返回 403 `permission_denied`。每次写操作记一条 `personal.called` 事件。
 - `GET /v1/session-principal`:当前凭证对应的 principal。
 
 ## HTTP 端点
@@ -21,7 +21,7 @@ daemon 只监听 `127.0.0.1`。客户端有桌面端(`apps/desktop`,经 preload 
 | `GET /health`                              | `{service, protocol_version, version}`,不需凭证                                                                             |
 | `GET /v1/capabilities`                     | 每个适配器的实测能力报告                                                                                                    |
 | `POST /v1/commands`                        | 执行一条命令，返回 `{receipt}`                                                                                              |
-| `GET /v1/board?project_id=`                | 看板快照                                                                                                                    |
+| `GET /v1/board?project_id=`                | 状态快照                                                                                                                    |
 | `GET /v1/<method>?…`                       | 只读查询，见下方"查询"表；参数走 URL query                                                                                  |
 | `GET /v1/events?after=&project_id=&limit=` | 持久事件续传，`limit` 1–2000,默认 256:`{events, cursor}`;游标超出保留范围时 `{snapshot_required: true, cursor, events: []}` |
 | `WS /v1/events/ws`                         | 实时事件，见下文                                                                                                            |
@@ -64,7 +64,7 @@ daemon 只监听 `127.0.0.1`。客户端有桌面端(`apps/desktop`,经 preload 
 
 ## MCP 工具
 
-工作台会话也挂 Pantheon MCP:看板任务的会话拿 worker 凭证，其余工作台会话都拿 lead 凭证(`packages/domain` 的 `credentialRole`)。daemon 自己起的会话也通过 `pantheon mcp` 拿到工具：交叉审查的 reviewer 会话，以及摸底、简介和改动解读会话。工具名和命令的对应写在 `packages/protocol` 的 `sessionTools`(按会话角色)和 `coordinationTools`(摸底、简介和改动解读会话，只放行该用途列出的命令)里，下方命令表的"MCP 工具"列由它们生成。会话凭证只能调它角色允许的命令。
+带 Pantheon 工具的会话挂 Pantheon MCP,凭证角色由 `packages/domain` 的 `credentialRole` 定:带工具的会话(`purpose: 'conductor'`)拿 conductor 凭证,交叉审查的 reviewer 会话拿 reviewer 凭证,摸底、简介、改动解读、项目初始化和运行时分析会话拿 planner 凭证。普通会话和导入会话不挂 Pantheon MCP、不拿凭证。工具名和命令的对应写在 `packages/protocol` 的 `sessionTools`(按会话角色)和 `coordinationTools`(摸底、简介和改动解读会话,只放行该用途列出的命令)里,下方命令表的"MCP 工具"列由它们生成。会话凭证只能调它角色允许的命令。
 
 用户自己的 agent 用 `pantheon mcp --personal`:token 从 `PANTHEON_PERSONAL_TOKEN_FILE` 读，文件名就是 key id;daemon 地址取 `PANTHEON_DAEMON_URL`,没有时读数据目录的 `daemon.json`。工具定义在 `apps/cli/src/personal-tools.ts`,共六个:`projects_overview`(`projects.summary`)、`needs_you`(`needs_you.list`)、`project_brief`(`project.brief`)、`project_decisions`(`project.decisions`)、`send_request`(`request.send`,不带附件)和 `answer_decision`(按 `kind` 发 `lead.question.answer`、`board.plan.proposal.resolve` 或 `milestone.accept`)。
 
@@ -93,7 +93,7 @@ daemon 只监听 `127.0.0.1`。客户端有桌面端(`apps/desktop`,经 preload 
 - 回合的 `origin: "compaction"` 标记维护回合；`input` 只保留指示，不保存 `/compact` 用户消息，压缩仍用 `context.compacted` 事件和现有计数。
 - `approval.respond` 只有用户能调；权限请求不过期，`approve_session` 只用于带规则的权限请求，把规则记到会话上，之后同一规则的请求直接放行。
 - `session.merge` 要求会话空闲、worktree 没有未提交改动且有新提交；合并在后台跑(rebase、门禁、`merge --ff-only`),结果是 `session.merged` 或 `session.merge_blocked` 事件，被挡后可直接重发。
-- `visual.draw` 是 planner、lead、worker 的 `draw` 工具，项目和会话取自凭证，返回 `{visual_id, revision}`。`spec` 按 `kind` 校验；Vega-Lite 数据只允许内联，HTML 原文只检查长度，不解析或清洗。
+- `visual.draw` 是带 Pantheon 工具的会话的 `draw` 工具，项目和会话取自凭证，返回 `{visual_id, revision}`。`spec` 按 `kind` 校验；Vega-Lite 数据只允许内联，HTML 原文只检查长度，不解析或清洗。
 - `visual.draw.source?` 是数据出处（文件路径、命令、URL 或查询），单行、至多 500 字符；`size?: "S" | "M" | "L"` 是会话卡片高度，省略时由屏幕选默认值，与看板 `pin` 无关。重画不传 source 或 size 时清掉旧值。
 - 只有 kind 对应的 spec 校验失败时，仍保存原始 spec 和至多 20 条 `error: {message, path}[]`，path 相对于 spec；命令仍返回原有 `invalid_input` 错误和完整字段信息。其他输入校验或 replaces 权限失败时不保存图表。`visual.read` 和 `visual.list` 包含失败图表；成功的 replaces 清掉 error。
 - `visual.read` 返回 `Visual`，`visual.list` 返回 `{visuals}`，至多 200 条；默认按创建时间倒序，`pinned: true` 按 `pin.position`，未传或 `pinned: false` 时列全部图表。读取和看板命令只供用户调用。
@@ -107,20 +107,9 @@ daemon 只监听 `127.0.0.1`。客户端有桌面端(`apps/desktop`,经 preload 
 - 简介的行数和语言来自 `baseline-facts.ts` 的共享文本计数：Git 根读取 `git ls-files` 跟踪的普通文件，非 Git 根复用摸底的文件扫描，含 NUL 的二进制文件跳过。语言按扩展名判定，未知语言和超出展示数量的部分归入 `other`，总计至多 8 项，按行数降序。`weeks` 是写入时刻之前连续 8 个七天窗口，由旧到新；目录提交数为最近 30 天触及该目录的提交数。目录及 entry 相对于同一个项目根，同名目录按根顺序取第一个。
 - 不支持的功能返回明确错误，不模拟成功。
 
-- `board.view {project_id, days, until?}` accepts `days` of `1`, `3`, `7`, `14`, `30` or `all`. Numeric ranges cover that many local calendar days ending today, or on the optional local `YYYY-MM-DD` day `until`; future days and `until` with `all` return `invalid_input`. All time starts on the project's creation day. Range metrics and daily series follow the chosen window. `tasks` holds the present rows (not ended, or ended within the same number of local days ending today) plus the rows that ended within the chosen range; the `running`, `waiting`, `ready` and `failed` counts cover only the present rows. Lanes, leads, slots, needs-you items and iterations describe the present. `now` remains the computation time. `counts.previous` covers the same number of local days immediately before the chosen range, with `tokens`, `cost_usd`, `merged`, `median_ms` and optional `cache_read_share` and `gate_first_pass`; it is absent for all time. Both current and previous cache shares use the same reported-cache-input denominator as `project.trace.stats` and are absent without such input. `gate_first_pass {tasks, passed}` counts the tasks whose newest retrospective was recorded within the period and those of them that passed their first gate run; it is absent without such tasks. Each task's `retrospective.recorded_at` is the time of that record.
-- `board.view.leads[].messages_today[].subagents` counts sub-agent calls started by the task session today, including Claude `Agent`/`Task` calls and Codex `spawnAgent` calls; zero is omitted.
-- `board.view.leads[].messages_today[].reviews` counts external review rounds requested for the task session today, once per round across reviewer runtimes; zero is omitted.
-- `board.view.leads[].messages_today[].gates` counts gate runs started by the session today, including failed and cancelled runs; zero is omitted.
-- `board.view.leads[].messages_today[].in_flight` names moving lines as `lead`, `subagent`, `review` or `gate`; pending or queued dispatch/message delivery, an unfinished sub-agent call in a running turn, a running review, or an unfinished gate run qualifies. Empty lists are omitted; sessions with only moving lines still have rows.
-- `board.view.leads[].events_today` lists `{ at, kind, session_id }` for task-session handbacks (`handback`) and model changes (`model_change`), in epoch milliseconds and time order, keeping the newest 200; empty lists are omitted. These daily fields use local midnight through the read time, independent of the board range.
-- `board.view.counts.session_time { sessions, working_ms, waiting_ms, gate_ms, queue_ms }` gives the per-part median milliseconds over workbench sessions merged in the range, from each session's first event to its merge; it is absent without merges. Open approvals or questions take precedence, then a gate or merge, then review after a successful turn when nothing runs, then a running turn, then queue. Overlapping user waits count once, with approval before question before review.
-- `board.view.counts.previous.session_time` gives the same median parts and session count for sessions merged in the preceding range; it is absent without such sessions.
-- `board.view.counts.wait_by_reason_ms { approval?, review?, question? }` totals project session wait milliseconds intersecting the chosen range, including still-open waits through the range end; zero reasons and an empty object are omitted. Questions include both AskUserQuestion approvals and lead questions; review begins after a successful turn and ends when work, a gate or a merge begins, or the session ends.
-- `board.view.gate_failures` lists command names that failed at least twice among gate runs completed in the chosen board range, ordered by descending `failed_runs` then name, limited to ten. Each row contains `{ name, failed_runs, runs, flaky }`; `flaky` means one commit has both a failed and passed execution of the named command in the range. Carried results are not executions and are excluded. The field is absent when no command qualifies.
 - `project.gates.history {project_id, since?, limit?}` accepts an optional epoch-millisecond `since`. With it, runs starting at or after that instant are returned newest by start first, with `limit` up to 500. Without it, the existing newest-completed-first order, default of 30 and maximum of 100 remain.
 - Gate commands accept `enabled` (default `true`) and `skippable` (default `false`). Disabled commands produce no result or count. Failed skippable commands retain their exit code and reason with `state: skipped`; they never count as passed. `session.gate_step_checked` updates the session list's completed counts while later commands run.
-- `workflow.policy.set` accepts `gate_on_fail: handback | retry | stop` and `gate_runner: daemon | session`, defaulting to `handback` and `daemon`. Retry repeats each failed command once without repeating successes. Stop uses the same user escalation as `handback_limit: 0`. Session gates run in the local session workspace; remote session execution is refused with `unsupported_capability` because the existing device helper has no bounded exit-code executor.
-- The `parallel` task path uses the plan task's `parallel` array of 2–4 `{ title, goal, scope, acceptance }` parts. Each part runs in its own session and worktree; existing source merge queues land them in sequence. All parts must fit the configured project, runtime and device capacity; a four-part split therefore needs at least four session places.
+- `workflow.policy.set` accepts `gate_on_fail: retry | stop` and `gate_runner: daemon | session`, defaulting to `stop` and `daemon`. Retry repeats each failed command once without repeating successes. Stop leaves a failed gate to the user. Session gates run in the local session workspace; remote session execution is refused with `unsupported_capability` because the existing device helper has no bounded exit-code executor.
 
 ## Project workbench settings
 
@@ -131,8 +120,7 @@ daemon 只监听 `127.0.0.1`。客户端有桌面端(`apps/desktop`,经 preload 
 - `GET project.branches { project_id, root? }` returns `{ name, sha, commit_time, checked_out }[]`: local branches ordered by commit time descending, capped at 200. `root` defaults to the first project folder and must identify a project root. Times are Unix milliseconds.
 - `project.worktree.set { project_id, copy_paths: string[], command?: { argv: string[], timeout_ms?: number } }` replaces `Project.worktree` and returns the updated project. Use the project's revision, as with `project.gate.set`; read the settings through `project.read`. Paths apply relative to each worktree's source project folder. Missing paths are skipped; existing selected files and folders are copied, preserving symlinks. Saving rejects absolute paths, parent traversal and paths resolving outside a project root. Runtime copying also checks the live source and destination boundaries.
 - Preparation runs after the existing dependency-folder copy and before the first turn. The command runs directly in the worktree with the native environment and project environment variables; its default timeout is 20 minutes, as for gate commands. Copy or command failures retain the worktree, set provisioning to `failed`, close the session with `session.closed { reason: "workspace_failed", error }`, and fail its queued turns. The session list shows `failed`. The last 4,000 characters of combined command output are stored in `Workspace.provisioning.output` and included in the failed turn's error. Workspace data is available in the board snapshot and `workspace.provisioning` events.
-- `GET workspace.stale { project_id }` returns `{ count, size_bytes?, worktree_disk?, shared_files?, worktree_root? }`. `count` and `size_bytes` cover existing linked worktrees whose bound sessions are all archived. `worktree_disk { count, size_bytes, unmeasured }` covers all existing linked worktrees, excluding removed records, and is absent without one; unmeasured worktrees contribute no bytes. Both totals reuse per-worktree measurements of logical file and symlink bytes without following symlinks. Measurements run asynchronously; a worktree is measured again at most every five minutes, and its last size stays until the new one lands. A measurement error emits `workspace.stale_size_failed` and leaves that worktree unmeasured. `worktree_root` is the read-only managed worktree folder, absent when none is configured.
-- `workspace.stale.shared_files { files: { path, session_ids }[], total }` lists paths changed against their base by at least two unfinished linked-worktree sessions, including uncommitted and untracked files. Files are ordered by descending session count then path, limited to 50; `total` is the full path count. Session ids are sorted. The field is absent until the background read completes.
+- `GET workspace.stale { project_id }` returns `{ count, size_bytes?, worktree_disk?, worktree_root? }`. `count` and `size_bytes` cover existing linked worktrees whose bound sessions are all archived. `worktree_disk { count, size_bytes, unmeasured }` covers all existing linked worktrees, excluding removed records, and is absent without one; unmeasured worktrees contribute no bytes. Both totals reuse per-worktree measurements of logical file and symlink bytes without following symlinks. Measurements run asynchronously; a worktree is measured again at most every five minutes, and its last size stays until the new one lands. A measurement error emits `workspace.stale_size_failed` and leaves that worktree unmeasured. `worktree_root` is the read-only managed worktree folder, absent when none is configured.
 - `session.list` supplies optional `predicted_conflicts { files: string[], total }` beside each session's `ahead` and `behind`. Only unfinished linked-worktree sessions with commits ahead of their target receive a prediction; a clean merge has an empty file list. `files` is limited to 20 and `total` is the full conflict count. Background reads use the preflight merge preview and cache it by session and target head commits. A read after a new event refreshes the worktrees of the sessions that changed, at most every two seconds; without a new event, a read 30 seconds or more after the last full read reads every worktree again, so edits and commits made outside a session appear the next time a client reads the board (window focus, project events) rather than on a fixed schedule; a read that finds other predictions or shared files emits `workspace.repository_changed`. Git read failures emit `workspace.repository_read_failed` and retain the last completed snapshot.
 - `workspace.prune_stale { project_id }` returns `{ removed }`, using existing worktree removal guards. A worktree still in use or holding unlanded changes after a merge is retained. Branches and commits remain intact. A failed Git removal is not counted or marked removed.
 
@@ -152,7 +140,7 @@ daemon 只监听 `127.0.0.1`。客户端有桌面端(`apps/desktop`,经 preload 
 ```sh
 pnpm cli health
 pnpm cli capabilities
-pnpm cli board
+pnpm cli board  # 状态快照,名字沿用旧看板
 pnpm cli events --after 0 --project PROJECT_ID
 pnpm cli command --file /absolute/path/command.json
 pnpm cli command --json '{"type":"…"}'
@@ -220,19 +208,15 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 `revision_conflict` rejects stale writes, and `permission_denied` rejects agent writes.
 
 - `workflow.policy` returns `defaults` alongside the current settings. Reset restores all settings,
-  including pins and budgets, and records changed parameters in a new policy version.
+  including budgets, and records changed parameters in a new policy version.
 - `project.read.project.session_defaults` is present only when the project has its own defaults.
   `project.sessionDefaults.clear` removes it. The existing composer/runtime defaults then apply.
   `writer` and `reviewer` are optional `{runtime, model?, effort?}` choices; omitting them keeps
   task routing and reviewer selection. Explicit task choices retain precedence over writer defaults.
-- `session_defaults.fallbacks` has optional `lead`, `writer` and `reviewer` choices. Lead/main and
-  writer session creation use them when runtime admission rejects the first choice. Writer dispatch
-  also uses its fallback at the existing quota threshold check; a limited fallback still waits.
-  Reviewer selection tries its fallback after the preferred reviewer fails admission. These settings
+- `session_defaults.fallbacks` has optional `lead`, `writer` and `reviewer` choices. New session
+  creation uses `lead` (the key keeps its old name) when runtime admission rejects the first choice.
+  Reviewer selection tries `reviewer` after the preferred reviewer fails admission. These settings
   add no installation, authentication or connection probes and do not transfer running native sessions.
-- `project.usageTargets.set` merges `targets: { [runtime]: number | null }`; `null` clears a target.
-  `project.read.project.usage_targets` returns the stored targets, absent when none remain. Values
-  are nonnegative whole tokens; negative and fractional values return `invalid_input`.
 
 <!-- api-doc:start -->
 
@@ -242,7 +226,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
-| `app.settings.set` | `auto_git_init?`: boolean<br>`auto_archive_merged?`: boolean<br>`session_recap?`: boolean<br>`brief_prose?`: boolean<br>`attention_delivery?`: object<br>`quiet_hours?`: object \| null<br>`baseline_rounds?`: integer<br>`baseline_visuals?`: boolean |  |
+| `app.settings.set` | `auto_git_init?`: boolean<br>`auto_archive_merged?`: boolean<br>`session_recap?`: boolean<br>`brief_prose?`: boolean<br>`attention_delivery?`: object<br>`quiet_hours?`: object \| null |  |
 
 ### approval
 
@@ -281,7 +265,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | type | input | MCP 工具 |
 |---|---|---|
 | `device.remove` | `id`: string |  |
-| `device.save` | `id`: string<br>`ssh`: string<br>`name?`: string<br>`note?`: string<br>`labels?`: string[]<br>`resources?`: object<br>`max_sessions?`: integer |  |
+| `device.save` | `id`: string<br>`ssh`: string<br>`name?`: string<br>`note?`: string |  |
 
 ### github
 
@@ -347,8 +331,8 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
-| `project.defaults.clear` | `key`: "workflow_policy" \| "session_defaults" \| "usage_targets" \| "external_events" |  |
-| `project.defaults.set` | `key`: "workflow_policy"<br>`value`: object<br>或<br>`key`: "session_defaults"<br>`value`: object<br>或<br>`key`: "usage_targets"<br>`value`: object<br>或<br>`key`: "external_events"<br>`value`: "off" \| "approve" \| "auto" |  |
+| `project.defaults.clear` | `key`: "workflow_policy" \| "session_defaults" |  |
+| `project.defaults.set` | `key`: "workflow_policy"<br>`value`: object<br>或<br>`key`: "session_defaults"<br>`value`: object |  |
 
 ### project.environment
 
@@ -362,12 +346,6 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | type | input | MCP 工具 |
 |---|---|---|
 | `project.extensions.set` | `project_id`: string<br>`runtime`: string<br>`overrides`: object |  |
-
-### project.externalEvents
-
-| type | input | MCP 工具 |
-|---|---|---|
-| `project.externalEvents.set` | `project_id`: string<br>`mode`: "off" \| "approve" \| "auto" |  |
 
 ### project.facts
 
@@ -404,7 +382,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
-| `project.override.clear` | `project_id`: string<br>`key`: "workflow_policy" \| "session_defaults" \| "usage_targets" \| "external_events"<br>`param?`: "runtime_quota_threshold" \| "gate_on_fail" \| "gate_runner" \| "pinned" |  |
+| `project.override.clear` | `project_id`: string<br>`key`: "workflow_policy" \| "session_defaults"<br>`param?`: "gate_on_fail" \| "gate_runner" |  |
 
 ### project.read
 
@@ -430,12 +408,6 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 |---|---|---|
 | `project.sessionDefaults.clear` | `project_id`: string |  |
 | `project.sessionDefaults.set` | `project_id`: string<br>`runtime`: string<br>`permission_mode`: "ask" \| "auto_edit" \| "plan" \| "auto" \| "full_access"<br>`model?`: string<br>`effort?`: "none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max" \| "ultra"<br>`single_model?`: boolean<br>`writer?`: object<br>`reviewer?`: object<br>`fallbacks?`: object |  |
-
-### project.usageTargets
-
-| type | input | MCP 工具 |
-|---|---|---|
-| `project.usageTargets.set` | `project_id`: string<br>`targets`: object |  |
 
 ### project.worktree
 
@@ -510,7 +482,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
-| `trace.evidence` | `project_id`: string<br>`view?`: "summary" \| "findings" \| "workflow"<br>`kind?`: "turn_queue" \| "turn_prepare" \| "approval" \| "permission_delivery" \| "gate" \| "slow_tool" \| "tool_failure" \| "turn_failure" \| "context_compaction" \| "background_task" \| "workflow_step"<br>`offset?`: integer<br>`limit?`: integer | trace_evidence (project session) |
+| `trace.evidence` | `project_id`: string<br>`view?`: "summary" \| "findings" \| "workflow"<br>`kind?`: "turn_queue" \| "turn_prepare" \| "approval" \| "permission_delivery" \| "gate" \| "slow_tool" \| "tool_failure" \| "turn_failure" \| "context_compaction" \| "background_task"<br>`offset?`: integer<br>`limit?`: integer | trace_evidence (project session) |
 | `trace.reflect` | `project_id`: string<br>`runtime?`: string<br>`from`: integer<br>`to`: integer |  |
 | `trace.remember` | `session_id`: string |  |
 | `trace.report` | `project_id`: string<br>`summary`: string<br>`finding_ids`: string[]<br>`disposition`: "experiment" \| "measure" \| "none"<br>`change`: string<br>`baseline`: string<br>`metric`: string<br>`rollback`: string | trace_report (project session) |
@@ -532,7 +504,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | type | input | MCP 工具 |
 |---|---|---|
 | `workflow.policy.reset` | `project_id`: string |  |
-| `workflow.policy.set` | `project_id`: string<br>`runtime_quota_threshold?`: number<br>`gate_on_fail?`: "handback" \| "retry" \| "stop"<br>`gate_runner?`: "daemon" \| "session"<br>`project_budget?`: object \| null<br>`pinned?`: "runtime_quota_threshold"[] |  |
+| `workflow.policy.set` | `project_id`: string<br>`gate_on_fail?`: "retry" \| "stop"<br>`gate_runner?`: "daemon" \| "session"<br>`project_budget?`: object \| null |  |
 
 ### workspace
 
@@ -553,7 +525,6 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `device.probe` | `id`: string |
 | `device.ssh_hosts` | — |
 | `extensions.inventory` | `project_id`: string<br>`runtime`: string |
-| `external.read` | `project_id`: string |
 | `files.read` | `project_id`: string<br>`session_id?`: string<br>`path`: string |
 | `files.search` | `project_id`: string<br>`session_id?`: string<br>`q`: string |
 | `github.items` | `project_id`: string<br>`kind`: "pr" \| "issue" |

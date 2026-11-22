@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest';
-import type { AgentEvent, Session, Timer } from '@pantheon/domain';
+import type { AgentEvent, Session } from '@pantheon/domain';
 import { settle, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
@@ -56,7 +56,7 @@ it('leaves a session a person drives failed after a usage-limit failure', async 
   failNextTurn(f, usageLimit(f.store.now() + MINUTE));
   const session = await f.create();
   await settle(f, session);
-  expect(f.store.list<Timer>('timers')).toEqual([]);
+  expect(f.store.list('timers')).toEqual([]);
   advance(10 * MINUTE);
   await f.control.tick();
   expect(f.turns(session.id)).toMatchObject([{ state: 'failed' }]);

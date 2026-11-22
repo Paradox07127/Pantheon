@@ -124,8 +124,6 @@ it('refuses a plain folder and a repository without commits once git init is tur
     session_recap: true,
     brief_prose: true,
     attention_delivery: expect.objectContaining({ question: 'now' }),
-    baseline_rounds: 5,
-    baseline_visuals: true,
   });
   expect(f.control.appSettings(user)).toEqual({
     auto_git_init: false,
@@ -133,8 +131,6 @@ it('refuses a plain folder and a repository without commits once git init is tur
     session_recap: true,
     brief_prose: true,
     attention_delivery: expect.objectContaining({ question: 'now' }),
-    baseline_rounds: 5,
-    baseline_visuals: true,
   });
   for (const root of [plain, uncommitted])
     await expect(f.call('project.open', { name: 'Refused', roots: [root] })).rejects.toThrowError(
@@ -171,8 +167,6 @@ it('runs git init again on the next project.open after the setting is turned bac
     session_recap: true,
     brief_prose: true,
     attention_delivery: expect.objectContaining({ question: 'now' }),
-    baseline_rounds: 5,
-    baseline_visuals: true,
   });
   f.call('app.settings.set', { auto_git_init: false });
   await expect(f.call('project.open', { name: 'Plain', roots: [plain] })).rejects.toThrowError(

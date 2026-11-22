@@ -137,8 +137,7 @@ it.each([
     { baseline_id: 'baseline', answers: [] },
     false,
   ],
-  ['six baseline rounds', 'app.settings.set', { baseline_rounds: 6 }, false],
-  ['three baseline rounds', 'app.settings.set', { baseline_rounds: 3 }, true],
+  ['baseline rounds, no longer a setting', 'app.settings.set', { baseline_rounds: 3 }, false],
 ])('%s in %s parses: %s', (_name, type, input, ok) => {
   expect(schemas[type]?.safeParse(input).success).toBe(ok);
 });

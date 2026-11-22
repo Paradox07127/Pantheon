@@ -17,8 +17,6 @@ import {
   DomainError,
   requireThat,
   type Principal,
-  type ExternalEvent,
-  type ExternalRead,
   type NeedsYouItem,
   type Session,
   type SessionComment,
@@ -118,11 +116,8 @@ import { projectsSummary, summaryProjects } from './projects-summary.js';
 import { projectBrief } from './project-brief.js';
 import { decisionsForUser } from './decisions-for-user.js';
 import { personalKeyList } from './personal-keys.js';
-import { timerHandlers } from './timers.js';
 import type { ProtectionPaths } from './protection.js';
 import { readProcess } from './process.js';
-import { githubSource } from './github-notifications.js';
-import { externalSourceStatuses, type ExternalSource } from './external-sources.js';
 import { stopChildProcesses } from './child-processes.js';
 import { reconnectRuntime, refreshRuntimeStatus, runtimeStatus } from './runtime-status.js';
 import {
@@ -144,7 +139,7 @@ import {
 import { prepareRuntimeConfig } from './runtime-config.js';
 import { readAppSettings } from './app-settings.js';
 import { listDevices, refreshDevices, reprobeDevice, sshHosts } from './devices.js';
-import { backendList, externalEvents, readUserConfig } from './user-config.js';
+import { backendList, readUserConfig } from './user-config.js';
 import { onDevice, pullRemoteWorkspace } from './remote-workspace.js';
 import { importCandidates, importableSessions } from './import-candidates.js';
 import { Terminals, type TerminalSpawn, type TerminalFrame } from './terminals.js';
@@ -157,13 +152,6 @@ export {
   type TerminalFrame,
 } from './terminals.js';
 
-export {
-  scheduleTimer,
-  cancelTimer,
-  fireDueTimers,
-  timerHandlers,
-  type TimerHandler,
-} from './timers.js';
 export {
   protectionList,
   plannerProtectionList,
@@ -251,8 +239,6 @@ export interface ControlOptions {
   mcpEntry?: string;
   /** The source checkout the running app is built from; absent means the one this package is built in. */
   appRoot?: string;
-  /** Where external events come from; absent means GitHub through the gh CLI. */
-  externalSources?: ExternalSource[];
   /** Runs local connection and GitHub commands; absent means execFile. */
   localCommand?: LocalCommand;
   /** Writes each session's recap after its turns and requests; absent means sessions get none. */
@@ -342,7 +328,6 @@ export class Control extends EventEmitter {
       devices: new Map(),
       deviceLink: options.deviceLink,
       toolRelays: new Map(),
-      externalSources: options.externalSources ?? [githubSource()],
       localCommand: options.localCommand ?? localCommand,
       turnSummarizer: options.turnSummarizer,
       failpoint,
@@ -845,19 +830,6 @@ export class Control extends EventEmitter {
   }
   needsYou(principal: Principal, projectId?: string): { items: NeedsYouItem[] } {
     return needsYou(this.ctx, principal, projectId);
-  }
-  externalRead(principal: Principal, projectId: string): ExternalRead {
-    userOnly(principal);
-    const mode = externalEvents(this.ctx, this.ctx.store.must<Project>('projects', projectId));
-    return {
-      ...(mode !== 'off' && { mode }),
-      sources: externalSourceStatuses(this.ctx),
-      events: this.ctx.store
-        .list<ExternalEvent>('external_events')
-        .filter((event) => event.project_id === projectId)
-        .reverse()
-        .slice(0, 50),
-    };
   }
   projectsSummary(principal: Principal, readChanges: true | 'cached' = true) {
     return projectsSummary(this.ctx, principal, readChanges);

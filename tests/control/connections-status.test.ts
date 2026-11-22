@@ -22,7 +22,7 @@ const hosts = {
 };
 async function setup(replies: Record<string, LocalCommandResult> = {}) {
   const run: LocalCommand = vi.fn(async (file) => replies[file] ?? missing);
-  const f = await fixture({ controlOptions: { localCommand: run, externalSources: [] } });
+  const f = await fixture({ controlOptions: { localCommand: run } });
   cleanups.push(() => f.close());
   return { ...f, run, replies };
 }

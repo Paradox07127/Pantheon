@@ -137,11 +137,31 @@ export function receiptOf(output: unknown): Record<string, unknown> | null {
 
 /** The orchestration row of a Pantheon call; null for reads and any other tool. */
 export function orchestrationLabel(name: string, input: unknown): ToolLabel | null {
-  if (pantheonTool(name) !== 'request_review') return null;
-  return {
-    title: t({ id: 'data.toolCalls.action.requestReview', defaultMessage: 'Request review' }),
-    detail: strings(callArgs(input).runtimes).join(', '),
-  };
+  const args = callArgs(input);
+  switch (pantheonTool(name)) {
+    case 'request_review':
+      return {
+        title: t({ id: 'data.toolCalls.action.requestReview', defaultMessage: 'Request review' }),
+        detail: strings(args.runtimes).join(', '),
+      };
+    case 'spawn_session':
+      return {
+        title: t({ id: 'data.toolCalls.action.spawnSession', defaultMessage: 'Start a session' }),
+        detail: text(args.runtime) ?? '',
+      };
+    case 'report_ready':
+      return {
+        title: t({ id: 'data.toolCalls.action.reportReady', defaultMessage: 'Report ready' }),
+        detail: text(args.session_id) ?? '',
+      };
+    case 'read_state':
+      return {
+        title: t({ id: 'data.toolCalls.action.readState', defaultMessage: 'Read project state' }),
+        detail: '',
+      };
+    default:
+      return null;
+  }
 }
 
 // Labels are getters, so each is read in the language loaded by then.
@@ -184,25 +204,107 @@ export function orchestrationResult(name: string, output: unknown, ok: boolean):
   }
   const r = receiptOf(output);
   if (!r) return toolOutcome(output, ok);
-  if (pantheonTool(name) === 'request_review') return REVIEW_STATE[String(r.state)] ?? '';
-  return '';
+  switch (pantheonTool(name)) {
+    case 'request_review':
+      return REVIEW_STATE[String(r.state)] ?? (r.review_id ? REVIEW_STATE.running! : '');
+    case 'spawn_session': {
+      const session = text(r.session_id);
+      return session
+        ? t({ id: 'data.toolCalls.spawned', defaultMessage: 'Started {session}' }, { session })
+        : '';
+    }
+    case 'report_ready':
+      return r.session_id
+        ? t({ id: 'data.toolCalls.ready.gating', defaultMessage: 'Gates running' })
+        : t({ id: 'data.toolCalls.ready.afterTurn', defaultMessage: 'Lands after this turn' });
+    case 'read_state':
+      return t(
+        {
+          id: 'data.toolCalls.state',
+          defaultMessage:
+            '{changes, plural, one {# change} other {# changes}}, {todo, plural, one {# waits for you} other {# wait for you}}',
+        },
+        {
+          changes: Array.isArray(r.changes) ? r.changes.length : 0,
+          todo: Array.isArray(r.todo) ? r.todo.length : 0,
+        },
+      );
+    default:
+      return '';
+  }
 }
 
 /** One line of an orchestration call's folded-out detail: a word and code. */
 export interface OrchestrationEntry {
   name: string;
   code: string;
+  /** Text in words, shown over a few lines instead of as one line of code. */
+  prose?: true;
 }
 
-/** The folded-out lines of an orchestration call; null for any other tool. */
-export function orchestrationDetail(name: string, input: unknown): OrchestrationEntry[] | null {
-  if (pantheonTool(name) !== 'request_review') return null;
-  return [
-    {
-      name: t({ id: 'data.toolCalls.reviewEntry', defaultMessage: 'Review' }),
-      code: strings(callArgs(input).runtimes).join(', '),
-    },
-  ];
+/** The folded-out lines of an orchestration call, from its input and receipt; null for any other tool. */
+export function orchestrationDetail(
+  name: string,
+  input: unknown,
+  output?: unknown,
+): OrchestrationEntry[] | null {
+  const tool = pantheonTool(name);
+  const args = callArgs(input);
+  const session = text(args.session_id);
+  const sessionEntry = session
+    ? [{ name: t({ id: 'data.toolCalls.sessionEntry', defaultMessage: 'Session' }), code: session }]
+    : [];
+  switch (tool) {
+    case 'request_review':
+      return [
+        {
+          name: t({ id: 'data.toolCalls.reviewEntry', defaultMessage: 'Review' }),
+          code: strings(args.runtimes).join(', '),
+        },
+        ...sessionEntry,
+      ];
+    case 'report_ready':
+      return sessionEntry;
+    case 'spawn_session': {
+      const runtime = text(args.runtime);
+      const prompt = text(args.input);
+      return [
+        ...(runtime
+          ? [
+              {
+                name: t({ id: 'data.toolCalls.runtimeEntry', defaultMessage: 'Runtime' }),
+                code: runtime,
+              },
+            ]
+          : []),
+        ...(prompt
+          ? [
+              {
+                name: t({ id: 'data.toolCalls.inputEntry', defaultMessage: 'Input' }),
+                code: prompt,
+                prose: true as const,
+              },
+            ]
+          : []),
+      ];
+    }
+    case 'read_state': {
+      const r = output === undefined ? null : receiptOf(output);
+      if (!r || !Array.isArray(r.changes) || !Array.isArray(r.todo)) return [];
+      return [
+        {
+          name: t({ id: 'data.toolCalls.changesEntry', defaultMessage: 'Changes' }),
+          code: String(r.changes.length),
+        },
+        {
+          name: t({ id: 'data.toolCalls.todoEntry', defaultMessage: 'Waiting for you' }),
+          code: String(r.todo.length),
+        },
+      ];
+    }
+    default:
+      return null;
+  }
 }
 
 export const COMMANDS = [

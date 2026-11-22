@@ -6,7 +6,6 @@ export const APPEARANCE_KEY = 'pantheon.appearance.v1';
 /** Widths in px; dragging below `fold` folds the pane. */
 export const SIDEBAR = { min: 200, max: 420, initial: 248, fold: 140, rail: 48 } as const;
 export const INSPECTOR = { min: 320, max: 640, initial: 400, fold: 240 } as const;
-export const DRAWER = { min: 360, initial: 440 } as const;
 /** The session panels' widths and the terminal's height, each under its own key. */
 export const PANEL_WIDTHS_KEY = 'pantheon.panel-widths';
 export const TERMINAL_HEIGHT_KEY = 'pantheon.terminal-height';
@@ -21,7 +20,6 @@ export interface SidebarLayout {
 export interface Layout {
   sidebar: SidebarLayout;
   inspector: number;
-  drawer: number;
   /** The sidebar opens folded at every start of the app. */
   collapse_sidebar_at_start: boolean;
 }
@@ -29,7 +27,6 @@ export interface Layout {
 export const DEFAULT_LAYOUT: Layout = {
   sidebar: { collapsed: false, width: SIDEBAR.initial },
   inspector: INSPECTOR.initial,
-  drawer: DRAWER.initial,
   collapse_sidebar_at_start: false,
 };
 
@@ -60,7 +57,6 @@ export function readLayout(raw: string | null): Layout {
   const value = parse(raw) as {
     sidebar?: unknown;
     inspector?: unknown;
-    drawer?: unknown;
     collapse_sidebar_at_start?: unknown;
   } | null;
   if (!value || typeof value !== 'object') return DEFAULT_LAYOUT;
@@ -70,10 +66,6 @@ export function readLayout(raw: string | null): Layout {
       typeof value.inspector === 'number' && Number.isFinite(value.inspector)
         ? clamp(value.inspector, INSPECTOR.min, INSPECTOR.max)
         : INSPECTOR.initial,
-    drawer:
-      typeof value.drawer === 'number' && Number.isFinite(value.drawer)
-        ? Math.max(DRAWER.min, value.drawer)
-        : DRAWER.initial,
     collapse_sidebar_at_start: value.collapse_sidebar_at_start === true,
   };
 }
@@ -97,10 +89,6 @@ export function inspectorWidth(main: number, stored: number): number {
 /** The inspector slides in over the thread when a default-width column would leave the thread too little room. */
 export function inspectorIsSheet(main: number): boolean {
   return main - INSPECTOR.initial < THREAD_MIN;
-}
-
-export function drawerMax(viewport: number): number {
-  return Math.max(DRAWER.min, Math.floor(viewport / 2));
 }
 
 // Only the start folds the sidebar; another window's save keeps what it stored.
@@ -157,7 +145,7 @@ export function resetLayout() {
   }
 }
 
-/** Folds the sidebar and closes the inspector and drawer that are open. */
+/** Folds the sidebar and closes the inspector that is open. */
 export function foldAll() {
   layout = { ...layout, sidebar: { ...layout.sidebar, collapsed: true } };
   folds++;
@@ -177,17 +165,6 @@ export function useFolds(): number {
 export function useSizeChanges(): number {
   const read = () => sizeChanges;
   return useSyncExternalStore(subscribe, read, read);
-}
-
-const viewport = () => window.innerWidth;
-const subscribeViewport = (listener: () => void) => {
-  window.addEventListener('resize', listener);
-  return () => window.removeEventListener('resize', listener);
-};
-
-/** The window's width; server rendering assumes the default window. */
-export function useViewportWidth(): number {
-  return useSyncExternalStore(subscribeViewport, viewport, () => 1280);
 }
 
 export type Density = 'standard' | 'compact';

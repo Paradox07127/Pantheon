@@ -16,7 +16,6 @@ import { Result } from './BaselineBlocks';
 import { briefRequest } from './brief';
 import { Button, useSend } from './parts';
 import { useProjectsView } from './view';
-import '../../components/button-busy.css';
 import './project-setup.css';
 import './add-project.css';
 

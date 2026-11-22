@@ -5,7 +5,6 @@ import {
   requireThat,
   type Principal,
   type Project,
-  type ProjectBaseline,
   type ProjectIntro,
   type Session,
   type SessionTurn,
@@ -231,10 +230,6 @@ export const projectIntroPreparers: Preparers = {
     );
     return (ctx, p, c) => {
       const { project, runtimeName } = startTarget(ctx, p, c);
-      const baseline = ctx.store
-        .list<ProjectBaseline>('project_baselines')
-        .filter((entry) => entry.project_id === project.id && entry.state === 'confirmed')
-        .at(-1);
       const session: Session = {
         id: id(),
         revision: 1,
@@ -252,13 +247,7 @@ export const projectIntroPreparers: Preparers = {
         project_id: project.id,
         session_id: session.id,
         model: session.reported_model ?? session.requested_model ?? null,
-        input: renderIntroBrief(
-          project,
-          counts,
-          baseline,
-          ctx.store.projectIntro(project.id),
-          deps,
-        ),
+        input: renderIntroBrief(project, counts, ctx.store.projectIntro(project.id), deps),
         kind: 'send',
         delivery: 'pending',
         state: 'queued',

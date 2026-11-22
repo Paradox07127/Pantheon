@@ -45,6 +45,7 @@ async function daemonWithSession(prepare: (directory: string) => void = () => {}
     runtime: 'fixture',
     state: 'open',
     turn_count: 0,
+    project_setup: true,
   });
   const ctx = (daemon.control as unknown as { ctx: ControlContext }).ctx;
   return { directory, daemon, session, ctx };

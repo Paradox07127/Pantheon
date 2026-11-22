@@ -73,6 +73,7 @@ it('refuses terminal sockets from untrusted origins and rejects unknown or unaut
       runtime: 'fixture',
       state: 'open',
       turn_count: 0,
+      project_setup: true,
     });
     expect(
       await f.connect(terminal_id, f.daemon.auth.issueSession(session, 'planner')).closed,

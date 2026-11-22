@@ -25,6 +25,7 @@ const span = (id: string, kind: Span['kind'], extra: Partial<Span> = {}): Span =
 
 const listed = (id: string, extra: Partial<RunSession> = {}): RunSession => ({
   id,
+  created_at: new Date(0).toISOString(),
   title: `title of ${id}`,
   runtime: 'claude',
   model: null,
@@ -182,20 +183,21 @@ describe('runForest', () => {
       NO_PARENTS,
       new Map(),
     );
-    expect(forest.trees.map((n) => [n.id, n.status, n.phase])).toEqual([
-      ['starting', 'running', null],
-      ['running', 'running', 'thinking'],
-      ['waiting', 'waiting', null],
-      ['idle', 'idle', 'idle'],
-      ['ready', 'ready', null],
-      ['merging', 'running', null],
-      ['gate', 'running', 'gate'],
-      ['approval', 'waiting', 'waiting_approval'],
-      ['failed', 'error', 'thinking'],
-      ['merged', 'ok', null],
-      ['discarded', 'idle', null],
-      ['done', 'ok', null],
-    ]);
+    // Only the order of the trees depends on their start, which only live sessions take here.
+    expect(Object.fromEntries(forest.trees.map((n) => [n.id, [n.status, n.phase]]))).toEqual({
+      starting: ['running', null],
+      running: ['running', 'thinking'],
+      waiting: ['waiting', null],
+      idle: ['idle', 'idle'],
+      ready: ['ready', null],
+      merging: ['running', null],
+      gate: ['running', 'gate'],
+      approval: ['waiting', 'waiting_approval'],
+      failed: ['error', 'thinking'],
+      merged: ['ok', null],
+      discarded: ['idle', null],
+      done: ['ok', null],
+    });
     expect(runStats(forest.trees, 0).running).toBe(4);
   });
 
@@ -370,7 +372,7 @@ describe('runForest', () => {
     expect(forest.trees[0]).toMatchObject({ start: 100, end: 400, tokens: 0 });
   });
 
-  it('ends an open session that is not running at its last call or turn', () => {
+  it('keeps a session waiting on the user open, and ends an idle one at its last call or turn', () => {
     const spans = [
       span('turn-1', 'turn', { parent: null, start: 100, end: 300 }),
       span('worked', 'tool', { start: 120, end: 280 }),
@@ -383,18 +385,45 @@ describe('runForest', () => {
           run: { phase: 'waiting_approval', since: 320 },
         }),
         listed('running-session'),
+        listed('idle-session', { state: 'idle' }),
       ],
       NO_PARENTS,
       new Map([
         ['waiting-session', spans],
         ['running-session', spans],
+        ['idle-session', spans],
       ]),
     );
-    const [waiting, running] = forest.trees;
-    expect(waiting).toMatchObject({ status: 'waiting', start: 100, end: 320 });
-    expect(runStats([waiting!], 1000).duration_ms).toBe(220);
+    const [waiting, running, idle] = ['waiting-session', 'running-session', 'idle-session'].map(
+      (id) => forest.trees.find((tree) => tree.id === id),
+    );
+    expect(waiting).toMatchObject({ status: 'waiting', start: 100, end: null });
+    expect(runStats([waiting!], 1000).duration_ms).toBe(900);
     expect(running).toMatchObject({ status: 'running', start: 100, end: null });
+    expect(idle).toMatchObject({ status: 'idle', start: 100, end: 320 });
   });
+
+  it('times a session with no calls yet from its creation', () => {
+    const forest = runForest(
+      [listed('new-session', { created_at: new Date(400).toISOString() })],
+      NO_PARENTS,
+      new Map(),
+    );
+    expect(forest.trees[0]).toMatchObject({ status: 'running', start: 400, end: null });
+    expect(runStats(forest.trees, 1000).duration_ms).toBe(600);
+  });
+
+  it.each(['idle', 'ready', 'failed'] as const)(
+    'gives a %s session with no calls no start, so it shows no duration',
+    (state) => {
+      const forest = runForest(
+        [listed('quiet-session', { state, created_at: new Date(400).toISOString() })],
+        NO_PARENTS,
+        new Map(),
+      );
+      expect(forest.trees[0]).toMatchObject({ start: null, end: null });
+    },
+  );
 
   it('does not hang on a cycle in parent links', () => {
     const forest = runForest(

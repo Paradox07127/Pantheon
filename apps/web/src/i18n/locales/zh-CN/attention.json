@@ -1,10 +1,8 @@
 {
   "components.needsPopover.empty": "没有需要你的事。",
   "components.needsPopover.more": "更多操作：{name}",
-  "data.attention.decision.improvement": "改进",
   "data.attention.decision.permission": "权限",
   "data.attention.decision.question": "问题",
-  "data.attention.decision.repeatedFailure": "失败两次",
   "board.needs.noReason": "后端没有给出原因",
   "board.needs.actions.open": "打开会话",
   "board.needs.actions.answer": "去回答",
@@ -17,14 +15,12 @@
   "board.needs.actions.gates": "重跑门禁",
   "board.needs.actions.stopBackground": "停止后台任务",
   "board.needs.actions.continue": "继续",
-  "board.needs.reasonDetail": "{reason}：{detail}",
-  "board.needs.answerQuestion": "回答提问",
-  "board.needs.approveAction": "审批 {action}",
-  "board.needs.toolFallback": "工具",
   "board.charts.chartView": "图表视图",
   "board.charts.tableView": "表格视图",
   "board.gateHistory.notRun": "未跑",
   "board.gateHistory.exitCode": "退出码 {code}",
   "board.gateHistory.label": "门禁历史，最近 {count, plural, other {#}} 次运行",
-  "board.panel.renderFailed": "渲染失败"
+  "board.panel.renderFailed": "渲染失败",
+  "data.attention.decision.budget": "预算",
+  "board.needs.actions.projectSettings": "打开项目设置"
 }

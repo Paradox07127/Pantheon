@@ -120,3 +120,22 @@ it('refuses a fourth code review with a readable reason and creates no reviewer 
   expect(f.store.list<Review>('reviews')).toHaveLength(3);
   expect(f.store.list<Session>('sessions')).toEqual(sessions);
 });
+
+it('counts review rounds again after the session lands', async () => {
+  const f = await reviewFixture();
+  for (let round = 1; round <= 3; round++) {
+    if (round > 1) f.change(round);
+    await f.complete(await f.request());
+  }
+  // A conductor stays open after it lands and goes on to its next change.
+  f.store.transaction(() =>
+    f.store.event(
+      'session.merged',
+      f.store.must<Session>('sessions', f.session.id),
+      f.project.id,
+      {},
+    ),
+  );
+  f.change(4);
+  expect((await f.request()).round).toBe(1);
+});

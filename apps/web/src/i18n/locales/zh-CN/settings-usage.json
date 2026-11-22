@@ -1,11 +1,6 @@
 {
-  "settings.usage.budgetAndQuota": "预算与额度",
-  "settings.usage.noTarget": "不设",
-  "settings.usage.percent": "{param}要在 0 到 100 之间",
-  "settings.usage.pin": "钉住{param}",
+  "settings.usage.budget": "预算",
   "settings.usage.positive": "{param}要是正整数",
   "settings.usage.projectBudget": "项目预算",
-  "settings.usage.quotaThreshold": "运行时额度阈值",
-  "settings.usage.targetField": "{runtime} token 目标",
   "settings.usage.tokens": "token"
 }

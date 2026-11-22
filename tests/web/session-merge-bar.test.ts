@@ -264,6 +264,7 @@ describe('merge bar blocked', () => {
     [{ worktree_clean: false, blocked_reason: 'uncommitted_changes' }, 'uncommitted'],
     [{ worktree_clean: false, blocked_reason: 'unresolved_conflicts' }, 'unresolved'],
     [{ target_branch: null, blocked_reason: 'source_detached' }, 'sourceDetached'],
+    [{ blocked_reason: 'gate_required' }, 'gateRequired'],
   ])('turns the merge button off with the reason: %#', (extra, reason) => {
     mock.preflight = preflight({ ...extra, can_merge: false });
     const h = bar();
@@ -811,8 +812,8 @@ describe('merge bar readiness', () => {
   it.each([
     { name: 'ends a session', from: session, extra: {}, says: 'consequence' },
     {
-      name: 'keeps a lead that lands its direct task',
-      from: { ...session, direct_task: { id: 'task-a', generation: 1 } },
+      name: 'keeps a session with the Pantheon tools',
+      from: { ...session, conductor: true as const },
       extra: {},
       says: 'directConsequence',
     },

@@ -35,11 +35,11 @@ describe('settings search reveals a setting whose row renders after the jump', (
     let rendered = false;
     vi.stubGlobal('document', {
       querySelector: (selector: string) =>
-        rendered && selector === '[data-setting-id="general.baselineVisuals"]' ? row : null,
+        rendered && selector === '[data-setting-id="general.sessionRecap"]' ? row : null,
     });
-    const hit = searchSettings('绘制解释图').find((h) => h.id === 'general.baselineVisuals');
+    const hit = searchSettings('会话进度摘要').find((h) => h.id === 'general.sessionRecap');
     expect(hit).toBeDefined();
-    useSettingsView.setState({ open: true, page: 'appearance', query: '绘制解释图' });
+    useSettingsView.setState({ open: true, page: 'appearance', query: '会话进度摘要' });
     jumpTo(hit!);
     // The general page draws its rows only after its settings read returns.
     frames.shift()!(0);
@@ -66,10 +66,10 @@ describe('settings search reveals a setting whose row renders after the jump', (
     let rendered = false;
     vi.stubGlobal('document', {
       querySelector: (selector: string) =>
-        rendered && selector === '[data-setting-id="general.baselineVisuals"]' ? row : null,
+        rendered && selector === '[data-setting-id="general.sessionRecap"]' ? row : null,
     });
-    const hit = searchSettings('绘制解释图').find((h) => h.id === 'general.baselineVisuals');
-    useSettingsView.setState({ open: true, page: 'appearance', query: '绘制解释图' });
+    const hit = searchSettings('会话进度摘要').find((h) => h.id === 'general.sessionRecap');
+    useSettingsView.setState({ open: true, page: 'appearance', query: '会话进度摘要' });
     jumpTo(hit!);
     const frame = () => {
       vi.advanceTimersByTime(16);

@@ -5,7 +5,6 @@ import { ClaudeAdapter, CodexAdapter, FixtureAdapter } from '@pantheon/adapters'
 import { NATIVE_ENV_ALLOWLIST } from '@pantheon/domain';
 import type {
   Approval,
-  BoardPlan,
   HarnessAdapter,
   Principal,
   Project,

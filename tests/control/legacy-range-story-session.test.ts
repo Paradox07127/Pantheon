@@ -73,3 +73,50 @@ it('closes a stored range story session that never started on restart without st
   expect(start).not.toHaveBeenCalled();
   expect(resume).not.toHaveBeenCalled();
 });
+
+it('closes a stored range story session that had started on restart without resuming it', async () => {
+  const { f, session, turn } = await legacySession('running');
+  f.store.update<Session>('sessions', { ...session, native_id: 'native-story' }, session.revision);
+  f.store.update<SessionTurn>(
+    'session_turns',
+    { ...turn, delivery: 'delivered', state: 'running' },
+    turn.revision,
+  );
+  const start = vi.spyOn(f.adapter, 'start');
+  const resume = vi.spyOn(f.adapter, 'resume');
+  await f.control.recover();
+  for (let i = 0; i < 3; i++) await f.control.tick();
+  expect(f.store.must<Session>('sessions', session.id).state).toBe('closed');
+  expect(f.store.must<SessionTurn>('session_turns', turn.id).state).toBe('failed');
+  expect(start).not.toHaveBeenCalled();
+  expect(resume).not.toHaveBeenCalled();
+});
+
+it('fails queued turns an older version queued from a lead or to continue a session on restart', async () => {
+  const f = await fixture();
+  cleanups.push(() => f.close());
+  const session = f.store.insert<Session>('sessions', {
+    id: 'older-session',
+    revision: 1,
+    project_id: f.project.id,
+    runtime: f.adapter.name,
+    state: 'open',
+    turn_count: 2,
+  });
+  const queued = (['lead', 'continuation'] as const).map((origin) =>
+    f.store.insert<SessionTurn>('session_turns', {
+      id: `${origin}-turn`,
+      revision: 1,
+      project_id: f.project.id,
+      session_id: session.id,
+      input: 'Carry on with the plan',
+      kind: 'send',
+      delivery: 'pending',
+      state: 'queued',
+      origin,
+    }),
+  );
+  await f.control.recover();
+  for (const turn of queued)
+    expect(f.store.must<SessionTurn>('session_turns', turn.id).state).toBe('failed');
+});

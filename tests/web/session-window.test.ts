@@ -87,7 +87,7 @@ import { failureText } from '@/data/needs-you';
 import { runMenuAction } from '@/lib/menu-actions';
 import { SessionWindow } from '@/shell/SessionWindow';
 import { useShell } from '@/store';
-import { zh } from './i18n-setup.js';
+import { zh, zhf } from './i18n-setup.js';
 
 const ok = async () => ({ ok: true, value: null });
 
@@ -359,6 +359,24 @@ describe('a session window', () => {
     runMenuAction('forward');
     expect(shown()).toBe('agent-2');
     expect(text(find(h.value, (n) => n.type === 'h1'))).toBe('Write the tests');
+  });
+
+  it('names the session that started this one as its starter, and the one it was forked from as its origin', () => {
+    inWindow({ kind: 'session', project_id: 'alpha', session_id: 'refund-1' });
+    const conductor = { ...listed, id: 'conductor-0', title: 'Payments plan', state: 'idle' };
+    useShell.setState({
+      history: [{ projectId: 'alpha', screen: 'sessions', sessionId: 'refund-1' }],
+      historyIndex: 0,
+    });
+    const label = () =>
+      find(
+        mount(() => SessionWindow({ project_id: 'alpha', session_id: 'refund-1' })).value,
+        (n) => n.type === 'button' && n.props.className === 'sh-lead',
+      ).props['aria-label'];
+    mock.list.data = [conductor, { ...listed, spawned_by: { session_id: 'conductor-0' } }];
+    expect(label()).toBe(zhf('sessions.header.spawnedBy', { title: 'Payments plan' }));
+    mock.list.data = [conductor, { ...listed, forked_from: { session_id: 'conductor-0' } }];
+    expect(label()).toBe(zhf('sessions.header.forkedFrom', { title: 'Payments plan' }));
   });
 
   it('opens the command palette from the menu with only what this window carries out', async () => {

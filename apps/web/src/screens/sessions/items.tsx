@@ -22,20 +22,14 @@ import {
   Unplug,
   X,
 } from 'lucide-react';
-import { Popover } from '@base-ui/react/popover';
 import type { FilesReadResult, SessionToolImage } from '@pantheon/protocol';
 import { appToolName } from '../../components/mcp-app/AppFrame';
-import { DiffCounts } from '../../components/DiffCounts';
 import { Equalizer } from '../../components/Equalizer';
-import { LoadError } from '../../components/LoadError';
 import { Markdown } from '../../components/Markdown';
-import { Skeleton } from '../../components/Skeleton';
 import { Tip } from '../../components/Tip';
 import { toast } from '../../components/Toast';
 import { VisualById, VisualsDrawing } from '../../components/visual/VisualCard';
 import { useBoard } from '../../data/board';
-import { runCommand } from '../../data/commands';
-import { diffLines, type DiffLine } from '../../lib/text-diff';
 import { useLook } from '../../data/layout';
 import { eventSummary } from '../../data/logs';
 import { failureText } from '../../data/needs-you';
@@ -79,7 +73,6 @@ import { InlineApp } from './AppPanels';
 import { showUrl } from './BrowserPanel';
 import { hasBrowser } from './inspector-model';
 import { itemId } from './model';
-import { openMemory } from './MemoryUsed';
 import { clockText } from '../../lib/time-text';
 import { scrimFlag } from '../../lib/root-flag';
 import { OrchestrationRow } from './orchestration';

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Collapsible } from '@base-ui/react/collapsible';
 import { ChevronRight } from 'lucide-react';
+import { Clip } from '../../components/Clip';
 import {
   isTruncated,
   orchestrationDetail,
@@ -32,7 +33,7 @@ export function OrchestrationRow(props: {
   const duration = toolDuration(item);
   const elapsed = duration === null ? '' : elapsedText(duration);
   const cut = isTruncated(item.input) || isTruncated(item.output);
-  const entries = orchestrationDetail(item.name, item.input)!;
+  const entries = orchestrationDetail(item.name, item.input, item.output)!;
   return (
     <Collapsible.Root
       className={`ss-tool${props.depth ? ` d${props.depth}` : ''}${props.enter}`}
@@ -40,17 +41,23 @@ export function OrchestrationRow(props: {
       onOpenChange={setOpen}
     >
       <div className="ss-orow">
-        <Collapsible.Trigger
-          className="ss-otg"
-          aria-label={[label.title, label.detail, result || state.label, elapsed]
-            .filter(Boolean)
-            .join(t({ id: 'sessions.parts.separator', defaultMessage: ', ' }))}
-        >
-          <span className="ss-tchev" aria-hidden="true">
-            <ChevronRight aria-hidden="true" />
+        {entries.length === 0 ? (
+          <span className="ss-otb">
+            <span className="ss-tn">{label.title}</span>
           </span>
-          <span className="ss-tn">{label.title}</span>
-        </Collapsible.Trigger>
+        ) : (
+          <Collapsible.Trigger
+            className="ss-otg"
+            aria-label={[label.title, label.detail, result || state.label, elapsed]
+              .filter(Boolean)
+              .join(t({ id: 'sessions.parts.separator', defaultMessage: ', ' }))}
+          >
+            <span className="ss-tchev" aria-hidden="true">
+              <ChevronRight aria-hidden="true" />
+            </span>
+            <span className="ss-tn">{label.title}</span>
+          </Collapsible.Trigger>
+        )}
         <span className="ss-oa">
           {label.detail && <span className="ss-ta">{label.detail}</span>}
         </span>
@@ -65,16 +72,23 @@ export function OrchestrationRow(props: {
         <StateMark state={props.state} />
         <span className="ss-td mono">{elapsed}</span>
       </div>
-      <Collapsible.Panel className="ss-tio">
-        <ul className="ss-olist">
-          {entries.map((line, i) => (
-            <li key={i}>
-              <span className="ss-on">{line.name}</span>
-              {line.code && <span className="ss-ox mono">{line.code}</span>}
-            </li>
-          ))}
-        </ul>
-      </Collapsible.Panel>
+      {entries.length > 0 && (
+        <Collapsible.Panel className="ss-tio">
+          <ul className="ss-olist">
+            {entries.map((line, i) => (
+              <li key={i} data-prose={line.prose}>
+                <span className="ss-on">{line.name}</span>
+                {line.code &&
+                  (line.prose ? (
+                    <Clip as="div" className="ss-op" text={line.code} lines={3} />
+                  ) : (
+                    <span className="ss-ox mono">{line.code}</span>
+                  ))}
+              </li>
+            ))}
+          </ul>
+        </Collapsible.Panel>
+      )}
     </Collapsible.Root>
   );
 }

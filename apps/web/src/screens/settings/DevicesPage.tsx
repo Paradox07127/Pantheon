@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState, type CSSProperties, type ReactNode } from 'react';
-import { Activity, ChevronLeft, Copy, Minus, Plus, RefreshCw, Terminal, X } from 'lucide-react';
+import { Activity, ChevronLeft, Copy, Plus, RefreshCw, Terminal } from 'lucide-react';
 import { create } from 'zustand';
 import type { DeviceListItem, SshHost } from '@pantheon/protocol';
 import { compareRuntimes, RuntimeGlyph, runtimeName } from '../../components/RuntimeGlyph';
@@ -17,8 +17,6 @@ import { registerPageHeader } from './settings-header';
 import { useSettingsView } from './view';
 import '../../components/state-icon.css';
 import './devices.css';
-
-type DeviceConfig = NonNullable<DeviceListItem['config']>;
 
 const isLocal = (d: DeviceListItem) => d.id === 'local';
 
@@ -111,14 +109,6 @@ export function DevicesPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [host, setHost] = useState('');
   const [addError, setAddError] = useState<string | null>(null);
-  const [labelDraft, setLabelDraft] = useState<{ id: string; text: string } | null>(null);
-  const [resourceDraft, setResourceDraft] = useState<{
-    id: string;
-    name: string;
-    count: string;
-  } | null>(null);
-  /** Session limits as typed, by device. */
-  const [maxDrafts, setMaxDrafts] = useState<Record<string, string>>({});
   const [copyFailed, setCopyFailed] = useState<string | null>(null);
   const devices = read.state === 'ready' ? read.devices : [];
 
@@ -142,17 +132,6 @@ export function DevicesPage() {
     if (!result.ok) toast({ title: failureText(result.error), kind: 'failure' });
     await reload(false);
     setTesting(({ [id]: _, ...rest }) => rest);
-  };
-
-  const save = async (d: DeviceListItem, change: Partial<DeviceConfig>, at: string) => {
-    const result = await runCommand('device.save', { id: d.id, ...d.config, ...change }, null);
-    if (!result.ok) {
-      fail(at, failureText(result.error));
-      return false;
-    }
-    fail(at, null);
-    void test(d.id);
-    return true;
   };
 
   /** Adds the SSH host as a device and tests it; the failure text, else null. */
@@ -406,16 +385,9 @@ export function DevicesPage() {
     );
   };
 
-  const labelsRow = (d: DeviceListItem, name: string, editable: boolean) => {
-    const own = d.config?.labels ?? [];
-    const drafting = labelDraft?.id === d.id ? labelDraft : null;
-    const saveLabel = async () => {
-      const label = drafting?.text.trim();
-      if (!label) return setLabelDraft(null);
-      if (await save(d, { labels: [...new Set([...own, label])] }, `${d.id}:labels`))
-        setLabelDraft(null);
-    };
-    return (
+  /** The labels the device's probe found. */
+  const labelsRow = (d: DeviceListItem) =>
+    d.labels.length > 0 && (
       <>
         <span className="dv-k">
           {t({ id: 'settings.devices.labels', defaultMessage: 'Labels' })}
@@ -424,230 +396,11 @@ export function DevicesPage() {
           {d.labels.map((label) => (
             <span key={label} className="chip dv-lbl">
               {label}
-              {editable && own.includes(label) && (
-                <button
-                  type="button"
-                  className="dv-rm"
-                  aria-label={t(
-                    {
-                      id: 'settings.devices.removeLabel',
-                      defaultMessage: 'Remove label {label} from {name}',
-                    },
-                    { label, name },
-                  )}
-                  onClick={() =>
-                    void save(d, { labels: own.filter((l) => l !== label) }, `${d.id}:labels`)
-                  }
-                >
-                  <X aria-hidden="true" />
-                </button>
-              )}
             </span>
           ))}
-          {editable &&
-            (drafting ? (
-              <input
-                className="dv-in mono"
-                autoFocus
-                spellCheck={false}
-                aria-label={t(
-                  { id: 'settings.devices.newLabel', defaultMessage: 'New label of {name}' },
-                  { name },
-                )}
-                value={drafting.text}
-                onChange={(e) => setLabelDraft({ id: d.id, text: e.target.value })}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') void saveLabel();
-                  if (e.key === 'Escape') setLabelDraft(null);
-                }}
-              />
-            ) : (
-              <button
-                type="button"
-                className="ib dv-plus"
-                aria-label={t(
-                  { id: 'settings.devices.addLabel', defaultMessage: 'Add a label to {name}' },
-                  { name },
-                )}
-                onClick={() => setLabelDraft({ id: d.id, text: '' })}
-              >
-                <Plus aria-hidden="true" />
-              </button>
-            ))}
-          {errorText(`${d.id}:labels`)}
         </div>
       </>
     );
-  };
-
-  const resourcesRow = (d: DeviceListItem, name: string, editable: boolean) => {
-    const own = d.config?.resources ?? {};
-    const drafting = resourceDraft?.id === d.id ? resourceDraft : null;
-    const saveResource = async () => {
-      const resource = drafting?.name.trim();
-      const count = Number(drafting?.count);
-      if (!resource || !Number.isInteger(count) || count < 1) return;
-      if (await save(d, { resources: { ...own, [resource]: count } }, `${d.id}:resources`))
-        setResourceDraft(null);
-    };
-    const keys = (e: { key: string }) => {
-      if (e.key === 'Enter') void saveResource();
-      if (e.key === 'Escape') setResourceDraft(null);
-    };
-    return (
-      <>
-        <span className="dv-k">
-          {t({ id: 'settings.devices.resources', defaultMessage: 'Resources' })}
-        </span>
-        <div className="dv-v">
-          {Object.entries(d.resources).map(([resource, total]) => (
-            <span key={resource} className="dv-res">
-              <span className="mono">{resource}</span>
-              <span className="dv-num">{total}</span>
-              {editable && resource in own && (
-                <button
-                  type="button"
-                  className="dv-rm"
-                  aria-label={t(
-                    {
-                      id: 'settings.devices.removeResource',
-                      defaultMessage: 'Remove resource {resource} from {name}',
-                    },
-                    { resource, name },
-                  )}
-                  onClick={() =>
-                    void save(
-                      d,
-                      {
-                        resources: Object.fromEntries(
-                          Object.entries(own).filter(([other]) => other !== resource),
-                        ),
-                      },
-                      `${d.id}:resources`,
-                    )
-                  }
-                >
-                  <X aria-hidden="true" />
-                </button>
-              )}
-            </span>
-          ))}
-          {editable &&
-            (drafting ? (
-              <>
-                <input
-                  className="dv-in mono"
-                  autoFocus
-                  spellCheck={false}
-                  aria-label={t({
-                    id: 'settings.devices.resourceName',
-                    defaultMessage: 'Resource name',
-                  })}
-                  value={drafting.name}
-                  onChange={(e) => setResourceDraft({ ...drafting, name: e.target.value })}
-                  onKeyDown={keys}
-                />
-                <input
-                  className="dv-in dv-in-n mono"
-                  inputMode="numeric"
-                  aria-label={t({
-                    id: 'settings.devices.resourceCount',
-                    defaultMessage: 'How many',
-                  })}
-                  value={drafting.count}
-                  onChange={(e) => setResourceDraft({ ...drafting, count: e.target.value })}
-                  onKeyDown={keys}
-                />
-              </>
-            ) : (
-              <button
-                type="button"
-                className="ib dv-plus"
-                aria-label={t(
-                  {
-                    id: 'settings.devices.addResource',
-                    defaultMessage: 'Add a resource to {name}',
-                  },
-                  { name },
-                )}
-                onClick={() => setResourceDraft({ id: d.id, name: '', count: '1' })}
-              >
-                <Plus aria-hidden="true" />
-              </button>
-            ))}
-          {errorText(`${d.id}:resources`)}
-        </div>
-      </>
-    );
-  };
-
-  const limitRow = (d: DeviceListItem, name: string) => {
-    const max = d.max_sessions;
-    const saveMax = (next: number) => {
-      setMaxDrafts(({ [d.id]: _, ...rest }) => rest);
-      if (next !== max) void save(d, { max_sessions: next }, `${d.id}:max`);
-    };
-    const commit = () => {
-      const typed = maxDrafts[d.id];
-      if (typed === undefined) return;
-      const next = Number(typed);
-      if (Number.isInteger(next) && next >= 1) saveMax(next);
-      else setMaxDrafts(({ [d.id]: _, ...rest }) => rest);
-    };
-    return (
-      <>
-        <span className="dv-k">
-          {t({ id: 'settings.devices.maxSessions', defaultMessage: 'Session limit' })}
-        </span>
-        <div className="dv-v">
-          <button
-            type="button"
-            className="ib dv-plus"
-            disabled={max <= 1}
-            aria-label={t(
-              {
-                id: 'settings.devices.lowerMax',
-                defaultMessage: 'Lower the session limit of {name}',
-              },
-              { name },
-            )}
-            onClick={() => saveMax(max - 1)}
-          >
-            <Minus aria-hidden="true" />
-          </button>
-          <input
-            className="dv-max mono"
-            inputMode="numeric"
-            aria-label={t(
-              { id: 'settings.devices.maxOf', defaultMessage: 'Session limit of {name}' },
-              { name },
-            )}
-            value={maxDrafts[d.id] ?? String(max)}
-            onChange={(e) => setMaxDrafts((typed) => ({ ...typed, [d.id]: e.target.value }))}
-            onBlur={commit}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') commit();
-            }}
-          />
-          <button
-            type="button"
-            className="ib dv-plus"
-            aria-label={t(
-              {
-                id: 'settings.devices.raiseMax',
-                defaultMessage: 'Raise the session limit of {name}',
-              },
-              { name },
-            )}
-            onClick={() => saveMax(max + 1)}
-          >
-            <Plus aria-hidden="true" />
-          </button>
-          {errorText(`${d.id}:max`)}
-        </div>
-      </>
-    );
-  };
 
   /** The open sessions on the device; one opens where the board knows its project. */
   const runningRow = (d: DeviceListItem) =>
@@ -702,14 +455,13 @@ export function DevicesPage() {
       </>
     );
 
-  const details = (d: DeviceListItem, name: string) => {
+  const details = (d: DeviceListItem) => {
     if (isLocal(d))
       return (
         <>
           {runtimeRows(d)}
           {loadRow(d)}
-          {d.labels.length > 0 && labelsRow(d, name, false)}
-          {Object.keys(d.resources).length > 0 && resourcesRow(d, name, false)}
+          {labelsRow(d)}
           {toolsRow(d)}
           {runningRow(d)}
         </>
@@ -720,9 +472,7 @@ export function DevicesPage() {
           <>
             {runtimeRows(d)}
             {loadRow(d)}
-            {labelsRow(d, name, true)}
-            {resourcesRow(d, name, true)}
-            {limitRow(d, name)}
+            {labelsRow(d)}
             {toolsRow(d)}
           </>
         ) : (
@@ -771,7 +521,7 @@ export function DevicesPage() {
             )}
             {testButton(d, name)}
           </div>
-          <div className="dv-x">{details(d, name)}</div>
+          <div className="dv-x">{details(d)}</div>
         </section>
       </div>
     );

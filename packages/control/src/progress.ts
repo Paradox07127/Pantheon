@@ -1,4 +1,4 @@
-import type { Approval, BackgroundTask, Session, SessionTurn } from '@pantheon/domain';
+import type { Approval, BackgroundTask, SessionTurn } from '@pantheon/domain';
 import type { ControlContext } from './context.js';
 import { sessionTasks } from './session-tasks.js';
 
@@ -258,22 +258,3 @@ export function sessionLoop(
   const key = [...newest!.keys()].findLast((key) => older.every((turn) => turn.has(key)));
   if (key !== undefined) return { call: newest!.get(key)!, turns: failed.length };
 }
-
-/** The depth of the turn's causal chain: 0 once its session merged. */
-export function chainDepth(ctx: ControlContext, turn: SessionTurn | undefined): number {
-  if (!turn) return 0;
-  if (ctx.store.get<Session>('sessions', turn.session_id)?.outcome === 'merged') return 0;
-  return turn.causal_depth ?? 0;
-}
-
-/** The session's running turn, else its newest: the turn a daemon turn follows from. */
-export function causeTurn(ctx: ControlContext, sessionId: string): SessionTurn | undefined {
-  const turns = ctx.store
-    .list<SessionTurn>('session_turns')
-    .filter((turn) => turn.session_id === sessionId);
-  return turns.findLast((turn) => turn.state === 'running') ?? turns.at(-1);
-}
-
-/** The causal depth of a daemon turn that follows from the session's running or newest turn. */
-export const nextDepth = (ctx: ControlContext, sessionId: string) =>
-  chainDepth(ctx, causeTurn(ctx, sessionId)) + 1;

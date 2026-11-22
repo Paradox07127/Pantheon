@@ -5,7 +5,7 @@ import { Collapsible } from '../../apps/web/node_modules/@base-ui/react/collapsi
 import { Dialog } from '../../apps/web/node_modules/@base-ui/react/dialog/index.mjs';
 import { KeyRound } from '../../apps/web/node_modules/lucide-react';
 import { find, mount, named, nodes, text, unmountAll } from './web-hook-host.js';
-import { zh, zhf } from './i18n-setup.js';
+import { zh } from './i18n-setup.js';
 const mock = vi.hoisted(() => ({ board: {} as any }));
 vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMock(actual));
 vi.mock('@/data/board', () => ({
@@ -236,50 +236,18 @@ describe('the expandable rows of the context breakdown', () => {
   });
 });
 
-describe('the confirmed baseline a lead starts from', () => {
-  it('folds into a closed card named for the baseline that opens to its whole text', () => {
+describe('the fix request of the baseline checks', () => {
+  it('shows as a Pantheon message with its whole text', () => {
     const input =
-      '[Pantheon] This is the confirmed baseline of the project.\n\nWorkstreams: importer';
-    const h = turnHost(listed('running'), { turn: turn({ input, origin: 'baseline' }) });
-    const card = find(h.value, (n) => n.type === Collapsible.Root);
-    expect(card.props.defaultOpen).toBeFalsy();
-    expect(text(find(card, (n) => n.type === Collapsible.Trigger))).toBe(
-      zh('sessions.thread.confirmedBaseline'),
-    );
-    const shown = 'This is the confirmed baseline of the project.\n\nWorkstreams: importer';
-    expect(text(find(card, (n) => n.type === Collapsible.Panel))).toBe(shown);
-    // The text shows only inside the card.
-    expect(nodes(h.value).filter((n) => n.props.children === shown)).toHaveLength(1);
-  });
-});
-
-describe('the answers the user gave in the baseline session', () => {
-  it.each([
-    ['turn-round-1', 1],
-    ['turn-round-2', 2],
-  ])('fold into a card named for their round (%s)', (id, round) => {
-    const answers = (turnId: string, n: number) =>
-      turn({
-        id: turnId,
-        input: `The user answered the questions of round ${n}:\n- Which license? Answer: MIT`,
-        origin: 'baseline',
-      });
+      'Pantheon ran the commands you proposed in a fresh worktree, and these failed:\n- test in /repo (exit 1)';
     mock.board.board = {
       sessions: [
         { id: 'session-a', runtime: 'claude', revision: 4, baseline: { baseline_id: 'b-1' } },
       ],
-      session_turns: [
-        turn({ id: 'turn-scan', input: 'Scan the project' }),
-        answers('turn-round-1', 1),
-        answers('turn-round-2', 2),
-      ],
+      session_turns: [turn({ input, origin: 'baseline' })],
     };
-    const h = turnHost(listed('running'), {
-      turn: mock.board.board.session_turns.find((t: SessionTurn) => t.id === id),
-    });
-    const card = find(h.value, (n) => n.type === Collapsible.Root);
-    expect(text(find(card, (n) => n.type === Collapsible.Trigger))).toBe(
-      zhf('sessions.thread.baselineAnswers', { round }),
-    );
+    const h = turnHost(listed('running'), { turn: mock.board.board.session_turns[0] });
+    expect(nodes(h.value).some((n) => n.type === Collapsible.Root)).toBe(false);
+    expect(find(h.value, (n) => n.props['data-find'] === 'input').props.children).toBe(input);
   });
 });

@@ -369,7 +369,7 @@ it('merges a session declared ready after its turn while the event loop runs', a
   gitWrapper(['status']);
   const fired = timerFired();
   const started = () => f.store.kindEvents(f.project.id, ['session.merge_started']).length > 0;
-  autoMergeAfterTurn((f.control as unknown as { ctx: ControlContext }).ctx, session.id, turnId);
+  autoMergeAfterTurn((f.control as unknown as { ctx: ControlContext }).ctx, session.id);
   let firedBeforeMerge: boolean | undefined;
   await eventually(() => {
     if (!started()) return false;

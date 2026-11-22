@@ -35,7 +35,6 @@ export const PAGE_NAME: Record<SettingsPage, Message> = {
     defaultMessage: 'Notifications',
   }),
   shortcuts: defineMessage({ id: 'settings.pages.shortcuts', defaultMessage: 'Shortcuts' }),
-  usage: defineMessage({ id: 'settings.pages.usage', defaultMessage: 'Usage' }),
   data: defineMessage({ id: 'settings.pages.data', defaultMessage: 'Data' }),
   about: defineMessage({ id: 'settings.pages.about', defaultMessage: 'About' }),
   gates: defineMessage({ id: 'settings.pages.gates', defaultMessage: 'Gates' }),
@@ -44,10 +43,6 @@ export const PAGE_NAME: Record<SettingsPage, Message> = {
     defaultMessage: 'Worktrees and merging',
   }),
   permissions: defineMessage({ id: 'settings.pages.permissions', defaultMessage: 'Permissions' }),
-  external: defineMessage({
-    id: 'settings.pages.external',
-    defaultMessage: 'External requests',
-  }),
   defaults: defineMessage({ id: 'settings.pages.defaults', defaultMessage: 'Default model' }),
   project: defineMessage({ id: 'settings.pages.project', defaultMessage: 'Project' }),
   extensions: defineMessage({ id: 'settings.pages.extensions', defaultMessage: 'Extensions' }),
@@ -90,7 +85,6 @@ const languageAndSleep = defineMessage({
   id: 'settings.general.languageAndSleep',
   defaultMessage: 'Language and sleep',
 });
-const baseline = defineMessage({ id: 'settings.general.baseline', defaultMessage: 'Baseline' });
 const environment = defineMessage({
   id: 'settings.environment.title',
   defaultMessage: 'Environment',
@@ -108,10 +102,7 @@ const personal = defineMessage({
   id: 'settings.data.personal',
   defaultMessage: 'Personal settings',
 });
-const budgetAndQuota = defineMessage({
-  id: 'settings.usage.budgetAndQuota',
-  defaultMessage: 'Budget and quota',
-});
+const budget = defineMessage({ id: 'settings.usage.budget', defaultMessage: 'Budget' });
 
 /** Every setting, in navigation order and in each page's order. */
 export const SETTINGS_INDEX: SettingRecord[] = [
@@ -236,32 +227,6 @@ export const SETTINGS_INDEX: SettingRecord[] = [
     keywords: defineMessage({
       id: 'settings.search.keywords.sessionRecap',
       defaultMessage: 'recap, summary, where it stands, headline',
-    }),
-  },
-  {
-    id: 'general.baselineRounds',
-    page: 'general',
-    section: baseline,
-    label: defineMessage({
-      id: 'settings.general.baselineRounds',
-      defaultMessage: 'Follow-up rounds',
-    }),
-    keywords: defineMessage({
-      id: 'settings.search.keywords.baselineRounds',
-      defaultMessage: 'baseline, questions, question rounds',
-    }),
-  },
-  {
-    id: 'general.baselineVisuals',
-    page: 'general',
-    section: baseline,
-    label: defineMessage({
-      id: 'settings.general.baselineVisuals',
-      defaultMessage: 'Draw explanation charts',
-    }),
-    keywords: defineMessage({
-      id: 'settings.search.keywords.baselineVisuals',
-      defaultMessage: 'baseline, charts, visuals, pin',
     }),
   },
 
@@ -492,19 +457,6 @@ export const SETTINGS_INDEX: SettingRecord[] = [
     }),
     keywords: defineMessage({
       id: 'settings.search.keywords.inspectorWidth',
-      defaultMessage: 'panel width, resize',
-    }),
-  },
-  {
-    id: 'appearance.drawerWidth',
-    page: 'appearance',
-    section: layout,
-    label: defineMessage({
-      id: 'settings.appearance.drawerWidth',
-      defaultMessage: 'Drawer width',
-    }),
-    keywords: defineMessage({
-      id: 'settings.search.keywords.drawerWidth',
       defaultMessage: 'panel width, resize',
     }),
   },
@@ -958,20 +910,10 @@ export const SETTINGS_INDEX: SettingRecord[] = [
     }),
   },
 
-  page('usage'),
-  {
-    id: 'usage.targets',
-    page: 'usage',
-    label: defineMessage({ id: 'settings.usage.targets', defaultMessage: 'Token targets' }),
-    keywords: defineMessage({
-      id: 'settings.search.keywords.usageTargets',
-      defaultMessage: 'budget, cost, quota, limit',
-    }),
-  },
   {
     id: 'project.budget',
     page: 'project',
-    section: budgetAndQuota,
+    section: budget,
     label: defineMessage({
       id: 'data.workflowPolicy.param.projectBudget',
       defaultMessage: 'Project budget (input tokens)',
@@ -979,19 +921,6 @@ export const SETTINGS_INDEX: SettingRecord[] = [
     keywords: defineMessage({
       id: 'settings.search.keywords.projectBudget',
       defaultMessage: 'cost, limit',
-    }),
-  },
-  {
-    id: 'usage.runtimeQuotaThreshold',
-    page: 'usage',
-    section: budgetAndQuota,
-    label: defineMessage({
-      id: 'data.workflowPolicy.param.runtimeQuotaThreshold',
-      defaultMessage: 'Runtime quota threshold (%)',
-    }),
-    keywords: defineMessage({
-      id: 'settings.search.keywords.runtimeQuotaThreshold',
-      defaultMessage: 'quota, rate limit, usage limit',
     }),
   },
 
@@ -1209,20 +1138,6 @@ export const SETTINGS_INDEX: SettingRecord[] = [
     keywords: defineMessage({
       id: 'settings.search.keywords.permissionRules',
       defaultMessage: 'approval, allow, permission rule, always allow',
-    }),
-  },
-
-  page('external'),
-  {
-    id: 'external.mode',
-    page: 'external',
-    label: defineMessage({
-      id: 'settings.external.requests',
-      defaultMessage: 'Requests received',
-    }),
-    keywords: defineMessage({
-      id: 'settings.search.keywords.externalMode',
-      defaultMessage: 'github, issue, notification, start on its own, approve, poll',
     }),
   },
 

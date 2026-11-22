@@ -12,15 +12,3 @@
 .wf-nm > :first-child {
   font-weight: 500;
 }
-.ps-rows .wf-pin {
-  width: 22px;
-  height: 22px;
-  border-radius: max(calc(var(--r-sm) - 2px), 4px);
-}
-.wf-pin[aria-pressed='false'] {
-  color: var(--mu);
-}
-.ps-rows .wf-pin:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}

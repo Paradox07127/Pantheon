@@ -18,6 +18,7 @@ import { restoreCheckpoint } from './checkpoint.js';
 import { runGit } from './git.js';
 import { onWslAutomount } from './wsl-mount.js';
 import { unsnooze } from './session.js';
+import { afterSpawnedTurn } from './conductor.js';
 
 type Provisioning = NonNullable<Workspace['provisioning']>;
 interface Job {
@@ -69,9 +70,14 @@ export function failWorkbenchTurns(ctx: ControlContext, session: Session, error:
   }
 }
 
-/** Ends the sessions waiting for a worktree that will never be ready; the caller owns the transaction. */
-function failWorkbenchSessions(ctx: ControlContext, workspace: Workspace, error: string): void {
-  for (const session of workbenchSessions(ctx, workspace)) {
+/** Ends the sessions waiting for a worktree that will never be ready and returns them; the caller owns the transaction. */
+function failWorkbenchSessions(
+  ctx: ControlContext,
+  workspace: Workspace,
+  error: string,
+): Session[] {
+  const sessions = workbenchSessions(ctx, workspace);
+  for (const session of sessions) {
     failWorkbenchTurns(ctx, session, error);
     const next = ctx.store.update(
       'sessions',
@@ -81,10 +87,12 @@ function failWorkbenchSessions(ctx: ControlContext, workspace: Workspace, error:
     ctx.store.event('session.closed', next, next.project_id, { reason: 'workspace_failed', error });
     unsnooze(ctx, next.id, 'session_ended');
   }
+  return sessions;
 }
 
 function record(ctx: ControlContext, workspaceId: string, patch: Partial<Provisioning>): Workspace {
-  return ctx.store.transaction(() => {
+  const ended: Session[] = [];
+  const recorded = ctx.store.transaction(() => {
     const current = ctx.store.must<Workspace>('workspaces', workspaceId);
     if (current.kind === 'in_place') return current;
     const next = ctx.store.update(
@@ -97,12 +105,14 @@ function record(ctx: ControlContext, workspaceId: string, patch: Partial<Provisi
     );
     ctx.store.event('workspace.provisioning', next, next.project_id, next.provisioning);
     if (patch.state === 'failed' || patch.state === 'cancelled') {
-      failWorkbenchSessions(
-        ctx,
-        next,
-        [patch.error ?? `Workspace provisioning ${patch.state}`, next.provisioning?.output]
-          .filter(Boolean)
-          .join('\n'),
+      ended.push(
+        ...failWorkbenchSessions(
+          ctx,
+          next,
+          [patch.error ?? `Workspace provisioning ${patch.state}`, next.provisioning?.output]
+            .filter(Boolean)
+            .join('\n'),
+        ),
       );
       if (
         ctx.store
@@ -128,6 +138,8 @@ function record(ctx: ControlContext, workspaceId: string, patch: Partial<Provisi
     ctx.changed();
     return next;
   });
+  for (const session of ended) if (session.spawned_by) afterSpawnedTurn(ctx, session.id);
+  return recorded;
 }
 
 function assertReservation(ctx: ControlContext, workspace: Workspace): void {

@@ -132,6 +132,45 @@ export function requireNoRunningReviewer(
   requireThat(!duplicate, 'resource_busy', 'A requested reviewer is already reviewing this worker');
 }
 
+/** A blocking finding nobody resolved; going stale says nothing of whether it was fixed. */
+export const blockingUnresolved = (finding: ReviewFinding) =>
+  finding.blocking &&
+  (finding.status === 'open' || finding.status === 'stale') &&
+  !finding.resolution;
+
+/** The session's reviews, oldest first, less those requested before it last landed. */
+export function reviewsSinceLanding(ctx: ControlContext, sessionId: string): Review[] {
+  const landed = ctx.store
+    .statement(
+      "SELECT MAX(sequence) AS sequence FROM events WHERE aggregate_id=? AND kind='session.merged'",
+    )
+    .get(sessionId) as { sequence: number | null };
+  const requestedBefore = ctx.store.statement(
+    "SELECT 1 FROM events WHERE aggregate_id=? AND kind='review.requested' AND sequence<? LIMIT 1",
+  );
+  return ctx.store
+    .list<Review>('reviews')
+    .filter(
+      (review) =>
+        review.session_id === sessionId &&
+        !(landed.sequence !== null && requestedBefore.get(review.id, landed.sequence)),
+    );
+}
+
+/**
+ * Refuses landing the session while the latest clean review since it last landed, or any failed,
+ * incomplete or running review after it, has an unresolved blocking finding.
+ */
+export function requireNoBlockingReview(ctx: ControlContext, sessionId: string): void {
+  const reviews = reviewsSinceLanding(ctx, sessionId);
+  const clean = reviews.findLastIndex((each) => each.state === 'completed' && !each.incomplete);
+  requireThat(
+    !reviews.slice(Math.max(clean, 0)).some((each) => each.findings.some(blockingUnresolved)),
+    'review_blocking_open',
+    'A review of this work has open blocking findings; fix them and request another review first',
+  );
+}
+
 /** Starts the next review round of a session's committed changes, within the round limit. */
 export function startSessionReview(
   ctx: ControlContext,
@@ -146,9 +185,8 @@ export function startSessionReview(
     fallback?: string[];
   },
 ): Review {
-  const round =
-    ctx.store.list<Review>('reviews').filter((review) => review.session_id === session.id).length +
-    1;
+  // A conductor stays open after it lands; its next change gets rounds of its own.
+  const round = reviewsSinceLanding(ctx, session.id).length + 1;
   requireThat(
     round <= REVIEW_MAX_ROUNDS,
     'invalid_state',
@@ -537,8 +575,8 @@ export function reviewerRuntime(
 ): string | undefined {
   const admitted = (name: string) => {
     try {
-      runtime(ctx, name, 'reviewer');
-      return true;
+      // A runtime whose binary did not answer `--version` is registered but not installed.
+      return runtime(ctx, name, 'reviewer').report.version !== 'unprobed';
     } catch (error) {
       if (error instanceof DomainError) return false;
       throw error;
@@ -1054,10 +1092,10 @@ function reviewResults(ctx: ControlContext, review: Review, turns: SessionTurn[]
     ...(review.incomplete ? [`Incomplete: ${review.incomplete}.`] : []),
     'Only findings whose quotes match the supplied artifact follow. Failed or cancelled reviewers are not a clean review.',
     ...review.findings
-      .filter((finding) => finding.status === 'open')
+      .filter((finding) => finding.status === 'open' || blockingUnresolved(finding))
       .map(
         (finding) =>
-          `${finding.runtime} ${finding.location} (${finding.blocking ? 'must fix before merge' : 'report-only'})\nQuote: ${finding.quote}\nEvidence: ${finding.evidence}\nImpact: ${finding.impact}${finding.reproduction === undefined ? '' : `\nReproduction: ${JSON.stringify(finding.reproduction)}`}`,
+          `${finding.runtime} ${finding.location} (${finding.blocking ? 'must fix before merge' : 'report-only'}${finding.status === 'stale' ? ', stale' : ''})\nQuote: ${finding.quote}\nEvidence: ${finding.evidence}\nImpact: ${finding.impact}${finding.reproduction === undefined ? '' : `\nReproduction: ${JSON.stringify(finding.reproduction)}`}`,
       ),
   ];
 }
@@ -1065,7 +1103,7 @@ function reviewResults(ctx: ControlContext, review: Review, turns: SessionTurn[]
 /** A review a session asked for returns to that session as a message, not through a lead's inbox. */
 function notifyRequestingSession(ctx: ControlContext, review: Review, turns: SessionTurn[]): void {
   if (!review.notify_session_id) return;
-  const blocking = review.findings.some((finding) => finding.status === 'open' && finding.blocking);
+  const blocking = review.findings.some(blockingUnresolved);
   const lines = [
     `[Pantheon] Review ${review.id}: ${review.state}. Reviewed session ${review.session_id}.`,
     ...(review.range

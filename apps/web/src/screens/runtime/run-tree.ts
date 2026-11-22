@@ -193,7 +193,9 @@ export function sessionNode(
     return last === null ? [] : [last];
   });
   const running =
-    root.status === 'running' || root.children.some((child) => child.status === 'running');
+    root.status === 'running' ||
+    root.status === 'waiting' ||
+    root.children.some((child) => child.status === 'running');
   root.start ??= starts.length === 0 ? null : starts.reduce((a, b) => Math.min(a, b));
   root.end ??= running || lasts.length === 0 ? null : lasts.reduce((a, b) => Math.max(a, b));
   return root;
@@ -209,7 +211,7 @@ function newest(node: RunNode): number {
 
 export type RunSession = Pick<
   WorkbenchSession,
-  'id' | 'title' | 'baseline_started_at' | 'runtime' | 'model' | 'state' | 'run'
+  'id' | 'title' | 'created_at' | 'baseline_started_at' | 'runtime' | 'model' | 'state' | 'run'
 >;
 
 /**
@@ -228,7 +230,7 @@ export function runForest(
   };
   const nodeOf = (session: RunSession): RunNode => {
     const phase = session.run?.phase ?? null;
-    return sessionNode(
+    const node = sessionNode(
       {
         id: session.id,
         kind: 'session',
@@ -243,6 +245,10 @@ export function runForest(
       spans.get(session.id) ?? [],
       sessions.filter((child) => parentOf(child.id) === session.id).map(nodeOf),
     );
+    // A running or waiting session with no timed call yet runs from its creation.
+    if (node.status === 'running' || node.status === 'waiting')
+      node.start ??= Date.parse(session.created_at);
+    return node;
   };
   const trees = sessions
     .filter((session) => parentOf(session.id) === null)
@@ -275,7 +281,7 @@ export function runStats(nodes: readonly RunNode[], now: number): RunStats {
   let end = -Infinity;
   for (const node of walk(nodes)) {
     if (node.start !== null) start = Math.min(start, node.start);
-    const last = node.end ?? (node.status === 'running' ? now : null);
+    const last = node.end ?? (node.status === 'running' || node.status === 'waiting' ? now : null);
     if (last !== null) end = Math.max(end, last);
     stats.tokens += node.tokens;
     stats.unreported += node.unreported ?? 0;

@@ -194,7 +194,6 @@ describe('stored layout', () => {
     expect(readLayout(null)).toEqual({
       sidebar: { collapsed: false, width: 248 },
       inspector: 400,
-      drawer: 440,
       collapse_sidebar_at_start: false,
     });
     expect(readLayout('{not json').inspector).toBe(400);
@@ -203,18 +202,16 @@ describe('stored layout', () => {
     ).toEqual({
       sidebar: { collapsed: false, width: 420 },
       inspector: 320,
-      drawer: 360,
       collapse_sidebar_at_start: false,
     });
   });
 
   it('keeps folding the sidebar at start through Reset layout, which puts the widths back', () => {
-    setLayout({ collapse_sidebar_at_start: true, inspector: 500, drawer: 600 });
+    setLayout({ collapse_sidebar_at_start: true, inspector: 500 });
     saveLayout();
     resetLayout();
     expect(getLayout()).toMatchObject({
       inspector: 400,
-      drawer: 440,
       collapse_sidebar_at_start: true,
     });
     expect(readLayout(stored.get(LAYOUT_KEY) ?? null).collapse_sidebar_at_start).toBe(true);
@@ -465,18 +462,18 @@ describe('inspector width', () => {
   });
 
   it('folds the sidebar at start only, and follows the sidebar another window stores', async () => {
-    const saved = (drawer: number) =>
+    const saved = (inspector: number) =>
       JSON.stringify({
         collapse_sidebar_at_start: true,
         sidebar: { collapsed: false, width: 280 },
-        drawer,
+        inspector,
       });
     stored.set(LAYOUT_KEY, saved(500));
     vi.resetModules();
     const fresh = await import('@/data/layout');
     expect(fresh.getLayout().sidebar.collapsed).toBe(true);
     fire('storage', { key: LAYOUT_KEY, newValue: saved(600) });
-    expect(fresh.getLayout().drawer).toBe(600);
+    expect(fresh.getLayout().inspector).toBe(600);
     expect(fresh.getLayout().sidebar.collapsed).toBe(false);
   });
 

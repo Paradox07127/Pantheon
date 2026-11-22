@@ -40,8 +40,6 @@ const thisMachine: DeviceListItem = {
   id: 'local',
   name: 'workstation',
   labels: ['xcode'],
-  resources: { display: 1 },
-  max_sessions: 12,
   online: true,
   checked_at: checkedAt,
   os: 'macos',
@@ -54,20 +52,12 @@ const thisMachine: DeviceListItem = {
   tools: { git: 'git version 2.50.1 (Apple Git-155)' },
   load: { active_sessions: [] },
 };
-const studioConfig = {
-  ssh: 'devbox.local',
-  name: 'studio',
-  labels: ['xcode', 'docker'],
-  resources: { simulator: 2 },
-  max_sessions: 2,
-};
+const studioConfig = { ssh: 'devbox.local', name: 'studio' };
 const studio: DeviceListItem = {
   id: 'studio',
   name: 'studio',
   ssh: 'devbox.local',
   labels: ['xcode', 'docker'],
-  resources: { simulator: 2 },
-  max_sessions: 2,
   online: true,
   checked_at: checkedAt,
   os: 'linux',
@@ -89,8 +79,6 @@ const unreachable: DeviceListItem = {
   name: 'pi5',
   ssh: 'pi5.lan',
   labels: [],
-  resources: {},
-  max_sessions: 1,
   online: false,
   error: 'ssh: connect to host pi5.lan port 22: Operation timed out',
   checked_at: checkedAt,
@@ -284,23 +272,11 @@ describe('device details', () => {
     expect(text(shown)).toContain('ssh: connect to host pi5.lan port 22: Operation timed out');
   });
 
-  it.each([
-    [
-      'raises the session limit with the rest of the configuration unchanged',
-      () => zhf('settings.devices.raiseMax', { name: 'studio' }),
-      { max_sessions: 3 },
-    ],
-    [
-      'removes one configured label and keeps the other fields',
-      () => zhf('settings.devices.removeLabel', { name: 'studio', label: 'xcode' }),
-      { labels: ['docker'] },
-    ],
-  ])('%s', async (_, label, change) => {
+  it('shows the labels the probe found with no field to edit', async () => {
     const h = await page();
     const shown = await open(h, 'studio');
-    labelled(shown, label()).props.onClick();
-    await h.flush();
-    expect(commands()).toEqual([['device.save', { id: 'studio', ...studioConfig, ...change }]]);
+    expect(text(shown)).toContain('docker');
+    expect(nodes(shown).filter((n) => n.type === 'input')).toEqual([]);
   });
 
   it('removes a device and goes back to the list', async () => {
@@ -317,7 +293,7 @@ describe('device details', () => {
   it('shows this machine read-only', async () => {
     const h = await page();
     const shown = await open(h, zh('settings.devices.thisMac'));
-    expect(text(shown)).toContain('display');
+    expect(text(shown)).toContain('xcode');
     expect(
       nodes(shown)
         .filter((n) => n.type === 'button')
@@ -330,30 +306,6 @@ describe('device details', () => {
     const local = await open(h, zh('settings.devices.thisMac'));
     const meter = labelled(local, zhf('settings.devices.loadOf', { percent: 20, load: '2.41' }));
     expect(meter.props.role).toBe('img');
-  });
-
-  it('shows the total of each resource without the sessions that hold it', async () => {
-    const started = new Date(Date.now() - 5 * 60_000).toISOString();
-    bridge.answers['device.list'] = [
-      thisMachine,
-      {
-        ...studio,
-        load: {
-          active_sessions: [
-            { id: 'refunds', title: 'Refund list', runtime: 'codex', started_at: started },
-          ],
-        },
-      },
-    ];
-    const h = await page();
-    const studioPanel = await open(h, 'studio');
-    expect(text(studioPanel)).toContain('simulator');
-    expect(text(studioPanel)).not.toContain('1 / 2');
-    button(studioPanel, BACK).props.onClick();
-    await h.flush();
-    const localPanel = await open(h, zh('settings.devices.thisMac'));
-    expect(text(localPanel)).toContain('display');
-    expect(text(localPanel)).not.toContain('0 / 1');
   });
 
   it('lists the open sessions of a device and opens one in its project', async () => {

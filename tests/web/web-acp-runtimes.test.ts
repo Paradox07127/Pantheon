@@ -211,7 +211,7 @@ describe('harness page runtime settings', () => {
   const page = () => mounted(() => HarnessPage({ projectId: null }));
   const row = (h: HookHost<any>, runtime: string) => labelled(tree(h), runtime);
 
-  it('lists no ACP runtime whose handshake did not answer, installed or not', async () => {
+  it('keeps an ACP runtime whose handshake did not answer, with that state and its switch', async () => {
     bridge.statuses = [
       status('claude', NATIVE),
       { ...grok(), handshake: true },
@@ -223,8 +223,11 @@ describe('harness page runtime settings', () => {
       .filter((n) => n.props.role === 'group')
       .map((n) => n.props['aria-label']);
     expect(groups).toContain(runtimeName('grok'));
-    expect(groups).not.toContain(runtimeName('cursor'));
-    expect(groups).not.toContain(runtimeName('gemini'));
+    expect(groups).toContain(runtimeName('cursor'));
+    expect(groups).toContain(runtimeName('gemini'));
+    expect(text(row(h, runtimeName('cursor')))).toContain(zh('settings.runtimes.noHandshake'));
+    expect(text(row(h, runtimeName('grok')))).not.toContain(zh('settings.runtimes.noHandshake'));
+    expect(labelled(row(h, runtimeName('cursor')), enable(runtimeName('cursor')))).toBeTruthy();
   });
 
   it('lists the session kinds each runtime can hold', async () => {

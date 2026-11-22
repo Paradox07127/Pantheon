@@ -120,6 +120,7 @@
   "sessions.panel.blocked.sourceDetached": "源仓库处于 detached HEAD",
   "sessions.panel.blocked.busy": "正在运行或合并",
   "sessions.panel.blocked.notReady": "会话未就绪",
+  "sessions.panel.blocked.gateRequired": "门禁还没在这个提交上通过",
   "sessions.panel.gate.running": "门禁运行中",
   "sessions.panel.gate.cancelling": "门禁取消中",
   "sessions.panel.gate.cancelled": "门禁已取消",

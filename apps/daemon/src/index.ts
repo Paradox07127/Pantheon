@@ -556,7 +556,7 @@ export async function startDaemon(options: DaemonOptions) {
     };
     // The answer waits for the reads at most LIST_READ_WAIT_MS; reads that land later emit an event.
     const prefetch = async (p: Principal, projectId?: string): Promise<void> => {
-      // A personal principal starts no worktree prefetch; repository insights its lists read may still run Git.
+      // A personal principal starts no worktree prefetch.
       if (p.role === 'personal') return;
       let deadline: ReturnType<typeof setTimeout> | undefined;
       await Promise.race([
@@ -635,7 +635,6 @@ export async function startDaemon(options: DaemonOptions) {
         await prefetch(p, i.project_id);
         return timed('needs_you.list', () => control.needsYou(p, i.project_id));
       },
-      'external.read': (p, i) => control.externalRead(p, i.project_id),
       'projects.summary': async (p) => {
         await prefetch(p);
         return timed('projects.summary', () => control.projectsSummary(p, 'cached'));

@@ -9,7 +9,9 @@ import type {
   Session,
   SessionTurn,
 } from '@pantheon/domain';
-import { insideSandbox, awaitWorkspaceReady, eventually, user } from '../helpers.js';
+import type { ControlContext } from '../../packages/control/dist/context.js';
+import { notifySession } from '../../packages/control/dist/session-wake.js';
+import { insideSandbox, awaitWorkspaceReady, eventually } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
 type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
@@ -88,6 +90,11 @@ function commit(repository: string, name: string, contents: string) {
 }
 
 const current = (f: Fixture, sessionId: string) => f.store.must<Session>('sessions', sessionId);
+
+const ctxOf = (f: Fixture) => (f.control as unknown as { ctx: ControlContext }).ctx;
+
+/** A notice that queues a turn behind the running one, as a spawned session's turn end does. */
+const SPAWNED_NOTICE = 'A session you spawned completed its turn.';
 
 const send = (f: Fixture, sessionId: string, input = 'Finish the answer') =>
   f.call<SessionTurn>(
@@ -169,6 +176,7 @@ function review(
   id: string,
   blocking: boolean,
   status: 'open' | 'stale' = 'open',
+  fields: Partial<Review> = {},
 ) {
   f.store.transaction(() =>
     f.store.insert<Review>('reviews', {
@@ -196,6 +204,7 @@ function review(
             },
           ]
         : [],
+      ...fields,
     }),
   );
 }
@@ -230,7 +239,120 @@ it.skipIf(insideSandbox)(
 );
 
 it.skipIf(insideSandbox)(
-  'keeps a conductor in the project folder open once its work lands',
+  'lands work declared ready once the turn queued behind the declaring turn ends',
+  async () => {
+    const f = await readyFixture();
+    const { session, workspace } = await openConductor(f);
+    const head = commit(workspace.path, 'answer.txt', 'queued behind\n');
+    const seen = duringNextTurn(f, () => {
+      notifySession(ctxOf(f), session.id, SPAWNED_NOTICE, 'spawned-turn');
+      return ready(f, session.id);
+    });
+    send(f, session.id);
+    await eventually(
+      () => messages(f, session.id).length > 0,
+      () => f.control.tick(),
+      10000,
+    );
+    expect(seen[0]!.result).toEqual({
+      next: expect.stringContaining('the turns queued after it end'),
+    });
+    expect(f.turns(session.id).map((turn) => turn.origin)).toContain('tracker');
+    expect(git(f.source, 'rev-parse', 'main')).toBe(head);
+    expect(payloads(f, session.id, 'session.merge_started')).toEqual([{}]);
+    expect(messages(f, session.id)).toEqual([expect.stringContaining(`landed on main at ${head}`)]);
+    expect(current(f, session.id)).not.toHaveProperty('ready');
+  },
+);
+
+it.skipIf(insideSandbox)(
+  'drops work declared ready when the turn queued behind the declaring turn fails, and says so',
+  async () => {
+    const f = await readyFixture();
+    const { session, workspace } = await openConductor(f);
+    const sourceHead = git(f.source, 'rev-parse', 'main');
+    commit(workspace.path, 'answer.txt', 'not landed\n');
+    duringNextTurn(f, async () => {
+      const declared = await ready(f, session.id);
+      notifySession(ctxOf(f), session.id, SPAWNED_NOTICE, 'spawned-turn');
+      return declared;
+    });
+    vi.mocked(f.adapter.send).mockImplementationOnce(async (_handle, turn) => ({
+      turn_id: turn.turn_id,
+      status: 'unsupported',
+      reason: 'Refused by the test',
+    }));
+    send(f, session.id);
+    await eventually(
+      () => messages(f, session.id).length > 0,
+      () => f.control.tick(),
+      10000,
+    );
+    expect(messages(f, session.id)).toEqual([expect.stringContaining('report_ready again')]);
+    expect(current(f, session.id)).not.toHaveProperty('ready');
+    const notice = f.turns(session.id).at(-1)!;
+    await settle(f, session.id, notice.id);
+    const later = send(f, session.id, 'Look again');
+    await settle(f, session.id, later.id);
+    expect(payloads(f, session.id, 'session.merge_started')).toEqual([]);
+    expect(git(f.source, 'rev-parse', 'main')).toBe(sourceHead);
+  },
+);
+
+it.skipIf(insideSandbox)(
+  'does not land work declared ready when a review that blocks it arrives before the turn ends',
+  async () => {
+    const f = await readyFixture();
+    const { session, workspace } = await openConductor(f);
+    const sourceHead = git(f.source, 'rev-parse', 'main');
+    commit(workspace.path, 'answer.txt', 'reviewed late\n');
+    duringNextTurn(f, async () => {
+      const declared = await ready(f, session.id);
+      review(f, session.id, 'late-review', true);
+      return declared;
+    });
+    send(f, session.id);
+    await eventually(
+      () => messages(f, session.id).length > 0,
+      () => f.control.tick(),
+      10000,
+    );
+    expect(messages(f, session.id)).toEqual([expect.stringContaining('review_blocking_open')]);
+    expect(payloads(f, session.id, 'session.merge_started')).toEqual([]);
+    expect(git(f.source, 'rev-parse', 'main')).toBe(sourceHead);
+  },
+);
+
+it.skipIf(insideSandbox)(
+  'lands without a gate in a project with no gate commands and says so',
+  async () => {
+    const f = await readyFixture([]);
+    const { session: conductor } = await openConductor(f);
+    const { session, workspace } = await spawnedBy(f, conductor.id);
+    const head = commit(workspace.path, 'answer.txt', 'no gate\n');
+    expect(await ready(f, conductor.id, { session_id: session.id })).toEqual({
+      session_id: session.id,
+      next: expect.stringContaining('no gate commands'),
+    });
+    // The landing notice takes a turn of the conductor's own.
+    await eventually(
+      () => landings(f, conductor.id).length > 0 && current(f, conductor.id).state === 'open',
+      () => f.control.tick(),
+      10000,
+    );
+    expect(git(f.source, 'rev-parse', 'main')).toBe(head);
+    const seen = duringNextTurn(f, () => ready(f, conductor.id));
+    send(f, conductor.id);
+    await eventually(
+      () => seen.length > 0,
+      () => f.control.tick(),
+    );
+    expect(seen[0]!.result).toEqual({ next: expect.stringContaining('no gate commands') });
+  },
+);
+
+it.skipIf(insideSandbox)(
+  'refuses report_ready on a conductor in the project folder, which the user lands in the app',
   async () => {
     const f = await readyFixture();
     const { session } = await idle(
@@ -244,23 +366,22 @@ it.skipIf(insideSandbox)(
       }),
     );
     expect(session.in_place).toBeDefined();
-    const head = commit(f.source, 'answer.txt', 'in place\n');
-    await f.call('session.gates.run', { session_id: session.id }, current(f, session.id).revision);
-    await eventually(
-      () => f.control.sessionGates(user, session.id).last?.commit === head,
-      () => f.control.tick(),
-      10000,
+    commit(f.source, 'answer.txt', 'in place\n');
+    const seen = duringNextTurn(f, () =>
+      ready(f, session.id).catch((error: { code?: string; message?: string }) => ({
+        code: error.code,
+        message: error.message,
+      })),
     );
-    duringNextTurn(f, () => ready(f, session.id));
-    send(f, session.id);
-    await eventually(
-      () => payloads(f, session.id, 'session.merged').length > 0,
-      () => f.control.tick(),
-      10000,
-    );
-    expect(git(f.source, 'rev-parse', 'main')).toBe(head);
-    expect(current(f, session.id).state).not.toBe('closed');
-    expect(current(f, session.id).outcome).toBeUndefined();
+    const turn = send(f, session.id);
+    await settle(f, session.id, turn.id);
+    expect(seen[0]!.result).toEqual({
+      code: 'invalid_state',
+      message: expect.stringContaining('the user lands it in the app'),
+    });
+    expect(payloads(f, session.id, 'session.merge_started')).toEqual([]);
+    expect(payloads(f, session.id, 'session.merged')).toEqual([]);
+    expect(current(f, session.id)).not.toHaveProperty('ready');
   },
 );
 
@@ -284,6 +405,8 @@ it.skipIf(insideSandbox)(
     expect(messages(f, session.id)[0]).toContain('Always fails');
     expect(messages(f, session.id)[0]).toContain('exit code 3');
     expect(messages(f, session.id)[0]).toContain('gate broke');
+    // The notice starts a turn, which keeps the blocked merge the user acts on.
+    expect(current(f, session.id).merge).toMatchObject({ state: 'blocked' });
   },
 );
 
@@ -368,6 +491,53 @@ it.skipIf(insideSandbox)(
     expect(git(f.source, 'rev-parse', 'main')).toBe(head);
   },
 );
+
+// Outside a turn, a declaration the review check lets through is refused as invalid_state.
+it('keeps refusing a blocking finding after a later review fails or ends incomplete', async () => {
+  const f = await readyFixture();
+  const { session } = await openConductor(f);
+  review(f, session.id, 'blocking-review', true);
+  review(f, session.id, 'failed-review', false, 'open', { state: 'failed' });
+  expect(await refusal(() => ready(f, session.id))).toBe('review_blocking_open');
+  review(f, session.id, 'incomplete-review', false, 'open', {
+    incomplete: 'reviewer codex ended its turn with no finding and no reply',
+  });
+  expect(await refusal(() => ready(f, session.id))).toBe('review_blocking_open');
+  review(f, session.id, 'clean-review', false);
+  expect(await refusal(() => ready(f, session.id))).toBe('invalid_state');
+});
+
+it.each([
+  { name: 'failed', fields: { state: 'failed' as const } },
+  { name: 'ended incomplete', fields: { incomplete: 'reviewer claude failed' } },
+])(
+  'refuses a blocking finding of a review after the latest clean one that $name',
+  async ({ fields }) => {
+    const f = await readyFixture();
+    const { session } = await openConductor(f);
+    review(f, session.id, 'clean-review', false);
+    review(f, session.id, 'unfinished-review', true, 'open', fields);
+    expect(await refusal(() => ready(f, session.id))).toBe('review_blocking_open');
+  },
+);
+
+it('weighs only the reviews requested since the session last landed', async () => {
+  const f = await readyFixture();
+  const { session } = await openConductor(f);
+  review(f, session.id, 'landed-review', true);
+  f.store.transaction(() => {
+    f.store.event(
+      'review.requested',
+      f.store.must<Review>('reviews', 'landed-review'),
+      f.project.id,
+      {},
+    );
+    f.store.event('session.merged', current(f, session.id), f.project.id, {});
+  });
+  expect(await refusal(() => ready(f, session.id))).toBe('invalid_state');
+  review(f, session.id, 'next-review', true);
+  expect(await refusal(() => ready(f, session.id))).toBe('review_blocking_open');
+});
 
 it.skipIf(insideSandbox).each(['open', 'stale'] as const)(
   "refuses a spawned session's work with an unresolved %s blocking finding to its conductor but not to the user's merge",

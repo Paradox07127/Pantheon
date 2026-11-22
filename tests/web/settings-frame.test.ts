@@ -53,8 +53,6 @@ describe('settings navigation', () => {
         ['app', 'data', 'settings.pages.data'],
         ['app', 'about', 'settings.pages.about'],
         ['global', 'defaults', 'settings.pages.defaults'],
-        ['global', 'usage', 'settings.pages.usage'],
-        ['global', 'external', 'settings.pages.external'],
         ['global', 'permissions', 'settings.pages.permissions'],
         ['global', 'projects', 'settings.pages.projects'],
         ['project', 'gates', 'settings.pages.gates'],

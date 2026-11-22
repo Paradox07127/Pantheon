@@ -75,19 +75,18 @@ it('opens a login shell in the project or session workspace and forwards writes 
   }
 });
 
-it('opens the terminal of a resident session without a workspace in the project folder', async () => {
+it('opens the terminal of a session without a workspace in the project folder', async () => {
   const f = await terminalFixture();
   try {
-    const resident = f.store.insert<Session>('sessions', {
-      id: 'resident-session',
+    const session = f.store.insert<Session>('sessions', {
+      id: 'workspaceless-session',
       revision: 1,
       project_id: f.project.id,
       runtime: f.adapter.name,
       state: 'open',
       turn_count: 0,
-      resident: { kind: 'assistant' },
     });
-    await f.open(resident.id);
+    await f.open(session.id);
     expect(f.spawn.mock.calls[0]![2].cwd).toBe(f.project.roots[0]);
   } finally {
     await f.close();

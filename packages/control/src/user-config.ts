@@ -8,6 +8,7 @@ import {
   userConfigSchema,
   type BackendProfile,
   type BackendSummary,
+  type ProjectSettingValues,
   type UserConfig,
 } from '@pantheon/protocol';
 import type { ControlContext } from './context.js';
@@ -46,16 +47,24 @@ export function autoGitInit(dir: string | undefined): boolean {
   return readUserConfig(dir).auto_git_init ?? true;
 }
 
-export type ProjectDefaults = NonNullable<UserConfig['project_defaults']>;
+export type ProjectDefaults = Omit<
+  NonNullable<UserConfig['project_defaults']>,
+  'workflow_policy'
+> & {
+  workflow_policy?: ProjectSettingValues['workflow_policy'];
+};
 
-/** The values every project follows where it has none of its own. */
+/** The values every project follows where it has none of its own; a stored `handback` reads as `stop`. */
 export function projectDefaults(dir: string | undefined): ProjectDefaults {
-  const defaults = readUserConfig(dir).project_defaults ?? {};
-  if (!defaults.workflow_policy) return defaults;
+  const { workflow_policy: stored, ...defaults } = readUserConfig(dir).project_defaults ?? {};
+  if (!stored) return defaults;
   const workflow_policy = Object.fromEntries(
-    Object.entries(defaults.workflow_policy).filter(
-      ([key]) => !(RETIRED_POLICY_SETTINGS as readonly string[]).includes(key),
-    ),
+    Object.entries(stored)
+      .filter(([key]) => !(RETIRED_POLICY_SETTINGS as readonly string[]).includes(key))
+      .map(([key, value]) => [
+        key,
+        key === 'gate_on_fail' && value === 'handback' ? 'stop' : value,
+      ]),
   );
   return { ...defaults, workflow_policy };
 }
@@ -66,21 +75,6 @@ export function sessionDefaults(
   project: Project,
 ): SessionDefaults | undefined {
   return project.session_defaults ?? projectDefaults(ctx.userConfigDir).session_defaults;
-}
-
-/** The global token targets with the project's own ones over them. */
-export function usageTargets(
-  ctx: Pick<ControlContext, 'userConfigDir'>,
-  project: Project,
-): Record<string, number> {
-  return { ...projectDefaults(ctx.userConfigDir).usage_targets, ...project.usage_targets };
-}
-
-export function externalEvents(
-  ctx: Pick<ControlContext, 'userConfigDir'>,
-  project: Project,
-): 'off' | 'approve' | 'auto' {
-  return project.external_events ?? projectDefaults(ctx.userConfigDir).external_events ?? 'off';
 }
 
 export function userConfigDirectory(ctx: Pick<ControlContext, 'userConfigDir'>): string {

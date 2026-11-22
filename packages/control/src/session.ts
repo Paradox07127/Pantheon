@@ -87,7 +87,7 @@ import { workspaceReady } from './provisioning.js';
 import { activeRuntimeReview, RUNTIME_REVIEW_CONTRACT } from './runtime-review.js';
 import { projectOverBudget } from './workflow-policy.js';
 import { backgroundTasks } from './progress.js';
-import { afterSpawnedTurn } from './conductor.js';
+import { afterSpawnedTurn, dropReadyAfterEndedTurn } from './conductor.js';
 import { personalKeyId } from './personal-scope.js';
 import {
   applyModel,
@@ -385,16 +385,7 @@ export function queuedTurn(
   kind: SessionTurn['kind'],
   extras: Pick<
     SessionTurn,
-    | 'attachments'
-    | 'skills'
-    | 'refs'
-    | 'reference_context'
-    | 'handoff'
-    | 'causal_depth'
-    | 'lead_note_ids'
-    | 'wake'
-    | 'app'
-    | 'via'
+    'attachments' | 'skills' | 'refs' | 'reference_context' | 'handoff' | 'app' | 'via'
   > = {},
 ): SessionTurn {
   return {
@@ -1107,8 +1098,10 @@ export function createTurnQueue(ctx: ControlContext, initial: SessionTurn, resum
             ctx.store.update('sessions', { ...session, state: 'open' as const }, session.revision);
           loseSessionApprovals(ctx, session.id);
         });
+        // A turn of this queue may have failed before this one ran.
+        dropReadyAfterEndedTurn(ctx, initial.session_id);
         if (state === 'completed' && current.origin !== 'compaction')
-          autoMergeAfterTurn(ctx, initial.session_id, current.id);
+          autoMergeAfterTurn(ctx, initial.session_id);
         afterSpawnedTurn(ctx, initial.session_id);
         ctx.changed();
         resolveTurn = undefined;
@@ -1451,9 +1444,6 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
                             .map((root) => path.join(root, 'runtime-analysis')),
                         ]
                       : otherReviewers,
-                    hiddenChecksDirs: reviewsRoots(ctx).map((reviews) =>
-                      path.join(path.dirname(reviews), 'checks'),
-                    ),
                   }).map(({ path, deny }) => ({ path, deny })),
                 },
               }
@@ -1480,9 +1470,6 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
                               !inside(resolvedPath(root), other),
                           ),
                         ),
-                      hiddenChecksDirs: reviewsRoots(ctx).map((reviews) =>
-                        path.join(path.dirname(reviews), 'checks'),
-                      ),
                     }).map(({ path, deny }) => ({ path, deny })),
                   },
                 }
@@ -1490,7 +1477,9 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
           env_allowlist: NATIVE_ENV_ALLOWLIST,
           skills: [],
           mcp_servers: [],
-          pantheon_mcp: sessionMcp(ctx, session, credentialRole(session)),
+          pantheon_mcp: usesPantheonTools(ctx, session)
+            ? sessionMcp(ctx, session, credentialRole(session))
+            : undefined,
           extensions: { mode: 'none' },
           device_id: session.device_id ?? 'local',
           budget: {
@@ -1660,6 +1649,8 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
           ctx.endTurns.delete(turn.id);
         }
         ctx.completions.delete(completion);
+        // Without the closing handle, the session takes the notice as a turn of its own.
+        dropReadyAfterEndedTurn(ctx, session.id);
       });
     ctx.completions.add(completion);
     ctx.failpoint('during_turn_start');
@@ -1703,6 +1694,7 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
         'failed',
         error instanceof DomainError ? error.code : undefined,
       );
+      dropReadyAfterEndedTurn(ctx, session.id);
     }
   }
 }
