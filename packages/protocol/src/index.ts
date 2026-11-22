@@ -1693,7 +1693,7 @@ export const inputSchemas = {
       .max(3)
       .optional()
       .describe(
-        "Two or three distinct runtimes; one session starts on each with the same first message, each on its runtime's default model.",
+        'Two or three distinct runtimes; one session starts on each with the same first message, each on the model a new session of that runtime gets.',
       ),
     input: str.describe('The first message of the new session.'),
     acceptance: z

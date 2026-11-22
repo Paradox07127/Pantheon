@@ -21,6 +21,7 @@ import {
   type Preparers,
 } from './context.js';
 import { runGit } from './git.js';
+import { runtime as admittedRuntime } from './admission.js';
 import { gateCommands, inScope } from './landing.js';
 import { sessionGoal } from './landing-diff.js';
 import { executed, latestEvent, needsYou } from './needs-you.js';
@@ -45,7 +46,7 @@ import { projectOverBudget } from './workflow-policy.js';
 
 /** The instructions Pantheon adds to a conductor session after the line on where it works. */
 export const CONDUCTOR_INSTRUCTIONS =
-  "Pantheon gives this session these tools. request_review: another vendor reviews your committed changes or those of a session you spawned; the result comes back to you as a message. report_ready: committed changes go through the project's gate and land. spawn_session: another vendor's session starts in a new worktree from your current commit, in permission mode ask or auto_edit; you hear when its turn ends. Give it acceptance, what done means; its first message ends with the list, and request_review on it checks each item. Give it owns, the paths it may change; read_state lists its changed files outside them. Give runtimes, two or three, to run the same task once on each. To keep the best result, review them, land one with report_ready and close the others with stop_session close. message_session: a message to a session you spawned, or a steer into its running turn; at most 2 a minute to one session. stop_session: interrupts the running turn of a session you spawned, or closes that session. read_state: this project's changes, checks, landing queue and items waiting for the user, and each session you spawned with its state and what it used. read_needs_you: the items waiting for the user; only the user answers them. project_read: the project's settings, brief and memory. memory_context, memory_search, memory_related and memory_get: project memory, which Pantheon does not add to your turns. memory_propose: a memory entry; a decision stays a draft until the user confirms it. draw: a chart or diagram the user sees in this session. Plan, split work and run subagents with your own tools.";
+  "Pantheon gives this session these tools. request_review: another vendor reviews your committed changes or those of a session you spawned; the result comes back to you as a message. report_ready: committed changes go through the project's gate and land. spawn_session: another vendor's session starts in a new worktree from your current commit, in permission mode ask or auto_edit; you hear when its turn ends. Give it acceptance, what done means; its first message ends with the list, and request_review on it checks each item. Give it owns, the paths it may change; its first message names them, and read_state lists its changed files outside them. Give runtimes, two or three, to run the same task once on each. To keep the best result, review them, land one with report_ready and close the others with stop_session close. message_session: a message to a session you spawned, or a steer into its running turn; at most 2 a minute to one session. stop_session: interrupts the running turn of a session you spawned, or closes that session. read_state: this project's changes, checks, landing queue and items waiting for the user, and each session you spawned with its state and what it used. read_needs_you: the items waiting for the user; only the user answers them. project_read: the project's settings, brief and memory. memory_context, memory_search, memory_related and memory_get: project memory, which Pantheon does not add to your turns. memory_propose: a memory entry; a decision stays a draft until the user confirms it. draw: a chart or diagram the user sees in this session. Plan, split work and run subagents with your own tools.";
 
 /** conductor.review; the session's committed range and its diff are read before the transaction. */
 function prepareConductorReview(
@@ -250,6 +251,8 @@ function spawnInputs(ctx: ControlContext, p: Principal, command: Command) {
     "With runtimes each session starts on its runtime's default model; give model only with runtime",
   );
   const names = runtimes ?? [runtime!];
+  // A runtime that is out stops the whole call; a fallback would run two of the tries on one runtime.
+  if (runtimes) for (const name of runtimes) admittedRuntime(ctx, name, 'writer');
   const caller = ctx.store.must<Session>('sessions', p.session_id!);
   requireBudgetLeft(ctx, caller.project_id);
   requireTurnSlot(ctx, caller, names.length);
@@ -261,7 +264,11 @@ function spawnInputs(ctx: ControlContext, p: Principal, command: Command) {
       model,
       effort,
       ...(permission_mode ? { permission_mode } : {}),
-      input: acceptance ? `${input}\n\nDone when:\n${itemLines(acceptance)}` : input,
+      input: [
+        input,
+        ...(owns ? [`Change only these paths:\n${itemLines(owns)}`] : []),
+        ...(acceptance ? [`Done when:\n${itemLines(acceptance)}`] : []),
+      ].join('\n\n'),
       // An in-place caller's HEAD is the project folder's, which a start without `from` reads.
       ...(sessionWorkspaceKind(ctx, caller) === 'linked_worktree'
         ? { from: { session_id: caller.id } }
@@ -444,7 +451,7 @@ function spawnedSessions(
   ctx: ControlContext,
   callerId: string,
   projectId: string,
-  changed: Map<string, string[]>,
+  changed: Map<string, string[] | null>,
 ) {
   const now = ctx.store.now();
   const discarded = new Map(
@@ -479,12 +486,15 @@ function spawnedSessions(
         state: session.state,
         ...(session.outcome ? { outcome: session.outcome } : {}),
         ...(session.contract?.group ? { group: session.contract.group } : {}),
-        ...(owns
-          ? {
-              outside_owns: (changed.get(session.id) ?? [])
-                .filter((file) => !owns.some((entry) => inScope(file, entry)))
-                .slice(0, OUTSIDE_OWNS_LIMIT),
-            }
+        ...(owns && changed.has(session.id)
+          ? changed.get(session.id) === null
+            ? { outside_owns_unknown: true as const }
+            : {
+                outside_owns: changed
+                  .get(session.id)!
+                  .filter((file) => !owns.some((entry) => inScope(file, entry)))
+                  .slice(0, OUTSIDE_OWNS_LIMIT),
+              }
           : {}),
         usage: {
           ...(counted
@@ -506,12 +516,12 @@ const OUTSIDE_OWNS_LIMIT = 50;
 
 /**
  * The files each open session the caller spawned with owned paths changed against its worktree's
- * base commit, committed or not, as the session list's change counts read them.
+ * base commit, committed or not, as the session list's change counts read them; null when a read failed.
  */
 async function ownedSessionChanges(
   ctx: ControlContext,
   callerId: string,
-): Promise<Map<string, string[]>> {
+): Promise<Map<string, string[] | null>> {
   const owning = ctx.store
     .list<Session>('sessions')
     .filter(
@@ -529,13 +539,14 @@ async function ownedSessionChanges(
     '--exclude-standard',
     '-z',
   ];
-  const reads = owning.map(async (session): Promise<[string, string[]]> => {
+  const reads = owning.map(async (session): Promise<[string, string[] | null]> => {
     const workspace = ctx.store.get<Workspace>('workspaces', session.workspace_id!);
-    if (!workspace?.base_sha) return [session.id, []];
+    if (!workspace?.base_sha) return [session.id, null];
     const results = await Promise.all([
       runGit(
         workspace.path,
-        ['diff', '--name-only', '-z', '--no-ext-diff', '--find-renames', workspace.base_sha, '--'],
+        // A rename reported as one path would hide its deleted source.
+        ['diff', '--name-only', '-z', '--no-ext-diff', '--no-renames', workspace.base_sha, '--'],
         undefined,
         true,
       ),
@@ -543,9 +554,9 @@ async function ownedSessionChanges(
     ]);
     return [
       session.id,
-      results.flatMap((result) =>
-        result.exit_code === 0 ? result.stdout.toString().split('\0').filter(Boolean) : [],
-      ),
+      results.every((result) => result.exit_code === 0)
+        ? results.flatMap((result) => result.stdout.toString().split('\0').filter(Boolean))
+        : null,
     ];
   });
   return new Map(await Promise.all(reads));

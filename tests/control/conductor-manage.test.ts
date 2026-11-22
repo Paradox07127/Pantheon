@@ -7,9 +7,10 @@ import {
   type Review,
   type Session,
   type SessionTurn,
+  type Workspace,
 } from '@pantheon/domain';
 import { awaitWorkspaceReady, eventually, settle, waitOutStatusReuse } from '../helpers.js';
-import { workbenchFixture } from './workbench-fixture.js';
+import { git, workbenchFixture } from './workbench-fixture.js';
 
 type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
@@ -458,6 +459,7 @@ type State = {
     usage: Record<string, unknown>;
     group?: string;
     outside_owns?: string[];
+    outside_owns_unknown?: true;
   }[];
 };
 
@@ -584,6 +586,52 @@ it('lists the changed files of a spawned session that lie outside the paths it o
   expect(listed(unbounded)).not.toHaveProperty('outside_owns');
 });
 
+it('lists a file a spawned session moved out of the paths it does not own', async () => {
+  const f = await workbenchFixture();
+  const conductor = await openConductor(f);
+  const owning = await spawn(
+    f,
+    conductor.id,
+    script({ write: { path: 'src/parser.txt', text: 'parser\n' } }),
+    { owns: ['src/**'] },
+  );
+  await settle(f, row(f, owning));
+  const worktree = f.store.must<Workspace>('workspaces', row(f, owning).workspace_id!).path;
+  git(worktree, 'mv', 'answer.txt', 'src/answer.txt');
+  git(worktree, 'commit', '--quiet', '-m', 'Move the answer');
+
+  const state = await asSession<Promise<State>>(f, conductor.id, 'conductor.state', {});
+
+  const listed = state.spawned.find((each) => each.session_id === owning)!;
+  expect(listed.outside_owns).toEqual(['answer.txt']);
+});
+
+it('says the owned paths of a spawned session could not be checked when its worktree cannot be read', async () => {
+  const f = await workbenchFixture();
+  const conductor = await openConductor(f);
+  const owning = await spawn(
+    f,
+    conductor.id,
+    script({ write: { path: 'src/a.txt', text: 'a\n' } }),
+    {
+      owns: ['src/**'],
+    },
+  );
+  await settle(f, row(f, owning));
+  const workspace = f.store.must<Workspace>('workspaces', row(f, owning).workspace_id!);
+  f.store.update<Workspace>(
+    'workspaces',
+    { ...workspace, base_sha: '0'.repeat(40) },
+    workspace.revision,
+  );
+
+  const state = await asSession<Promise<State>>(f, conductor.id, 'conductor.state', {});
+
+  const listed = state.spawned.find((each) => each.session_id === owning)!;
+  expect(listed).toMatchObject({ outside_owns_unknown: true });
+  expect(listed).not.toHaveProperty('outside_owns');
+});
+
 it('starts one spawned session on each named runtime in one group, only when all of them fit', async () => {
   const f = await workbenchFixture();
   const conductor = await openConductor(f);
@@ -619,7 +667,7 @@ it('starts one spawned session on each named runtime in one group, only when all
   for (const sessionId of session_ids) {
     expect(row(f, sessionId).spawned_by).toEqual({ session_id: conductor.id });
     expect(f.turns(sessionId)[0]!.input).toBe(
-      'Port the parser\n\nDone when:\n- The parser keeps comments',
+      'Port the parser\n\nChange only these paths:\n- src/**\n\nDone when:\n- The parser keeps comments',
     );
   }
   for (const sessionId of [...busy, ...session_ids]) await settle(f, row(f, sessionId));
