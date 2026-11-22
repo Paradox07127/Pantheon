@@ -206,8 +206,11 @@ export async function recover(ctx: ControlContext): Promise<void> {
         if (
           active.length > 0 &&
           active.every(
-            (turn) =>
-              turn.state === 'queued' && turn.delivery === 'pending' && pendingTurns.has(turn.id),
+            (turn, index) =>
+              turn.state === 'queued' &&
+              turn.delivery === 'pending' &&
+              // Notices behind the first turn run after it, as the turn queue drains.
+              (pendingTurns.has(turn.id) || (index > 0 && waitingNotice(turn))),
           )
         ) {
           for (const turn of active) unstartedTurns.add(turn.id);

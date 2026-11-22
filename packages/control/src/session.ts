@@ -1748,7 +1748,12 @@ export async function finishTurn(
     const held = !s.stop_requested ? s.queued_handoff : undefined;
     // The daemon's shutdown keeps a notice that never reached the session for the next start.
     const kept =
-      ctx.closing && !held && !s.review_id && s.state !== 'closed'
+      ctx.closing &&
+      !held &&
+      !s.stop_requested &&
+      !stopPending &&
+      !s.review_id &&
+      s.state !== 'closed'
         ? turns.filter(waitingNotice)
         : [];
     // A confirmed close ends the process even when the adapter no longer reports its identity.

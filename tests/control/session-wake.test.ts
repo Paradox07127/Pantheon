@@ -139,7 +139,7 @@ const conductorOf = (f: Fixture, sessionId: string): Principal => ({
 });
 
 /** A main agent whose turn runs without a fixture process, so it stays running until stopped. */
-async function mainAgentMidTurn(f: Fixture) {
+async function mainAgentMidTurn(f: Fixture, identity = true) {
   const conductor = await f.call<Promise<Session>>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
@@ -148,7 +148,8 @@ async function mainAgentMidTurn(f: Fixture) {
   });
   await settle(f, conductor);
   vi.spyOn(f.adapter, 'send').mockImplementationOnce(async (handle, turn) => {
-    handle.process_identity = { pid: 4000001, start_time_us: 1700000000123456 };
+    if (identity) handle.process_identity = { pid: 4000001, start_time_us: 1700000000123456 };
+    else delete handle.process_identity;
     return { turn_id: turn.turn_id, status: 'delivered' };
   });
   const running = f.call<SessionTurn>(
@@ -159,11 +160,15 @@ async function mainAgentMidTurn(f: Fixture) {
   await eventually(
     () =>
       f.store.must<SessionTurn>('session_turns', running.id).state === 'running' &&
-      sessionOf(f, conductor.id).process_identity !== undefined,
+      (!identity || sessionOf(f, conductor.id).process_identity !== undefined),
     () => f.control.tick(),
   );
   return conductor;
 }
+
+/** How many times the adapter was sent the turn. */
+const sendsOf = (f: Fixture, turnId: string) =>
+  vi.mocked(f.adapter.send).mock.calls.filter(([, turn]) => turn.turn_id === turnId).length;
 
 /** The main agent's notice turns that carry the text. */
 const noticesWith = (f: Fixture, sessionId: string, text: string) =>
@@ -263,4 +268,88 @@ it('fails a message the user queued behind the running turn of the main agent wh
     delivery: 'failed',
     delivery_reason: 'daemon_shutdown',
   });
+});
+
+it('tells the main agent each of two notices that waited behind its running turn once after a daemon stop and start', async () => {
+  const f = await workbenchFixture();
+  const conductor = await mainAgentMidTurn(f);
+  const spawned = await spawnedNewsQueued(f, conductor.id);
+  const [news] = noticesWith(f, conductor.id, spawned);
+  const stored = f.store.insert<SessionTurn>('session_turns', {
+    id: id(),
+    revision: 1,
+    project_id: f.project.id,
+    session_id: conductor.id,
+    input: 'The review found two issues.',
+    kind: 'send',
+    delivery: 'pending',
+    state: 'queued',
+    origin: 'tracker',
+  });
+
+  await f.control.shutdown();
+  await f.restart(() => undefined, { abandon: true });
+  await eventually(
+    () =>
+      sessionOf(f, conductor.id).state === 'reconciling' ||
+      (sessionOf(f, conductor.id).state === 'open' &&
+        f.turns(conductor.id).every((turn) => !['queued', 'running'].includes(turn.state))),
+    () => f.control.tick(),
+  );
+
+  expect(sessionOf(f, conductor.id).state).toBe('open');
+  for (const notice of [news!, stored]) {
+    expect(f.store.must<SessionTurn>('session_turns', notice.id)).toMatchObject({
+      state: 'completed',
+      delivery: 'delivered',
+    });
+    expect(sendsOf(f, notice.id)).toBe(1);
+  }
+});
+
+it('ends a waiting notice of a main agent whose discard was asked when the daemon stops, and discards it', async () => {
+  const f = await workbenchFixture();
+  const conductor = await mainAgentMidTurn(f);
+  const spawned = await spawnedNewsQueued(f, conductor.id);
+  const [news] = noticesWith(f, conductor.id, spawned);
+  const row = sessionOf(f, conductor.id);
+  f.store.update<Session>(
+    'sessions',
+    { ...row, stop_requested: { reason: 'Closed by the user', by: 'user', at: f.store.now() } },
+    row.revision,
+  );
+
+  await f.control.shutdown();
+
+  expect(sessionOf(f, conductor.id).state).not.toBe('running');
+  await f.restart(() => undefined, { abandon: true });
+  for (let i = 0; i < 3; i++) await f.control.tick();
+  expect(f.store.must<SessionTurn>('session_turns', news!.id)).toMatchObject({
+    state: 'failed',
+    delivery: 'failed',
+    delivery_reason: 'daemon_shutdown',
+  });
+  expect(sessionOf(f, conductor.id).outcome).toBe('discarded');
+  expect(sendsOf(f, news!.id)).toBe(0);
+});
+
+it('ends a waiting notice when the daemon stop of a main agent with no known process fails', async () => {
+  const f = await workbenchFixture();
+  const conductor = await mainAgentMidTurn(f, false);
+  expect(sessionOf(f, conductor.id).process_identity).toBeUndefined();
+  const spawned = await spawnedNewsQueued(f, conductor.id);
+  const [news] = noticesWith(f, conductor.id, spawned);
+  vi.spyOn(f.adapter, 'cancel').mockRejectedValue(new Error('The process did not answer'));
+
+  await f.control.shutdown();
+  await f.restart(() => undefined, { abandon: true });
+  for (let i = 0; i < 3; i++) await f.control.tick();
+
+  expect(sessionOf(f, conductor.id).state).not.toBe('running');
+  expect(f.store.must<SessionTurn>('session_turns', news!.id)).toMatchObject({
+    state: 'failed',
+    delivery: 'failed',
+    delivery_reason: 'daemon_shutdown',
+  });
+  expect(sendsOf(f, news!.id)).toBe(0);
 });
