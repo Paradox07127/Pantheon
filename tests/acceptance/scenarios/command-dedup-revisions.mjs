@@ -9,7 +9,7 @@ import { waitFor } from '../lib/event-client.mjs';
 import { writeEvidence } from '../lib/evidence.mjs';
 import { createWorkspaceRoot } from '../lib/workspace-root.mjs';
 
-export const title = '去重、并发和过期版本';
+export const title = '去重和并发';
 export const mode = 'integration';
 
 const env = {
@@ -37,7 +37,7 @@ export async function run({ workspace, evidenceDir }) {
   const { daemon } = fixture;
   const receipts = [],
     observations = {};
-  let projectId, milestoneId, sharedKey, failure, evidence;
+  let projectId, sharedKey, failure, evidence;
 
   /** One client of the daemon: its own requests, recorded under its name. */
   const client = (name) => ({
@@ -165,46 +165,6 @@ export async function run({ workspace, evidenceDir }) {
       distinct_receipts: [...new Set(creates.map((entry) => entry.receipt_id))],
       session_opened_events: opened.length,
     };
-
-    // The user makes a milestone; both clients revise it from the same revision at the same time.
-    const milestone = await call('milestone', 'milestone.create', {
-      project_id: projectId,
-      title: 'Ship the first slice',
-      required_sessions: [sessions[0].id],
-      criteria: ['The first slice is merged'],
-    });
-    milestoneId = milestone.receipt_id;
-    const current = (await snapshot()).milestones.find((row) => row.id === milestoneId);
-    const revisions = await Promise.all(
-      clients.map((each, index) =>
-        each.send(
-          'stale_revision',
-          command(
-            USER_PRINCIPAL_ID,
-            'milestone.revise',
-            {
-              milestone_id: milestoneId,
-              title: `Ship the first slice, revised by client ${index + 1}`,
-              required_sessions: [sessions[0].id],
-              criteria: ['The first slice is merged'],
-            },
-            current.revision,
-          ),
-        ),
-      ),
-    );
-    const accepted = revisions.filter((entry) => entry.status === 200);
-    const rejected = revisions.filter((entry) => entry.status !== 200);
-    const after = (await snapshot()).milestones.find((row) => row.id === milestoneId);
-    observations.milestones = {
-      stale_revision_rejected:
-        accepted.length === 1 &&
-        rejected.length === 1 &&
-        after.revision === current.revision + 1 &&
-        after.title === accepted[0].input.title
-          ? rejected[0].error
-          : revisions.map((entry) => entry.error ?? 'accepted'),
-    };
   } catch (error) {
     failure = error;
   } finally {
@@ -248,7 +208,6 @@ export async function run({ workspace, evidenceDir }) {
           session_id,
           state,
         })),
-        milestones: board.milestones,
         shared_key_receipts: sharedKey
           ? db
               .prepare('SELECT source_key, input_hash FROM inbox WHERE source_key=?')

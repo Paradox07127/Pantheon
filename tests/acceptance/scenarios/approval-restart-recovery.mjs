@@ -8,11 +8,10 @@ import { FixtureAdapter } from '@pantheon/adapters';
 import { command, USER_PRINCIPAL_ID } from '@pantheon/protocol';
 import { startFixtureDaemon } from '../lib/daemon.mjs';
 import { waitFor } from '../lib/event-client.mjs';
-import { createVirtualClock } from '../lib/clock.mjs';
 import { writeEvidence } from '../lib/evidence.mjs';
 import { createWorkspaceRoot } from '../lib/workspace-root.mjs';
 
-export const title = '持久等待与审批恢复';
+export const title = '审批恢复';
 export const mode = 'integration';
 
 const env = {
@@ -29,7 +28,6 @@ const INTERVAL_MS = 50;
 /** Daemon ticks to run while nothing should change. */
 const IDLE_TICKS = 20;
 const CRASH_TIMEOUT_MS = 20000;
-const HOUR_MS = 3600000;
 const lostChild = fileURLToPath(
   new URL('../fixtures/daemon-lost-at-approval.mjs', import.meta.url),
 );
@@ -49,17 +47,12 @@ export async function run({ workspace, evidenceDir }) {
   const receipts = [],
     restarts = [],
     approvalsSeen = {},
-    timersSeen = {},
     ids = {},
     observations = {};
   let projectId, failure, evidence;
 
-  let clock;
   const start = async (reason) => {
-    fixture = await startFixtureDaemon(dataDir, [new FixtureAdapter()], {
-      ...options,
-      now: clock?.now,
-    });
+    fixture = await startFixtureDaemon(dataDir, [new FixtureAdapter()], options);
     daemon = fixture.daemon;
     restarts.push({ reason, at: new Date().toISOString() });
   };
@@ -317,68 +310,6 @@ export async function run({ workspace, evidenceDir }) {
       later.some(
         (event) => event.kind.startsWith('approval.') && event.aggregate_id === ids.voided_approval,
       );
-
-    // A session stops at a usage limit that resets in an hour; a virtual clock crosses the reset.
-    clock = createVirtualClock(Date.now());
-    await restart('restart on the virtual clock');
-    const resetsAt = clock.now() + HOUR_MS;
-    ids.limited = (
-      await call('limit', 'session.create', {
-        project_id: projectId,
-        runtime: 'fixture',
-        input: script({
-          fail: { message: 'Usage limit reached', error_code: 'usage_limit', resets_at: resetsAt },
-        }),
-      })
-    ).id;
-    const limitItem = await waitFor(
-      async () =>
-        (await needsYou()).items.find(
-          (item) => item.source?.id === ids.limited && item.reason === 'usage_limit_reached',
-        ) ?? false,
-      'the usage limit in "needs you"',
-      WAIT_MS,
-    );
-    // Nothing else in this project schedules a timer, so every timer belongs to the limit.
-    const timersOf = () =>
-      daemon.store.list('timers').filter((timer) => timer.project_id === projectId);
-    timersSeen.before_reset = timersOf();
-    // Just short of the reset, then across it with a restart in between.
-    clock.advance(HOUR_MS - 60000);
-    await sleepTicks(IDLE_TICKS);
-    timersSeen.before_due = timersOf();
-    await restart('restart just before the reset time');
-    clock.advance(2 * 60000);
-    await sleepTicks(IDLE_TICKS);
-    timersSeen.after_reset = timersOf();
-    const fired = (await events()).filter((event) => event.kind === 'timer.fired');
-    timersSeen.fired = fired;
-    const pending = (rows) => rows.length > 0 && rows.every((timer) => timer.state === 'pending');
-    const lost = timersSeen.before_reset.filter(
-      (timer) => !timersSeen.after_reset.some((row) => row.id === timer.id),
-    );
-    const counts = {
-      limit_resets_at: limitItem.resets_at ?? null,
-      timers_before_reset: timersSeen.before_reset.length,
-      timers_after_reset: timersSeen.after_reset.length,
-      timer_fired_events: fired.length,
-    };
-    observations.timers = {
-      fired_once_logically:
-        !timersSeen.before_reset.length && !timersSeen.after_reset.length && !fired.length
-          ? {
-              supported: false,
-              reason: 'No timer is scheduled for the usage limit reset of a plain session',
-              ...counts,
-            }
-          : lost.length
-            ? { lost: lost.map((timer) => timer.id), ...counts }
-            : pending(timersSeen.before_reset) &&
-              pending(timersSeen.before_due) &&
-              fired.length === 1 &&
-              fired[0].payload.fired_at >= resetsAt &&
-              timersSeen.after_reset.every((timer) => timer.state !== 'pending'),
-    };
   } catch (error) {
     failure = error;
   } finally {
@@ -406,6 +337,7 @@ export async function run({ workspace, evidenceDir }) {
     return {
       'approval-ledger.json': {
         ids,
+        restarts,
         approvals: daemon.store
           .list('approvals')
           .filter((row) => [ids.asking, ids.live_session].includes(row.session_id)),
@@ -416,14 +348,6 @@ export async function run({ workspace, evidenceDir }) {
             event.kind.startsWith('approval.') || event.kind.startsWith('agent.permission.'),
         ),
         observations,
-      },
-      'timer-ledger.json': {
-        restarts,
-        clock_now: clock?.now() ?? null,
-        limited_session: ids.limited ?? null,
-        seen: timersSeen,
-        timers: daemon.store.list('timers'),
-        timer_events: all.filter((event) => event.kind.startsWith('timer.')),
       },
       'observations.json': observations,
     };

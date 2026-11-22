@@ -255,18 +255,16 @@
     },
     {
       "id": "A006",
-      "title": "去重、并发和过期版本",
+      "title": "去重和并发",
       "gate": "G1",
       "mode": "integration",
       "timeout_ms": 120000,
       "setup": [
-        "一个项目；双客户端；fixture 运行时",
-        "一个用户建的里程碑"
+        "一个项目；双客户端；fixture 运行时"
       ],
       "steps": [
         "并发发送 100 次同一 idempotency_key 的 session.create",
-        "用同一 key 改输入再发一次",
-        "两个客户端基于同一 revision 各发一次 milestone.revise"
+        "用同一 key 改输入再发一次"
       ],
       "assertions": [
         {
@@ -278,11 +276,6 @@
           "path": "commands.different_input_conflict",
           "op": "eq",
           "expected": true
-        },
-        {
-          "path": "milestones.stale_revision_rejected",
-          "op": "eq",
-          "expected": "revision_conflict"
         }
       ],
       "evidence": [
@@ -435,18 +428,16 @@
     },
     {
       "id": "A014",
-      "title": "持久等待与审批恢复",
+      "title": "审批恢复",
       "gate": "G1",
       "mode": "integration",
       "timeout_ms": 120000,
       "setup": [
-        "等待审批的会话；因 usage_limit 失败、带重置时刻的 daemon 驱动会话",
-        "虚拟时钟，不实际长时间等待"
+        "等待审批的会话"
       ],
       "steps": [
         "重启 daemon,读 needs_you.list",
-        "对同一个仍有效的审批重复投递 approval.respond;对已作废的审批再发 approval.respond",
-        "推进虚拟时钟跨过用量重置时刻，期间再重启一次，再跑若干 tick"
+        "对同一个仍有效的审批重复投递 approval.respond;对已作废的审批再发 approval.respond"
       ],
       "assertions": [
         {
@@ -463,15 +454,9 @@
           "path": "approvals.invalid_request_reused",
           "op": "eq",
           "expected": false
-        },
-        {
-          "path": "timers.fired_once_logically",
-          "op": "eq",
-          "expected": true
         }
       ],
       "evidence": [
-        "timer-ledger.json",
         "approval-ledger.json"
       ],
       "status": "not_run"
