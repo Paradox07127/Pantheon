@@ -34,5 +34,6 @@
   "memory.detail.versions": "版本 {count}",
   "memory.detail.draft": "草稿",
   "memory.detail.tags": "标签",
-  "memory.detail.filterTag": "只看带 {tag} 标签的记忆"
+  "memory.detail.filterTag": "只看带 {tag} 标签的记忆",
+  "memory.detail.byPlan": "计划里定的"
 }

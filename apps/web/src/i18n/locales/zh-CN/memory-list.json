@@ -25,5 +25,6 @@
   "memory.list.firstPage": "回到第一页",
   "memory.list.more": "接着读 {count} 条",
   "memory.list.noMatch": "没有匹配的记忆",
-  "memory.list.moreTags": "+{count}"
+  "memory.list.moreTags": "+{count}",
+  "memory.list.byPlan": "计划里定的"
 }

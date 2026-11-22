@@ -50,7 +50,7 @@ Pantheon 管理记忆的生效状态，agent 提交分析候选。无需外部�
 记忆工具只给 Pantheon 自己起的会话：新项目搭建(`project_setup`)、摸底、简介、改动说明和审查会话。用户开的会话(工作树会话、就地会话、带工具的会话)没有记忆工具，也不收记忆 packet。这些会话可用：
 
 1. `memory_context {}`：任务开始、压缩之后、接受/合并工作之前读取。项目由 MCP 凭据绑定，返回 signature、作用域、来源、正文和省略数量。
-2. `memory_search {"q":"数据库","kind":"decision","tag":"storage"}`：定向检索当前内容，可按 kind/tag/task_id/lead_session_id 精确筛选。tag 接受一个字符串或字符串数组，数组要求每个标签都匹配（沿用大小写折叠）；GET 查询可重复传 `tag=storage&tag=local`。`project_only: true` 只选无 task 的项目级记录；同时传 task_id 或 lead_session_id 时没有结果（目录和图谱查询直接拒绝这种组合）。返回标题、摘要、版本 ID、状态、作用域和命中理由，不打开正文。旧记录从索引取最多 600 UTF-8 bytes 摘要；显式摘要上限 400 字符；结果条目合计最多 16,000 bytes，`omitted` 显示未返回数量。依赖前必须用 get 读原文。FTS5 处理词语匹配，中文短词另用字面子串匹配，元数据支持精确匹配。
+2. `memory_search {"q":"数据库","kind":"decision","tag":"storage"}`：定向检索当前内容，可按 kind/tag 精确筛选。tag 接受一个字符串或字符串数组，数组要求每个标签都匹配（沿用大小写折叠）；GET 查询可重复传 `tag=storage&tag=local`。返回标题、摘要、版本 ID、状态、作用域和命中理由，不打开正文。旧记录从索引取最多 600 UTF-8 bytes 摘要；显式摘要上限 400 字符；结果条目合计最多 16,000 bytes，`omitted` 显示未返回数量。依赖前必须用 get 读原文。FTS5 处理词语匹配，中文短词另用字面子串匹配，元数据支持精确匹配。
 3. `memory_get {"memory_id":"当前版本 ID"}`：读取当前版本。ID 不可读时重新获取 context，不能改用会话里早先读到的副本。
 4. `memory_related {"memory_id":"当前版本 ID","relation":"dependent","depth":2,"limit":10}`：查依赖、反向依赖、版本关系或同标签内容。最多两跳、30 条、16,000 bytes，同样只返回当前作用域的摘要；shared_tag 只表示同主题。
 5. `memory_propose`：写入笔记、报告，或提交决定候选。启动指令要求 agent 不等用户要求、在同一回合内写入：用户纠正做法或说明偏好与规则、用户确认了一个不显然的做法、发现代码、git 历史和文档里看不到的项目事实、用户说要记住。写入前先 `memory_search`，用旧条目的 key 替代过时内容。例如：
@@ -97,7 +97,7 @@ scheduler 比较来源签名，持久化去重的 memory job；每 tick 最多�
 
 目录 `facets.tags` 为 `[{ tag: string, count: number }]`，计数使用除 tag 外的其余筛选（包括状态、kind、task 与 q），在分页前统计每个标签所含的记录数。大小写折叠后的同一标签每条记录只计一次，标签拼写取首条记录；保留最多 100 个按名称排序的标签。
 
-目录 `facets.tasks` 列出带任务作用域的条目所属的任务 `{ id, lead_session_id }`，不带 title。`memory.recent {"project_id":"项目 ID","limit":10}` 返回 `items: [{ at, kind, memory_id, memory_kind, key, title, actor, reason? }]`，kind 为 proposed、committed、archived、restored 或 retraction_undone，memory_kind 沿用记录的 decision/report/note。记录当前已归档时附带 reason（superseded、retracted、expired、stale），沿用现有归档原因；这些字段描述记录当前状态，不是事件发生时的快照。最新事件在前；同一时间按事件序号倒序。limit 默认 10，范围 1–50。只返回生命周期事件元数据，不含正文。旧事件缺少操作人时使用记录作者。`memory.turn`、`memory.session_turns` 与 `memory.recent` 都是仅用户可用的 GET 查询，不增加 agent 工具。
+目录和图谱查询仍接受旧客户端发来的 `task_id`、`lead_session_id`、`project_only`、`origin`、`milestone_id`，但忽略它们。`memory.recent {"project_id":"项目 ID","limit":10}` 返回 `items: [{ at, kind, memory_id, memory_kind, key, title, actor, reason? }]`，kind 为 proposed、committed、archived、restored 或 retraction_undone，memory_kind 沿用记录的 decision/report/note。记录当前已归档时附带 reason（superseded、retracted、expired、stale），沿用现有归档原因；这些字段描述记录当前状态，不是事件发生时的快照。最新事件在前；同一时间按事件序号倒序。limit 默认 10，范围 1–50。只返回生命周期事件元数据，不含正文。旧事件缺少操作人时使用记录作者。`memory.turn`、`memory.session_turns` 与 `memory.recent` 都是仅用户可用的 GET 查询，不增加 agent 工具。
 
 title/summary/tags/references 是可选字段。文件 references 使用项目相对路径和 root 编号，检查真实路径不越出根目录；小于等于 2 MB 的文件保存内容 hash，正文详情返回 unchanged/changed/unversioned/unavailable。HTTP(S) 引用不自动联网，状态是 unverified。引用是来源身份与变化提示，不代表已经验证结论，也不自动把原文件全文复制成记忆。文件变化尚不触发后台自动归档，agent 必须检查 reference_status 并重读来源；已确认规则的撤回仍由明确生命周期操作决定。
 

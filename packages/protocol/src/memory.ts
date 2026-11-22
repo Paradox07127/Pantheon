@@ -32,21 +32,33 @@ export const memoryFilterShape = {
     .default('')
     .describe('Words or a phrase to search for, at most 200 characters.'),
 };
-/** Task and plan filters an older client may still send; accepted and not read. */
+const ignored = z.unknown().optional().describe('Ignored; an older client may still send it.');
+/** Task and plan filters an older client may still send; accepted and dropped. */
 const retiredQueryFilters = {
-  task_id: z.unknown().optional(),
-  lead_session_id: z.unknown().optional(),
-  project_only: z.unknown().optional(),
-  origin: z.unknown().optional(),
-  milestone_id: z.unknown().optional(),
+  task_id: ignored,
+  lead_session_id: ignored,
+  project_only: ignored,
+  origin: ignored,
+  milestone_id: ignored,
 };
-export const memoryDirectorySchema = z.strictObject({
-  project_id: id,
-  ...memoryFilterShape,
-  ...retiredQueryFilters,
-  limit: z.coerce.number().int().min(1).max(50).default(20),
-  cursor: z.string().max(1024).optional(),
-});
+// Dropped before the handler sees them: the next-page cursor hashes the parsed input.
+const dropRetired = <T extends Record<string, unknown>>({
+  task_id: _t,
+  lead_session_id: _l,
+  project_only: _p,
+  origin: _o,
+  milestone_id: _m,
+  ...input
+}: T) => input;
+export const memoryDirectorySchema = z
+  .strictObject({
+    project_id: id,
+    ...memoryFilterShape,
+    ...retiredQueryFilters,
+    limit: z.coerce.number().int().min(1).max(50).default(20),
+    cursor: z.string().max(1024).optional(),
+  })
+  .transform(dropRetired);
 const graphKind = z.enum(['decision', 'report', 'note', 'file', 'url', 'session']);
 export const memoryGraphSchema = z
   .strictObject({
@@ -65,7 +77,7 @@ export const memoryGraphSchema = z
       .default(false),
   })
   .transform((input) => ({
-    ...input,
+    ...dropRetired(input),
     max_nodes: input.max_nodes ?? (input.memory_id ? 40 : 80),
   }));
 export const memoryInputSchemas = {

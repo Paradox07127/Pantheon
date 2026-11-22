@@ -39,10 +39,12 @@ const kindText = (kind: MemoryRecord['kind']) =>
       ? t({ id: 'memory.detail.kind.report', defaultMessage: 'Report' })
       : t({ id: 'memory.detail.kind.note', defaultMessage: 'Note' });
 
-const authorityText = (r: Pick<MemoryRecord, 'authority'>) =>
-  r.authority === 'user'
-    ? t({ id: 'memory.detail.byUser', defaultMessage: 'You decided' })
-    : t({ id: 'memory.detail.byAgent', defaultMessage: 'Agent report' });
+const authorityText = (r: Pick<MemoryRecord, 'authority' | 'origin'>) =>
+  r.origin
+    ? t({ id: 'memory.detail.byPlan', defaultMessage: 'Decided in the plan' })
+    : r.authority === 'user'
+      ? t({ id: 'memory.detail.byUser', defaultMessage: 'You decided' })
+      : t({ id: 'memory.detail.byAgent', defaultMessage: 'Agent report' });
 
 const stateTone = (r: Pick<MemoryRecord, 'state'>): Tone =>
   r.state === 'active' ? 'ok' : r.state === 'draft' ? 'wait' : 'idle';

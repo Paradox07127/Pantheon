@@ -333,9 +333,11 @@ export function EntryList(p: EntryListProps) {
         </span>
         <span className="ml-by">
           {(r.state === 'draft' && r.author_session_id && p.authorTitle(r.author_session_id)) ||
-            (r.authority === 'user'
-              ? t({ id: 'memory.list.byUser', defaultMessage: 'Set by you' })
-              : t({ id: 'memory.list.byAgent', defaultMessage: 'Agent report' }))}
+            (r.origin
+              ? t({ id: 'memory.list.byPlan', defaultMessage: 'Set in the plan' })
+              : r.authority === 'user'
+                ? t({ id: 'memory.list.byUser', defaultMessage: 'Set by you' })
+                : t({ id: 'memory.list.byAgent', defaultMessage: 'Agent report' }))}
         </span>
         <span className="ml-tm">
           {r.state === 'draft' && (

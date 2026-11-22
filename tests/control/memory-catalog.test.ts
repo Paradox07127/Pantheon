@@ -876,6 +876,7 @@ it('restores an entry stored with a board task scope as a project draft that can
 it('reads the directory and graph unchanged when an older client sends task or plan filters', async () => {
   const f = await catalogFixture();
   const note = f.save('note', 'Project-wide');
+  f.save('other', 'Second');
   const retired = {
     task_id: 'task',
     lead_session_id: 'lead',
@@ -883,9 +884,13 @@ it('reads the directory and graph unchanged when an older client sends task or p
     origin: 'plan',
     milestone_id: 'milestone',
   };
-  expect(f.directory(retired).records.map((r: MemorySummary) => r.id)).toEqual([note.id]);
+  const page = f.directory({ ...retired, limit: 1 });
+  // A retired filter that changes between pages does not invalidate the cursor.
+  const next = f.directory({ limit: 1, cursor: page.next_cursor });
+  expect(new Set([...page.records, ...next.records].map((r: MemorySummary) => r.id)).size).toBe(2);
+  expect(f.directory(retired).records.map((r: MemorySummary) => r.id)).toContain(note.id);
   expect(f.directory(retired).facets).toEqual({ tags: [] });
   expect(
     f.control.memoryGraph(user, { project_id: f.project.id, ...retired }).nodes.map((n) => n.id),
-  ).toEqual([note.id]);
+  ).toContain(note.id);
 });
