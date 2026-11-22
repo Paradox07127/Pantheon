@@ -56,6 +56,8 @@ interface ListRow {
   detail?: ReactNode;
   /** The files the item is about, under the detail. */
   files?: string;
+  /** Shown under the row, outside its open button. */
+  body?: ReactNode;
   actions?: ReactNode;
   end?: ReactNode;
   dim?: boolean;
@@ -146,6 +148,7 @@ function listPopover(props: {
                         </button>
                         <span className="np-e">{row.end}</span>
                         <span className="np-a">{row.actions}</span>
+                        {row.body && <div className="np-b">{row.body}</div>}
                       </li>
                     ))}
                   </ul>
@@ -189,6 +192,82 @@ const answerable = (item: NeedsYouItem) =>
 
 // Every file shows: the approval lands all of them.
 const filesText = (files: readonly string[]) => listText(...files);
+
+/** The short name of the setting a proposal changes; an unknown command shows as it is. */
+function settingName(command: string): string {
+  switch (command) {
+    case 'project.gate.set':
+      return t({ id: 'components.needsPopover.setting.gate', defaultMessage: 'Gate commands' });
+    case 'workflow.policy.set':
+      return t({ id: 'components.needsPopover.setting.budget', defaultMessage: 'Budget' });
+    case 'project.sessionDefaults.set':
+      return t({
+        id: 'components.needsPopover.setting.sessionDefaults',
+        defaultMessage: 'Session defaults',
+      });
+    case 'project.extensions.set':
+      return t({
+        id: 'components.needsPopover.setting.extensions',
+        defaultMessage: 'Extensions',
+      });
+    default:
+      return command;
+  }
+}
+
+const NONE = '—';
+
+function valueText(value: unknown): string {
+  if (value === undefined || value === null) return NONE;
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value) && value.every((v) => typeof v === 'string')) return listText(...value);
+  return JSON.stringify(value);
+}
+
+/** The root, the agent's reason and each changed field now and after the change. */
+function settingBody(setting: NonNullable<NeedsYouItem['setting']>, name: string): ReactNode {
+  const before = setting.before ?? {};
+  const after = setting.after ?? {};
+  const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])];
+  return (
+    <>
+      {setting.root && <span className="np-rt">{setting.root}</span>}
+      <p className="np-why">{setting.reason}</p>
+      {keys.length > 0 && (
+        <table
+          className="np-tb"
+          aria-label={t(
+            { id: 'components.needsPopover.setting.change', defaultMessage: 'Change: {name}' },
+            { name },
+          )}
+        >
+          <thead>
+            <tr>
+              <td />
+              <th scope="col" className="np-th">
+                {t({ id: 'components.needsPopover.setting.now', defaultMessage: 'Now' })}
+              </th>
+              <th scope="col" className="np-th">
+                {t({ id: 'components.needsPopover.setting.after', defaultMessage: 'After' })}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {keys.map((key) => (
+              <tr key={key}>
+                <th scope="row" className="np-k">
+                  {key}
+                </th>
+                <td className="np-v">{valueText(before[key])}</td>
+                <td className="np-v">{valueText(after[key])}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </>
+  );
+}
 
 const ANSWERING = '';
 const NO_PROJECTS: readonly never[] = [];
@@ -275,6 +354,7 @@ export function NeedsPopover({
     const failed = answers[key];
     const kind = decisionText(item.decision);
     const named = session && board ? sessionTitle(session, board) : undefined;
+    const setting = item.setting && settingName(item.setting.command);
     const row: ListRow = {
       key,
       projectId: item.project_id,
@@ -284,15 +364,16 @@ export function NeedsPopover({
       }),
       since: item.created_at,
       icon: needsGlyph(item),
-      title: kind ?? named ?? reason,
+      title: setting ?? kind ?? named ?? reason,
       detail: failed ? (
         <span role="alert">{failed}</span>
-      ) : kind ? (
+      ) : kind || setting ? (
         (named ?? reason)
       ) : named ? (
         reason
       ) : undefined,
       ...(item.files?.length ? { files: filesText(item.files) } : {}),
+      ...(item.setting && setting ? { body: settingBody(item.setting, setting) } : {}),
       end: ageText(item.created_at, now),
       on: key === current,
     };

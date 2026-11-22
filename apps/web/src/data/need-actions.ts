@@ -26,8 +26,14 @@ export interface NeedAction {
   reason: string | null;
 }
 
-function offReason(item: NeedsYouItem, command: string): string | null {
-  const action = item.actions.find((a) => a.command === command);
+function offReason(
+  item: NeedsYouItem,
+  command: string,
+  decision?: 'approve' | 'reject',
+): string | null {
+  const action = item.actions.find(
+    (a) => a.command === command && (!decision || a.decision === decision),
+  );
   if (!action || action.allowed) return null;
   return action.disabled_reason
     ? reasonText(action.disabled_reason)
@@ -127,6 +133,20 @@ export function needActions(item: NeedsYouItem, session?: SnapshotSession): Need
         : []),
       open,
     ];
+  if (item.kind === 'setting.proposed')
+    return [
+      {
+        key: 'approve',
+        label: t({ id: 'board.needs.actions.approveSetting', defaultMessage: 'Approve' }),
+        reason: offReason(item, 'setting.proposal.respond', 'approve'),
+      },
+      {
+        key: 'reject',
+        label: t({ id: 'board.needs.actions.rejectSetting', defaultMessage: 'Reject' }),
+        reason: offReason(item, 'setting.proposal.respond', 'reject'),
+      },
+      open,
+    ];
   if (item.kind === 'project.over_budget')
     return [
       {
@@ -201,6 +221,12 @@ export function needCommand(
       type: 'session.background.stop',
       input: { session_id: sessionId, background_id: item.background.id },
       revision: null,
+    };
+  if (item.kind === 'setting.proposed' && (key === 'approve' || key === 'reject'))
+    return {
+      type: 'setting.proposal.respond',
+      input: { proposal_id: item.source.id, decision: key },
+      revision: item.source.revision,
     };
   if (key === 'approve' || key === 'approve_session' || key === 'reject')
     return {

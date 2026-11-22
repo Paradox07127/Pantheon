@@ -316,6 +316,119 @@ describe('needs-you list', () => {
   );
 });
 
+describe('a settings change the main agent proposes', () => {
+  const respond = (decision: 'approve' | 'reject', allowed = true) => ({
+    command: 'setting.proposal.respond',
+    allowed,
+    decision,
+    ...(allowed ? {} : { disabled_reason: 'permission_denied' }),
+  });
+  const proposal = (over: Partial<NeedsYouItem> = {}) =>
+    item({
+      source: { table: 'setting_change_proposals', id: 'proposal-1', revision: 2 },
+      kind: 'setting.proposed',
+      session_id: 'session-login',
+      reason: 'setting_proposed',
+      decision: 'other',
+      primary: 'setting.proposal.respond',
+      actions: [respond('approve'), respond('reject')],
+      setting: {
+        command: 'project.gate.set',
+        root: '/repo/app',
+        before: { commands: ['pnpm test'], timeout_ms: null },
+        after: { commands: ['pnpm test', 'pnpm lint'], timeout_ms: 60000, env: { CI: '1' } },
+        reason: 'Lint failures only show up in review',
+      },
+      ...over,
+    });
+  const show = (proposed: NeedsYouItem) => {
+    const h = mount(() => NeedsPopover({ items: [proposed], trigger }));
+    root(h.value).props.onOpenChange(true);
+    h.render();
+    return h;
+  };
+  const approve = (tree: unknown) =>
+    find(
+      tree as never,
+      (n) => n.type === 'button' && text(n) === zh('board.needs.actions.approveSetting'),
+    );
+  const reject = (tree: unknown) =>
+    find(
+      tree as never,
+      (n) =>
+        n.type !== 'button' &&
+        !!n.props.onClick &&
+        text(n) === zh('board.needs.actions.rejectSetting'),
+    );
+  const gateName = zh('components.needsPopover.setting.gate');
+
+  it.each([
+    ['approves', 'approve', approve],
+    ['rejects', 'reject', reject],
+  ] as const)(
+    '%s the change from its row at the proposal revision',
+    async (_name, decision, press) => {
+      const h = show(proposal());
+      await press(h.value).props.onClick();
+      expect(runCommand).toHaveBeenCalledWith(
+        'setting.proposal.respond',
+        { proposal_id: 'proposal-1', decision },
+        2,
+      );
+    },
+  );
+
+  it('keeps approve off with the reason the backend gives', async () => {
+    const h = show(proposal({ actions: [respond('approve', false), respond('reject')] }));
+    expect(approve(h.value).props['aria-disabled']).toBe(true);
+    expect(find(h.value, (n) => n.props.content === reasonText('permission_denied'))).toBeTruthy();
+    await approve(h.value).props.onClick();
+    expect(runCommand).not.toHaveBeenCalled();
+    expect(reject(h.value).props.disabled).toBe(false);
+  });
+
+  it('names the setting and its root, gives the reason and lists each field now and after', () => {
+    const h = show(proposal());
+    expect(text(button(h.value, gateName))).toContain('Fix login');
+    expect(text(h.value)).toContain('/repo/app');
+    expect(text(h.value)).toContain('Lint failures only show up in review');
+    const table = find(
+      h.value,
+      (n) =>
+        n.type === 'table' &&
+        n.props['aria-label'] === zhf('components.needsPopover.setting.change', { name: gateName }),
+    );
+    const cells = (n: unknown) =>
+      nodes(n as never)
+        .filter((c) => c.type === 'th' || c.type === 'td')
+        .map(text);
+    const rows = nodes(table).filter((n) => n.type === 'tr');
+    expect(cells(rows[0])).toEqual([
+      '',
+      zh('components.needsPopover.setting.now'),
+      zh('components.needsPopover.setting.after'),
+    ]);
+    expect(rows.slice(1).map(cells)).toEqual([
+      ['commands', 'pnpm test', 'pnpm test, pnpm lint'],
+      ['timeout_ms', '—', '60000'],
+      ['env', '—', '{"CI":"1"}'],
+    ]);
+  });
+
+  it('shows a change without before and after by its reason and buttons alone', () => {
+    const h = show(
+      proposal({
+        setting: { command: 'workflow.policy.set', reason: 'The budget runs out daily' },
+      }),
+    );
+    expect(text(h.value)).toContain(zh('components.needsPopover.setting.budget'));
+    expect(text(h.value)).toContain('The budget runs out daily');
+    expect(nodes(h.value).some((n) => n.type === 'table')).toBe(false);
+    expect(approve(h.value)).toBeTruthy();
+    expect(reject(h.value)).toBeTruthy();
+  });
+});
+
 describe('running and ready lists', () => {
   const session = (over: Partial<WorkbenchSession>) =>
     ({

@@ -94,6 +94,14 @@ export interface NeedsYouItem {
   };
   /** Who acts next and how. */
   next_step?: string;
+  /** The settings change a main agent proposes; before and after hold the fields it changes. */
+  setting?: {
+    command: string;
+    root?: string;
+    before?: Record<string, unknown>;
+    after?: Record<string, unknown>;
+    reason: string;
+  };
 }
 
 export interface Availability {
