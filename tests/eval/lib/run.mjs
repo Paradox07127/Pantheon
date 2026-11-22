@@ -25,12 +25,18 @@ const TITLE_WAIT_MS = 35000;
 // The first turn of the native session that the adopted condition imports; the task needs nothing from it.
 const OPENER = 'Reply with the single word ready.';
 
+/** The `codex exec` flags that choose the spec's model and effort; none leaves the user's Codex configuration. */
+const execFlags = (spec) => [
+  ...(spec.model ? ['-m', spec.model] : []),
+  ...(spec.effort ? ['-c', `model_reasoning_effort=${spec.effort}`] : []),
+];
+
 /** Runs `codex exec --json` on the input in cwd, as a user would from a shell, with its output in logs. */
-async function codexExec(binary, cwd, input, logs, name, timeoutMs) {
+async function codexExec(binary, cwd, input, logs, name, timeoutMs, flags) {
   const stdout = fs.openSync(path.join(logs, `${name}.jsonl`), 'w');
   const stderr = fs.openSync(path.join(logs, `${name}.stderr.log`), 'w');
   const started = Date.now();
-  const child = spawn(binary, ['exec', '--json', input], {
+  const child = spawn(binary, ['exec', '--json', ...flags, input], {
     cwd,
     stdio: ['ignore', stdout, stderr],
   });
@@ -113,9 +119,13 @@ function nativeTurn(threads, goal, checkouts) {
     .flatMap(({ lines: own }) =>
       own.filter((line) => line.type === 'token_usage_record').map((line) => line.payload.usage),
     );
+  const contexts = lines.filter((line) => line.type === 'turn_context');
   return {
     native_session_id: lines[0].payload.id,
-    model: lines.findLast((line) => line.type === 'turn_context')?.payload.model ?? null,
+    model: contexts.at(-1)?.payload.model ?? null,
+    effort: contexts.at(-1)?.payload.effort ?? null,
+    // The first turn's model: in an adopted run, the opener's.
+    first_model: contexts[0]?.payload.model ?? null,
     // false: what reached the model as the user's message is not the goal as written.
     goal_verbatim: text === goal,
     tool_calls: calls.length,
@@ -179,6 +189,8 @@ async function adapterRun(spec, repo, adapter) {
       mcp_servers: [],
       budget: { max_turns: 1, wall_time_ms: spec.settleMs },
       permission_mode: 'auto_edit',
+      ...(spec.model ? { model: spec.model } : {}),
+      ...(spec.effort ? { effort: spec.effort } : {}),
     },
     (event) => {
       events.push(event);
@@ -200,13 +212,14 @@ async function adapterRun(spec, repo, adapter) {
     task_turns: 1,
     approvals: 0,
     wall_ms: Date.now() - started,
+    workspace_kind: null,
   };
 }
 
 /**
- * A session inside a fresh daemon on its own data directory and home: a worktree session the
- * user creates with the goal (plain), or the bare opener's native session adopted in the
- * repository and sent the goal (adopted).
+ * A session inside a fresh daemon on its own data directory and home: a session the user creates
+ * with the goal where the app puts it by default (plain), or the bare opener's native session
+ * adopted in the repository and sent the goal (adopted).
  */
 async function pantheonRun(spec, repo, opener) {
   const home = path.join(spec.workspace, 'home');
@@ -237,6 +250,12 @@ async function pantheonRun(spec, repo, opener) {
       if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${description}`);
     }
   };
+  const choice = {
+    ...(spec.model ? { model: spec.model } : {}),
+    ...(spec.effort ? { effort: spec.effort } : {}),
+  };
+  const row = async (params, id) =>
+    (await get('board', params)).sessions.find((one) => one.id === id);
   try {
     const project = await fixture.call('project.open', { name: 'Evaluation run', roots: [repo] });
     const params = { project_id: project.id };
@@ -254,10 +273,22 @@ async function pantheonRun(spec, repo, opener) {
         runtime: spec.runtime,
         native_session_id: opener.thread,
       });
-      const idle = await poll(async () => {
-        const row = (await get('board', params)).sessions.find((one) => one.id === session.id);
-        return row?.state === 'open' && row;
-      }, 'the adopted session to open');
+      const open = async () => {
+        const one = await row(params, session.id);
+        return one?.state === 'open' && one;
+      };
+      let idle = await poll(open, 'the adopted session to open');
+      if (spec.model) {
+        await fixture.call(
+          'session.setModel',
+          { session_id: session.id, ...choice },
+          idle.revision,
+        );
+        idle = await poll(
+          async () => (await row(params, session.id))?.revision !== idle.revision && open(),
+          'the adopted session to take the model',
+        );
+      }
       started = Date.now();
       await fixture.call(
         'session.send',
@@ -266,9 +297,12 @@ async function pantheonRun(spec, repo, opener) {
       );
     } else {
       started = Date.now();
+      // The app's new session: the project folder unless a session already writes there.
       session = await fixture.call('session.create', {
         project_id: project.id,
+        workspace: 'auto',
         runtime: spec.runtime,
+        ...choice,
         input: spec.goal,
       });
     }
@@ -279,14 +313,20 @@ async function pantheonRun(spec, repo, opener) {
       turns = [],
       wall,
       title = null,
-      renamed;
+      renamed,
+      workspaceKind;
+    const kind = async () =>
+      (await get('session.list', params)).find((one) => one.id === session.id).workspace_kind;
     // The runtime's error of each failed turn, by turn id.
     const failures = new Map();
-    // A plain session's runtime names it after the turn ends; closing the daemon earlier cuts that off.
+    // The runtime names a plain worktree session after the turn ends; closing the daemon earlier cuts that off.
     for (
       const deadline = started + spec.settleMs;
       settled
-        ? !opener && !renamed && Date.now() < started + wall + TITLE_WAIT_MS
+        ? !opener &&
+          workspaceKind === 'linked_worktree' &&
+          !renamed &&
+          Date.now() < started + wall + TITLE_WAIT_MS
         : Date.now() < deadline;
     ) {
       await delay(POLL_MS);
@@ -324,19 +364,23 @@ async function pantheonRun(spec, repo, opener) {
       if (turns.length && !turns.some(busy)) {
         settled = true;
         wall = Date.now() - started;
+        workspaceKind = await kind();
       }
     }
     wall ??= Date.now() - started;
-    // The plain session's worktree is the one linked worktree of the repository.
-    const tree = opener
-      ? repo
-      : git(repo, 'worktree', 'list', '--porcelain')
-          .split('\n')
-          .filter((line) => line.startsWith('worktree '))
-          .map((line) => line.slice('worktree '.length))
-          .find((dir) => fs.realpathSync(dir) !== fs.realpathSync(repo));
+    const workspace_kind = workspaceKind ?? (await kind());
+    // A worktree session's tree is the one linked worktree of the repository.
+    const tree =
+      workspace_kind === 'in_place'
+        ? repo
+        : git(repo, 'worktree', 'list', '--porcelain')
+            .split('\n')
+            .filter((line) => line.startsWith('worktree '))
+            .map((line) => line.slice('worktree '.length))
+            .find((dir) => fs.realpathSync(dir) !== fs.realpathSync(repo));
     return {
       tree,
+      workspace_kind,
       settled,
       turn_error: failures.get(turns.findLast((turn) => turn.state === 'failed')?.id) ?? null,
       task_turns: turns.length,
@@ -366,15 +410,32 @@ export async function runOne(spec) {
   if (spec.condition.mode === 'adopted') {
     opener = {
       since,
-      ...(await codexExec(adapter.binary, repo, OPENER, spec.logs, 'opener', spec.settleMs)),
+      ...(await codexExec(
+        adapter.binary,
+        repo,
+        OPENER,
+        spec.logs,
+        'opener',
+        spec.settleMs,
+        execFlags(spec),
+      )),
     };
     if (!opener.thread) throw new Error(`the opener started no native session: ${opener.error}`);
   }
   if (spec.condition.mode !== 'bare') run = await pantheonRun(spec, repo, opener);
   else if (codex) {
-    const bare = await codexExec(adapter.binary, repo, spec.goal, spec.logs, 'bare', spec.settleMs);
+    const bare = await codexExec(
+      adapter.binary,
+      repo,
+      spec.goal,
+      spec.logs,
+      'bare',
+      spec.settleMs,
+      execFlags(spec),
+    );
     run = {
       tree: repo,
+      workspace_kind: null,
       settled: bare.settled,
       turn_error: bare.error,
       task_turns: 1,
@@ -394,12 +455,16 @@ export async function runOne(spec) {
     hidden_passed,
     // true: the hidden check failed once and passed on its second try.
     hidden_unstable,
+    model_requested: spec.model ?? null,
+    effort_requested: spec.effort ?? null,
     title: null,
     title_ms: null,
     ...rest,
     native_error: native.error ?? null,
     native_session_id: native.native_session_id ?? null,
     model_reported: native.model ?? null,
+    effort_reported: native.effort ?? null,
+    opener_model_reported: spec.condition.mode === 'adopted' ? (native.first_model ?? null) : null,
     goal_verbatim: native.goal_verbatim ?? null,
     tool_calls: native.tool_calls ?? null,
     model_requests: native.model_requests ?? null,

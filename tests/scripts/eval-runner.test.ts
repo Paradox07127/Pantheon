@@ -19,6 +19,9 @@ type Row = {
   wall_ms: number;
   title: string | null;
   title_ms: number | null;
+  workspace_kind: string | null;
+  model_requested: string | null;
+  effort_requested: string | null;
 };
 type Spec = Record<string, unknown>;
 // The tests project only typechecks the scripts it lists, so these modules are imported by URL.
@@ -106,6 +109,7 @@ describe('one run', () => {
     mode: string,
     behaviour: string,
     adapters = fixtureTasks.adapters() as FixtureAdapter[],
+    choice: { model?: string; effort?: string } = {},
   ) => {
     const workspace = fresh(path.join(repoRoot, 'node_modules/.cache'));
     const logs = fresh(path.join(repoRoot, 'node_modules/.cache'));
@@ -121,6 +125,7 @@ describe('one run', () => {
       hiddenCheck: fixtureTasks.hiddenCheck,
       settleMs: 60000,
       checkouts: [],
+      ...choice,
     });
     const spec = start.mock.calls[0]![0] as SessionSpec;
     return { row, spec, repo: fs.realpathSync(path.join(workspace, 'repo')) };
@@ -138,20 +143,40 @@ describe('one run', () => {
     expect(spec.sandbox).toBeUndefined();
   }, 120000);
 
-  it('plain works in a worktree of the repository that Pantheon made', async () => {
+  it('plain works where the app puts a new session, the repository itself, and records it in place', async () => {
     const { row, spec, repo } = await run('plain', 'completes_correctly');
-    expect(row).toMatchObject({ mode: 'plain', outcome: 'changed', hidden_passed: true });
-    expect(fs.realpathSync(spec.cwd)).not.toBe(repo);
+    expect(row).toMatchObject({
+      mode: 'plain',
+      outcome: 'changed',
+      hidden_passed: true,
+      workspace_kind: 'in_place',
+    });
+    expect(fs.realpathSync(spec.cwd)).toBe(repo);
     expect(fs.realpathSync(gitDir(spec.cwd))).toBe(path.join(repo, '.git'));
   }, 120000);
 
-  it('keeps the daemon up until a plain session is named, outside the wall time of its turn', async () => {
+  it.each(['plain', 'bare'])(
+    '%s starts its session on the model and effort the run names',
+    async (mode) => {
+      const choice = { model: 'fixture-model', effort: 'low' };
+      const { row, spec } = await run(
+        mode,
+        'completes_correctly',
+        fixtureTasks.adapters() as FixtureAdapter[],
+        choice,
+      );
+      expect(spec).toMatchObject(choice);
+      expect(row).toMatchObject({ model_requested: 'fixture-model', effort_requested: 'low' });
+    },
+    120000,
+  );
+
+  it('does not wait for a name the runtime never gives a plain session in the project folder', async () => {
     const begun = Date.now();
     const { row } = await run('plain', 'completes_correctly', [new TitlingAdapter()]);
-    const elapsed = Date.now() - begun;
-    expect(row).toMatchObject({ mode: 'plain', title: 'Write the greeting' });
-    expect(row.title_ms).toBeGreaterThanOrEqual(TITLE_DELAY_MS - 1000);
-    expect(row.wall_ms).toBeLessThanOrEqual(elapsed - row.title_ms!);
+    expect(row).toMatchObject({ mode: 'plain', workspace_kind: 'in_place', title: null });
+    // Below the runner's wait for a worktree session's name.
+    expect(Date.now() - begun).toBeLessThan(20000);
   }, 120000);
 
   it('counts a run that leaves nothing as unchanged, without a hidden check', async () => {

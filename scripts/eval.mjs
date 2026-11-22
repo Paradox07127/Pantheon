@@ -27,7 +27,7 @@ const FROZEN_SETTLE_MS = 3600000;
 // Real-model runs per invocation without --over-cap.
 const REAL_RUN_CAP = 5;
 const usage =
-  'usage: node scripts/eval.mjs check [task-name...] | run --runtime fixture|reference|codex [--task <name>]... [--condition <name>]... [--repetitions <n>] [--over-cap] [--workspace <dir>] [--out <dir>] | report <run-dir> | history <bundle> <dir>';
+  'usage: node scripts/eval.mjs check [task-name...] | run --runtime fixture|reference|codex [--task <name>]... [--tasks <name,name,...>] [--condition <name>]... [--model <id> [--effort <level>]] [--repetitions <n>] [--over-cap] [--workspace <dir>] [--out <dir>] | report <run-dir> | history <bundle> <dir>';
 
 /** Returns the tasks; exits with how to supply them when historyRoot lacks one of their commits. */
 const withCommits = (tasks) => {
@@ -68,6 +68,11 @@ if (command === 'run') {
   const runtime = option('--runtime');
   if (!['fixture', 'reference', 'codex'].includes(runtime)) refuse(usage);
   const real = runtime === 'codex';
+  // Passed alike to every condition; absent leaves the runtime's own configuration.
+  const model = option('--model');
+  const effort = option('--effort');
+  // A session takes an effort only with its model.
+  if (effort && !model) refuse(usage);
   const repetitions = Number(option('--repetitions') ?? 1);
   if (!Number.isInteger(repetitions) || repetitions < 1) refuse(usage);
   // A real runtime reads the whole disk, and the checkout holds each task's source commit and hidden test.
@@ -100,7 +105,10 @@ if (command === 'run') {
   const frozen =
     runtime === 'fixture'
       ? []
-      : loadTasks(path.join(repoRoot, 'tests/eval/tasks'), values('--task'));
+      : loadTasks(path.join(repoRoot, 'tests/eval/tasks'), [
+          ...values('--task'),
+          ...values('--tasks').flatMap((list) => list.split(',').filter(Boolean)),
+        ]);
   // Each job is a task, a condition, a repetition and the runOne spec for a workspace.
   const jobs =
     runtime === 'fixture'
@@ -116,6 +124,8 @@ if (command === 'run') {
               goal: fixtureTasks.goal(name, path.join(workspace, 'repo')),
               condition,
               hiddenCheck: fixtureTasks.hiddenCheck,
+              model,
+              effort,
               settleMs: SETTLE_MS,
               checkouts: [],
             }),
@@ -136,6 +146,8 @@ if (command === 'run') {
             goal: task.goal,
             condition,
             hiddenCheck: frozenTasks.hiddenCheck(historyRoot, task),
+            model,
+            effort,
             settleMs: FROZEN_SETTLE_MS,
             // A tool call that names one of these read where the frozen task's answer is:
             // this checkout, its main checkout, and the history repository.
@@ -160,9 +172,18 @@ if (command === 'run') {
   withCommits(frozen);
   const stamp = new Date().toISOString().slice(0, 19).replace(/:/g, '') + 'Z';
   const out = path.resolve(
-    repoRoot,
-    option('--out') ?? path.join('.notes/evidence/eval', `${stamp}-${runtime}`),
+    option('--out') ?? path.join(os.homedir(), '.pantheon-eval', 'runs', `${stamp}-${runtime}`),
   );
+  // A real run's results are kept: not where the system clears files, nor in the app's own data.
+  const refusedRoots = [
+    os.tmpdir(),
+    fs.realpathSync(os.tmpdir()),
+    '/tmp',
+    '/private/tmp',
+    path.join(os.homedir(), 'Library/Application Support/Pantheon'),
+  ];
+  if (real && refusedRoots.some((dir) => !path.relative(dir, out).startsWith('..')))
+    refuse(`refused: --out ${out} is a temporary or Pantheon data directory`);
   if (fs.existsSync(path.join(out, 'runs.jsonl')))
     refuse(`${out} already holds the runs of an earlier run`);
   fs.mkdirSync(out, { recursive: true });
@@ -171,6 +192,8 @@ if (command === 'run') {
     `${JSON.stringify(
       {
         ...rule,
+        model: model ?? null,
+        effort: effort ?? null,
         conditions: Object.fromEntries(named.map(({ name, ...entry }) => [name, entry])),
         job_order: jobs.map(({ task, condition, repetition }) => ({
           task,
