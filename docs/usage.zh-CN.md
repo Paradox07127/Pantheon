@@ -142,6 +142,8 @@ macOS 上「语音输入」使用系统内置的语音引擎。
 
 门禁命令不套沙箱。它们拿到的环境和你开的会话一样：项目变量加 daemon 的环境。桌面端用登录 shell 的 PATH 启动 daemon。Pantheon 记下被测提交、每条命令、退出码和输出。
 
+门禁跑的是被测提交里的文件，所以改这些文件的改动要等你批。一次合并或落地的改动碰到门禁命令点名的仓库文件，或项目 `protected_paths`(`project.gate.set`)里的路径时，不落地，进「待办」,原因是 `gate_files_changed`,并列出这些文件。「仍然落地」放行。
+
 ## 导入外部会话
 
 Pantheon 读取 Claude Code 和 Codex 的原生历史。
@@ -227,7 +229,7 @@ Pantheon 读取 Claude Code 和 Codex 的原生历史。
 
 ## CLI
 
-在检出目录里用 `pnpm cli` 运行 CLI。CLI 从数据目录读 `daemon.json` 和凭证。
+在检出目录里用 `pnpm cli` 运行 CLI。打包版(macOS 和 Linux)应用菜单里的「安装命令行工具…」写出 `~/.local/bin/pantheon`,之后在任何目录用 `pantheon` 跑同样的命令。CLI 从数据目录读 `daemon.json` 和凭证。
 
 | 命令                                                                | 结果                                      |
 | ------------------------------------------------------------------- | ----------------------------------------- |
@@ -239,11 +241,14 @@ Pantheon 读取 Claude Code 和 Codex 的原生历史。
 | `pnpm cli mcp`                                                      | 给原生会话用的 MCP 工具服务。             |
 | `pnpm cli mcp --personal`                                           | 给你自己的 agent 用的 MCP 工具服务。      |
 | `pnpm cli review --base REF [HEAD]` 或 `pnpm cli review BASE..HEAD` | 审查从两个 ref 的合并基点到 head 的提交。 |
+| `pnpm cli review resolve REVIEW_ID FINDING_ID OUTCOME`              | 记下一条发现的结论。                      |
 | `pnpm cli land [BRANCH]`                                            | 让一个分支过项目门禁后落地。              |
 
-`pnpm cli review` 只审已提交的内容；不给 head 时审当前目录的分支。每个审查 runtime 加一次 `--runtime NAME`。它等到结果，打印未关闭的发现和每个审查者的结论。退出码：每个审查者都通过为 0;有阻塞发现或 fail 结论为 1;审查失败、不完整、被拒或读不到 daemon 为 2;用法错误为 64。Ctrl-C 只停止等待，审查继续。
+`pnpm cli review` 只审已提交的内容；不给 head 时审当前目录的分支。每个审查 runtime 加一次 `--runtime NAME`。`--fallback NAME` 按顺序给出接替的 runtime:某个审查者的回合因用量上限结束时由它接手。它等到结果，打印未关闭的发现和每个审查者的结论。退出码：每个审查者都通过为 0;有阻塞发现或 fail 结论为 1;审查失败、不完整、被拒或读不到 daemon 为 2;用法错误为 64。Ctrl-C 只停止等待，审查继续。
 
-`pnpm cli land` 把分支(缺省为当前目录的分支)落到项目目录当前检出的分支上。项目目录要配了门禁。`--message TEXT` 把这些提交合成一个提交落地。退出码：已落地或没有改动为 0;落地受阻或被拒为 1。
+`pnpm cli review resolve` 把一条发现记为 `fixed`、`intentional`、`not_worth_it` 或 `wrong`,`--note TEXT` 记下原因。
+
+`pnpm cli land` 把分支(缺省为当前目录的分支)落到项目目录当前检出的分支上。项目目录要配了门禁。`--message TEXT` 把这些提交合成一个提交落地。退出码：已落地或没有改动为 0;落地受阻或被拒为 1。因门禁文件被改而挡下时，它打出带 `--allow-gate-change` 的放行命令。
 
 ```sh
 pnpm cli review --base main

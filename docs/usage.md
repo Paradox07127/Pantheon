@@ -142,6 +142,8 @@ The session list shows the files that will probably conflict when you merge.
 
 Gate commands run without a sandbox. They get the same environment as a session that you open: the project variables and the environment of the daemon. The desktop app starts the daemon with the PATH of your login shell. Pantheon records the tested commit, each command, its exit code and its output.
 
+The gate runs the files of the commit it tests, so a change to those files waits for you. A merge or a landing whose changes touch a repository file that a gate command names, or a path in the project's `protected_paths` (`project.gate.set`), does not land. It goes to "Needs you" with the reason `gate_files_changed` and the files. "Land anyway" lands it.
+
 ## Import an external session
 
 Pantheon reads the native history of Claude Code and Codex.
@@ -227,7 +229,7 @@ You can replay a turn and see the file changes of one step.
 
 ## CLI
 
-In a checkout, run the CLI with `pnpm cli`. The CLI reads `daemon.json` and the token from the data directory.
+In a checkout, run the CLI with `pnpm cli`. In the packaged app (macOS and Linux), "Install Command Line Tool…" in the app menu writes `~/.local/bin/pantheon`; then `pantheon` takes the same commands in any directory. The CLI reads `daemon.json` and the token from the data directory.
 
 | Command                                                             | Result                                                                      |
 | ------------------------------------------------------------------- | --------------------------------------------------------------------------- |
@@ -239,11 +241,14 @@ In a checkout, run the CLI with `pnpm cli`. The CLI reads `daemon.json` and the 
 | `pnpm cli mcp`                                                      | MCP tool server for a native session.                                       |
 | `pnpm cli mcp --personal`                                           | MCP tool server for your own agent.                                         |
 | `pnpm cli review --base REF [HEAD]` or `pnpm cli review BASE..HEAD` | Reviews the commits from the merge base of the two refs up to the head ref. |
+| `pnpm cli review resolve REVIEW_ID FINDING_ID OUTCOME`              | Records the outcome of one finding.                                         |
 | `pnpm cli land [BRANCH]`                                            | Lands a branch through the project gate.                                    |
 
-`pnpm cli review` reviews only committed content; without a head it reviews the branch of the current directory. Add `--runtime NAME` once per reviewing runtime. It waits for the result and prints the open findings and each reviewer's verdict. It exits 0 when every reviewer passes, 1 on a blocking finding or a fail verdict, 2 when the review failed, is incomplete or was refused or the daemon could not be read, and 64 on a usage error. Ctrl-C stops the wait; the review goes on.
+`pnpm cli review` reviews only committed content; without a head it reviews the branch of the current directory. Add `--runtime NAME` once per reviewing runtime. Add `--fallback NAME`, in order, for the runtimes that take over from a reviewer whose turn ends on its usage limit. It waits for the result and prints the open findings and each reviewer's verdict. It exits 0 when every reviewer passes, 1 on a blocking finding or a fail verdict, 2 when the review failed, is incomplete or was refused or the daemon could not be read, and 64 on a usage error. Ctrl-C stops the wait; the review goes on.
 
-`pnpm cli land` lands the branch (by default the branch of the current directory) onto the branch checked out in the project directory. The project directory needs a gate. `--message TEXT` lands the commits as one commit. It exits 0 when the branch landed or had no changes, and 1 when the landing is blocked or refused.
+`pnpm cli review resolve` closes a finding as `fixed`, `intentional`, `not_worth_it` or `wrong`. `--note TEXT` records why.
+
+`pnpm cli land` lands the branch (by default the branch of the current directory) onto the branch checked out in the project directory. The project directory needs a gate. `--message TEXT` lands the commits as one commit. It exits 0 when the branch landed or had no changes, and 1 when the landing is blocked or refused. A landing held for changed gate files prints the command that lands it with `--allow-gate-change`.
 
 ```sh
 pnpm cli review --base main
