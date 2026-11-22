@@ -283,6 +283,14 @@ describe('pnpm cli review', () => {
       line: 'claude: no verdict',
     },
     {
+      name: 'a review read back without its reviewers',
+      args: ['--base', 'main'],
+      answers: [started, { body: reviewOf({ runtimes: [], verdicts: [] }) }],
+      code: 2,
+      stream: 'stdout',
+      line: 'codex: no verdict',
+    },
+    {
       name: 'a rejected command',
       args: ['--base', 'main'],
       answers: [{ status: 409, body: { code: 'invalid_ref', message: 'no such ref' } }],

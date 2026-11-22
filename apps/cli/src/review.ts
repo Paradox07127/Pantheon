@@ -366,7 +366,7 @@ export const review = async (
         (value) => value.state !== 'running',
       );
       const blocking = result.findings.filter(unresolvedBlocking).length;
-      settled.push({ label, id: result.id, code: printReview(result), blocking });
+      settled.push({ label, id: result.id, code: printReview(result, started.runtimes), blocking });
     } catch (error) {
       // Exit 1 means the review blocks; one that never finished or reads back malformed is exit 2.
       console.error(String(error));
@@ -387,8 +387,8 @@ export const review = async (
 const unresolvedBlocking = (finding: ReviewFinding) =>
   finding.status === 'open' && finding.blocking && !finding.resolution;
 
-/** Prints a settled review's open findings and verdicts; returns its exit code. */
-const printReview = (result: Review) => {
+/** Prints a settled review's open findings and verdicts; returns its exit code. `asked` is the start receipt's runtimes. */
+const printReview = (result: Review, asked: string[]) => {
   const open = result.findings.filter((finding) => finding.status === 'open');
   const located = open
     .filter((finding) => !finding.unlocated)
@@ -402,7 +402,7 @@ const printReview = (result: Review) => {
   const verdicts = result.verdicts ?? [];
   for (const replaced of result.replacements ?? [])
     console.log(`${replaced.runtime}: replaced by ${replaced.by} (${replaced.reason})`);
-  const reviewers = result.runtimes.filter(
+  const reviewers = [...new Set([...asked, ...result.runtimes])].filter(
     (runtime) => !result.replacements?.some((replaced) => replaced.runtime === runtime),
   );
   for (const runtime of reviewers) {
