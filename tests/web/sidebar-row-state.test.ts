@@ -105,13 +105,22 @@ describe('sidebar row state', () => {
       () => '+184 −22',
     ],
     ['new result over landed', session('merged'), true, () => zh('sessions.sidebar.badge.unread')],
-    ['landed', session('merged'), false, () => '已落地'],
+    ['landed', session('merged'), false, () => zh('components.sessionState.merged')],
+    [
+      'run failed over a failed gate',
+      session('failed', { gate: failedGate }),
+      false,
+      () => zh('components.sessionState.failed'),
+    ],
     ['idle shows nothing', session('idle'), false, () => ''],
   ])('%s', (_case, listed, unread, expected) => {
     expect(shownState(render(listed, unread))).toBe(expected());
   });
 
-  it('names a broken environment and a ready diff in the row name', () => {
+  it('names a broken environment, a ready diff and a queued turn in the row name', () => {
+    expect(
+      nameOf(render(session('idle', { last_turn: { id: 'turn', state: 'queued' } }), false)),
+    ).toContain(zh('sessions.row.badge.queued'));
     expect(nameOf(render(session('ready', { merge: environment }), false))).toContain(
       zh('sessions.sidebar.badge.environment'),
     );

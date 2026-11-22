@@ -129,14 +129,11 @@ function stateSlot(
   s: WorkbenchSession,
   badge: Badge | null,
 ): { text: ReactNode; spoken?: string } | null {
-  if (!badge)
-    return s.state === 'merged'
-      ? { text: t({ id: 'sessions.row.state.landed', defaultMessage: 'Landed' }) }
-      : null;
+  if (!badge) return s.state === 'merged' ? { text: sessionStateLabel(s) } : null;
   if (badge.kind === 'running' || badge.kind === 'starting')
     return { text: <RunTime since={Date.parse(s.created_at)} /> };
   if (badge.kind === 'environment') return { text: badge.label, spoken: badge.label };
-  if (badge.kind === 'failed') {
+  if (badge.kind === 'failed' && s.state !== 'failed') {
     if (s.gate?.state === 'failed') return { text: GATE_NAME.failed };
     if (s.merge?.state === 'blocked')
       return { text: t({ id: 'sessions.screen.mergeBlocked', defaultMessage: 'Merge blocked' }) };
@@ -159,7 +156,7 @@ function stateSlot(
       ),
     };
   }
-  return { text: badge.label };
+  return { text: badge.label, ...(badge.kind === 'queued' && { spoken: badge.label }) };
 }
 
 /** The runtime glyph with the session's status mark on its corner. */
