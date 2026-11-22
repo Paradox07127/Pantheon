@@ -401,7 +401,7 @@ export function SessionHeader({
       )}
       <span className="sh-fill" />
       {session && <MemoryDelivery projectId={session.project_id} sessionId={session.id} />}
-      {listed && working(listed) && <RunClock since={Date.parse(listed.created_at)} />}
+      {listed && working(listed) && <RunClock since={runSince(listed)} />}
       <div
         className="sh-tools"
         role="toolbar"
@@ -609,6 +609,10 @@ export function GateSeg(props: {
 /** Whether the session is at work or waiting on the user, as the list preview counts its time. */
 const working = (s: WorkbenchSession): boolean =>
   s.stopping || ['starting', 'running', 'waiting', 'merging'].includes(s.state);
+
+/** When the running turn started, or when the session opened if no running turn says. */
+export const runSince = (s: WorkbenchSession): number =>
+  Date.parse((s.last_turn?.state === 'running' && s.last_turn.started_at) || s.created_at);
 
 /** The session's time so far; only it re-renders as the seconds pass. */
 function RunClock({ since }: { since: number }) {

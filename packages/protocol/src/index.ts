@@ -2326,6 +2326,8 @@ export interface WorkbenchSession {
   last_turn?: {
     id: string;
     state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+    /** ISO time a running turn started running; absent in every other state. */
+    started_at?: string;
     error?: string;
     error_code?: string;
   };

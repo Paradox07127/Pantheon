@@ -200,6 +200,19 @@ describe('header clock', () => {
     expect(text(part(h, 'RunClock').value)).toBe(zhf('data.elapsed.seconds', { seconds: 40 }));
   });
 
+  it('counts a running session from when its current turn started', () => {
+    const created_at = new Date(Date.now() - 3 * 86_400_000).toISOString();
+    const started_at = new Date(Date.now() - 30_000).toISOString();
+    const h = header({
+      listed: listed('session-a', {
+        state: 'running',
+        created_at,
+        last_turn: { id: 'turn-a', state: 'running', started_at },
+      }),
+    });
+    expect(text(part(h, 'RunClock').value)).toBe(zhf('data.elapsed.seconds', { seconds: 30 }));
+  });
+
   it('leaves the clock out of an idle session', () => {
     const h = header({ listed: listed('session-a', { state: 'idle' }) });
     expect(nodes(h.value).some((n) => (n.type as any)?.name === 'RunClock')).toBe(false);

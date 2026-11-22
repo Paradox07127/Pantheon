@@ -45,7 +45,7 @@ import {
 import { aheadText, gateCounts, sessionBranch } from './inspector-model';
 import { ringTone } from './run-model';
 import { runningModel } from './thread-model';
-import { GATE_NAME, GateSeg, UNCOUNTED_GATE } from './SessionHeader';
+import { GATE_NAME, GateSeg, UNCOUNTED_GATE, runSince } from './SessionHeader';
 import { conductorLabel } from './session-groups';
 import { FIT_MENU, useSessionMenu } from './shared';
 import './session-row.css';
@@ -131,7 +131,7 @@ function stateSlot(
 ): { text: ReactNode; spoken?: string } | null {
   if (!badge) return s.state === 'merged' ? { text: sessionStateLabel(s) } : null;
   if (badge.kind === 'running' || badge.kind === 'starting')
-    return { text: <RunTime since={Date.parse(s.created_at)} /> };
+    return { text: <RunTime since={runSince(s)} /> };
   if (badge.kind === 'environment') return { text: badge.label, spoken: badge.label };
   if (badge.kind === 'failed' && s.state !== 'failed') {
     if (s.gate?.state === 'failed') return { text: GATE_NAME.failed };

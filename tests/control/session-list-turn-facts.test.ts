@@ -70,3 +70,59 @@ it('lists the goal, last turn, context and compactions as the turns and their ev
     await f.close();
   }
 });
+
+it('gives the last turn the time it started running, and no start while it waits in the queue', async () => {
+  let clock = 1_800_000_000_000;
+  const f = await fixture({ now: () => clock });
+  try {
+    const project = f.project.id;
+    const open = (id: string, state: SessionTurn['state']) => {
+      const workspace = f.store.insert<Workspace>('workspaces', {
+        id: `${id}-worktree`,
+        revision: 1,
+        project_id: project,
+        kind: 'linked_worktree',
+        path: `${f.projectRoot}/${id}`,
+        owner: id,
+        ownership_epoch: 1,
+      });
+      const session = f.store.insert<Session>('sessions', {
+        id,
+        revision: 1,
+        project_id: project,
+        runtime: 'fixture',
+        state: 'open',
+        workspace_id: workspace.id,
+        turn_count: 1,
+      });
+      return f.store.insert<SessionTurn>('session_turns', {
+        id: `${id}-turn`,
+        revision: 1,
+        project_id: project,
+        session_id: session.id,
+        input: id,
+        kind: 'send',
+        delivery: 'delivered',
+        state,
+      });
+    };
+    const running = open('running-session', 'running'),
+      queued = open('queued-session', 'queued');
+    f.store.event('turn.running', running, project, running);
+    // A turn put back in the queue after it ran has no start until it runs again.
+    f.store.event('turn.running', queued, project, queued);
+    clock += 60_000;
+    f.store.event('turn.running', running, project, running);
+    clock += 60_000;
+
+    const listed = new Map(f.control.sessionList(user, project).map((s) => [s.id, s]));
+    expect(listed.get('running-session')!.last_turn).toEqual({
+      id: running.id,
+      state: 'running',
+      started_at: new Date(1_800_000_060_000).toISOString(),
+    });
+    expect(listed.get('queued-session')!.last_turn).toEqual({ id: queued.id, state: 'queued' });
+  } finally {
+    await f.close();
+  }
+});

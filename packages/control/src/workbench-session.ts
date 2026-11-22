@@ -1,3 +1,4 @@
+import { latestEvent } from './needs-you.js';
 import { workflowPolicy } from './workflow-policy.js';
 import { onDevice } from './remote-workspace.js';
 import { githubReference } from './github.js';
@@ -1203,6 +1204,12 @@ export function listedOutcomes(
   }));
 }
 
+/** When a running turn last started running; empty when no event says. */
+function startedAt(ctx: ControlContext, turnId: string): { started_at?: string } {
+  const started = latestEvent(ctx, turnId, 'turn.running');
+  return started ? { started_at: new Date(started.created_at).toISOString() } : {};
+}
+
 /**
  * Runs no Git: true and 'cached' show the reads prefetchWorktreeReads cached, and a read not cached
  * yet as unknown; false skips the worktree reads, so ready sessions list as idle. action is the
@@ -1351,6 +1358,7 @@ export function sessionList(
             last_turn: {
               id: latestTurn.id,
               state: latestTurn.state,
+              ...(latestTurn.state === 'running' && startedAt(ctx, latestTurn.id)),
               ...(turnError ? { error: turnError } : {}),
               ...(turnErrorCode ? { error_code: turnErrorCode } : {}),
             },

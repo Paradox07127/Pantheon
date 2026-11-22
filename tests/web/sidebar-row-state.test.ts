@@ -129,7 +129,15 @@ describe('sidebar row state', () => {
     );
   });
 
-  it('counts the running time on from when the session opened', () => {
+  it('counts the running time from when the current turn started', () => {
+    const running = session('running', {
+      created_at: new Date(NOW - 3 * 86_400_000).toISOString(),
+      last_turn: { ...runningTurn, started_at: new Date(NOW - 2 * 60_000).toISOString() },
+    });
+    expect(shownState(render(running, false))).toBe(zhf('lib.time.minutes', { minutes: 2 }));
+  });
+
+  it('counts a running turn without a start time on from when the session opened', () => {
     const running = session('running', { last_turn: runningTurn });
     vi.setSystemTime(NOW + 5 * 60_000);
     expect(shownState(render(running, false))).toBe(zhf('lib.time.minutes', { minutes: 45 }));
