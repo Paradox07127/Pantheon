@@ -2053,7 +2053,7 @@
     },
     {
       "id": "A041",
-      "title": "带工具会话读状态、起会话、收通知、要审查，阻塞发现时拒绝落地，再审无阻塞后落地(fixture)",
+      "title": "带工具会话读状态、起会话、收通知、要审查，阻塞发现时拒绝落地，再审无阻塞后落地，再提一项设置、用户批准后才生效(fixture)",
       "gate": "G2",
       "mode": "integration",
       "timeout_ms": 300000,
@@ -2064,7 +2064,8 @@
       "steps": [
         "用户起一个带工具会话，它调 read_state,结果里有自己那一行",
         "它调 spawn_session 起一个会话，被起会话在新工作树里提交一个文件；回合结束后带工具会话收到通知并调 request_review",
-        "审查方报一条阻塞发现,report_ready 被拒、main 不动；被起会话提交修正、再审无阻塞后 report_ready 过门禁并快进进 main"
+        "审查方报一条阻塞发现,report_ready 被拒、main 不动；被起会话提交修正、再审无阻塞后 report_ready 过门禁并快进进 main",
+        "落地后它调 propose_setting 提议改项目预算，提议列在等用户处理的事项里、预算不变；用户批准后预算才改，带工具会话收到 [setting] 开头的通知"
       ],
       "assertions": [
         {
@@ -2076,6 +2077,21 @@
           "path": "read_state.lists_self",
           "op": "eq",
           "expected": true
+        },
+        {
+          "path": "project_read.ok",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "project_read.project",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "project_read.role",
+          "op": "eq",
+          "expected": "conductor"
         },
         {
           "path": "spawn.spawned_by_conductor",
@@ -2153,6 +2169,21 @@
           "expected": null
         },
         {
+          "path": "message.ok",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "message.session",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "message.turn",
+          "op": "eq",
+          "expected": true
+        },
+        {
           "path": "landed.second_review_state",
           "op": "eq",
           "expected": "completed"
@@ -2189,6 +2220,31 @@
         },
         {
           "path": "landed.conductor_told",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "setting.proposed_ok",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "setting.waits_for_user",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "setting.unchanged_before",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "setting.applied",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "setting.conductor_told",
           "op": "eq",
           "expected": true
         }

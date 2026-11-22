@@ -8,7 +8,7 @@ import { waitFor } from '../lib/event-client.mjs';
 import { writeEvidence } from '../lib/evidence.mjs';
 
 export const title =
-  '带工具会话读状态、起会话、收通知、要审查，阻塞发现时拒绝落地，再审无阻塞后落地(fixture)';
+  '带工具会话读状态、起会话、收通知、要审查，阻塞发现时拒绝落地，再审无阻塞后落地，再提一项设置、用户批准后才生效(fixture)';
 export const mode = 'integration';
 
 const env = {
@@ -26,6 +26,7 @@ const WRITER = 'fixture-writer';
 const REVIEWER = 'fixture-reviewer';
 const FEATURE = 'feature.txt';
 const DEFECT = 'answer = 41';
+const PROPOSED_BUDGET = 500000;
 const passingGate = [{ name: 'Passes', argv: [process.execPath, '-e', 'process.exit(0)'] }];
 /** A turn input the fixture runtime runs as these steps. */
 const script = (...steps) => `fixture-script\n${JSON.stringify(steps)}`;
@@ -348,6 +349,56 @@ export async function run({ workspace, evidenceDir }) {
         text.includes(`(${ids.spawned}) landed on main at ${spawnedHead}`),
       ),
     };
+
+    // The conductor proposes a budget; it applies only once the user approves it.
+    const budget = async () =>
+      (await get('workflow.policy', { project_id: projectId })).project_budget?.input_tokens ??
+      null;
+    const budgetBefore = await budget();
+    await call(
+      'setting',
+      'session.send',
+      {
+        session_id: ids.conductor,
+        input: script(
+          tool('propose_setting', {
+            command: 'workflow.policy.set',
+            input: { project_budget: { input_tokens: PROPOSED_BUDGET } },
+            reason: 'The next feature needs a budget',
+          }),
+        ),
+      },
+      sessionRow(board, ids.conductor).revision,
+    );
+    await finished('propose_setting', 1);
+    const proposed = calls('propose_setting')[0];
+    let proposalId;
+    try {
+      proposalId = JSON.parse(proposed.output).receipt?.proposal_id;
+    } catch {
+      proposalId = undefined;
+    }
+    const waiting = (await get('needs_you.list', { project_id: projectId })).items.find(
+      (item) => item.kind === 'setting.proposed' && item.source.id === proposalId,
+    );
+    observations.setting = {
+      proposed_ok: proposed.ok && Boolean(proposalId),
+      waits_for_user: Boolean(waiting),
+      unchanged_before: budgetBefore !== PROPOSED_BUDGET && (await budget()) === budgetBefore,
+    };
+    if (!waiting) throw new Error(`propose_setting: ${JSON.stringify(proposed)}`);
+    await call(
+      'setting',
+      'setting.proposal.respond',
+      { proposal_id: proposalId, decision: 'approve' },
+      waiting.source.revision,
+    );
+    observations.setting.applied = (await budget()) === PROPOSED_BUDGET;
+    const toldSetting = () =>
+      notices().some((text) => text.split('\n').some((line) => line.startsWith('[setting]')));
+    await waitFor(toldSetting, 'the conductor to hear the answer', WAIT_MS);
+    observations.setting.conductor_told = toldSetting();
+    await settled(ids.conductor, 'the conductor to read the answer');
   } catch (error) {
     failure = error;
   } finally {

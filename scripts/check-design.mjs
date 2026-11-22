@@ -38,7 +38,7 @@ for (const c of catalog.cases) {
     assertionCount++;
   }
 }
-need(assertionCount === 247, "247 assertions");
+need(assertionCount === 258, "258 assertions");
 for (let f = 0; f < files.length; f++) {
   const text = texts[f];
   for (const m of text.matchAll(/\bA\d{3}\b/g)) need(ids.has(m[0]) || retired.has(m[0]), "unknown case in " + files[f] + ": " + m[0]);
@@ -53,6 +53,6 @@ if (failures.length) {
   for (const failure of failures) console.error("FAIL " + failure);
   process.exitCode = 1;
 } else {
-  console.log(`Design checks passed: 34 cases, 247 assertions, links in ${files.length} docs.`);
+  console.log(`Design checks passed: 34 cases, 258 assertions, links in ${files.length} docs.`);
   console.log("Scope: static specification only; product results are recorded in separate reports.");
 }
