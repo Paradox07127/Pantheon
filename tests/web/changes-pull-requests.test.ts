@@ -58,7 +58,12 @@ import { EmptyState } from '@/components/EmptyState';
 import { ChangesScreen } from '@/screens/changes/ChangesScreen';
 import { PullRequestDetail } from '@/screens/changes/PullRequestDetail';
 import { PullRequestList } from '@/screens/changes/PullRequestList';
+import { GateSeg } from '@/screens/sessions/SessionHeader';
 import { zh, zhf } from './i18n-setup.js';
+
+// The data hooks themselves, past the mock the panels read through.
+const readHooks =
+  await vi.importActual<typeof import('@/data/github-pulls')>('@/data/github-pulls');
 
 const NOW = Date.UTC(2026, 10, 3, 12);
 const pulls: GithubItems = {
@@ -224,12 +229,56 @@ describe('pull requests in the changes screen', () => {
       nodes(first!.props.children).some(
         (n) =>
           n.props.role === 'img' &&
-          n.props['aria-label'] === zhf('changes.pulls.checksLabel', { total: 4, passed: 3 }),
+          n.props['aria-label'] ===
+            zhf('changes.pulls.checksLabel', { total: 4, passed: 3, rest: 1, state: 'running' }),
       ),
     ).toBe(true);
     expect(text(second!.props.children)).toContain('#409');
     expect(nodes(second!.props.children).some((n) => n.props.role === 'img')).toBe(false);
     expect(shown(tree)).toBeUndefined();
+  });
+
+  it('draws the checks of a failing pull request as passed and not passed, claiming no failed count', () => {
+    reads.pulls = reads.landed<GithubItems>({
+      repo: 'acme/payments',
+      items: [{ ...pulls.items[0]!, checks: 'failing', checks_passed: 1, checks_total: 10 }],
+    });
+    const row = rows(list().value)[0]!;
+    const bar = find(row.props.children, (n) => n.props.role === 'img');
+    expect(find(bar.props.children, (n) => n.type === GateSeg).props).toMatchObject({
+      passed: 1,
+      failed: 0,
+      running: 0,
+      skipped: 0,
+      notRun: 9,
+    });
+    expect(bar.props['aria-label']).toBe(
+      zhf('changes.pulls.checksLabel', { total: 10, passed: 1, rest: 9, state: 'unknown' }),
+    );
+    expect(bar.props['aria-label']).not.toContain(zh('changes.pulls.check.failed'));
+  });
+
+  it.each<[string, () => unknown]>([
+    ['github.items', () => readHooks.useGithubPulls('pulls')],
+    ['github.pr.detail', () => readHooks.useGithubPullDetail('pulls', 418)],
+  ])('reads %s again when the window gains focus', async (method, hook) => {
+    const listeners = new Map<string, () => void>();
+    const query = vi.fn(async (asked: string) => ({
+      ok: true,
+      value: asked === 'github.items' ? pulls : detail(),
+    }));
+    vi.stubGlobal('window', {
+      addEventListener: (type: string, listener: () => void) => listeners.set(type, listener),
+      removeEventListener() {},
+      pantheon: { query },
+    });
+    const host = mount(hook);
+    await host.flush();
+    const asked = () => query.mock.calls.filter(([m]) => m === method).length;
+    expect(asked()).toBe(1);
+    listeners.get('focus')?.();
+    await host.flush();
+    expect(asked()).toBe(2);
   });
 
   it('opens the pressed pull request beside the list and closes it again', () => {

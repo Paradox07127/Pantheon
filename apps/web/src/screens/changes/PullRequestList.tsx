@@ -15,11 +15,22 @@ import { GateSeg } from '../sessions/SessionHeader';
 import { PullRequestDetail, reviewChip } from './PullRequestDetail';
 import './pull-requests.css';
 
-/** The checks of a listed pull request; the summary tells what the ones not passed are doing. */
+/**
+ * The state every check not passed is in, when the summary allows only one: all skipped when
+ * passing, and a lone one is what the summary names; otherwise the split is only in the detail.
+ */
+function restState(pull: GithubItem, rest: number) {
+  if (pull.checks === 'passing') return 'skipped';
+  if (rest !== 1) return 'unknown';
+  return pull.checks === 'failing' ? 'failed' : 'running';
+}
+
+/** The checks of a listed pull request: passed, and the rest in one state when it is known. */
 function pullChecks(pull: GithubItem) {
   const total = pull.checks_total ?? 0;
   const passed = pull.checks_passed ?? 0;
   const rest = total - passed;
+  const state = restState(pull, rest);
   return (
     <span className="cpr-checks">
       <span
@@ -28,16 +39,17 @@ function pullChecks(pull: GithubItem) {
           {
             id: 'changes.pulls.checksLabel',
             defaultMessage:
-              '{total, plural, one {# check} other {# checks}}, {passed, plural, other {# passed}}',
+              '{total, plural, one {# check} other {# checks}}, {passed, plural, other {# passed}}{rest, plural, =0 {} other {, # {state, select, failed {failed} running {running} skipped {skipped} other {not passed}}}}',
           },
-          { total, passed },
+          { total, passed, rest, state },
         )}
       >
         <GateSeg
           passed={passed}
-          failed={pull.checks === 'failing' ? rest : 0}
-          running={pull.checks === 'pending' ? rest : 0}
-          skipped={pull.checks === 'passing' ? rest : 0}
+          failed={state === 'failed' ? rest : 0}
+          running={state === 'running' ? rest : 0}
+          skipped={state === 'skipped' ? rest : 0}
+          notRun={state === 'unknown' ? rest : 0}
         />
       </span>
       <span className="cpr-n">

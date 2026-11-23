@@ -1,7 +1,7 @@
 {
   "changes.pulls.tab": "拉取请求",
   "changes.pulls.empty": "还没有拉取请求",
-  "changes.pulls.checksLabel": "{total, plural, other {# 项检查}}，{passed, plural, other {# 项通过}}",
+  "changes.pulls.checksLabel": "{total, plural, other {# 项检查}}，{passed, plural, other {# 项通过}}{rest, plural, =0 {} other {，# 项{state, select, failed {失败} running {运行中} skipped {跳过} other {未通过}}}}",
   "changes.pulls.notConnected": "GitHub 没有连上",
   "changes.pulls.noRepo": "这个项目没有 GitHub 仓库",
   "changes.pulls.list": "打开的拉取请求",
