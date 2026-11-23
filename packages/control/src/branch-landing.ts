@@ -317,8 +317,11 @@ async function landBranch(ctx: ControlContext, landingId: string, jobId: string)
             ctx,
             landingId,
             kind === 'gate_started'
-              ? { gate_results: [], gate_started_at: ctx.store.now() }
-              : { gate_results: payload.results as NonNullable<LandingItem['gate_results']> },
+              ? { gate_results: [], gate_started_at: ctx.store.now(), gate_finished_at: undefined }
+              : {
+                  gate_results: payload.results as NonNullable<LandingItem['gate_results']>,
+                  ...(kind === 'gate_checked' ? { gate_finished_at: ctx.store.now() } : {}),
+                },
           ),
         progress: {
           saved: row.landing,

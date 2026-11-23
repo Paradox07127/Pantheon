@@ -93,6 +93,8 @@ it.skipIf(insideSandbox)(
     });
     expect(done.gate_started_at).toBeGreaterThanOrEqual(done.started_at!);
     expect(done.gate_started_at).toBeLessThanOrEqual(done.finished_at!);
+    expect(done.gate_finished_at).toBeGreaterThanOrEqual(done.gate_started_at!);
+    expect(done.gate_finished_at).toBeLessThanOrEqual(done.finished_at!);
     expect(done.landing).toBeUndefined();
     expect(git(f.source, 'rev-parse', 'main')).toBe(tip);
     expect(git(f.source, 'rev-parse', 'feature')).toBe(tip);

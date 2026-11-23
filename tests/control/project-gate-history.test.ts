@@ -419,13 +419,30 @@ it('lists a landing run only when its gate reached a verdict, not one cut short 
     gate_results: [passing, { ...passing, name: 'test', argv: ['pnpm', 'test'], exit_code: 1 }],
   });
   insertLanding(f, { id: 'no-changes', state: 'no_changes', ...ended, gate_results: [passing] });
+  // A landing that records its gate's start and end says itself whether the gate finished.
+  const gated = { gate_started_at: at + 10, gate_finished_at: at + 60 };
+  insertLanding(f, {
+    id: 'blocked-after-gate',
+    state: 'blocked',
+    reason: 'target_branch_changed',
+    ...ended,
+    ...gated,
+    gate_results: [passing],
+  });
+  insertLanding(f, {
+    id: 'cut-short-recorded',
+    state: 'landed',
+    ...ended,
+    gate_started_at: at + 10,
+    gate_results: [passing],
+  });
 
   expect(
     f.control
       .projectGatesHistory(user, f.project.id)
       .runs.map((run) => run.run_id)
       .sort(),
-  ).toEqual(['gate-failed', 'no-changes']);
+  ).toEqual(['blocked-after-gate', 'gate-failed', 'no-changes']);
 });
 
 it('times a landing run from when its gate started, not from when the landing queued', async () => {
@@ -435,6 +452,7 @@ it('times a landing run from when its gate started, not from when the landing qu
     id: 'waited-in-queue',
     started_at: at - 60_000,
     gate_started_at: at + 10,
+    gate_finished_at: at + 70,
     finished_at: at + 5_000,
     gate_results: [
       {
@@ -460,7 +478,7 @@ it('times a landing run from when its gate started, not from when the landing qu
     expect.objectContaining({
       run_id: 'waited-in-queue',
       started_at: new Date(at + 10).toISOString(),
-      finished_at: new Date(at + 60).toISOString(),
+      finished_at: new Date(at + 70).toISOString(),
     }),
   ]);
   expect(f.control.projectGatesHistory(user, f.project.id, 500, at + 11).runs).toEqual([]);

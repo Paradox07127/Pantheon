@@ -537,6 +537,8 @@ export interface Landing extends Entity {
   started_at?: number;
   /** When the gate's latest run started, after the landing's wait for the root. */
   gate_started_at?: number;
+  /** When that gate reached its verdict; absent while it runs and when it was cut short. */
+  gate_finished_at?: number;
   finished_at?: number;
 }
 export interface Workspace extends Entity {

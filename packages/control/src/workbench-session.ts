@@ -2550,21 +2550,26 @@ export function projectGatesHistory(
       };
     });
   // A landing keeps only the results of its last gate run, without the commands it did not reach;
-  // one that ended before its gate's verdict keeps the steps that ran, so it is left out.
+  // one that ended before its gate's verdict keeps the steps that ran, so it is left out. Rows from
+  // before the gate's start and end were recorded tell a verdict only by how the landing ended.
   const landingRuns = ctx.store
     .list<Landing>('landings')
     .filter(
       (landing) =>
         landing.project_id === projectId &&
         landing.finished_at !== undefined &&
-        (landing.state !== 'blocked' || landing.reason === 'gate_failed') &&
+        (landing.gate_started_at !== undefined
+          ? landing.gate_finished_at !== undefined
+          : landing.state !== 'blocked' || landing.reason === 'gate_failed') &&
         !!landing.gate_results?.length,
     )
     .map((landing) => {
       const results = landing.gate_results!,
         duration = results.reduce((sum, r) => sum + (r.duration_ms ?? 0), 0),
         gated = landing.gate_started_at,
-        end = gated === undefined ? landing.finished_at! : gated + duration,
+        end =
+          landing.gate_finished_at ??
+          (gated === undefined ? landing.finished_at! : gated + duration),
         at = gated ?? landing.started_at ?? end - duration;
       return {
         at,

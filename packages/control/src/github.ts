@@ -126,17 +126,29 @@ function reviewDecision(decision: string | null | undefined): GithubReviewDecisi
 }
 
 /**
- * Finds the session that opened a pull request, or else the one whose worktree is on its head
- * branch; either only among sessions on a worktree of root, whose repository the number is of.
+ * Finds the session that opened a pull request of the repository at host/repo, or else the one
+ * whose worktree of root is on its head branch.
  */
-async function pullSessions(ctx: ControlContext, projectId: string, root: string) {
-  const worktrees = sessionWorktrees(ctx, projectId, root, await listedWorktrees(root));
+async function pullSessions(
+  ctx: ControlContext,
+  projectId: string,
+  root: string,
+  repository: { host: string; repo: string },
+) {
+  // A number names a pull request only within its repository, which the opened one's url gives.
+  const prefix = `https://${repository.host}/${repository.repo}/pull/`.toLowerCase();
   const opened = new Map<number, string>();
-  for (const event of ctx.store.kindEvents(projectId, ['session.pr_created']))
-    if (worktrees.has(event.aggregate_id))
-      opened.set((event.payload as { number: number }).number, event.aggregate_id);
+  for (const event of ctx.store.kindEvents(projectId, ['session.pr_created'])) {
+    const pull = event.payload as { number: number; url: string };
+    if (pull.url.toLowerCase().startsWith(prefix)) opened.set(pull.number, event.aggregate_id);
+  }
   const onBranch = new Map<string, string>();
-  for (const [session, worktree] of worktrees)
+  for (const [session, worktree] of sessionWorktrees(
+    ctx,
+    projectId,
+    root,
+    await listedWorktrees(root),
+  ))
     if (worktree.branch) onBranch.set(worktree.branch, session);
   return (number: number, head: string | undefined) =>
     opened.get(number) ?? (head === undefined ? undefined : onBranch.get(head));
@@ -274,7 +286,7 @@ export async function githubItems(
       root,
     );
     const items = githubJson(output, z.array(itemSchema));
-    const sessionOf = kind === 'pr' ? await pullSessions(ctx, projectId, root) : undefined;
+    const sessionOf = kind === 'pr' ? await pullSessions(ctx, projectId, root, repo) : undefined;
     value = {
       repo: repo.repo,
       items: items
@@ -372,7 +384,7 @@ export async function githubPullDetail(
     const at = value ? Date.parse(value) : NaN;
     return at > 0 ? at : null;
   };
-  const session = (await pullSessions(ctx, projectId, root))(pull.number, pull.headRefName);
+  const session = (await pullSessions(ctx, projectId, root, repo))(pull.number, pull.headRefName);
   const value: GithubPullDetail = {
     number: pull.number,
     title: pull.title,

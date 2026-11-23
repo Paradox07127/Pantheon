@@ -78,11 +78,18 @@ function worktreeSession(f: Awaited<ReturnType<typeof setup>>, folder: string, b
     turn_count: 0,
   });
 }
-/** A session whose worktree is on pt/feature, and one on another worktree that opened pull request 7. */
+/** A session whose worktree is on pt/feature, and one without a worktree that opened pull request 7. */
 function pullSessions(f: Awaited<ReturnType<typeof setup>>) {
   git(f.projectRoot, 'commit', '--quiet', '--allow-empty', '-m', 'Start');
   const onBranch = worktreeSession(f, f.projectRoot, 'pt/feature'),
-    opener = worktreeSession(f, f.projectRoot, 'pt/opener');
+    opener = f.store.insert<Session>('sessions', {
+      id: id(),
+      revision: 1,
+      project_id: f.project.id,
+      runtime: f.adapter.name,
+      state: 'open',
+      turn_count: 0,
+    });
   f.store.event('session.pr_created', opener, f.project.id, {
     number: 7,
     url: 'https://github.com/owner/project/pull/7',
@@ -287,10 +294,13 @@ it('names only a session of the first folder for its pull request when another f
   );
   const first = worktreeSession(f, f.projectRoot, 'pt/first'),
     other = worktreeSession(f, second, 'pt/other');
-  for (const opener of [first, other])
+  for (const [opener, repo] of [
+    [first, 'owner/project'],
+    [other, 'owner/other'],
+  ] as const)
     f.store.event('session.pr_created', opener, f.project.id, {
       number: 12,
-      url: 'https://github.com/owner/project/pull/12',
+      url: `https://github.com/${repo}/pull/12`,
     });
   f.setItems([item(12, '2026-11-14T00:00:00Z', { headRefName: 'pt/elsewhere' })]);
   f.setDetail({
