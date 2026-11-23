@@ -20,6 +20,7 @@ import { sessionTitle } from '../data/transcript';
 import { readQuery, useFocusTick, useRefetchTick } from '../data/workbench-sessions';
 import { t } from '../i18n';
 import { keyText, shortcutKeys } from '../lib/shortcuts';
+import { runtimeQuotas } from '../lib/usage-quota';
 import { durationText } from '../lib/time-text';
 import { resolveTheme, useShell } from '../store';
 import { readyAfterPaint } from './window-kind';
@@ -206,19 +207,7 @@ export function TrayPopover() {
   const running = (board?.sessions ?? []).filter(
     (s) => s.state === 'running' && shownProjects.has(s.project_id),
   );
-  const quotas =
-    read.state === 'ready'
-      ? read.statuses.flatMap((s) =>
-          s.quota?.windows.length
-            ? [
-                {
-                  runtime: s.runtime,
-                  percent: Math.round(Math.max(...s.quota.windows.map((w) => w.used_percent))),
-                },
-              ]
-            : [],
-        )
-      : [];
+  const quotas = read.state === 'ready' ? runtimeQuotas(read.statuses) : [];
 
   const head = (title: string, count: number) => (
     <h2 className="tp-h">

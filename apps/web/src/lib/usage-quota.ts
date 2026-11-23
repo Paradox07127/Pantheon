@@ -1,4 +1,5 @@
 import type { QuotaWindow } from '@pantheon/domain';
+import type { RuntimeStatus } from '@pantheon/protocol';
 import { t } from '../i18n';
 
 /* Subscription quota */
@@ -13,6 +14,30 @@ export const quotaWindowName = (window: string) => {
 
 /** The used share kept within 0 to 100, for the bar. */
 export const quotaUsed = (w: QuotaWindow) => Math.min(Math.max(w.used_percent, 0), 100);
+
+export interface RuntimeQuota {
+  runtime: string;
+  /** The share used of its most used window, rounded. */
+  percent: number;
+  /** Its most used window. */
+  top: QuotaWindow;
+  windows: readonly QuotaWindow[];
+}
+
+/** Each runtime that reports quota, in the given order, with the share used of its most used window. */
+export const runtimeQuotas = (statuses: readonly RuntimeStatus[]): RuntimeQuota[] =>
+  statuses.flatMap((s) => {
+    if (!s.quota?.windows.length) return [];
+    const top = s.quota.windows.reduce((a, b) => (b.used_percent > a.used_percent ? b : a));
+    return [
+      {
+        runtime: s.runtime,
+        percent: Math.round(top.used_percent),
+        top,
+        windows: s.quota.windows,
+      },
+    ];
+  });
 
 /** The window's name and, while it is ahead, how long until it resets. */
 export function quotaWindowText(w: QuotaWindow, now: number): string {

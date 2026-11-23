@@ -19,6 +19,7 @@ vi.mock('@/store', () => ({
     theme === 'system' ? (dark ? 'dark' : 'light') : theme,
 }));
 import { TrayPopover, useProjectSessions } from '@/shell/TrayPopover';
+import { runtimeQuotas } from '@/lib/usage-quota';
 import { zh } from './i18n-setup.js';
 
 const WAITING = zh('trayPopover.waiting.title');
@@ -361,6 +362,7 @@ describe('tray popover other groups', () => {
     tree = (await popover()).value;
     const meter = find(tree, (n) => n.props.role === 'meter');
     expect(meter.props['aria-valuenow']).toBe(38);
+    expect(meter.props['aria-valuenow']).toBe(runtimeQuotas(statuses)[0]!.percent);
     expect(meter.props.style).toEqual({ '--v': '38%' });
     expect(text(tree)).toContain('Claude 订阅额度');
     expect(text(tree)).toContain('38%');

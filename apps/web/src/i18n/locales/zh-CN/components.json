@@ -173,5 +173,8 @@
   "components.environment.failsOnMachine": "这台机器的问题",
   "components.environment.log": "{name} 的日志末尾",
   "components.environment.fixing": "写基线的 agent 正在修 {name}",
-  "components.environment.fixed": "agent 修过一次后通过"
+  "components.environment.fixed": "agent 修过一次后通过",
+  "components.sidebarQuota.label": "订阅额度",
+  "components.sidebarQuota.runtime": "{runtime}：已用 {percent}%，{reset}",
+  "components.sidebarQuota.window": "已用 {percent}%，{window}"
 }

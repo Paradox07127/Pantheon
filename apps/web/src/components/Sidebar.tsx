@@ -61,6 +61,7 @@ import { Clip } from './Clip';
 import { LoadError } from './LoadError';
 import { compareRuntimes, RuntimeGlyph, runtimeName } from './RuntimeGlyph';
 import { ProjectMonogram } from './ProjectMonogram';
+import { SidebarQuota } from './SidebarQuota';
 import { KeyHint } from './Shortcuts';
 import { Skeleton } from './Skeleton';
 import { Splitter } from './Splitter';
@@ -1193,6 +1194,7 @@ export function Sidebar({
         )}
       </section>
       <hr className="sb-sep" />
+      <SidebarQuota />
       <div className="sb-gz">
         <button type="button" className="sb-it" onClick={openSettingsHere}>
           <Settings2 aria-hidden="true" />
@@ -1286,6 +1288,7 @@ export function Sidebar({
               </>,
               { current: current('projects') },
             )}
+          <SidebarQuota rail />
           {icon(
             SCREEN_NAMES.settings,
             SCREEN_NAMES.settings,
