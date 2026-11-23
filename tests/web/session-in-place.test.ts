@@ -264,6 +264,7 @@ describe('a session in its own folder on screen', () => {
       zh('sessions.screen.tabChanges'),
       checks,
       zh('sessions.panel.dock.plan'),
+      zh('sessions.panel.dock.files'),
       zh('sessions.panel.dock.trace'),
       zh('sessions.panel.dock.monitor'),
     ]);

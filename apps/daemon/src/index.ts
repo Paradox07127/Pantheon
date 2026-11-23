@@ -662,6 +662,7 @@ export async function startDaemon(options: DaemonOptions) {
       'project.head': (p, i) => control.projectHead(p, i.project_id),
       'session.create.preview': (p, i) => control.sessionCreatePreview(p, i),
       'files.search': (p, i) => control.filesSearch(p, i.project_id, i.session_id, i.q),
+      'files.list': (p, i) => control.filesList(p, i.project_id, i.session_id, i.path),
       'files.read': (p, i) => control.filesRead(p, i.project_id, i.session_id, i.path),
       'session.tool_image': (p, i) => control.sessionToolImage(p, i.session_id, i.hash),
       'symbols.search': (p, i) => control.symbolsSearch(p, i.project_id, i.session_id, i.q),

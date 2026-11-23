@@ -29,6 +29,7 @@ it('defines a strict input schema for each unimplemented command and the queries
     'device.probe',
     'device.ssh_hosts',
     'extensions.inventory',
+    'files.list',
     'files.read',
     'files.search',
     'github.items',

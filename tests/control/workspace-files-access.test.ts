@@ -55,6 +55,8 @@ it('lets a project setup session read only its own worktree, never another sessi
   writeFileSync(path.join(otherWorkspace.path, 'theirs.ts'), 'function theirsSymbol() {}');
   const reader = credentialOf(f, own);
   expect(() => f.control.filesRead(reader, f.project.id, other.id, 'theirs.ts')).toThrow(denied);
+  expect(() => f.control.filesList(reader, f.project.id, other.id, undefined)).toThrow(denied);
+  expect(() => f.control.filesList(reader, f.project.id, undefined, undefined)).toThrow(denied);
   expect(() => f.control.symbolsSearch(reader, f.project.id, other.id, 'theirs')).toThrow(denied);
   expect(() => f.control.filesRead(reader, f.project.id, undefined, 'answer.txt')).toThrow(denied);
   expect(f.control.filesRead(reader, f.project.id, own.id, 'mine.ts').text).toContain('mineSymbol');
@@ -96,6 +98,9 @@ it('refuses a session read of data its sandbox protects inside its own worktree'
   expect(() =>
     f.control.filesRead(credentialOf(f, own), f.project.id, own.id, 'backups/saved.txt'),
   ).toThrow(denied);
+  expect(() => f.control.filesList(credentialOf(f, own), f.project.id, own.id, 'backups')).toThrow(
+    denied,
+  );
   expect(f.control.filesRead(user, f.project.id, own.id, 'backups/saved.txt').text).toBe(
     'protected',
   );
@@ -137,6 +142,20 @@ it('refuses to open a checked path whose parent became a symlink out of the work
       closeSync(swapped);
     }
   }).toThrow(expect.objectContaining({ code: 'invalid_input' }));
+});
+
+it('skips a listed file deleted before its size is read', async () => {
+  const f = await workbenchFixture();
+  writeFileSync(path.join(f.source, 'vanishing.txt'), 'soon gone');
+  const lstat = fs.lstatSync;
+  vi.spyOn(fs, 'lstatSync').mockImplementation(((target: fs.PathLike, options?: never) => {
+    if (path.basename(String(target)) === 'vanishing.txt')
+      throw Object.assign(new Error('ENOENT: no such file or directory'), { code: 'ENOENT' });
+    return lstat(target, options);
+  }) as typeof fs.lstatSync);
+  expect((await f.control.filesList(user, f.project.id, undefined, undefined)).entries).toEqual([
+    { name: 'answer.txt', kind: 'file', size: 5 },
+  ]);
 });
 
 it('lets a project setup session search only its own worktree for file names', async () => {

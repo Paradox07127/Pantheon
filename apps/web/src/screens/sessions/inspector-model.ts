@@ -199,14 +199,22 @@ export const conflictItem = (block: { text: string; request: string }): Feedback
 });
 
 /** A column of the session's panel dock. */
-export type Panel = 'changes' | 'checks' | 'plan' | 'browser' | 'trace' | 'monitor';
+export type Panel = 'changes' | 'checks' | 'plan' | 'files' | 'browser' | 'trace' | 'monitor';
 /** What a link into a session opens: a panel, or the diff, review or change story of the changes panel. */
 export type PanelTab = Panel | 'diff' | 'review' | 'story';
 /** What the changes panel shows. */
 export type ChangesView = 'diff' | 'review' | 'story';
 
-const PANELS: readonly Panel[] = ['changes', 'checks', 'plan', 'browser', 'trace', 'monitor'];
-const NO_WORKTREE_PANELS: readonly Panel[] = ['plan', 'browser', 'trace', 'monitor'];
+const PANELS: readonly Panel[] = [
+  'changes',
+  'checks',
+  'plan',
+  'files',
+  'browser',
+  'trace',
+  'monitor',
+];
+const NO_WORKTREE_PANELS: readonly Panel[] = ['plan', 'files', 'browser', 'trace', 'monitor'];
 const IN_PLACE_PANELS = PANELS.filter((panel) => panel !== 'checks');
 const CHANGES_VIEWS: readonly ChangesView[] = ['diff', 'review', 'story'];
 

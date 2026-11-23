@@ -17,6 +17,58 @@ import type { ControlContext } from '../../packages/control/dist/context.js';
 import { awaitWorkspaceReady, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
+it('lists directories before files by name, excluding ignored entries and git metadata', async () => {
+  const f = await workbenchFixture();
+  for (const name of ['zebra', 'alpha', 'ignored']) mkdirSync(path.join(f.source, name));
+  writeFileSync(path.join(f.source, '.gitignore'), 'ignored/\nsecret.txt\n');
+  writeFileSync(path.join(f.source, 'secret.txt'), 'hidden');
+  writeFileSync(path.join(f.source, 'alpha', 'notes.txt'), 'notes');
+  const listed = await f.control.filesList(user, f.project.id, undefined, undefined);
+  expect(listed).toEqual({
+    entries: [
+      { name: 'alpha', kind: 'dir' },
+      { name: 'zebra', kind: 'dir' },
+      { name: '.gitignore', kind: 'file', size: 20 },
+      { name: 'answer.txt', kind: 'file', size: 5 },
+    ],
+    truncated: false,
+  });
+  expect(await f.control.filesList(user, f.project.id, undefined, 'alpha')).toEqual({
+    entries: [{ name: 'notes.txt', kind: 'file', size: 5 }],
+    truncated: false,
+  });
+  expect(await f.control.filesList(user, f.project.id, undefined, 'zebra')).toEqual({
+    entries: [],
+    truncated: false,
+  });
+});
+
+it('lists a link to a folder inside the workspace as a folder that opens', async () => {
+  const f = await workbenchFixture();
+  mkdirSync(path.join(f.source, 'docs'));
+  writeFileSync(path.join(f.source, 'docs', 'a.md'), 'a');
+  symlinkSync('docs', path.join(f.source, 'current'));
+  expect((await f.control.filesList(user, f.project.id, undefined, undefined)).entries).toEqual([
+    { name: 'current', kind: 'dir' },
+    { name: 'docs', kind: 'dir' },
+    { name: 'answer.txt', kind: 'file', size: 5 },
+  ]);
+  expect((await f.control.filesList(user, f.project.id, undefined, 'current')).entries).toEqual([
+    { name: 'a.md', kind: 'file', size: 1 },
+  ]);
+});
+
+it('returns at most one thousand sorted directory entries and reports truncation', async () => {
+  const f = await workbenchFixture();
+  mkdirSync(path.join(f.source, 'many'));
+  for (let index = 0; index < 1001; index++)
+    writeFileSync(path.join(f.source, 'many', `${String(index).padStart(4, '0')}.txt`), '');
+  const listed = await f.control.filesList(user, f.project.id, undefined, 'many');
+  expect(listed.entries).toHaveLength(1000);
+  expect(listed.entries[999]!.name).toBe('0999.txt');
+  expect(listed.truncated).toBe(true);
+});
+
 it('reads text, empty and binary files and truncates UTF-8 at a character boundary', async () => {
   const f = await workbenchFixture();
   const read = (file: string) => f.control.filesRead(user, f.project.id, undefined, file);
@@ -96,6 +148,11 @@ it('uses the session worktree for all queries and enforces project access and ow
   const workspace = await awaitWorkspaceReady(f.control, session.workspace_id!);
   writeFileSync(path.join(f.source, 'source-only.ts'), 'function sourceOnly() {}');
   writeFileSync(path.join(workspace.path, 'local.ts'), 'function localSymbol() {}');
+  expect(
+    (await f.control.filesList(user, f.project.id, session.id, undefined)).entries.map(
+      (e) => e.name,
+    ),
+  ).toEqual(['answer.txt', 'local.ts']);
   expect(f.control.filesRead(user, f.project.id, session.id, 'local.ts').text).toContain(
     'localSymbol',
   );
@@ -106,6 +163,8 @@ it('uses the session worktree for all queries and enforces project access and ow
   mkdirSync(otherRoot);
   const other = await f.call<Project>('project.open', { name: 'Other', roots: [otherRoot] });
   const queries = [
+    (project: string, sessionId: string | undefined, principal = user) =>
+      f.control.filesList(principal, project, sessionId, undefined),
     (project: string, sessionId: string | undefined, principal = user) =>
       f.control.filesRead(principal, project, sessionId, 'answer.txt'),
     (project: string, sessionId: string | undefined, principal = user) =>
@@ -123,6 +182,9 @@ it('uses the session worktree for all queries and enforces project access and ow
   expect(f.control.filesRead(user, f.project.id, plain.id, 'source-only.ts').text).toContain(
     'sourceOnly',
   );
+  expect(
+    (await f.control.filesList(user, f.project.id, plain.id, undefined)).entries.map((e) => e.name),
+  ).toContain('source-only.ts');
   for (const query of queries) {
     expect(() => query(other.id, session.id)).toThrow(
       expect.objectContaining({ code: 'permission_denied' }),
@@ -140,6 +202,10 @@ it('rejects parent traversal, absolute paths and symlinks escaping the workspace
   writeFileSync(path.join(outside, 'secret.ts'), 'function secretSymbol() {}');
   symlinkSync(outside, path.join(f.source, 'escape'));
   symlinkSync(path.join(outside, 'secret.ts'), path.join(f.source, 'escape.ts'));
+  for (const file of ['../outside', outside, 'escape'])
+    expect(() => f.control.filesList(user, f.project.id, undefined, file)).toThrow(
+      expect.objectContaining({ code: 'invalid_input' }),
+    );
   for (const file of [
     '../outside/secret.ts',
     path.join(outside, 'secret.ts'),

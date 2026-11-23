@@ -1870,6 +1870,11 @@ export const querySchemas = {
     session_id: str.optional(),
     q: z.string().max(200),
   }),
+  'files.list': z.strictObject({
+    project_id: str,
+    session_id: str.optional(),
+    path: z.string().optional(),
+  }),
   'files.read': z.strictObject({
     project_id: str,
     session_id: str.optional(),
@@ -2470,6 +2475,10 @@ export interface ProjectFactsRead {
   collected_at: number | null;
   /** Every project folder holds no code yet, as a baseline start judges it now. */
   empty: boolean;
+}
+export interface FilesListResult {
+  entries: { name: string; kind: 'file' | 'dir'; size?: number }[];
+  truncated: boolean;
 }
 export interface FilesReadResult {
   path: string;

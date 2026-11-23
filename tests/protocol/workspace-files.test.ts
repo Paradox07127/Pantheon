@@ -3,6 +3,7 @@ import { querySchemas } from '@pantheon/protocol';
 
 it('defines strict workspace file and symbol queries with optional session scope', () => {
   for (const [name, extra] of [
+    ['files.list', {}],
     ['files.read', { path: 'src/main.ts' }],
     ['symbols.search', { q: '' }],
   ] as const) {
@@ -21,6 +22,10 @@ it('defines strict workspace file and symbol queries with optional session scope
       false,
     );
   }
+  expect(querySchemas['files.list'].parse({ project_id: 'project', path: 'src' })).toEqual({
+    project_id: 'project',
+    path: 'src',
+  });
   expect(querySchemas['files.read'].safeParse({ project_id: 'project' }).success).toBe(false);
   expect(querySchemas['symbols.search'].safeParse({ project_id: 'project' }).success).toBe(false);
 });

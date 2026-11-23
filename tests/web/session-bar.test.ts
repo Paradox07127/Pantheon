@@ -216,6 +216,7 @@ describe('session bar', () => {
       zh('sessions.screen.tabChanges'),
       zh('sessions.screen.tabChecks'),
       zh('sessions.panel.dock.plan'),
+      zh('sessions.panel.dock.files'),
       zh('sessions.panel.dock.trace'),
       zh('sessions.panel.dock.monitor'),
     ]);
@@ -225,6 +226,7 @@ describe('session bar', () => {
       false,
       true,
       true,
+      false,
       true,
       false,
     ]);

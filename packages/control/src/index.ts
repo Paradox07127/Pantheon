@@ -76,7 +76,7 @@ import {
   prepareChangeStory,
 } from './change-story.js';
 import { projectIntroRead } from './project-intro.js';
-import { filesRead, sessionToolImage, symbolsSearch } from './workspace-files.js';
+import { filesList, filesRead, sessionToolImage, symbolsSearch } from './workspace-files.js';
 import { prepareRollback, readTurnDiff } from './checkpoint.js';
 import {
   addAttachment,
@@ -1016,6 +1016,9 @@ export class Control extends EventEmitter {
   }
   filesSearch(principal: Principal, projectId: string, sessionId: string | undefined, q: string) {
     return filesSearch(this.ctx, principal, projectId, sessionId, q);
+  }
+  filesList(principal: Principal, projectId: string, sessionId: string | undefined, path?: string) {
+    return filesList(this.ctx, principal, projectId, sessionId, path);
   }
   filesRead(principal: Principal, projectId: string, sessionId: string | undefined, path: string) {
     return filesRead(this.ctx, principal, projectId, sessionId, path);

@@ -541,6 +541,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `device.probe` | `id`: string |
 | `device.ssh_hosts` | — |
 | `extensions.inventory` | `project_id`: string<br>`runtime`: string |
+| `files.list` | `project_id`: string<br>`session_id?`: string<br>`path?`: string |
 | `files.read` | `project_id`: string<br>`session_id?`: string<br>`path`: string |
 | `files.search` | `project_id`: string<br>`session_id?`: string<br>`q`: string |
 | `github.items` | `project_id`: string<br>`kind`: "pr" \| "issue" |

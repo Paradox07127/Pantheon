@@ -78,6 +78,7 @@ import {
   type Panel,
 } from './inspector-model';
 import { BrowserPanel } from './BrowserPanel';
+import { FilesPanel } from './FilesPanel';
 import { askFix, ChecksTab, MergeBar, PlanTab, ReviewTab, StoryTab } from './panel';
 import { ThreadTrace, useThreadTurns } from './trace';
 import { MonitorPanel } from './MonitorPanel';
@@ -1078,6 +1079,8 @@ export function SessionInspector(props: {
           onReview={() => props.onOpen('review')}
         />
       );
+    if (tab === 'files')
+      return projectId && <FilesPanel projectId={projectId} sessionId={props.sessionId} />;
     if (tab === 'browser') return <BrowserPanel sessionId={props.sessionId} />;
     if (tab === 'trace') return <ThreadTrace sessionId={props.sessionId} />;
     if (tab === 'monitor') return <MonitorPanel sessionId={props.sessionId} />;
