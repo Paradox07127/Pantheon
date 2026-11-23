@@ -1,0 +1,215 @@
+/* The pull requests tab of the changes screen: the open ones, and the opened one's checks and reviews. */
+.cpr-list {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cpr-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--sp-2);
+  row-gap: var(--sp-1);
+  width: 100%;
+  padding: var(--sp-2);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--tx2);
+  font: inherit;
+  text-align: left;
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+.cpr-row:hover {
+  background: var(--sf2);
+  color: var(--tx);
+}
+.cpr-row[aria-pressed='true'] {
+  background: var(--sel);
+  color: var(--tx);
+}
+.cpr-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.cpr-checks {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.cpr-meta {
+  grid-column: 2 / 4;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  white-space: nowrap;
+}
+.cpr-ses {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.cpr-end {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-left: auto;
+}
+.cpr-mu {
+  color: var(--mu);
+}
+.cpr-b {
+  font-weight: 600;
+}
+.cpr-n {
+  font-variant-numeric: tabular-nums;
+}
+.cpr-kv {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: var(--sp-2) var(--sp-3);
+  margin: 0;
+}
+.cpr-kv dt {
+  color: var(--mu);
+}
+.cpr-kv dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.cpr-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--tx);
+  font: inherit;
+}
+.cpr-link:hover {
+  text-decoration: underline;
+}
+.cpr-grp {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.cpr-gh {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.cpr-gh h3 {
+  margin: 0;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  font-weight: 600;
+}
+.cpr-checklist {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cpr-check {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  height: var(--row);
+}
+.cpr-name {
+  flex: 1;
+  min-width: 0;
+}
+.cpr-st {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  color: var(--idle);
+}
+.cpr-st > svg {
+  width: 14px;
+  height: 14px;
+}
+.cpr-st[data-state='passed'] {
+  color: var(--ok);
+}
+.cpr-st[data-state='failed'] {
+  color: var(--bad);
+}
+.cpr-st[data-state='running'] {
+  color: var(--run);
+}
+.cpr-took {
+  min-width: 48px;
+  text-align: right;
+}
+.cpr-threads {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cpr-rv {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: var(--sp-3);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+}
+.cpr-rvh {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.cpr-where {
+  min-width: 0;
+  margin-left: auto;
+}
+.cpr-body {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.cpr-done {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.cpr-done > summary {
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.cpr-done > .cpr-threads {
+  margin-top: var(--sp-2);
+}

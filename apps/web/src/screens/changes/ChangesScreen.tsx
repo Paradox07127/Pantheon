@@ -35,6 +35,7 @@ import { GateResults } from '../sessions/GateResults';
 import { aheadText, gateFailing } from '../sessions/inspector-model';
 import { GATE_NAME } from '../sessions/SessionHeader';
 import { ChangedFiles } from './ChangedFiles';
+import { PullRequestList } from './PullRequestList';
 import { TellBox } from './TellBox';
 import './changes.css';
 
@@ -171,6 +172,7 @@ export function ChangesScreen({
 }) {
   const read = useProjectChanges(projectId);
   const [filter, setFilter] = useState<ChangeFilter>('all');
+  const [pulls, setPulls] = useState(false);
   const [active, setActive] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const all = read.read ? sortChanges(read.read.changes) : null;
@@ -218,8 +220,11 @@ export function ChangesScreen({
   return (
     <Tabs.Root
       className="tb-pg"
-      value={filter}
-      onValueChange={(value) => setFilter(value as ChangeFilter)}
+      value={pulls ? 'pulls' : filter}
+      onValueChange={(value) => {
+        setPulls(value === 'pulls');
+        if (value !== 'pulls') setFilter(value as ChangeFilter);
+      }}
     >
       <TopBar title={name} count={all?.length}>
         <Tabs.List className="tb-tabs" aria-label={name}>
@@ -229,6 +234,9 @@ export function ChangesScreen({
               <span className="tb-ct">{count(f)}</span>
             </Tabs.Tab>
           ))}
+          <Tabs.Tab className="tb-tab" value="pulls">
+            {t({ id: 'changes.pulls.tab', defaultMessage: 'Pull requests' })}
+          </Tabs.Tab>
         </Tabs.List>
       </TopBar>
       <Tabs.Panel className="chg" value={filter} data-inspector={opened ? '' : undefined}>
@@ -348,6 +356,7 @@ export function ChangesScreen({
           <ChangeInspector key={opened.id} row={opened} sessions={sessions} onClose={close} />
         )}
       </Tabs.Panel>
+      {pulls && <PullRequestList projectId={projectId} sessions={sessions} />}
     </Tabs.Root>
   );
 }

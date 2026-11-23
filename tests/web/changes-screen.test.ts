@@ -174,6 +174,7 @@ describe('changes screen', () => {
       `${zh('changes.filter.ready')}1`,
       `${zh('changes.filter.needsYou')}1`,
       `${zh('changes.filter.merged')}2`,
+      zh('changes.pulls.tab'),
     ]);
     const root = nodes(h.value).find((n) => n.type === Tabs.Root)!;
     root.props.onValueChange('merged');
