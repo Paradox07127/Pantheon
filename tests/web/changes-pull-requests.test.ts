@@ -258,6 +258,19 @@ describe('pull requests in the changes screen', () => {
     expect(bar.props['aria-label']).not.toContain(zh('changes.pulls.check.failed'));
   });
 
+  it('names a lone check not passed by no state when the summary gives none', () => {
+    reads.pulls = reads.landed<GithubItems>({
+      repo: 'acme/payments',
+      items: [{ ...pulls.items[0]!, checks: undefined, checks_passed: 1, checks_total: 2 }],
+    });
+    const row = rows(list().value)[0]!;
+    const bar = find(row.props.children, (n) => n.props.role === 'img');
+    expect(find(bar.props.children, (n) => n.type === GateSeg).props).toMatchObject({
+      running: 0,
+      notRun: 1,
+    });
+  });
+
   it.each<[string, () => unknown]>([
     ['github.items', () => readHooks.useGithubPulls('pulls')],
     ['github.pr.detail', () => readHooks.useGithubPullDetail('pulls', 418)],

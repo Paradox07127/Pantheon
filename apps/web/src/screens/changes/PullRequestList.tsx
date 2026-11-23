@@ -22,7 +22,8 @@ import './pull-requests.css';
 function restState(pull: GithubItem, rest: number) {
   if (pull.checks === 'passing') return 'skipped';
   if (rest !== 1) return 'unknown';
-  return pull.checks === 'failing' ? 'failed' : 'running';
+  if (pull.checks === 'failing') return 'failed';
+  return pull.checks === 'pending' ? 'running' : 'unknown';
 }
 
 /** The checks of a listed pull request: passed, and the rest in one state when it is known. */
