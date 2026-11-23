@@ -6,6 +6,7 @@ import {
   type Landing,
   type Principal,
   type Project,
+  type ProjectPlan,
   type Review,
   type ReviewFinding,
   type Session,
@@ -36,6 +37,7 @@ interface ChangeRow {
 interface ConductorState {
   changes: ChangeRow[];
   todo: { reason: string; session_id?: string; created_at: number }[];
+  plan: ProjectPlan | null;
 }
 
 const credential = (session: Session, role: Principal['role']): Principal => ({
@@ -235,6 +237,7 @@ it("lists the project's changes, their review and to-dos to a conductor session 
   });
   expect(rows.has(`session:${foreign.id}`)).toBe(false);
   expect(rows.has(`landing:${foreignLanding.id}`)).toBe(false);
+  expect(state.plan).toBeNull();
 
   for (const principal of [user, credential(quiet, 'planner'), credential(running, 'writer')])
     expect(await refusal(f, principal), principal.role).toBe('permission_denied');

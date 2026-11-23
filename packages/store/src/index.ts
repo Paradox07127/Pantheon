@@ -62,6 +62,7 @@ export const tables = [
   'environment_checks',
   'landings',
   'setting_change_proposals',
+  'project_plans',
 ] as const;
 export type Table = (typeof tables)[number];
 export interface Outbox {
@@ -343,6 +344,15 @@ export const migrations: readonly Migration[] = [
         CREATE TABLE setting_change_proposals (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;
         CREATE INDEX setting_change_proposal_project ON setting_change_proposals(json_extract(data,'$.project_id'));
       `);
+    },
+  },
+  {
+    // The id is the project id, so the table needs no project index.
+    version: 19,
+    up(db) {
+      db.exec(
+        'CREATE TABLE project_plans (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;',
+      );
     },
   },
 ];

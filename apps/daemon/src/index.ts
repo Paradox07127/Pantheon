@@ -645,6 +645,10 @@ export async function startDaemon(options: DaemonOptions) {
         await prefetch(p, i.project_id);
         return timed('project.changes', () => control.projectChanges(p, i.project_id));
       },
+      'project.plan': async (p, i) => {
+        await prefetch(p, i.project_id);
+        return timed('project.plan', () => control.projectPlan(p, i.project_id));
+      },
       'project.decisions': (p, i) => control.decisionsForUser(p, i.project_id, i.since),
       'extensions.inventory': (p, i) =>
         withRuntimeDeadline(

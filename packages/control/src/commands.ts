@@ -14,6 +14,7 @@ import { workbenchSessionHandlers } from './workbench-session.js';
 import { approvalHandlers } from './approvals.js';
 import { prepareRangeReview, prepareReviewRequest, reviewHandlers } from './review.js';
 import { settingProposalPreparers } from './setting-proposal.js';
+import { projectPlanPreparers } from './project-plan.js';
 import { workflowPolicyHandlers } from './workflow-policy.js';
 import { inPlaceSessionHandlers } from './in-place-session.js';
 import { visualHandlers } from './visual.js';
@@ -53,6 +54,7 @@ export const preparers: Preparers = {
   ...branchLandingPreparers,
   ...conductorPreparers,
   ...settingProposalPreparers,
+  ...projectPlanPreparers,
   'review.request': prepareReviewRequest,
   'review.range': prepareRangeReview,
   'session.resolve': prepareResolve,

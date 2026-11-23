@@ -124,6 +124,7 @@ export function projectChanges(
       ...(listed.merge?.state === 'running' || listed.state === 'merging'
         ? { landing: 'running' as const }
         : {}),
+      ...(listed.changes ? { changes: listed.changes } : {}),
       updated_at: listed.last_activity_at,
     });
   }

@@ -62,6 +62,7 @@ it('defines a strict input schema for each unimplemented command and the queries
     'project.intro.read',
     'project.landing.find',
     'project.landing.read',
+    'project.plan',
     'project.read',
     'project.review.metrics',
     'project.timeline',
@@ -142,6 +143,7 @@ it('gives a conductor session exactly its tools with strict inputs', () => {
     stop_session: 'conductor.stop',
     read_needs_you: 'conductor.needs_you',
     propose_setting: 'conductor.propose_setting',
+    write_plan: 'conductor.plan_set',
     project_read: 'project.read',
     memory_context: 'memory.context',
     memory_search: 'memory.search',
@@ -209,6 +211,33 @@ it('gives a conductor session exactly its tools with strict inputs', () => {
       [{}, { session_id: 'spawned', close: 'yes' }],
     ],
     ['conductor.needs_you' as CommandType, {}, [{ project_id: 'project' }]],
+    [
+      'conductor.plan_set' as CommandType,
+      {
+        milestones: [{ id: 'export', title: 'Export ships' }],
+        items: [
+          {
+            id: 'parser',
+            title: 'Parse the export format',
+            milestone: 'export',
+            depends_on: [],
+            session_ids: ['session'],
+            acceptance: ['It parses the sample'],
+            dropped: true,
+          },
+        ],
+      },
+      [
+        { milestones: Array(9).fill({ id: 'export', title: 'Export ships' }), items: [] },
+        { milestones: [], items: Array(41).fill({ id: 'parser', title: 'Parse' }) },
+        { milestones: [], items: [{ id: 'parser', title: 'x'.repeat(121) }] },
+        { milestones: [], items: [{ id: '', title: 'Parse' }] },
+        { milestones: [], items: [{ id: 'parser', title: 'Parse', dropped: false }] },
+        { milestones: [], items: [{ id: 'parser', title: 'Parse', accepted: { at: 'now' } }] },
+        { milestones: [], items: [{ id: 'parser', title: 'Parse', named_at: {} }] },
+        { items: [] },
+      ],
+    ],
   ];
   for (const [type, valid, invalid] of cases) {
     expect(Object.hasOwn(inputSchemas, type), type).toBe(true);

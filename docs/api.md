@@ -257,6 +257,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 |---|---|---|
 | `conductor.message` | `session_id`: string<br>`text`: string<br>`mode?`: "send" \| "steer" | message_session (conductor) |
 | `conductor.needs_you` | — | read_needs_you (conductor) |
+| `conductor.plan_set` | `milestones`: object[]<br>`items`: object[] | write_plan (conductor) |
 | `conductor.propose_setting` | `command`: "project.gate.set" \| "workflow.policy.set" \| "project.sessionDefaults.set" \| "project.extensions.set"<br>`input`: object<br>`reason`: string | propose_setting (conductor) |
 | `conductor.ready` | `session_id?`: string | report_ready (conductor) |
 | `conductor.review` | `runtimes`: string[]<br>`session_id?`: string | request_review (conductor) |
@@ -393,6 +394,12 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | type | input | MCP 工具 |
 |---|---|---|
 | `project.override.clear` | `project_id`: string<br>`key`: "workflow_policy" \| "session_defaults"<br>`param?`: "gate_on_fail" \| "gate_runner" |  |
+
+### project.plan
+
+| type | input | MCP 工具 |
+|---|---|---|
+| `project.plan.accept` | `project_id`: string<br>`item_id`: string<br>`accepted`: boolean |  |
 
 ### project.read
 
@@ -574,6 +581,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `project.intro.read` | `project_id`: string |
 | `project.landing.find` | `root`: string<br>`branch`: string |
 | `project.landing.read` | `landing_id`: string |
+| `project.plan` | `project_id`: string |
 | `project.read` | `project_id`: string |
 | `project.review.metrics` | `project_id`: string |
 | `project.timeline` | `project_id`: string<br>`since?`: string |

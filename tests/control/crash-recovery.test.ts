@@ -127,6 +127,7 @@ it.skipIf(insideSandbox)(
           source: workspace.source,
           from_sha: sourceHead,
           to_sha: head,
+          head_sha: head,
           files: 2,
           additions: 2,
           deletions: 0,

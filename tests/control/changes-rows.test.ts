@@ -1,3 +1,5 @@
+import { writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { expect, it } from 'vitest';
 import { id, type Project, type Review, type Session, type Workspace } from '@pantheon/domain';
 import { awaitWorkspaceReady, eventually, user, waitOutStatusReuse } from '../helpers.js';
@@ -79,3 +81,37 @@ it('lists a gate that is running or being cancelled as running', async () => {
     expect((await changeOf(f, session.id))?.gate, state).toEqual({ state: 'running' });
   }
 });
+
+it.each([
+  ['a worktree with a committed line', false, { files: 1, additions: 1, deletions: 0 }],
+  ['a session that landed and closed its worktree', true, undefined],
+] as const)(
+  'gives the row the worktree changes not landed yet: %s',
+  async (_case, closed, changes) => {
+    const f = await workbenchFixture();
+    const session = await f.create('Write the notes');
+    await awaitWorkspaceReady(f.control, session.workspace_id!);
+    await eventually(
+      () => f.store.must<Session>('sessions', session.id).state === 'open',
+      () => f.control.tick(),
+    );
+    const workspace = f.store.must<Workspace>('workspaces', session.workspace_id!);
+    writeFileSync(path.join(workspace.path, 'notes.txt'), 'notes\n');
+    git(workspace.path, 'add', 'notes.txt');
+    git(workspace.path, 'commit', '--quiet', '-m', 'Notes');
+    if (closed) {
+      const current = f.store.must<Session>('sessions', session.id);
+      f.store.update(
+        'sessions',
+        { ...current, state: 'closed', outcome: 'merged' },
+        current.revision,
+      );
+    }
+
+    const row = await changeOf(f, session.id);
+
+    expect(row?.status).toBe(closed ? 'merged' : 'ready');
+    if (changes) expect(row?.changes).toEqual(changes);
+    else expect(row).not.toHaveProperty('changes');
+  },
+);

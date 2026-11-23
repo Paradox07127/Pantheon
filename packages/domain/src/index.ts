@@ -1642,4 +1642,33 @@ export interface SettingProposal extends Entity {
   notified_at?: number;
 }
 
+/** The plan main agents write for a project, one per project; id is the project id. */
+export interface ProjectPlan extends Entity {
+  project_id: string;
+  /** The main agent that wrote it last. */
+  session_id: string;
+  milestones: { id: string; title: string }[];
+  items: PlanItem[];
+  updated_at: string;
+}
+export interface PlanItem {
+  /** Stable across writes. */
+  id: string;
+  title: string;
+  /** A milestones[].id. */
+  milestone?: string;
+  /** items[].id, without a cycle. */
+  depends_on?: string[];
+  /** The main agent itself, another main agent, or a session a main agent spawned, of this project. */
+  session_ids?: string[];
+  /** Session id to the ISO time it was first written into the item; the daemon fills it. */
+  named_at?: Record<string, string>;
+  /** Absent reads the sessions' contract.acceptance. */
+  acceptance?: string[];
+  /** The main agent gave it up. */
+  dropped?: true;
+  /** Only the user's command writes it. */
+  accepted?: { at: string };
+}
+
 export * from './memory.js';

@@ -475,6 +475,30 @@ it('adds the landing table with its project index to a database without it', () 
   expect(store.get('projects', row.id)).toEqual(row);
 });
 
+it('adds the project plan table to a database without it', () => {
+  const file = databaseFile();
+  const behind = open(
+    file,
+    migrations.filter((migration) => migration.version < 19),
+  );
+  behind.insert('projects', row);
+  close(behind);
+  const store = open(file);
+  expect(tableList(store.db)).toEqual(expect.arrayContaining([{ name: 'project_plans' }]));
+  const plan = {
+    id: row.id,
+    revision: 1,
+    project_id: row.id,
+    session_id: 'main-agent',
+    milestones: [],
+    items: [{ id: 'parser', title: 'Parse the export format' }],
+    updated_at: '2026-11-23T10:00:00.000Z',
+  };
+  store.insert('project_plans', plan);
+  expect(store.get('project_plans', plan.id)).toEqual(plan);
+  expect(store.get('projects', row.id)).toEqual(row);
+});
+
 it('indexes the per-project plan and improvement reads and the active turn read on a database one version behind', () => {
   const file = databaseFile();
   close(open(file, migrations.slice(0, -1)));

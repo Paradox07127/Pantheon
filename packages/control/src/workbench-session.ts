@@ -2975,6 +2975,7 @@ async function completeMerge(ctx: ControlContext, sessionId: string, jobId: stri
     undefined,
     true,
   );
+  const headSha = head.exit_code === 0 ? head.stdout.toString().trim() : undefined;
   const gateNow = () =>
     gateCommands(
       ctx,
@@ -3015,7 +3016,7 @@ async function completeMerge(ctx: ControlContext, sessionId: string, jobId: stri
             progress: { saved, save: saveProgress },
           },
           workspace,
-          head.exit_code === 0 ? head.stdout.toString().trim() : undefined,
+          headSha,
           commands,
         );
   if (!item) return;
@@ -3061,6 +3062,7 @@ async function completeMerge(ctx: ControlContext, sessionId: string, jobId: stri
         source: item.source,
         from_sha: item.from_sha,
         to_sha: item.to_sha,
+        ...(headSha ? { head_sha: headSha } : {}),
         files: files.length,
         additions: files.reduce((sum, file) => sum + (file.additions ?? 0), 0),
         deletions: files.reduce((sum, file) => sum + (file.deletions ?? 0), 0),

@@ -69,6 +69,7 @@ import { projectBaselineRead, projectFactsRead } from './baseline.js';
 import { environmentChecks } from './environment-check.js';
 import { landingFind, landingRead } from './branch-landing.js';
 import { changesRead } from './changes.js';
+import { projectPlanView } from './project-plan.js';
 import {
   changeStoryDiff,
   changeStoryList,
@@ -843,6 +844,9 @@ export class Control extends EventEmitter {
   }
   projectChanges(principal: Principal, projectId: string) {
     return changesRead(this.ctx, principal, projectId);
+  }
+  projectPlan(principal: Principal, projectId: string) {
+    return projectPlanView(this.ctx, principal, projectId);
   }
   decisionsForUser(principal: Principal, projectId: string, since?: number) {
     return decisionsForUser(this.ctx, principal, projectId, since);

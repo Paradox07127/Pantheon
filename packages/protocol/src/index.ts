@@ -17,8 +17,10 @@ import type {
   McpServerStatus,
   NeedsYouItem,
   PermissionMode,
+  PlanItem,
   ProjectFacts,
   ProjectIntro,
+  ProjectPlan,
   ProposableSettingCommand,
   QuotaWindow,
   CapabilityReport,
@@ -206,6 +208,7 @@ export const sessionTools = {
     stop_session: 'conductor.stop',
     read_needs_you: 'conductor.needs_you',
     propose_setting: 'conductor.propose_setting',
+    write_plan: 'conductor.plan_set',
     project_read: 'project.read',
     ...memoryTools,
     draw: 'visual.draw',
@@ -307,6 +310,7 @@ const browserPage = z.strictObject({
 export type BrowserPage = z.infer<typeof browserPage>;
 const boardText = z.string().min(1).max(400);
 const planTitle = z.string().min(1).max(80);
+const planId = z.string().min(1).max(80);
 const runtimeChoice = z.strictObject({
   runtime: str,
   model: str.optional(),
@@ -1769,6 +1773,53 @@ export const inputSchemas = {
       ),
     reason: z.string().min(1).max(500).describe('Why the project needs the change.'),
   }),
+  'conductor.plan_set': z.strictObject({
+    milestones: z
+      .array(
+        z.strictObject({
+          id: planId.describe('A stable id of the milestone.'),
+          title: z.string().min(1).max(120).describe('What the milestone delivers.'),
+        }),
+      )
+      .max(8)
+      .describe('The milestones of the plan, at most 8.'),
+    items: z
+      .array(
+        z.strictObject({
+          id: planId.describe('A stable id of the item; keep it across writes.'),
+          title: z.string().min(1).max(120).describe('What the item delivers, 1-120 characters.'),
+          milestone: planId.optional().describe('The id of the milestone the item belongs to.'),
+          depends_on: z
+            .array(planId)
+            .max(40)
+            .optional()
+            .describe('The ids of the items this one waits for, without a cycle.'),
+          session_ids: z
+            .array(str)
+            .max(40)
+            .optional()
+            .describe(
+              'The sessions working on the item: you, another main agent, or a session a main agent spawned.',
+            ),
+          acceptance: z
+            .array(z.string().min(1).max(500))
+            .max(12)
+            .optional()
+            .describe(
+              "What done means, one check per entry; absent reads the sessions' acceptance.",
+            ),
+          dropped: z.literal(true).optional().describe('true: you gave the item up.'),
+        }),
+      )
+      .max(40)
+      .describe('The items of the plan, at most 40.'),
+  }),
+  /** The user only. */
+  'project.plan.accept': z.strictObject({
+    project_id: str,
+    item_id: str,
+    accepted: z.boolean(),
+  }),
   /** The user only; approve runs the proposed command as the user's own, reject drops it. */
   'setting.proposal.respond': z.strictObject({
     proposal_id: str,
@@ -1894,6 +1945,8 @@ export const querySchemas = {
   }),
   /** ProjectChanges; every change row of the project, unsorted and uncapped; read_state lists the newest 30 of the same rows. */
   'project.changes': z.strictObject({ project_id: str }),
+  /** ProjectPlanView; the stored plan, each item with where its sessions stand now. */
+  'project.plan': z.strictObject({ project_id: str }),
   /** DecisionsForUser; what a stored rule decided without the user from since on, Unix milliseconds, newest first. */
   'project.decisions': z.strictObject({
     project_id: str,
@@ -2200,12 +2253,46 @@ export interface ChangeRow {
     to_sha?: string;
   };
   landing?: 'queued' | 'running';
+  /** The worktree's changes not landed yet. */
+  changes?: { files: number; additions: number; deletions: number };
   /** ISO time. */
   updated_at: string;
 }
 /** GET /v1/project.changes. */
 export interface ProjectChanges {
   changes: ChangeRow[];
+}
+/** One plan item with where its sessions stand, read from them at query time. */
+export interface PlanItemView extends PlanItem {
+  stage: 'plan' | 'write' | 'checks' | 'review' | 'merge' | 'landed' | 'abandoned' | 'dropped';
+  status: ChangeRow['status'] | 'not_started' | 'abandoned';
+  change?: ChangeRow;
+  diff?: { files: number; additions: number; deletions: number };
+  /** The newest 5 gate runs, oldest first. */
+  gate_runs: ('passed' | 'failed' | 'skipped')[];
+  evidence?: {
+    level: 'report' | 'gate' | 'reviewed' | 'accepted';
+    reviewer?: 'other_vendor' | 'other_runtime';
+  };
+  /** at is ISO time. */
+  failure?: { reason: string; at: string; handled_by: 'main_agent' | 'you' };
+  /** ISO time. */
+  stuck_since?: string;
+}
+/** GET /v1/project.plan. */
+export interface ProjectPlanView {
+  plan: null | {
+    session_id: string;
+    conductor_open: boolean;
+    revision: number;
+    updated_at: string;
+    milestones: { id: string; title: string }[];
+    items: PlanItemView[];
+  };
+  /** Change rows no plan item names, the sessions the user opened among them. */
+  unplanned: ChangeRow[];
+  /** at is ISO time. */
+  latest_landing?: { sha: string; title: string; at: string };
 }
 /** A prompt answered by the stored permission rule; at is Unix milliseconds. */
 export interface DecisionForUser {
@@ -2247,6 +2334,11 @@ export type SessionSearchHit = {
 export interface SessionReconnectResult {
   session_id: string;
   succeeded: true;
+}
+/** The receipt of conductor.plan_set and project.plan.accept. */
+export interface ProjectPlanResult {
+  revision: number;
+  plan: ProjectPlan;
 }
 
 /** GET /v1/session.list; one native session working in its own linked worktree, or a baseline session. */

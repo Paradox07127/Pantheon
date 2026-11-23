@@ -105,6 +105,7 @@ it('fast-forwards the source branch to the session commit and removes the worktr
       source: workspace.source,
       from_sha: sourceHead,
       to_sha: head,
+      head_sha: head,
       files: 1,
       additions: 1,
       deletions: 1,
@@ -152,7 +153,7 @@ it('bases the worktree on the branch read when the session opened, though the so
 it('rebases the session onto a newer source commit and keeps the history linear', async () => {
   const f = await mergeFixture();
   const { session, workspace } = await idleSession(f);
-  commit(workspace.path, 'session.txt', 'session\n');
+  const ours = commit(workspace.path, 'session.txt', 'session\n');
   const theirs = commit(f.source, 'source.txt', 'source\n');
   await merge(f, session.id);
   await eventually(
@@ -171,11 +172,13 @@ it('rebases the session onto a newer source commit and keeps the history linear'
       source: workspace.source,
       from_sha: theirs,
       to_sha: git(f.source, 'rev-parse', 'main'),
+      head_sha: ours,
       files: 1,
       additions: 1,
       deletions: 0,
     },
   ]);
+  expect(git(f.source, 'rev-parse', 'main')).not.toBe(ours);
 });
 
 it('rebases without moving another branch that points at the session commit', async () => {
@@ -1007,6 +1010,7 @@ it.skipIf(insideSandbox)(
         source: workspace.source,
         from_sha: sourceHead,
         to_sha: head,
+        head_sha: head,
         files: 2,
         additions: 2,
         deletions: 0,
