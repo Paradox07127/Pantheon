@@ -193,7 +193,9 @@ afterEach(() => {
 });
 
 async function strip(onOpenLanding = vi.fn()) {
-  const h = mount(() => QualityStrip({ projectId: 'alpha', onOpenLanding }));
+  const h = mount(() =>
+    QualityStrip({ projectId: 'alpha', onOpenLanding, landingIds: new Set(['docs']) }),
+  );
   await h.flush();
   return h;
 }
@@ -259,6 +261,24 @@ describe('quality strip', () => {
     expect(labels[1]).toContain('Session refunds');
   });
 
+  it('draws a run it cannot open as a picture, not a button, and the strip opens only listed landings', async () => {
+    const tree = mount(() =>
+      GateTracker({ runs: runs.slice(0, 2), onRun: () => {}, openable: (c) => !c.landing_id }),
+    ).value;
+    const cells = nodes(tree).filter((n) => typeof n.props['aria-label'] === 'string');
+    const landingCell = cells.find((n) => n.props['aria-label'].includes('docs/landing:docs'))!;
+    const sessionCell = cells.find((n) => n.props['aria-label'].includes('Session refunds'))!;
+    expect(landingCell.type).toBe('span');
+    expect(landingCell.props.role).toBe('img');
+    expect(sessionCell.type).toBe('button');
+    answers = { 'project.gates.history': { runs }, 'project.review.metrics': [] };
+    const h = await strip();
+    const tracker = named(group(h.value, 'changes.quality.history'), 'GateTracker');
+    expect(tracker.props.openable({ landing_id: 'docs' })).toBe(true);
+    expect(tracker.props.openable({ landing_id: 'gone' })).toBe(false);
+    expect(tracker.props.openable({ session_id: 'refunds' })).toBe(true);
+  });
+
   it('draws each reviewer as a bar of its outcomes, named by its counts, and its adoption rate', async () => {
     answers = {
       'project.gates.history': { runs: [] },
@@ -293,7 +313,9 @@ describe('quality strip', () => {
 
   it('stands with dashes under aria-busy until its reads land', () => {
     // A project no earlier test read, so no cached answer stands in.
-    const h = mount(() => QualityStrip({ projectId: 'beta', onOpenLanding: () => {} }));
+    const h = mount(() =>
+      QualityStrip({ projectId: 'beta', onOpenLanding: () => {}, landingIds: new Set() }),
+    );
     expect(h.value.props['aria-busy']).toBe(true);
     expect(text(group(h.value, 'changes.quality.firstPass'))).toBe(
       `${zh('changes.quality.firstPass')}—`,

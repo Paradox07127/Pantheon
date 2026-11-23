@@ -15,10 +15,13 @@ const percent = (share: number | null) => (share === null ? '—' : `${Math.roun
 export function QualityStrip({
   projectId,
   onOpenLanding,
+  landingIds,
 }: {
   projectId: string | null;
   /** Opens the change of a branch landing whose gate run was chosen. */
   onOpenLanding: (landingId: string) => void;
+  /** Landings the changes list still shows; older ones have no row to open. */
+  landingIds: ReadonlySet<string>;
 }) {
   const history = useGateHistory(projectId);
   const metrics = useReviewMetrics(projectId);
@@ -80,6 +83,7 @@ export function QualityStrip({
           <span className="cq-k">{historyName}</span>
           <GateTracker
             runs={runs}
+            openable={(column) => !column.landing_id || landingIds.has(column.landing_id)}
             onRun={(column) => {
               if (column.landing_id) onOpenLanding(column.landing_id);
               else if (column.session_id) openSession(column.session_id, 'checks', column.run_id);

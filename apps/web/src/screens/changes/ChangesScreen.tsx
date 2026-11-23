@@ -194,6 +194,11 @@ export function ChangesScreen({
     setActive(row.id);
     setOpen(row.id);
   };
+  const landingIds = new Set(
+    (all ?? []).flatMap((each) =>
+      each.id.startsWith('landing:') ? [each.id.slice('landing:'.length)] : [],
+    ),
+  );
   const openLanding = (landingId: string) => {
     const row = all?.find((each) => each.id === `landing:${landingId}`);
     if (!row) return;
@@ -248,7 +253,7 @@ export function ChangesScreen({
       </TopBar>
       <Tabs.Panel className="chg" value={filter} data-inspector={opened ? '' : undefined}>
         <div className="chg-main">
-          <QualityStrip projectId={projectId} onOpenLanding={openLanding} />
+          <QualityStrip projectId={projectId} onOpenLanding={openLanding} landingIds={landingIds} />
           {read.error && <Failure error={read.error} onRetry={read.reload} />}
           {rows === null ? (
             !read.error && <Skeleton />

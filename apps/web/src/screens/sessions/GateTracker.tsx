@@ -34,12 +34,15 @@ export function GateTracker({
   runs,
   selected,
   onRun,
+  openable,
 }: {
   runs: Parameters<typeof gateTracker>[0];
   /** run_id of the column drawn with a border. */
   selected?: string;
   /** Without it a click opens the run's session on its checks tab. */
   onRun?: (run: TrackRun) => void;
+  /** False for a run nothing can open; its cells are drawn without a button. */
+  openable?: (run: TrackRun) => boolean;
 }) {
   const openSession = useShell((s) => s.openSession);
   const { columns, rows } = gateTracker(runs);
@@ -81,12 +84,20 @@ export function GateTracker({
                   dayText(Date.parse(column.finished_at), now, { time: true }),
                   cellResult(cell),
                 );
+                const label = listText(row.name, column.commit, tip);
+                const fill = `ql-tc ql-tc-${CELL_FILL[cell.state]}`;
+                if (openable && !openable(column))
+                  return (
+                    <Tip key={cell.run_id} content={tip}>
+                      <span className={fill} role="img" aria-label={label} />
+                    </Tip>
+                  );
                 return (
                   <Tip key={cell.run_id} content={tip}>
                     <button
                       type="button"
-                      className={`ql-tc ql-tc-${CELL_FILL[cell.state]}`}
-                      aria-label={listText(row.name, column.commit, tip)}
+                      className={fill}
+                      aria-label={label}
                       aria-current={column.run_id === selected || undefined}
                       // One tab stop per run: every cell of a column opens the same run.
                       tabIndex={r === 0 ? 0 : -1}
