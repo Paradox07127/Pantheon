@@ -1,0 +1,42 @@
+/* The message box at the bottom of the change inspector. */
+.chg-tell {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: var(--hair) solid var(--bd2);
+}
+.chg-tell-ta {
+  box-sizing: border-box;
+  width: 100%;
+  max-height: calc(8 * var(--lh-sm) + 16px);
+  padding: 8px;
+  border: var(--hair) solid var(--bd2);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--tx);
+  font: inherit;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  resize: none;
+  field-sizing: content;
+}
+.chg-tell-ta:focus-visible {
+  outline: 0;
+  border-color: var(--bd3);
+}
+.chg-tell-err {
+  color: var(--bad);
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.chg-tell-f {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.chg-tell-gap {
+  flex: 1;
+}

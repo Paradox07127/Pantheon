@@ -512,6 +512,57 @@ describe('change inspector', () => {
     expect(text(gate)).toContain(zh('sessions.screen.gateStale'));
   });
 
+  it('reruns only the failed gate steps of the session and reads the gate again', async () => {
+    mock.board.board.sessions = [{ id: 'refund-list', revision: 9, state: 'open' }];
+    answers['session.gates'] = {
+      configured: true,
+      running: false,
+      last: {
+        commit: 'abcdef1234567890',
+        checked_at: 1,
+        results: [
+          { name: 'Unit tests', exit_code: 1, timed_out: false, output_tail: '' },
+          { name: 'Lint', exit_code: 0, timed_out: false, output_tail: '' },
+        ],
+      },
+    };
+    const h = await inspector(
+      row({
+        id: 'session:refund-list',
+        title: 'Refund list page',
+        gate: { state: 'failed', failed: ['Unit tests'] },
+      }),
+    );
+    const reads = () => query.mock.calls.filter(([method]) => method === 'session.gates').length;
+    const before = reads();
+    button(h.value, zh('changes.inspector.rerunFailed'))!.props.onClick();
+    await h.flush();
+    expect(runCommand).toHaveBeenCalledWith(
+      'session.gates.run',
+      { session_id: 'refund-list', only_failed: true },
+      9,
+    );
+    expect(reads()).toBeGreaterThan(before);
+    expect(nodes(h.value).find((n) => n.type === GateResults)!.props.readOnly).toBe(true);
+  });
+
+  it('offers no rerun of the failed steps when every step passed', async () => {
+    answers['session.gates'] = {
+      configured: true,
+      running: false,
+      last: {
+        commit: 'abcdef1234567890',
+        checked_at: 1,
+        results: [{ name: 'Unit tests', exit_code: 0, timed_out: false, output_tail: '' }],
+      },
+    };
+    const h = await inspector(
+      row({ id: 'session:refund-list', title: 'Refund list page', gate: { state: 'passed' } }),
+    );
+    expect(nodes(h.value).some((n) => n.type === GateResults)).toBe(true);
+    expect(button(h.value, zh('changes.inspector.rerunFailed'))).toBeUndefined();
+  });
+
   it('offers no cancel on a landed row', async () => {
     const h = await inspector(row({ id: 'landing:land-8', title: 'docs/old', status: 'merged' }));
     expect(button(h.value, zh('changes.inspector.cancelLanding'))).toBeUndefined();

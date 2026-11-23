@@ -1,0 +1,75 @@
+/* The changed files of a change: the total in five cells, and one bar per file. */
+.chg-dsum {
+  display: inline-flex;
+  margin-left: auto;
+}
+.chg-dcells {
+  display: inline-flex;
+  gap: 2px;
+}
+.chg-dcells > i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--del);
+}
+.chg-dcells > i[data-k='a'] {
+  background: var(--add);
+}
+.chg-dfl {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.chg-dfl > li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.chg-dfl-h {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: max(calc(var(--r-sm) - 2px), 4px);
+  background: transparent;
+  color: var(--tx2);
+  font: inherit;
+  text-align: left;
+  transition: color var(--dur-1) var(--ease-std);
+}
+.chg-dfl-h:hover {
+  color: var(--tx);
+}
+.chg-dfl-h:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.chg-dfl-h > .path {
+  flex: 1;
+  min-width: 0;
+}
+.chg-dfb {
+  display: flex;
+  gap: 2px;
+  height: 6px;
+}
+.chg-dfb > i {
+  flex: 0 1 0;
+  border-radius: 2px;
+  background: var(--sf3);
+}
+.chg-dfb > i[data-k='a'] {
+  background: var(--add);
+}
+.chg-dfb > i[data-k='d'] {
+  background: var(--del);
+}

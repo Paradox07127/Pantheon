@@ -22,6 +22,7 @@ import {
   type ChangeFilter,
   type ChangeRow,
 } from '../../data/changes';
+import { useBoard } from '../../data/board';
 import { runCommand } from '../../data/commands';
 import { failureText } from '../../data/needs-you';
 import { useSessionGates } from '../../data/session-panel';
@@ -31,8 +32,10 @@ import { shortcutMatches } from '../../lib/shortcuts';
 import { SCREEN_NAMES } from '../../screens';
 import { useShell } from '../../store';
 import { GateResults } from '../sessions/GateResults';
-import { aheadText } from '../sessions/inspector-model';
+import { aheadText, gateFailing } from '../sessions/inspector-model';
 import { GATE_NAME } from '../sessions/SessionHeader';
+import { ChangedFiles } from './ChangedFiles';
+import { TellBox } from './TellBox';
 import './changes.css';
 
 const FILTER_NAME: Record<ChangeFilter, () => string> = {
@@ -341,15 +344,31 @@ export function ChangesScreen({
             </div>
           )}
         </div>
-        {opened && <ChangeInspector key={opened.id} row={opened} onClose={close} />}
+        {opened && (
+          <ChangeInspector key={opened.id} row={opened} sessions={sessions} onClose={close} />
+        )}
       </Tabs.Panel>
     </Tabs.Root>
   );
 }
 
 /** One change beside the list: its gate, its reviews and the guide to them, and what can be done. */
-export function ChangeInspector({ row, onClose }: { row: ChangeRow; onClose: () => void }) {
+export function ChangeInspector({
+  row,
+  sessions,
+  onClose,
+}: {
+  row: ChangeRow;
+  sessions?: readonly WorkbenchSession[] | null;
+  onClose: () => void;
+}) {
   const sessionId = changeSessionId(row);
+  const session = (sessionId && sessions?.find((s) => s.id === sessionId)) || null;
+  const mainId = session?.spawned_by?.session_id;
+  const main = (mainId && sessions?.find((s) => s.id === mainId)) || null;
+  const revision = useBoard(
+    (s) => s.board?.sessions.find((x) => x.id === sessionId)?.revision ?? null,
+  );
   const landingId = row.kind === 'branch' && row.landing ? changeLandingId(row) : null;
   const gates = useSessionGates(sessionId);
   const review = useReview(row.review?.id ?? null);
@@ -368,6 +387,28 @@ export function ChangeInspector({ row, onClose }: { row: ChangeRow; onClose: () 
     });
   };
   const gateLast = gates.data?.last ?? null;
+  const [rerun, setRerun] = useState<{
+    busy: boolean;
+    from: typeof gates.data;
+    error: string | null;
+  }>({ busy: false, from: null, error: null });
+  // A rerun the daemon took stays off until the gate is read again.
+  const rerunTaken = rerun.from !== null && rerun.from === gates.data;
+  const rerunFailed = async () => {
+    if (!sessionId || rerun.busy || rerunTaken) return;
+    setRerun({ busy: true, from: null, error: null });
+    const result = await runCommand(
+      'session.gates.run',
+      { session_id: sessionId, only_failed: true },
+      revision,
+    );
+    setRerun({
+      busy: false,
+      from: result.ok ? gates.data : null,
+      error: result.ok ? null : failureText(result.error),
+    });
+    if (result.ok) gates.reload();
+  };
   const gateName = t({ id: 'changes.inspector.gate', defaultMessage: 'Gate' });
   const reviewName = t({ id: 'changes.inspector.review', defaultMessage: 'Review' });
   return (
@@ -406,6 +447,27 @@ export function ChangeInspector({ row, onClose }: { row: ChangeRow; onClose: () 
                 running={gates.data.running}
                 readOnly
               />
+              {gateLast?.results.some(gateFailing) && (
+                <div className="chg-h">
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={gates.data.running || rerun.busy || rerunTaken}
+                    aria-busy={rerun.busy || rerunTaken || undefined}
+                    onClick={() => void rerunFailed()}
+                  >
+                    {t({
+                      id: 'changes.inspector.rerunFailed',
+                      defaultMessage: 'Rerun only the failed',
+                    })}
+                  </button>
+                </div>
+              )}
+              {rerun.error && (
+                <span className="chg-err" role="alert">
+                  {rerun.error}
+                </span>
+              )}
             </>
           ) : (
             <div className="chg-h">
@@ -414,6 +476,7 @@ export function ChangeInspector({ row, onClose }: { row: ChangeRow; onClose: () 
             </div>
           )}
         </section>
+        {sessionId && <ChangedFiles sessionId={sessionId} />}
         {row.review && (
           <section className="chg-sec" aria-label={reviewName}>
             <div className="chg-sec-h">
@@ -435,6 +498,7 @@ export function ChangeInspector({ row, onClose }: { row: ChangeRow; onClose: () 
           </section>
         )}
       </div>
+      {session && <TellBox row={row} session={session} main={main} />}
       {(landingId || sessionId) && (
         <div className="chg-foot">
           {landingId && (
