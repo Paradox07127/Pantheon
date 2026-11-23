@@ -157,6 +157,14 @@ export function openInside(
   return fd;
 }
 
+/** A path to the directory fd has open, whatever its own pathname names by now. */
+function openedDirectory(fd: number): string {
+  if (process.platform !== 'darwin') return `/proc/self/fd/${fd}`;
+  // macOS reaches a directory by its volume and inode under /.vol; its /dev/fd entries cannot be read as one.
+  const { dev, ino } = fstatSync(fd, { bigint: true });
+  return `/.vol/${dev}/${ino}`;
+}
+
 export function filesList(
   ctx: ControlContext,
   p: Principal,
@@ -182,7 +190,8 @@ async function listing(
   fd: number,
   unreadable: string[],
 ): Promise<FilesListResult> {
-  const children = readdirSync(directory, { withFileTypes: true }).filter(
+  const opened = openedDirectory(fd);
+  const children = readdirSync(opened, { withFileTypes: true }).filter(
     (entry) => entry.name !== '.git',
   );
   checkOpened(root, directory, fd, unreadable);
@@ -231,7 +240,7 @@ async function listing(
   const entries = listed.slice(0, 1000).flatMap((entry): FilesListResult['entries'] => {
     if (folders.has(entry.name)) return [{ name: entry.name, kind: 'dir' }];
     try {
-      const size = lstatSync(path.join(directory, entry.name)).size;
+      const size = lstatSync(path.join(opened, entry.name)).size;
       return [{ name: entry.name, kind: 'file', size }];
     } catch (error) {
       // An entry removed since the directory was read is no longer listed.

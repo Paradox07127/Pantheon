@@ -2498,8 +2498,8 @@ export function sessionGatesHistory(
 }
 
 /**
- * Recorded gate runs across the project's worktree sessions and finished branch landings, newest
- * finish first; with since, newest start first.
+ * Recorded gate runs across the project's worktree sessions and branch landings whose gate reached
+ * a verdict, newest finish first; with since, newest start first.
  */
 export function projectGatesHistory(
   ctx: ControlContext,
@@ -2523,6 +2523,11 @@ export function projectGatesHistory(
   );
   const events = ctx.store.kindEvents(projectId, ['session.gate_checked', 'session.gate_started']);
   const starts = gateStarts(events);
+  // Each session's earliest check, over all its recorded runs; events come oldest first.
+  const firsts = new Map<string, string>();
+  for (const event of events)
+    if (event.kind === 'session.gate_checked' && !firsts.has(event.aggregate_id))
+      firsts.set(event.aggregate_id, event.event_id);
   const sessionRuns = events
     .filter((event) => event.kind === 'session.gate_checked' && sessions.has(event.aggregate_id))
     .reverse()
@@ -2539,23 +2544,28 @@ export function projectGatesHistory(
             ...gateRun(checked, started, configured),
             session_id: session.id,
             session_title: session.title ?? '',
+            ...(firsts.get(session.id) === checked.event_id ? { first: true as const } : {}),
           };
         },
       };
     });
-  // A landing keeps only the results of its last gate run, without the commands it did not reach.
+  // A landing keeps only the results of its last gate run, without the commands it did not reach;
+  // one that ended before its gate's verdict keeps the steps that ran, so it is left out.
   const landingRuns = ctx.store
     .list<Landing>('landings')
     .filter(
       (landing) =>
         landing.project_id === projectId &&
         landing.finished_at !== undefined &&
+        (landing.state !== 'blocked' || landing.reason === 'gate_failed') &&
         !!landing.gate_results?.length,
     )
     .map((landing) => {
       const results = landing.gate_results!,
-        end = landing.finished_at!,
-        at = landing.started_at ?? end - results.reduce((sum, r) => sum + (r.duration_ms ?? 0), 0);
+        duration = results.reduce((sum, r) => sum + (r.duration_ms ?? 0), 0),
+        gated = landing.gate_started_at,
+        end = gated === undefined ? landing.finished_at! : gated + duration,
+        at = gated ?? landing.started_at ?? end - duration;
       return {
         at,
         end,
@@ -2567,6 +2577,7 @@ export function projectGatesHistory(
           results: results.map(gateRunResult),
           landing_id: landing.id,
           branch: landing.branch,
+          first: true,
         }),
       };
     });

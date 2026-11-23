@@ -1,8 +1,8 @@
-import { realpathSync } from 'node:fs';
+import { mkdirSync, realpathSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
-import { id, type Session, type Workspace } from '@pantheon/domain';
+import { id, type Project, type Session, type Workspace } from '@pantheon/domain';
 import { fixture, user } from '../helpers.js';
 import { git } from './workbench-fixture.js';
 import type { LocalCommand } from '../../packages/control/src/local-command.js';
@@ -54,33 +54,35 @@ async function setup(remote = 'git@github.com:owner/project.git') {
     },
   };
 }
-/** A session whose worktree is on pt/feature, and one without a worktree that opened pull request 7. */
-function pullSessions(f: Awaited<ReturnType<typeof setup>>) {
-  git(f.projectRoot, 'commit', '--quiet', '--allow-empty', '-m', 'Start');
-  const tree = path.join(f.root, 'feature-tree');
-  git(f.projectRoot, 'worktree', 'add', '--quiet', '-b', 'pt/feature', tree);
+/** A session on a new worktree of the folder's repository, on a new branch. */
+function worktreeSession(f: Awaited<ReturnType<typeof setup>>, folder: string, branch: string) {
+  const tree = path.join(f.root, `${branch.replace('/', '-')}-tree`);
+  git(folder, 'worktree', 'add', '--quiet', '-b', branch, tree);
   const workspace = f.store.insert<Workspace>('workspaces', {
     id: id(),
     revision: 1,
     project_id: f.project.id,
     kind: 'linked_worktree',
     path: realpathSync(tree),
-    source: realpathSync(f.projectRoot),
+    source: realpathSync(folder),
     owner: 'none',
     ownership_epoch: 0,
   });
-  const session = (workspace_id?: string) =>
-    f.store.insert<Session>('sessions', {
-      id: id(),
-      revision: 1,
-      project_id: f.project.id,
-      runtime: f.adapter.name,
-      ...(workspace_id ? { workspace_id } : {}),
-      state: 'open',
-      turn_count: 0,
-    });
-  const onBranch = session(workspace.id),
-    opener = session();
+  return f.store.insert<Session>('sessions', {
+    id: id(),
+    revision: 1,
+    project_id: f.project.id,
+    runtime: f.adapter.name,
+    workspace_id: workspace.id,
+    state: 'open',
+    turn_count: 0,
+  });
+}
+/** A session whose worktree is on pt/feature, and one on another worktree that opened pull request 7. */
+function pullSessions(f: Awaited<ReturnType<typeof setup>>) {
+  git(f.projectRoot, 'commit', '--quiet', '--allow-empty', '-m', 'Start');
+  const onBranch = worktreeSession(f, f.projectRoot, 'pt/feature'),
+    opener = worktreeSession(f, f.projectRoot, 'pt/opener');
   f.store.event('session.pr_created', opener, f.project.id, {
     number: 7,
     url: 'https://github.com/owner/project/pull/7',
@@ -267,6 +269,47 @@ it('adds check counts, the review decision, the head branch and the session to e
   ]);
   for (const field of ['checks_total', 'review_decision', 'session_id'])
     expect(result.items[2]).not.toHaveProperty(field);
+});
+
+it('names only a session of the first folder for its pull request when another folder has one of the same number', async () => {
+  const f = await setup();
+  git(f.projectRoot, 'commit', '--quiet', '--allow-empty', '-m', 'Start');
+  const second = path.join(f.root, 'second-folder');
+  mkdirSync(second);
+  git(second, 'init', '--quiet');
+  git(second, 'remote', 'add', 'origin', 'git@github.com:owner/other.git');
+  git(second, 'commit', '--quiet', '--allow-empty', '-m', 'Start');
+  const project = f.store.must<Project>('projects', f.project.id);
+  f.store.update<Project>(
+    'projects',
+    { ...project, roots: [...project.roots, realpathSync(second)] },
+    project.revision,
+  );
+  const first = worktreeSession(f, f.projectRoot, 'pt/first'),
+    other = worktreeSession(f, second, 'pt/other');
+  for (const opener of [first, other])
+    f.store.event('session.pr_created', opener, f.project.id, {
+      number: 12,
+      url: 'https://github.com/owner/project/pull/12',
+    });
+  f.setItems([item(12, '2026-11-14T00:00:00Z', { headRefName: 'pt/elsewhere' })]);
+  f.setDetail({
+    number: 12,
+    title: 'Item 12',
+    url: 'https://github.com/owner/project/pull/12',
+    state: 'OPEN',
+    reviewDecision: '',
+    headRefName: 'pt/elsewhere',
+    baseRefName: 'main',
+    additions: 1,
+    deletions: 0,
+    statusCheckRollup: [],
+  });
+  f.setThreads({ data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } });
+  expect((await f.control.githubItems(user, f.project.id, 'pr')).items).toEqual([
+    expect.objectContaining({ number: 12, session_id: first.id }),
+  ]);
+  expect((await f.control.githubPullDetail(user, f.project.id, 12)).session_id).toBe(first.id);
 });
 
 it('reads one pull request with mapped checks, unresolved review threads first and the session on its branch', async () => {

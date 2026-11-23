@@ -2594,10 +2594,13 @@ export interface ProjectGateRun extends SessionGateRun {
   /** Set on a branch landing's run, whose run_id is the landing id; it keeps only its last gate run. */
   landing_id?: string;
   branch?: string;
+  /** Set on the owner's first recorded run: a session's earliest, and a landing's only run. */
+  first?: true;
 }
 /**
  * GET /v1/project.gates.history; recorded gate runs across the project's worktree sessions and
- * finished branch landings, newest finish first, or newest start first when since is given.
+ * branch landings whose gate reached a verdict, newest finish first, or newest start first when
+ * since is given.
  */
 export interface ProjectGatesHistory {
   runs: ProjectGateRun[];

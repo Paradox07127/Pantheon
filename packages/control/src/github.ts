@@ -125,18 +125,18 @@ function reviewDecision(decision: string | null | undefined): GithubReviewDecisi
     : null;
 }
 
-/** Finds the session that opened a pull request, or else the one whose worktree is on its head branch. */
+/**
+ * Finds the session that opened a pull request, or else the one whose worktree is on its head
+ * branch; either only among sessions on a worktree of root, whose repository the number is of.
+ */
 async function pullSessions(ctx: ControlContext, projectId: string, root: string) {
+  const worktrees = sessionWorktrees(ctx, projectId, root, await listedWorktrees(root));
   const opened = new Map<number, string>();
   for (const event of ctx.store.kindEvents(projectId, ['session.pr_created']))
-    opened.set((event.payload as { number: number }).number, event.aggregate_id);
+    if (worktrees.has(event.aggregate_id))
+      opened.set((event.payload as { number: number }).number, event.aggregate_id);
   const onBranch = new Map<string, string>();
-  for (const [session, worktree] of sessionWorktrees(
-    ctx,
-    projectId,
-    root,
-    await listedWorktrees(root),
-  ))
+  for (const [session, worktree] of worktrees)
     if (worktree.branch) onBranch.set(worktree.branch, session);
   return (number: number, head: string | undefined) =>
     opened.get(number) ?? (head === undefined ? undefined : onBranch.get(head));

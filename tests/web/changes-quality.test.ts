@@ -38,13 +38,17 @@ const failed = (name: string, over: Partial<Result> = {}): Result =>
   passed(name, { exit_code: 1, ...over });
 
 let at = 0;
-/** A run of a session, or of a landing when the owner starts with `landing:`. */
-const run = (owner: string, commit: string, results: Result[]): ProjectGateRun => ({
+/**
+ * A run of a session, or of a landing when the owner starts with `landing:`; first marks the
+ * owner's first recorded run.
+ */
+const run = (owner: string, commit: string, results: Result[], first = false): ProjectGateRun => ({
   run_id: `run-${++at}`,
   commit,
   started_at: new Date(Date.UTC(2026, 10, 20, 10, at)).toISOString(),
   finished_at: new Date(Date.UTC(2026, 10, 20, 10, at, 30)).toISOString(),
   results,
+  ...(first ? { first: true as const } : {}),
   ...(owner.startsWith('landing:')
     ? { landing_id: owner.slice('landing:'.length), branch: `docs/${owner}` }
     : { session_id: owner, session_title: `Session ${owner}` }),
@@ -65,17 +69,26 @@ const metrics = (runtime: string, counts: Partial<ReviewMetrics>): ReviewMetrics
 });
 
 describe('gate quality', () => {
-  it('counts each session and landing once, by whether its oldest run passed', () => {
+  it('counts each session and landing once, by whether its first run passed', () => {
     // Newest first, as project.gates.history answers.
     const runs = [
       run('refunds', 'b', [passed('test')]),
-      run('landing:docs', 'c', [passed('test')]),
-      run('refunds', 'a', [passed('build'), failed('test')]),
-      run('webhooks', 'd', [passed('test'), passed('lint', { skipped: true })]),
-      run('landing:report', 'e', [passed('build'), failed('test', { timed_out: true })]),
+      run('landing:docs', 'c', [passed('test')], true),
+      run('refunds', 'a', [passed('build'), failed('test')], true),
+      run('webhooks', 'd', [passed('test'), passed('lint', { skipped: true })], true),
+      run('landing:report', 'e', [passed('build'), failed('test', { timed_out: true })], true),
     ];
     expect(gateQuality(runs).firstPass).toEqual({ passed: 2, total: 4 });
     expect(gateQuality([]).firstPass).toEqual({ passed: 0, total: 0 });
+  });
+
+  it('leaves out an owner whose first run fell out of the window, though its oldest run there passed', () => {
+    const runs = [
+      run('refunds', 'b', [passed('test')]),
+      run('refunds', 'b', [passed('test')]),
+      run('webhooks', 'd', [failed('test')], true),
+    ];
+    expect(gateQuality(runs).firstPass).toEqual({ passed: 0, total: 1 });
   });
 
   it('marks a step flaky when it passed and failed on one commit, in any run of the project', () => {
@@ -207,9 +220,9 @@ const group = (tree: unknown, id: string) =>
 describe('quality strip', () => {
   const runs = [
     run('refunds', 'b', [passed('test')]),
-    run('landing:docs', 'c', [passed('test')]),
-    run('refunds', 'b', [failed('test')]),
-    run('webhooks', 'd', [passed('test')]),
+    run('landing:docs', 'c', [passed('test')], true),
+    run('refunds', 'b', [failed('test')], true),
+    run('webhooks', 'd', [passed('test')], true),
   ];
 
   it('reads the gate history and the review metrics of the project', async () => {

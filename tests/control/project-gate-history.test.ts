@@ -66,7 +66,7 @@ it('merges session runs newest first with listed titles and one project event re
     titles.get(first.id),
     titles.get(second.id),
   ]);
-  expect(runs.map(({ session_id, session_title, ...run }) => run)).toEqual(expected);
+  expect(runs.map(({ session_id, session_title, first, ...run }) => run)).toEqual(expected);
   expect(runs.map((run) => run.started_at)).toEqual([
     new Date(newest.created_at - 50).toISOString(),
     new Date(firstStart.created_at).toISOString(),
@@ -294,6 +294,7 @@ it('lists the gate run of a finished branch landing by its branch, among session
   expect(runs.map((run) => run.run_id)).toEqual([newer.event_id, 'docs-landing', older.event_id]);
   expect(runs[1]).toEqual({
     run_id: 'docs-landing',
+    first: true,
     landing_id: 'docs-landing',
     branch: 'docs/refund-api',
     commit: 'd'.repeat(40),
@@ -382,4 +383,131 @@ it('allows more than a hundred runs only when a start is supplied', async () => 
   expect(() => f.control.projectGatesHistory(user, f.project.id, 101)).toThrow(
     expect.objectContaining({ code: 'invalid_input' }),
   );
+});
+
+it('lists a landing run only when its gate reached a verdict, not one cut short mid-gate', async () => {
+  const f = await workbenchFixture();
+  const at = Date.parse('2026-01-01T12:00:00Z');
+  const passing = {
+    name: 'build',
+    argv: ['pnpm', 'build'],
+    exit_code: 0,
+    duration_ms: 50,
+    timed_out: false,
+    output: '',
+  };
+  const ended = { started_at: at, finished_at: at + 100 };
+  insertLanding(f, {
+    id: 'cancelled-mid-gate',
+    state: 'blocked',
+    reason: 'cancelled',
+    ...ended,
+    gate_results: [passing],
+  });
+  insertLanding(f, {
+    id: 'stopped-by-git',
+    state: 'blocked',
+    reason: 'git_failed: fatal: bad object',
+    ...ended,
+    gate_results: [passing],
+  });
+  insertLanding(f, {
+    id: 'gate-failed',
+    state: 'blocked',
+    reason: 'gate_failed',
+    ...ended,
+    gate_results: [passing, { ...passing, name: 'test', argv: ['pnpm', 'test'], exit_code: 1 }],
+  });
+  insertLanding(f, { id: 'no-changes', state: 'no_changes', ...ended, gate_results: [passing] });
+
+  expect(
+    f.control
+      .projectGatesHistory(user, f.project.id)
+      .runs.map((run) => run.run_id)
+      .sort(),
+  ).toEqual(['gate-failed', 'no-changes']);
+});
+
+it('times a landing run from when its gate started, not from when the landing queued', async () => {
+  const f = await workbenchFixture();
+  const at = new Date(2027, 2, 10, 12).getTime();
+  insertLanding(f, {
+    id: 'waited-in-queue',
+    started_at: at - 60_000,
+    gate_started_at: at + 10,
+    finished_at: at + 5_000,
+    gate_results: [
+      {
+        name: 'build',
+        argv: ['pnpm', 'build'],
+        exit_code: 0,
+        duration_ms: 30,
+        timed_out: false,
+        output: '',
+      },
+      {
+        name: 'test',
+        argv: ['pnpm', 'test'],
+        exit_code: 0,
+        duration_ms: 20,
+        timed_out: false,
+        output: '',
+      },
+    ],
+  });
+
+  expect(f.control.projectGatesHistory(user, f.project.id, 500, at).runs).toEqual([
+    expect.objectContaining({
+      run_id: 'waited-in-queue',
+      started_at: new Date(at + 10).toISOString(),
+      finished_at: new Date(at + 60).toISOString(),
+    }),
+  ]);
+  expect(f.control.projectGatesHistory(user, f.project.id, 500, at + 11).runs).toEqual([]);
+});
+
+it('marks only the earliest recorded run of each session, and every landing run, as first', async () => {
+  const f = await workbenchFixture();
+  const session = await idleSession(f);
+  const at = Date.parse('2026-01-01T12:00:00Z');
+  const failedRun = recordGateRun(f, session, at, [
+    {
+      name: 'test',
+      argv: ['pnpm', 'test'],
+      exit_code: 1,
+      duration_ms: 50,
+      timed_out: false,
+      output: '',
+    },
+  ]);
+  const retry = recordGateRun(f, session, at + 100);
+  insertLanding(f, {
+    id: 'docs-landing',
+    started_at: at + 150,
+    finished_at: at + 200,
+    gate_results: [
+      {
+        name: 'check',
+        argv: ['true'],
+        exit_code: 0,
+        duration_ms: 20,
+        timed_out: false,
+        output: '',
+      },
+    ],
+  });
+
+  const runs = f.control.projectGatesHistory(user, f.project.id).runs;
+  expect(runs.map((run) => [run.run_id, run.first])).toEqual([
+    ['docs-landing', true],
+    [retry.event_id, undefined],
+    [failedRun.event_id, true],
+  ]);
+  expect(runs[1]).not.toHaveProperty('first');
+  expect(f.control.projectGatesHistory(user, f.project.id, 1).runs.map((run) => run.first)).toEqual(
+    [true],
+  );
+  expect(
+    f.control.projectGatesHistory(user, f.project.id, 500, at + 50).runs.map((run) => run.first),
+  ).toEqual([true, undefined]);
 });

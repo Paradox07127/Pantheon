@@ -20,8 +20,9 @@ export interface FlakyStep {
 /**
  * Gate quality over project runs, newest first.
  *
- * First pass: each session or landing counts once, by the oldest of its runs given; it passed when
- * no step of that run failed or timed out. A landing keeps only its last run, so it counts by that.
+ * First pass: each session or landing counts once, by its run the daemon marks `first`, its first
+ * over all recorded history; it passed when no step of that run failed or timed out. An owner whose
+ * first run is not among the runs given does not count. A landing keeps only one run, marked first.
  *
  * Flaky: a step, by name and command, that both passed and failed (or timed out) on the same
  * commit within the newest `GATE_RUNS` runs, in any order and in any session or landing; a skipped
@@ -31,9 +32,7 @@ export function gateQuality(runs: readonly ProjectGateRun[]): {
   firstPass: { passed: number; total: number };
   flaky: FlakyStep[];
 } {
-  const first = new Map<string, ProjectGateRun>();
-  for (const run of runs) first.set(run.landing_id ?? run.session_id ?? run.run_id, run);
-  const owners = [...first.values()];
+  const owners = runs.filter((run) => run.first);
   const seen = new Map<string, { name: string; by: Map<string, Set<'passed' | 'failed'>> }>();
   for (const run of runs.slice(0, GATE_RUNS)) {
     if (!run.commit) continue;

@@ -535,6 +535,8 @@ export interface Landing extends Entity {
   from_sha?: string;
   to_sha?: string;
   started_at?: number;
+  /** When the gate's latest run started, after the landing's wait for the root. */
+  gate_started_at?: number;
   finished_at?: number;
 }
 export interface Workspace extends Entity {

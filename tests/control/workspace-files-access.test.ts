@@ -158,6 +158,43 @@ it('skips a listed file deleted before its size is read', async () => {
   ]);
 });
 
+it('lists the checked folder even when it is swapped for a link to a protected one while it is read', async () => {
+  const f = await workbenchFixture();
+  const own = await setupSession(f);
+  const workspace = await awaitWorkspaceReady(f.control, own.workspace_id!);
+  f.protectionPaths.backupDir = path.join(workspace.path, 'backups');
+  mkdirSync(path.join(f.protectionPaths.backupDir, 'private-keys'), { recursive: true });
+  writeFileSync(path.join(f.protectionPaths.backupDir, 'saved.txt'), 'protected');
+  const folder = path.join(workspace.path, 'public');
+  mkdirSync(folder);
+  writeFileSync(path.join(folder, 'saved.txt'), 'public');
+  // Points the checked folder at the protected one only while each read runs.
+  const swapped =
+    <T>(read: (...args: never[]) => T) =>
+    (...args: never[]): T => {
+      renameSync(folder, `${folder}-moved`);
+      symlinkSync(f.protectionPaths.backupDir!, folder);
+      try {
+        return read(...args);
+      } finally {
+        fs.unlinkSync(folder);
+        renameSync(`${folder}-moved`, folder);
+      }
+    };
+  const readdirSync = swapped(fs.readdirSync) as typeof fs.readdirSync,
+    lstatSync = swapped(fs.lstatSync) as typeof fs.lstatSync;
+  const readdir = vi.spyOn(fs, 'readdirSync').mockImplementation(readdirSync);
+  const lstat = vi.spyOn(fs, 'lstatSync').mockImplementation(lstatSync);
+  try {
+    expect(
+      (await f.control.filesList(credentialOf(f, own), f.project.id, own.id, 'public')).entries,
+    ).toEqual([{ name: 'saved.txt', kind: 'file', size: 6 }]);
+  } finally {
+    readdir.mockRestore();
+    lstat.mockRestore();
+  }
+});
+
 it('lets a project setup session search only its own worktree for file names', async () => {
   const f = await workbenchFixture();
   const own = await setupSession(f);

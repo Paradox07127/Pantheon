@@ -313,12 +313,13 @@ async function landBranch(ctx: ControlContext, landingId: string, jobId: string)
         squashedTip,
         // A gate that starts again, after the root moved, drops the results of the earlier run.
         event: (kind, payload) =>
-          updateRow(ctx, landingId, {
-            gate_results:
-              kind === 'gate_started'
-                ? []
-                : (payload.results as NonNullable<LandingItem['gate_results']>),
-          }),
+          updateRow(
+            ctx,
+            landingId,
+            kind === 'gate_started'
+              ? { gate_results: [], gate_started_at: ctx.store.now() }
+              : { gate_results: payload.results as NonNullable<LandingItem['gate_results']> },
+          ),
         progress: {
           saved: row.landing,
           save: (landing) => updateRow(ctx, landingId, { landing }),

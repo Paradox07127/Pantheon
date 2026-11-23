@@ -91,6 +91,8 @@ it.skipIf(insideSandbox)(
       to_sha: tip,
       gate_results: [expect.objectContaining({ name: 'Passes', exit_code: 0 })],
     });
+    expect(done.gate_started_at).toBeGreaterThanOrEqual(done.started_at!);
+    expect(done.gate_started_at).toBeLessThanOrEqual(done.finished_at!);
     expect(done.landing).toBeUndefined();
     expect(git(f.source, 'rev-parse', 'main')).toBe(tip);
     expect(git(f.source, 'rev-parse', 'feature')).toBe(tip);
