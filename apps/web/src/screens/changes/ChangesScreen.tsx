@@ -36,6 +36,7 @@ import { aheadText, gateFailing } from '../sessions/inspector-model';
 import { GATE_NAME } from '../sessions/SessionHeader';
 import { ChangedFiles } from './ChangedFiles';
 import { PullRequestList } from './PullRequestList';
+import { QualityStrip } from './QualityStrip';
 import { TellBox } from './TellBox';
 import './changes.css';
 
@@ -193,6 +194,12 @@ export function ChangesScreen({
     setActive(row.id);
     setOpen(row.id);
   };
+  const openLanding = (landingId: string) => {
+    const row = all?.find((each) => each.id === `landing:${landingId}`);
+    if (!row) return;
+    if (!inFilter(row, filter)) setFilter('all');
+    choose(row);
+  };
   /** Closes the inspector and gives the focus back to the list, on the row it showed. */
   const close = () => {
     if (open !== null) setActive(open);
@@ -241,6 +248,7 @@ export function ChangesScreen({
       </TopBar>
       <Tabs.Panel className="chg" value={filter} data-inspector={opened ? '' : undefined}>
         <div className="chg-main">
+          <QualityStrip projectId={projectId} onOpenLanding={openLanding} />
           {read.error && <Failure error={read.error} onRetry={read.reload} />}
           {rows === null ? (
             !read.error && <Skeleton />

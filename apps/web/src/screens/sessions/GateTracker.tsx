@@ -77,6 +77,7 @@ export function GateTracker({
               {row.cells.map((cell, i) => {
                 const column = columns[i]!;
                 const tip = listText(
+                  column.branch ?? column.session_title,
                   dayText(Date.parse(column.finished_at), now, { time: true }),
                   cellResult(cell),
                 );

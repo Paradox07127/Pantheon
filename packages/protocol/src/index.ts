@@ -2586,9 +2586,21 @@ export interface SessionGateRun {
 export interface SessionGatesHistory {
   runs: SessionGateRun[];
 }
-/** GET /v1/project.gates.history; recorded gate runs across the project's worktree sessions, newest first. */
+/** A gate run of a worktree session, or of a branch landing (`pantheon land`) that no session owns. */
+export interface ProjectGateRun extends SessionGateRun {
+  /** Absent on a branch landing's run. */
+  session_id?: string;
+  session_title?: string;
+  /** Set on a branch landing's run, whose run_id is the landing id; it keeps only its last gate run. */
+  landing_id?: string;
+  branch?: string;
+}
+/**
+ * GET /v1/project.gates.history; recorded gate runs across the project's worktree sessions and
+ * finished branch landings, newest finish first, or newest start first when since is given.
+ */
 export interface ProjectGatesHistory {
-  runs: (SessionGateRun & { session_id: string; session_title: string })[];
+  runs: ProjectGateRun[];
 }
 /** GET /v1/project.timeline; event-derived state intervals of the project's worktree sessions. */
 export interface ProjectTimeline {

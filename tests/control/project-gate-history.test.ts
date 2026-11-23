@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest';
-import type { LandingItem, Project, Session } from '@pantheon/domain';
+import type { Landing, LandingItem, Project, Session } from '@pantheon/domain';
 import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
@@ -242,6 +242,135 @@ it('filters by the inclusive run start before limiting and orders by start newes
     f.control.projectGatesHistory(user, f.project.id, 500, at + 100).runs.map((run) => run.run_id),
   ).toEqual([newerStart.event_id]);
   expect(f.control.projectGatesHistory(user, f.project.id, 500, at + 101).runs).toEqual([]);
+});
+
+function insertLanding(f: Fixture, over: Partial<Landing> & { id: string }) {
+  return f.store.insert<Landing>('landings', {
+    revision: 1,
+    project_id: f.project.id,
+    root: f.source,
+    branch: 'docs/refund-api',
+    target_branch: 'main',
+    workspace_id: `workspace-${over.id}`,
+    state: 'landed',
+    ...over,
+  });
+}
+
+it('lists the gate run of a finished branch landing by its branch, among session runs by finish time', async () => {
+  const f = await workbenchFixture();
+  const session = await idleSession(f);
+  const at = Date.parse('2026-01-01T12:00:00Z');
+  const older = recordGateRun(f, session, at + 100),
+    newer = recordGateRun(f, session, at + 400);
+  insertLanding(f, {
+    id: 'docs-landing',
+    to_sha: 'd'.repeat(40),
+    started_at: at + 150,
+    finished_at: at + 300,
+    gate_results: [
+      {
+        name: 'build',
+        argv: ['pnpm', 'build'],
+        exit_code: 0,
+        duration_ms: 120,
+        timed_out: false,
+        output: 'built',
+      },
+      {
+        name: 'test',
+        argv: ['pnpm', 'test'],
+        state: 'failed',
+        exit_code: 1,
+        duration_ms: 30,
+        timed_out: false,
+        output: 'failed',
+        tests: { passed: 3, failed: 1, skipped: 0 },
+      },
+    ],
+  });
+
+  const { runs } = f.control.projectGatesHistory(user, f.project.id);
+  expect(runs.map((run) => run.run_id)).toEqual([newer.event_id, 'docs-landing', older.event_id]);
+  expect(runs[1]).toEqual({
+    run_id: 'docs-landing',
+    landing_id: 'docs-landing',
+    branch: 'docs/refund-api',
+    commit: 'd'.repeat(40),
+    started_at: new Date(at + 150).toISOString(),
+    finished_at: new Date(at + 300).toISOString(),
+    results: [
+      {
+        name: 'build',
+        command: ['pnpm', 'build'],
+        exit_code: 0,
+        timed_out: false,
+        duration_ms: 120,
+      },
+      {
+        name: 'test',
+        command: ['pnpm', 'test'],
+        state: 'failed',
+        exit_code: 1,
+        timed_out: false,
+        duration_ms: 30,
+        tests: { passed: 3, failed: 1, skipped: 0 },
+      },
+    ],
+  });
+  expect(runs[0]).toEqual(expect.objectContaining({ session_id: session.id }));
+  expect(runs[0]).not.toHaveProperty('landing_id');
+});
+
+it('leaves out a landing still running, one without gate results and another project’s', async () => {
+  const f = await workbenchFixture();
+  const at = Date.parse('2026-01-01T12:00:00Z');
+  const results: NonNullable<LandingItem['gate_results']> = [
+    { name: 'check', argv: ['true'], exit_code: 0, duration_ms: 50, timed_out: false, output: '' },
+  ];
+  insertLanding(f, { id: 'kept', started_at: at, finished_at: at + 100, gate_results: results });
+  insertLanding(f, { id: 'running', state: 'running', started_at: at, gate_results: results });
+  insertLanding(f, { id: 'ungated', state: 'blocked', started_at: at, finished_at: at + 50 });
+  insertLanding(f, {
+    id: 'elsewhere',
+    project_id: 'other-project',
+    started_at: at,
+    finished_at: at + 100,
+    gate_results: results,
+  });
+
+  expect(f.control.projectGatesHistory(user, f.project.id).runs.map((run) => run.run_id)).toEqual([
+    'kept',
+  ]);
+});
+
+it('filters landing runs by their start and limits them together with session runs', async () => {
+  const f = await workbenchFixture();
+  const session = await idleSession(f);
+  const at = new Date(2027, 2, 10, 12).getTime();
+  const results: NonNullable<LandingItem['gate_results']> = [
+    { name: 'check', argv: ['true'], exit_code: 0, duration_ms: 50, timed_out: false, output: '' },
+  ];
+  const sessionRun = recordGateRun(f, session, at + 200);
+  insertLanding(f, {
+    id: 'early',
+    started_at: at - 10,
+    finished_at: at + 300,
+    gate_results: results,
+  });
+  insertLanding(f, {
+    id: 'late',
+    started_at: at + 250,
+    finished_at: at + 260,
+    gate_results: results,
+  });
+
+  expect(
+    f.control.projectGatesHistory(user, f.project.id, 500, at).runs.map((run) => run.run_id),
+  ).toEqual(['late', sessionRun.event_id]);
+  expect(
+    f.control.projectGatesHistory(user, f.project.id, 2).runs.map((run) => run.run_id),
+  ).toEqual(['early', 'late']);
 });
 
 it('allows more than a hundred runs only when a start is supplied', async () => {

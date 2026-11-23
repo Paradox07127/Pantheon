@@ -36,6 +36,7 @@ import {
   type Project,
   type RuntimeModel,
   type ProjectBaseline,
+  type Landing,
   type LandingItem,
   type HarnessAdapter,
   type Review,
@@ -55,6 +56,7 @@ import {
   type Command,
   type SessionCreatePreview,
   type AttachmentMeta,
+  type ProjectGateRun,
   type ProjectGatesHistory,
   type ProjectHead,
   type ProjectTimeline,
@@ -2416,6 +2418,21 @@ function gateStartedAt(checked: Event, started: Event | undefined): number {
   );
 }
 
+function gateRunResult(r: NonNullable<LandingItem['gate_results']>[number]): SessionGateRunResult {
+  return {
+    name: r.name,
+    command: r.argv,
+    ...(r.state ? { state: r.state } : {}),
+    ...(r.state === 'skipped' ? { skipped: true } : {}),
+    ...(r.reason ? { reason: r.reason } : {}),
+    exit_code: r.exit_code,
+    timed_out: r.timed_out,
+    duration_ms: r.duration_ms,
+    ...(r.tests ? { tests: r.tests } : {}),
+    ...(r.carried ? { carried: true } : {}),
+  };
+}
+
 function gateRun(
   checked: Event,
   started: Event | undefined,
@@ -2440,21 +2457,7 @@ function gateRun(
         skipped: true,
       }))
     : [];
-  const results: SessionGateRunResult[] = [
-    ...recorded.map((r) => ({
-      name: r.name,
-      command: r.argv,
-      ...(r.state ? { state: r.state } : {}),
-      ...(r.state === 'skipped' ? { skipped: true } : {}),
-      ...(r.reason ? { reason: r.reason } : {}),
-      exit_code: r.exit_code,
-      timed_out: r.timed_out,
-      duration_ms: r.duration_ms,
-      ...(r.tests ? { tests: r.tests } : {}),
-      ...(r.carried ? { carried: true } : {}),
-    })),
-    ...skipped,
-  ];
+  const results: SessionGateRunResult[] = [...recorded.map(gateRunResult), ...skipped];
   return {
     run_id: checked.event_id,
     commit: payload.commit ?? '',
@@ -2494,7 +2497,10 @@ export function sessionGatesHistory(
   return { runs };
 }
 
-/** Recorded gate runs across the project's worktree sessions, newest first. */
+/**
+ * Recorded gate runs across the project's worktree sessions and finished branch landings, newest
+ * finish first; with since, newest start first.
+ */
 export function projectGatesHistory(
   ctx: ControlContext,
   p: Principal,
@@ -2517,13 +2523,54 @@ export function projectGatesHistory(
   );
   const events = ctx.store.kindEvents(projectId, ['session.gate_checked', 'session.gate_started']);
   const starts = gateStarts(events);
-  const newest = events
+  const sessionRuns = events
     .filter((event) => event.kind === 'session.gate_checked' && sessions.has(event.aggregate_id))
     .reverse()
     .map((checked) => {
       const started = starts.get(checked.event_id);
-      return { checked, started, at: gateStartedAt(checked, started) };
+      return {
+        at: gateStartedAt(checked, started),
+        end: checked.created_at,
+        run: (): ProjectGateRun => {
+          const session = sessions.get(checked.aggregate_id)!,
+            workspace = ctx.store.must<Workspace>('workspaces', session.workspace_id!),
+            configured = gateCommands(ctx, project, workspace, session) ?? [];
+          return {
+            ...gateRun(checked, started, configured),
+            session_id: session.id,
+            session_title: session.title ?? '',
+          };
+        },
+      };
     });
+  // A landing keeps only the results of its last gate run, without the commands it did not reach.
+  const landingRuns = ctx.store
+    .list<Landing>('landings')
+    .filter(
+      (landing) =>
+        landing.project_id === projectId &&
+        landing.finished_at !== undefined &&
+        !!landing.gate_results?.length,
+    )
+    .map((landing) => {
+      const results = landing.gate_results!,
+        end = landing.finished_at!,
+        at = landing.started_at ?? end - results.reduce((sum, r) => sum + (r.duration_ms ?? 0), 0);
+      return {
+        at,
+        end,
+        run: (): ProjectGateRun => ({
+          run_id: landing.id,
+          commit: landing.to_sha ?? '',
+          started_at: new Date(at).toISOString(),
+          finished_at: new Date(end).toISOString(),
+          results: results.map(gateRunResult),
+          landing_id: landing.id,
+          branch: landing.branch,
+        }),
+      };
+    });
+  const newest = [...sessionRuns, ...landingRuns].sort((a, b) => b.end - a.end);
   const shown =
     since === undefined
       ? newest.slice(0, limit)
@@ -2531,18 +2578,7 @@ export function projectGatesHistory(
           .filter((run) => run.at >= since)
           .sort((a, b) => b.at - a.at)
           .slice(0, limit);
-  return {
-    runs: shown.map(({ checked, started }) => {
-      const session = sessions.get(checked.aggregate_id)!,
-        workspace = ctx.store.must<Workspace>('workspaces', session.workspace_id!),
-        configured = gateCommands(ctx, project, workspace, session) ?? [];
-      return {
-        ...gateRun(checked, started, configured),
-        session_id: session.id,
-        session_title: session.title ?? '',
-      };
-    }),
-  };
+  return { runs: shown.map(({ run }) => run()) };
 }
 
 export function projectTimeline(

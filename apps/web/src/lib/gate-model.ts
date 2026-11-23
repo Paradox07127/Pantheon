@@ -1,13 +1,13 @@
-import type { ProjectGatesHistory, SessionGateRun } from '@pantheon/protocol';
+import type { ProjectGateRun, SessionGateRun } from '@pantheon/protocol';
 import { t } from '../i18n';
 
 /* Gate history */
 
 export const GATE_RUNS = 30;
 
-/** A project run names its session; a session's own runs do not. */
+/** A project run names its session or its landing's branch; a session's own runs do not. */
 type GateRun = SessionGateRun &
-  Partial<Pick<ProjectGatesHistory['runs'][number], 'session_id' | 'session_title'>>;
+  Pick<ProjectGateRun, 'session_id' | 'session_title' | 'landing_id' | 'branch'>;
 type GateState = 'passed' | 'failed' | 'timed_out' | 'skipped';
 
 export const GATE_STATES: Record<GateState, { label: string }> = {
@@ -41,6 +41,8 @@ export interface TrackRun {
   run_id: string;
   session_id?: string;
   session_title?: string;
+  landing_id?: string;
+  branch?: string;
   commit: string;
   finished_at: string;
 }
@@ -83,6 +85,8 @@ export function gateTracker(runs: readonly GateRun[]): { columns: TrackRun[]; ro
     run_id: run.run_id,
     session_id: run.session_id,
     session_title: run.session_title,
+    landing_id: run.landing_id,
+    branch: run.branch,
     commit: run.commit.slice(0, 7),
     finished_at: run.finished_at,
   }));

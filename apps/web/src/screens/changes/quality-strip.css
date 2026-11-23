@@ -1,0 +1,88 @@
+/* The quality strip above the changes: first pass, flaky steps, gate history, reviewer adoption. */
+.cq {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--sp-3) var(--sp-4);
+  margin-bottom: var(--sp-3);
+  padding: var(--sp-2) 8px var(--sp-3);
+  border-bottom: var(--hair) solid var(--bd2);
+}
+.cq-part {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.cq-hist {
+  flex: 1 1 240px;
+}
+.cq-k {
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+}
+.cq-v {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.cq-v > b,
+.cq-rr > b {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.cq-v > b {
+  font-size: var(--fs-lg);
+  line-height: 28px;
+}
+.cq-n {
+  color: var(--tx2);
+  font-variant-numeric: tabular-nums;
+}
+.cq-flaky {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cq-rev {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cq-rr {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 20px;
+}
+.cq-glyph {
+  display: inline-flex;
+  flex: none;
+}
+/* The outcomes of a reviewer's findings, side by side as shares of them. */
+.cq-bar {
+  display: flex;
+  width: 96px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--track);
+  overflow: hidden;
+}
+.cq-bar > i {
+  display: block;
+  height: 100%;
+}
+.cq-rr > b {
+  min-width: 4ch;
+  color: var(--tx2);
+  text-align: right;
+}
