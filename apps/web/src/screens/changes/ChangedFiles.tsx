@@ -51,7 +51,7 @@ function fileBars(files: readonly DiffFile[], sessionId: string) {
               type="button"
               className="chg-dfl-h"
               aria-label={t(
-                { id: 'changes.files.open', defaultMessage: 'Open {path} in the diff' },
+                { id: 'changes.files.open', defaultMessage: "{path}, opens the session's diff" },
                 { path: file.path },
               )}
               onClick={() => useShell.getState().openSession(sessionId, 'diff')}

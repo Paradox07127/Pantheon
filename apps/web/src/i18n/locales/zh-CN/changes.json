@@ -9,7 +9,7 @@
   "changes.emptyFilter": "这一栏没有改动。",
   "changes.files.file": "{path}：加 {additions} 行，删 {deletions} 行",
   "changes.files.none": "没有改动的文件。",
-  "changes.files.open": "在差异里打开 {path}",
+  "changes.files.open": "{path}，打开会话的差异",
   "changes.files.title": "改动的文件",
   "changes.files.total": "共加 {additions} 行，删 {deletions} 行",
   "changes.filter.all": "全部",

@@ -39,8 +39,10 @@ export function TellBox({
   const sent = sentTo === key;
   const state = tellState(target);
   const input = text.trim();
+  // The prefilled reference alone says nothing to the agent.
+  const empty = !input || input === tellDraft(row).trim();
   const send = async () => {
-    if (busy || sent || !input || !target || !state.enabled) return;
+    if (busy || sent || empty || !target || !state.enabled) return;
     setBusy(true);
     setError(null);
     const result = await runCommand(state.type, { session_id: target.id, input }, target.revision);
@@ -61,7 +63,7 @@ export function TellBox({
       className="btn pri sm"
       aria-label={sendName}
       aria-busy={busy || undefined}
-      disabled={busy || sent || !input}
+      disabled={busy || sent || empty}
       aria-disabled={!state.enabled || undefined}
       onClick={() => void send()}
     >

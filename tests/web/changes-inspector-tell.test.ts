@@ -151,11 +151,17 @@ describe('telling the agent of a change', () => {
     choice.props.onValueChange('main');
     h.render();
     expect(textarea(h.value).props.value).toBe(tellDraft(change));
+    expect(send(h.value).props.disabled).toBe(true);
+    send(h.value).props.onClick();
+    await h.flush();
+    expect(runCommand).not.toHaveBeenCalled();
+    textarea(h.value).props.onChange({ target: { value: `${tellDraft(change)}split the parser` } });
+    h.render();
     send(h.value).props.onClick();
     await h.flush();
     expect(runCommand).toHaveBeenCalledWith(
       'session.send',
-      { session_id: 'main', input: tellDraft(change).trim() },
+      { session_id: 'main', input: `${tellDraft(change)}split the parser` },
       4,
     );
   });
