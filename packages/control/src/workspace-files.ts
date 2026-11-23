@@ -196,12 +196,15 @@ async function listing(
     ),
     true,
   );
+  // A project folder outside git has nothing ignored.
+  const noRepository =
+    ignored.exit_code === 128 && ignored.stderr.toString().includes('not a git repository');
   requireThat(
-    ignored.exit_code === 0 || ignored.exit_code === 1,
+    ignored.exit_code === 0 || ignored.exit_code === 1 || noRepository,
     'workspace_read_failed',
     'Ignored files could not be checked',
   );
-  const excluded = new Set(ignored.stdout.toString().split('\0'));
+  const excluded = new Set(noRepository ? [] : ignored.stdout.toString().split('\0'));
   const listed = children.filter(
     (entry) => !excluded.has(path.relative(root, path.join(directory, entry.name))),
   );

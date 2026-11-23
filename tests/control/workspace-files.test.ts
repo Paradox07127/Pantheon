@@ -6,6 +6,7 @@ import {
   existsSync,
   mkdirSync,
   openSync,
+  rmSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -41,6 +42,18 @@ it('lists directories before files by name, excluding ignored entries and git me
     entries: [],
     truncated: false,
   });
+});
+
+it('lists a project folder that is not a git repository without an ignore filter', async () => {
+  const f = await workbenchFixture();
+  rmSync(path.join(f.source, '.git'), { recursive: true, force: true });
+  // An empty .git keeps git from finding a repository around the test folder.
+  mkdirSync(path.join(f.source, '.git'));
+  writeFileSync(path.join(f.source, '.gitignore'), 'answer.txt\n');
+  expect((await f.control.filesList(user, f.project.id, undefined, undefined)).entries).toEqual([
+    { name: '.gitignore', kind: 'file', size: 11 },
+    { name: 'answer.txt', kind: 'file', size: 5 },
+  ]);
 });
 
 it('lists a link to a folder inside the workspace as a folder that opens', async () => {
