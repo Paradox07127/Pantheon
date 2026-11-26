@@ -35,6 +35,9 @@ vi.mock('@/screens/memory/MemoryScreen', async () => ({
   MemoryScreen: await screen('memory')(),
 }));
 vi.mock('@/screens/trace/TraceScreen', async () => ({ TraceScreen: await screen('trace')() }));
+vi.mock('@/screens/project/ProjectScreen', async () => ({
+  ProjectScreen: await screen('project')(),
+}));
 vi.mock('@/screens/projects/ProjectsScreen', async () => ({
   ProjectsScreen: await screen('projects')(),
 }));
@@ -200,6 +203,18 @@ it('mounts the memory page once and keeps it while another screen shows', async 
   await go('memory');
   expect(shown('memory')?.style.display).toBe('');
   expect(seen.mounts.memory).toBe(1);
+  await go('sessions');
+});
+
+it('mounts the project page once and keeps it while another screen shows', async () => {
+  await go('project');
+  expect(useShell.getState().screen).toBe('project');
+  expect(shown('project')?.style.display).not.toBe('none');
+  await go('sessions');
+  expect(shown('project')?.style.display).toBe('none');
+  await go('project');
+  expect(shown('project')?.style.display).toBe('');
+  expect(seen.mounts.project).toBe(1);
   await go('sessions');
 });
 

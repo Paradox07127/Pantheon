@@ -47,7 +47,7 @@ const FILTER_NAME: Record<ChangeFilter, () => string> = {
   merged: () => t({ id: 'changes.filter.merged', defaultMessage: 'Landed' }),
 };
 
-const STATUS_GLYPH: Record<ChangeRow['status'], GlyphName> = {
+export const STATUS_GLYPH: Record<ChangeRow['status'], GlyphName> = {
   running: 'running',
   needs_you: 'approval',
   ready: 'ready',
@@ -101,7 +101,7 @@ function landingOf(row: ChangeRow): { tone: string; text: string } | null {
   return null;
 }
 
-function RowMark({ row }: { row: ChangeRow }) {
+export function RowMark({ row }: { row: ChangeRow }) {
   if (row.kind === 'branch')
     return (
       <GitBranch

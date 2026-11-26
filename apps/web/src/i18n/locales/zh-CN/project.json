@@ -1,0 +1,21 @@
+{
+  "project.status.label": "项目状态",
+  "project.status.running": "在跑",
+  "project.status.waiting": "等你",
+  "project.status.longest": "最久 {duration}",
+  "project.status.ready": "可落地",
+  "project.status.failed": "失败",
+  "project.status.landedToday": "今天落地",
+  "project.status.latestLanding": "最近落地",
+  "project.unplanned.title": "计划外",
+  "project.agents.title": "Agent",
+  "project.agents.slotsLabel": "主 agent 起的会话在跑 {running, plural, other {# 个}}，上限 {limit} 个",
+  "project.agents.slots": "{running} / {limit}",
+  "project.composer.send": "发送",
+  "project.composer.message": "给主 agent 的消息",
+  "project.composer.placeholder": "告诉 {title} 接下来做什么",
+  "project.empty.text": "这个项目还没有主 agent。",
+  "project.empty.start": "开主 agent",
+  "project.intro.expand": "展开",
+  "project.intro.collapse": "收起"
+}

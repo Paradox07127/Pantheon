@@ -6,6 +6,9 @@ export const SCREEN_NAMES: Record<Screen | 'settings', string> = {
   get sessions() {
     return t({ id: 'app.screenName.sessions', defaultMessage: 'Sessions' });
   },
+  get project() {
+    return t({ id: 'app.screenName.project', defaultMessage: 'Project' });
+  },
   get changes() {
     return t({ id: 'app.screenName.changes', defaultMessage: 'Changes' });
   },

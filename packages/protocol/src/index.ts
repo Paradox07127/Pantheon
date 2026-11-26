@@ -294,6 +294,8 @@ export const commandSchema = z.strictObject({
 export type Command = z.infer<typeof commandSchema>;
 /** The most characters of page text a browser read returns. */
 export const BROWSER_TEXT_LIMIT = 50_000;
+/** An upper bound on what one conductor can spend through the sessions it starts. */
+export const SPAWNED_SESSION_LIMIT = 4;
 const browserPage = z.strictObject({
   url: z.string().max(65536),
   title: z.string().max(65536),

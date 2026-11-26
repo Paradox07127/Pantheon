@@ -14,6 +14,7 @@ import {
   ChevronRight,
   Columns3,
   GitMerge,
+  LayoutDashboard,
   LayoutGrid,
   ListFilter,
   Pin,
@@ -1065,6 +1066,15 @@ export function Sidebar({
             <button
               type="button"
               className="sb-it"
+              aria-current={current('project')}
+              onClick={() => setScreen('project')}
+            >
+              <LayoutDashboard aria-hidden="true" />
+              {SCREEN_NAMES.project}
+            </button>
+            <button
+              type="button"
+              className="sb-it"
               aria-current={current('changes')}
               onClick={() => setScreen('changes')}
             >
@@ -1251,6 +1261,13 @@ export function Sidebar({
         <div className="sb-top" />
         {currentProjectId && !allProjects && (
           <>
+            {icon(
+              SCREEN_NAMES.project,
+              SCREEN_NAMES.project,
+              () => setScreen('project'),
+              <LayoutDashboard aria-hidden="true" />,
+              { current: current('project') },
+            )}
             {icon(
               SCREEN_NAMES.changes,
               SCREEN_NAMES.changes,

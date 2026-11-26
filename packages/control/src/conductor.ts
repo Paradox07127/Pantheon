@@ -12,7 +12,7 @@ import {
   type SettingProposal,
   type Workspace,
 } from '@pantheon/domain';
-import { inputSchemas, type Command } from '@pantheon/protocol';
+import { inputSchemas, SPAWNED_SESSION_LIMIT, type Command } from '@pantheon/protocol';
 import { projectChanges } from './changes.js';
 import { globalExcludes } from './checkpoint.js';
 import {
@@ -194,9 +194,6 @@ function gated(ctx: ControlContext, session: Session): boolean {
     workspace = ctx.store.must<Workspace>('workspaces', session.workspace_id!);
   return !!gateCommands(ctx, project, workspace, session)?.length;
 }
-
-/** An upper bound on what one conductor can spend through the sessions it starts. */
-const SPAWNED_SESSION_LIMIT = 4;
 
 /** Refuses a spawned session's new turn once the project spent its budget. */
 function requireBudgetLeft(ctx: ControlContext, projectId: string): void {

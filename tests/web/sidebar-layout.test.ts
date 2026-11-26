@@ -125,11 +125,11 @@ describe('sidebar layout', () => {
     expect(parts(mount(LIST))).toEqual(['project', 'nav', 'list', 'sessions', 'settings']);
   });
 
-  it('offers the changes page row and settings, no trace or memory page row', () => {
+  it('offers the project and changes page rows and settings, no trace or memory page row', () => {
     const pages = nodes(mount(LIST).value)
       .filter((n) => n.type === 'button' && n.props.className === 'sb-it')
       .map((n) => text(n.props.children));
-    expect(pages).toEqual([screen('changes'), screen('settings')]);
+    expect(pages).toEqual([screen('project'), screen('changes'), screen('settings')]);
   });
 
   it('draws the project row as the mark, the name and a chevron, with no counts under it', () => {
@@ -177,13 +177,14 @@ describe('sidebar layout', () => {
     expect(mock.shell.openSession).toHaveBeenCalledWith('waiting');
   });
 
-  it('keeps only changes, new session, all projects and settings on the folded rail', () => {
+  it('keeps only project, changes, new session, all projects and settings on the folded rail', () => {
     const h = mount(LIST, true);
     expect(nodes(h.value).some((n) => isFn(n, 'ProjectMenu'))).toBe(false);
     const labels = nodes(h.value)
       .filter((n) => n.type === 'button' && n.props.className === 'ib')
       .map((n) => n.props['aria-label']);
     expect(labels).toEqual([
+      screen('project'),
       screen('changes'),
       zh('components.sidebar.newSession'),
       allLabel,

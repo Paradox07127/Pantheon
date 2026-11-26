@@ -13,7 +13,7 @@ import type { PanelTab, SessionGroupKey } from './screens/sessions/model';
 import { navPage, useSettingsView } from './screens/settings/view';
 import { shownWindow } from './shell/window-kind';
 
-export type Screen = 'sessions' | 'changes' | 'flow' | 'trace' | 'memory' | 'projects';
+export type Screen = 'sessions' | 'project' | 'changes' | 'flow' | 'trace' | 'memory' | 'projects';
 
 export type TraceTab = 'timeline' | 'runs' | 'activity' | 'diagnose' | 'approved';
 export type MemoryTab = 'overview' | 'entries' | 'diagrams';
@@ -43,7 +43,7 @@ const THEME_KEY = 'pantheon.theme';
 // Project id → ProjectPlace.
 const PLACES_KEY = 'pantheon.projectPlaces';
 const HISTORY_LIMIT = 50;
-const PROJECT_SCREENS: readonly string[] = ['sessions', 'changes', 'trace', 'memory'];
+const PROJECT_SCREENS: readonly string[] = ['sessions', 'project', 'changes', 'trace', 'memory'];
 
 /** The stored theme; anything unreadable follows the system. */
 export function readTheme(storage?: Pick<Storage, 'getItem'>): Theme {

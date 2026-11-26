@@ -23,9 +23,10 @@ describe('shell', () => {
     expect(startScreen(null)).toBe('projects');
   });
 
-  it('has the sessions, changes, flow, trace, memory, projects and settings screens only', () => {
+  it('has the sessions, project, changes, flow, trace, memory, projects and settings screens only', () => {
     expect(Object.keys(SCREEN_NAMES)).toEqual([
       'sessions',
+      'project',
       'changes',
       'flow',
       'trace',
