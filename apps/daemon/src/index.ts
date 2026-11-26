@@ -489,6 +489,10 @@ export async function startDaemon(options: DaemonOptions) {
         service: 'pantheon',
         protocol_version: PROTOCOL_VERSION,
         version: PANTHEON_VERSION,
+        // An upgrade can delete the node this daemon runs, and every child it starts with it.
+        ...(existsSync(process.execPath)
+          ? {}
+          : { restart_required: `The node this daemon runs, ${process.execPath}, is gone.` }),
       }),
     );
     app.get('/v1/capabilities', (c) => c.json([...control.adapters.values()].map((a) => a.report)));

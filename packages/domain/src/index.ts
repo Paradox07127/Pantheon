@@ -986,6 +986,7 @@ export interface Review extends Entity {
     session_id?: string;
     state: SessionTurn['state'] | 'unknown';
     error?: string;
+    error_code?: string;
   }[];
 }
 /** One row per reviewer runtime; a finding is valid when its status is not 'rejected'. */

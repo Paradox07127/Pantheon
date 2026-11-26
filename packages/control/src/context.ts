@@ -74,6 +74,8 @@ export interface ControlContext {
   rollback?: (() => void)[];
   busy: boolean;
   closing: boolean;
+  /** Runs a change to a runtime's adapter or connection after every change queued before it. */
+  runtimeChange<T>(work: () => Promise<T>): Promise<T>;
   changed(): void;
   /** Reports a failure of background work that no caller awaits. */
   diagnostic(error: unknown): void;

@@ -1,14 +1,23 @@
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile, execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { PANTHEON_VERSION } from '@pantheon/domain/version';
 import { review } from '../../apps/cli/src/review.js';
 
 const requests: { method: string; url: string; body: string }[] = [];
 let replies: { status: number; body: unknown }[] = [];
+// The daemon's /health and runtime.status answers, kept out of requests and replies.
+const healthy = { service: 'pantheon', protocol_version: 1, version: PANTHEON_VERSION };
+let health: unknown = healthy;
+let healthStatus = 200;
+let healthLater: unknown;
+let healthReads = 0;
+let statuses: unknown[] = [];
+let statusReads = 0;
 let server: http.Server;
 let dataDir: string;
 let repo: string;
@@ -21,13 +30,34 @@ const git = (cwd: string, ...args: string[]) =>
     encoding: 'utf8',
   });
 
-const cli = (cwd: string, args: string[], answers: { status?: number; body: unknown }[]) => {
+/**
+ * `daemon.health` undefined: /health never answers; `healthLater` answers every /health read after
+ * the first. A `statuses` entry that is not an array is a `{ status, body }` reply.
+ */
+const cli = (
+  cwd: string,
+  args: string[],
+  answers: { status?: number; body: unknown }[],
+  daemon: {
+    health?: unknown;
+    healthStatus?: number;
+    healthLater?: unknown;
+    statuses?: unknown[];
+    dataDir?: string;
+  } = {},
+) => {
   requests.length = 0;
   replies = answers.map((answer) => ({ status: answer.status ?? 200, body: answer.body }));
+  health = 'health' in daemon ? daemon.health : healthy;
+  healthStatus = daemon.healthStatus ?? 200;
+  healthLater = daemon.healthLater;
+  healthReads = 0;
+  statuses = [...(daemon.statuses ?? [])];
+  statusReads = 0;
   return new Promise<{ code: number; stdout: string; stderr: string }>((resolve) =>
     execFile(
       'node',
-      [path.resolve('apps/cli/dist/index.js'), ...args, '--data-dir', dataDir],
+      [path.resolve('apps/cli/dist/index.js'), ...args, '--data-dir', daemon.dataDir ?? dataDir],
       { cwd },
       (error, stdout, stderr) => resolve({ code: error ? Number(error.code) : 0, stdout, stderr }),
     ),
@@ -47,6 +77,23 @@ beforeAll(async () => {
     let body = '';
     req.on('data', (chunk: Buffer) => (body += chunk));
     req.on('end', () => {
+      if (req.url === '/health') {
+        const answer = healthReads++ && healthLater !== undefined ? healthLater : health;
+        res.statusCode = healthStatus;
+        if (answer !== undefined)
+          res.setHeader('Content-Type', 'application/json').end(JSON.stringify(answer));
+        return;
+      }
+      if (req.url === '/v1/runtime.status') {
+        statusReads++;
+        const next = statuses.shift() ?? [];
+        const reply = Array.isArray(next)
+          ? { status: 200, body: next }
+          : (next as { status: number; body: unknown });
+        res.statusCode = reply.status;
+        res.setHeader('Content-Type', 'application/json').end(JSON.stringify(reply.body));
+        return;
+      }
       requests.push({ method: req.method!, url: req.url!, body });
       const reply = replies.shift() ?? { status: 500, body: { error: 'no reply queued' } };
       res.statusCode = reply.status;
@@ -281,6 +328,31 @@ describe('pnpm cli review', () => {
       code: 2,
       stream: 'stdout',
       line: 'claude: no verdict',
+    },
+    {
+      name: 'a reviewer whose turn failed',
+      args: ['--base', 'main'],
+      answers: [
+        started,
+        {
+          body: reviewOf({
+            runtimes: ['codex', 'claude'],
+            executions: [
+              { runtime: 'codex', session_id: 'session-1', state: 'completed' },
+              {
+                runtime: 'claude',
+                session_id: 'session-2',
+                state: 'failed',
+                error: "You've hit your weekly limit\nresets Monday",
+                error_code: 'usage_limit',
+              },
+            ],
+          }),
+        },
+      ],
+      code: 2,
+      stream: 'stdout',
+      line: "claude: no verdict (usage_limit: You've hit your weekly limit)\n",
     },
     {
       name: 'a review read back without its reviewers',
@@ -651,6 +723,190 @@ describe('pnpm cli review', () => {
     expect(result.code).toBe(0);
   });
 
+  const connected = { connected: true, held_session_count: 0, held_session_ids: [] };
+  const downOf = (runtime: string) => ({
+    runtime,
+    connection: {
+      connected: false,
+      disconnected_since: '2026-11-26T04:30:00.000Z',
+      reason: 'RPC timeout: account/read',
+      held_session_count: 1,
+      held_session_ids: ['session-1'],
+    },
+  });
+  /** A running review whose reviewers' turns are in the states given. */
+  const runningWith = (states: Record<string, string>) => ({
+    body: reviewOf({
+      state: 'running',
+      verdicts: [],
+      runtimes: Object.keys(states),
+      executions: Object.entries(states).map(([runtime, state], index) => ({
+        runtime,
+        session_id: `session-${index + 1}`,
+        state,
+      })),
+    }),
+  });
+  // Polls once a second and reads the runtimes on the first poll and every 15 s after it.
+  const pollsFor = (seconds: number) =>
+    Array.from({ length: seconds }, () => runningWith({ codex: 'running' }));
+
+  it('says once that a runtime of the review is disconnected, and once that it reconnected', async () => {
+    const down = [downOf('codex'), { runtime: 'claude', connection: connected }];
+    const up = [{ runtime: 'codex', connection: connected }];
+    const result = await cli(
+      repo,
+      ['review', '--base', 'main'],
+      [started, ...pollsFor(33), { body: reviewOf({}) }],
+      { statuses: [down, down, up, up] },
+    );
+    expect(statusReads).toBeGreaterThanOrEqual(3);
+    const lines = result.stderr.split('\n');
+    const disconnected = lines.filter((line) => line.startsWith('codex is disconnected'));
+    expect(disconnected).toHaveLength(1);
+    expect(disconnected[0]).toBe(
+      'codex is disconnected since 2026-11-26T04:30:00.000Z (RPC timeout: account/read); the review waits while the daemon retries it.',
+    );
+    expect(lines.filter((each) => each === 'codex reconnected')).toHaveLength(1);
+    expect(lines.indexOf('codex reconnected')).toBeGreaterThan(lines.indexOf(disconnected[0]!));
+    expect(result.code).toBe(0);
+  }, 50_000);
+
+  it('does not say a disconnected runtime reconnected once it is uninstalled', async () => {
+    const uninstalled = [
+      {
+        runtime: 'codex',
+        installed: false,
+        connection: { connected: false, held_session_count: 0, held_session_ids: [] },
+      },
+    ];
+    const result = await cli(
+      repo,
+      ['review', '--base', 'main'],
+      [started, ...pollsFor(18), { body: reviewOf({}) }],
+      { statuses: [[downOf('codex')], uninstalled] },
+    );
+    expect(statusReads).toBe(2);
+    const lines = result.stderr.split('\n');
+    expect(lines.filter((line) => line.startsWith('codex is disconnected'))).toHaveLength(1);
+    expect(lines).not.toContain('codex reconnected');
+    expect(result.code).toBe(0);
+  }, 30_000);
+
+  it('says a reviewer is disconnected when its first status read finds it uninstalled', async () => {
+    const result = await cli(
+      repo,
+      ['review', '--base', 'main'],
+      [started, runningWith({ codex: 'running' }), { body: reviewOf({}) }],
+      {
+        statuses: [
+          [
+            {
+              runtime: 'codex',
+              installed: false,
+              connection: { connected: false, held_session_count: 1, held_session_ids: ['s'] },
+            },
+          ],
+        ],
+      },
+    );
+    expect(result.stderr.split('\n')).toContain('codex is disconnected; the review waits for it.');
+  });
+
+  it.each([
+    ['fails', { status: 500, body: { error: 'runtime status failed' } }],
+    ['answers no list', { status: 200, body: { runtime: 'codex' } }],
+  ])(
+    'waits on through a runtime status read that %s and reads it again 15 s later',
+    async (_, first) => {
+      const result = await cli(
+        repo,
+        ['review', '--base', 'main'],
+        [started, ...pollsFor(18), { body: reviewOf({}) }],
+        { statuses: [first, [downOf('codex')]] },
+      );
+      expect(statusReads).toBe(2);
+      expect(result.stderr).toContain('codex is disconnected since');
+      expect(result.stdout).toBe('codex: pass — looks fine\n');
+      expect(result.code).toBe(0);
+    },
+    30_000,
+  );
+
+  it('watches the reviewers the review still waits for, also a fallback that took over', async () => {
+    const result = await cli(
+      repo,
+      ['review', '--base', 'main'],
+      [started, runningWith({ codex: 'failed', claude: 'queued' }), { body: reviewOf({}) }],
+      { statuses: [[downOf('codex'), downOf('claude')]] },
+    );
+    const lines = result.stderr.split('\n');
+    expect(lines.filter((line) => line.startsWith('claude is disconnected'))).toHaveLength(1);
+    expect(lines.filter((line) => line.startsWith('codex is disconnected'))).toEqual([]);
+  });
+
+  it('says a disconnected runtime reconnected after the review stopped waiting for it', async () => {
+    const result = await cli(
+      repo,
+      ['review', '--base', 'main'],
+      [
+        started,
+        runningWith({ codex: 'running', claude: 'running' }),
+        ...Array.from({ length: 17 }, () => runningWith({ codex: 'completed', claude: 'running' })),
+        { body: reviewOf({}) },
+      ],
+      { statuses: [[downOf('codex')], [{ runtime: 'codex', connection: connected }]] },
+    );
+    expect(statusReads).toBe(2);
+    const lines = result.stderr.split('\n');
+    expect(lines.filter((line) => line.startsWith('codex is disconnected'))).toHaveLength(1);
+    expect(lines.filter((line) => line === 'codex reconnected')).toHaveLength(1);
+  }, 30_000);
+
+  it('says nothing of a reviewer whose runtime was disabled while its turn runs', async () => {
+    const result = await cli(
+      repo,
+      ['review', '--base', 'main'],
+      [started, runningWith({ codex: 'running' }), { body: reviewOf({}) }],
+      { statuses: [[{ ...downOf('codex'), enabled: false }]] },
+    );
+    expect(result.stderr).not.toContain('codex is disconnected');
+  });
+
+  it('stops waiting with exit 2 once the daemon has to restart', async () => {
+    const result = await cli(
+      repo,
+      ['review', '--base', 'main'],
+      [started, ...pollsFor(3), { body: reviewOf({}) }],
+      {
+        healthLater: {
+          ...healthy,
+          restart_required:
+            'The node this daemon runs, /opt/homebrew/Cellar/node/25.1.0/bin/node, is gone.',
+        },
+      },
+    );
+    expect(result.stderr).toContain(
+      'The node this daemon runs, /opt/homebrew/Cellar/node/25.1.0/bin/node, is gone. Restart the daemon: pnpm relaunch\n',
+    );
+    expect(requests.map((request) => request.url)).toEqual([
+      '/v1/commands',
+      '/v1/review.read?review_id=review-1',
+    ]);
+    expect(result.code).toBe(2);
+  });
+
+  it('checks the daemon again before each part of a split review', async () => {
+    const result = await cli(repo, ['review', 'main..large'], settledParts(3), {
+      healthLater: { ...healthy, restart_required: 'The node this daemon runs is gone.' },
+    });
+    expect(posted()).toHaveLength(1);
+    expect(result.stderr).toContain(
+      'The node this daemon runs is gone. Restart the daemon: pnpm relaunch\n',
+    );
+    expect(result.code).toBe(2);
+  }, 20_000);
+
   it('resolves a finding at the current review revision and prints its outcome', async () => {
     const resolved = reviewOf({
       revision: 4,
@@ -942,6 +1198,17 @@ describe('pnpm cli land', () => {
     expect(result.code).toBe(0);
   });
 
+  it('cancels a landing with --cancel while the daemon has to restart', async () => {
+    const result = await cli(
+      repo,
+      ['land', '--cancel'],
+      [{ body: landingOf({}) }, { body: { receipt: landingOf({ cancel_requested: true }) } }],
+      { health: { ...healthy, restart_required: 'The node this daemon runs is gone.' } },
+    );
+    expect(result.stdout).toBe('cancelled landing-1\n');
+    expect(result.code).toBe(0);
+  });
+
   it('exits 1 with --cancel when the branch has no queued or running landing', async () => {
     const result = await cli(
       repo,
@@ -953,10 +1220,156 @@ describe('pnpm cli land', () => {
     expect(result.code).toBe(1);
   });
 
+  it('stops waiting with exit 2 once the daemon has to restart', async () => {
+    const result = await cli(
+      repo,
+      ['land', 'feature'],
+      [
+        { body: { receipt: landingOf({ state: 'queued' }) } },
+        ...Array.from({ length: 3 }, () => ({ body: landingOf({}) })),
+        { body: landingOf({ state: 'landed', from_sha: '0123456789ab', to_sha: 'abcdef012345' }) },
+      ],
+      { healthLater: { ...healthy, restart_required: 'The node this daemon runs is gone.' } },
+    );
+    expect(result.stderr).toContain(
+      'The node this daemon runs is gone. Restart the daemon: pnpm relaunch\n',
+    );
+    expect(requests.map((request) => request.url)).toEqual([
+      '/v1/commands',
+      '/v1/project.landing.read?landing_id=landing-1',
+    ]);
+    expect(result.code).toBe(2);
+  });
+
+  it('reports a landing that ended though the daemon has to restart now', async () => {
+    const result = await cli(
+      repo,
+      ['land', 'feature'],
+      [
+        { body: { receipt: landingOf({ state: 'queued' }) } },
+        { body: landingOf({ state: 'landed', from_sha: '0123456789ab', to_sha: 'abcdef012345' }) },
+      ],
+      { healthLater: { ...healthy, restart_required: 'The node this daemon runs is gone.' } },
+    );
+    expect(result.stdout).toBe('landed feature onto main 01234567..abcdef01\n');
+    expect(result.code).toBe(0);
+  });
+
   it('refuses a detached HEAD without a branch with exit 64', async () => {
     const result = await cli(detached, ['land'], []);
     expect(result.stderr).toContain('detached');
     expect(result.code).toBe(64);
     expect(requests).toEqual([]);
   });
+});
+
+describe('pnpm cli review and land without a running daemon', () => {
+  const notRunning = (dir: string) =>
+    `Pantheon daemon is not running (data dir ${dir}). Open the app, or run pnpm relaunch in the Pantheon repo.\n`;
+  const ended = spawnSync('true').pid;
+  it.each([
+    { name: 'no daemon.json', manifest: undefined },
+    { name: 'a daemon.json whose pid has ended', manifest: { pid: ended } },
+    { name: 'a daemon.json whose url is not one', manifest: { url: 'not a url' } },
+    {
+      name: 'a daemon.json whose token file is gone',
+      manifest: { token_file: '/nonexistent/token' },
+    },
+    { name: 'a /health that does not answer within 3 s', manifest: {}, silent: true },
+  ])(
+    'exits 2 on $name',
+    async ({ manifest, silent }) => {
+      const dir = mkdtempSync(path.join(os.tmpdir(), 'pantheon-cli-stopped-'));
+      if (manifest)
+        writeFileSync(
+          path.join(dir, 'daemon.json'),
+          JSON.stringify({
+            url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+            token_file: path.join(dataDir, 'token'),
+            ...manifest,
+          }),
+        );
+      for (const args of [['review', '--base', 'main'], ['land']]) {
+        const result = await cli(repo, args, [started], {
+          dataDir: dir,
+          ...(silent ? { health: undefined } : {}),
+        });
+        expect(result.stderr).toContain(notRunning(dir));
+        expect(result.code).toBe(2);
+        expect(requests).toEqual([]);
+      }
+    },
+    20_000,
+  );
+
+  it.each([
+    { name: 'answers /health with 404', health: { error: 'not found' }, healthStatus: 404 },
+    { name: 'is another service', health: { ok: true, version: PANTHEON_VERSION } },
+  ])('exits 2 when the listener of daemon.json $name', async (daemon) => {
+    for (const args of [['review', '--base', 'main'], ['land']]) {
+      const result = await cli(repo, args, [started], daemon);
+      expect(result.stderr).toContain(notRunning(dataDir));
+      expect(result.code).toBe(2);
+      expect(requests).toEqual([]);
+    }
+  });
+
+  it.each([
+    { args: ['review', '--base', 'main'], receipt: running, at: 'the wait' },
+    { args: ['land'], receipt: landingOf({ state: 'queued' }), at: 'the wait' },
+    { args: ['review', '--base', 'main'], receipt: undefined, at: 'its first command' },
+    { args: ['land'], receipt: undefined, at: 'its first command' },
+  ])('exits 2 on $args.0 when the daemon stops during $at', async ({ args, receipt }) => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'pantheon-cli-stopping-'));
+    const stopping = http.createServer((req, res) => {
+      res.setHeader('Content-Type', 'application/json');
+      if (req.url === '/health') return res.end(JSON.stringify(healthy));
+      if (req.url === '/v1/commands' && receipt) return res.end(JSON.stringify({ receipt }));
+      stopping.close();
+      stopping.closeAllConnections();
+    });
+    await new Promise<void>((resolve) => stopping.listen(0, '127.0.0.1', resolve));
+    writeFileSync(
+      path.join(dir, 'daemon.json'),
+      JSON.stringify({
+        url: `http://127.0.0.1:${(stopping.address() as AddressInfo).port}`,
+        token_file: path.join(dataDir, 'token'),
+      }),
+    );
+    const result = await cli(repo, args, [], { dataDir: dir });
+    expect(result.stderr).toContain(notRunning(dir));
+    expect(result.code).toBe(2);
+  });
+
+  it('only says so when the daemon runs another version', async () => {
+    const result = await cli(
+      repo,
+      ['review', '--base', 'main'],
+      [started, { body: reviewOf({}) }],
+      { health: { ...healthy, version: '0.0.1-old' } },
+    );
+    expect(result.stderr).toContain(
+      `The daemon runs 0.0.1-old and this CLI is ${PANTHEON_VERSION}; run pnpm relaunch to load the new code.\n`,
+    );
+    expect(result.stdout).toBe('codex: pass — looks fine\n');
+    expect(result.code).toBe(0);
+  });
+
+  it.each([[['review', '--base', 'main']], [['land']]])(
+    'exits 2 without starting anything for %j when the daemon has to restart',
+    async (args) => {
+      const result = await cli(repo, args, [started], {
+        health: {
+          ...healthy,
+          restart_required:
+            'The node this daemon runs, /opt/homebrew/Cellar/node/25.1.0/bin/node, is gone.',
+        },
+      });
+      expect(result.stderr).toBe(
+        'The node this daemon runs, /opt/homebrew/Cellar/node/25.1.0/bin/node, is gone. Restart the daemon: pnpm relaunch\n',
+      );
+      expect(result.code).toBe(2);
+      expect(requests).toEqual([]);
+    },
+  );
 });

@@ -2,12 +2,20 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
+import { PANTHEON_VERSION } from '@pantheon/domain/version';
 import { defaultDataDirectory } from '@pantheon/protocol/paths';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { createMcpServer } from './mcp.js';
 import { createPersonalMcpServer } from './personal-tools.js';
 import { land, landUsage } from './land.js';
-import { resolveUsage, review, reviewUsage } from './review.js';
+import {
+  notRunning,
+  readHealth,
+  resolveUsage,
+  review,
+  reviewUsage,
+  stopForRestart,
+} from './review.js';
 
 const usage = `Usage: pantheon mcp [--personal]|health|command (--file FILE|--json JSON)|<query method> [--project ID] [--after N] [--param KEY=VALUE]... [--data-dir DIR]
        pantheon ${reviewUsage} [--data-dir DIR]
@@ -59,6 +67,41 @@ const connect = () => {
   };
   return { url: manifest.url, token: readFileSync(manifest.token_file, 'utf8').trim() };
 };
+/**
+ * The daemon for review and land; exits 2 when it is not running or, unless the command only
+ * stops work, has to restart first.
+ */
+const running = async (stopsOnly = false) => {
+  const stopped = () => notRunning(directory);
+  let manifest: { url: string; token_file: string; pid?: number };
+  try {
+    manifest = JSON.parse(
+      readFileSync(path.join(directory, 'daemon.json'), 'utf8'),
+    ) as typeof manifest;
+  } catch {
+    return stopped();
+  }
+  try {
+    if (manifest.pid !== undefined) process.kill(manifest.pid, 0);
+  } catch (error) {
+    // EPERM: the process lives under another user.
+    if ((error as { code?: string }).code !== 'EPERM') return stopped();
+  }
+  const health = await readHealth(manifest.url);
+  if (!health) return stopped();
+  if (!stopsOnly) stopForRestart(health);
+  if (health.version !== PANTHEON_VERSION)
+    console.error(
+      `The daemon runs ${health.version} and this CLI is ${PANTHEON_VERSION}; run pnpm relaunch to load the new code.`,
+    );
+  let token: string;
+  try {
+    token = readFileSync(manifest.token_file, 'utf8').trim();
+  } catch {
+    return stopped();
+  }
+  return { url: manifest.url, token, dataDir: directory };
+};
 try {
   if (positionals[0] === 'mcp') {
     const variable = values.personal
@@ -77,9 +120,13 @@ try {
       : await createMcpServer(url, token);
     await server.connect(new StdioServerTransport());
   } else if (positionals[0] === 'review') {
-    process.exitCode = await review(connect, positionals.slice(1), values);
+    process.exitCode = await review(running, positionals.slice(1), values);
   } else if (positionals[0] === 'land') {
-    process.exitCode = await land(connect, positionals.slice(1), values);
+    process.exitCode = await land(
+      () => running(values.cancel === true),
+      positionals.slice(1),
+      values,
+    );
   } else {
     const manifest = connect(),
       token = manifest.token,

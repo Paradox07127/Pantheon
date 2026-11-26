@@ -3,11 +3,18 @@ import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { Review, ReviewFinding } from '@pantheon/domain';
-import { command, USER_PRINCIPAL_ID, type CommandType } from '@pantheon/protocol';
+import {
+  command,
+  USER_PRINCIPAL_ID,
+  type CommandType,
+  type RuntimeStatus,
+} from '@pantheon/protocol';
 
 export interface Daemon {
   url: string;
   token: string;
+  /** The data directory review and land found the daemon in. */
+  dataDir?: string;
 }
 
 export const reviewUsage =
@@ -23,6 +30,17 @@ export const resolveUsage = `review resolve REVIEW_ID FINDING_ID ${outcomes.join
 export const usageError = (message: string): never => {
   console.error(message);
   process.exit(64);
+};
+
+/** The value as one shell word. */
+export const quote = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`;
+
+/** Exits 2 saying no daemon runs for the data directory. */
+export const notRunning = (directory: string): never => {
+  console.error(
+    `Pantheon daemon is not running (data dir ${directory}). Open the app, or run pnpm relaunch in the Pantheon repo.`,
+  );
+  return process.exit(2);
 };
 
 const git = (...args: string[]) => spawnSync('git', args, { encoding: 'utf8' });
@@ -190,37 +208,116 @@ export const sendCommand = async (
   timeout: number,
   expectedRevision: number | null = null,
 ) => {
-  const response = await fetch(new URL('/v1/commands', daemon.url), {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${daemon.token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(command(USER_PRINCIPAL_ID, type, input, expectedRevision)),
-    signal: AbortSignal.timeout(timeout),
-  });
-  return { ok: response.ok, body: (await response.json()) as { receipt: unknown } };
+  try {
+    const response = await fetch(new URL('/v1/commands', daemon.url), {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${daemon.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(command(USER_PRINCIPAL_ID, type, input, expectedRevision)),
+      signal: AbortSignal.timeout(timeout),
+    });
+    return { ok: response.ok, body: (await response.json()) as { receipt: unknown } };
+  } catch (error) {
+    if (daemon.dataDir !== undefined && !(await readHealth(daemon.url))) notRunning(daemon.dataDir);
+    throw error;
+  }
 };
 
-/** Reads the query once a second until done; Ctrl-C only stops the wait. */
+/**
+ * Reads the query once a second until done; Ctrl-C only stops the wait. A read that fails while no
+ * daemon answers /health exits 2.
+ */
 export const poll = async <T>(
   daemon: Daemon,
   method: string,
   key: string,
   id: string,
   done: (value: T) => boolean,
-  each: (value: T) => void = () => {},
+  each: (value: T) => void | Promise<void> = () => {},
 ) => {
   const url = new URL(`/v1/${method}`, daemon.url);
   url.searchParams.set(key, id);
   for (;;) {
     await delay(1000);
-    const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${daemon.token}` },
-      signal: AbortSignal.timeout(5000),
-    });
-    const value = (await response.json()) as T;
+    let response: Response, value: T;
+    try {
+      response = await fetch(url, {
+        headers: { Authorization: `Bearer ${daemon.token}` },
+        signal: AbortSignal.timeout(5000),
+      });
+      value = (await response.json()) as T;
+    } catch (error) {
+      if (daemon.dataDir !== undefined && !(await readHealth(daemon.url)))
+        notRunning(daemon.dataDir);
+      throw error;
+    }
     if (!response.ok) throw new Error(JSON.stringify(value));
-    each(value);
+    await each(value);
     if (done(value)) return value;
   }
+};
+
+/** The /health of the daemon at the url; undefined when no Pantheon daemon answers it. */
+export const readHealth = async (url: string) => {
+  try {
+    const response = await fetch(new URL('/health', url), { signal: AbortSignal.timeout(3000) });
+    const health = (await response.json()) as {
+      service?: string;
+      version?: string;
+      restart_required?: string;
+    };
+    return response.ok && health.service === 'pantheon' ? health : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+/** Exits 2 when the daemon has to restart first. */
+export const stopForRestart = (health: { restart_required?: string } | undefined) => {
+  if (!health?.restart_required) return;
+  console.error(`${health.restart_required} Restart the daemon: pnpm relaunch`);
+  process.exit(2);
+};
+
+/** How often a wait reads whether the daemon has to restart and its runtimes are connected. */
+export const STATUS_MS = 15_000;
+
+/**
+ * Says once when a runtime the review waits for disconnects, and once when it connects again, also
+ * after the review stopped waiting for it; a status read that fails is tried again at the next read.
+ */
+const watchRuntimes = (daemon: Daemon) => {
+  const down = new Set<string>();
+  let readAt = -Infinity;
+  return async (review: Review) => {
+    if (Date.now() - readAt < STATUS_MS) return;
+    readAt = Date.now();
+    const [health, statuses] = await Promise.all([
+      readHealth(daemon.url),
+      fetch(new URL('/v1/runtime.status', daemon.url), {
+        headers: { Authorization: `Bearer ${daemon.token}` },
+        signal: AbortSignal.timeout(5000),
+      })
+        .then(async (response) => (response.ok ? ((await response.json()) as unknown) : undefined))
+        .then((body) => (Array.isArray(body) ? (body as RuntimeStatus[]) : undefined))
+        .catch(() => undefined),
+    ]);
+    stopForRestart(health);
+    const waiting = (review.executions ?? [])
+      .filter((execution) => execution.state === 'queued' || execution.state === 'running')
+      .map((execution) => execution.runtime);
+    for (const { runtime, connection, enabled } of statuses ?? []) {
+      // A disabled runtime has no adapter, so it reads as disconnected while its turn still runs.
+      if ((!waiting.includes(runtime) && !down.has(runtime)) || enabled === false) continue;
+      if (connection?.connected === false && !down.has(runtime)) {
+        // Only an outage the daemon recorded has a time and a retry; a missing executable has neither.
+        down.add(runtime);
+        console.error(
+          `${runtime} is disconnected${connection.disconnected_since ? ` since ${connection.disconnected_since}` : ''}${connection.reason ? ` (${connection.reason})` : ''}; the review waits ${connection.disconnected_since ? 'while the daemon retries it' : 'for it'}.`,
+        );
+      } else if (connection?.connected === true && down.delete(runtime))
+        console.error(`${runtime} reconnected`);
+    }
+  };
 };
 
 const printFinding = (finding: ReviewFinding) => {
@@ -236,12 +333,16 @@ const printFinding = (finding: ReviewFinding) => {
 };
 
 /** Records the user's outcome on one finding, at the review's current revision. */
-const resolve = async (connect: () => Daemon, positionals: string[], note?: string) => {
+const resolve = async (
+  connect: () => Daemon | Promise<Daemon>,
+  positionals: string[],
+  note?: string,
+) => {
   const [reviewId, findingId, outcome] = positionals;
   if (positionals.length !== 3 || !outcomes.includes(outcome!))
     return usageError(`Usage: pantheon ${resolveUsage}`);
   try {
-    const daemon = connect();
+    const daemon = await connect();
     const url = new URL('/v1/review.read', daemon.url);
     url.searchParams.set('review_id', reviewId!);
     const read = await fetch(url, {
@@ -275,7 +376,7 @@ const resolve = async (connect: () => Daemon, positionals: string[], note?: stri
 };
 
 export const review = async (
-  connect: () => Daemon,
+  connect: () => Daemon | Promise<Daemon>,
   positionals: string[],
   values: {
     base?: string;
@@ -284,6 +385,7 @@ export const review = async (
     note?: string;
     focus?: string;
     paths?: string;
+    'data-dir'?: string;
   },
 ) => {
   if (positionals[0] === 'resolve') return resolve(connect, positionals.slice(1), values.note);
@@ -333,7 +435,7 @@ export const review = async (
     const label = `PART ${index + 1}/${parts.length}`;
     let id: string | undefined;
     try {
-      const daemon = connect();
+      const daemon = await connect();
       const sent = await sendCommand(
         daemon,
         'review.range',
@@ -358,12 +460,14 @@ export const review = async (
       id = started.id;
       if (parts.length > 1) console.log(`${label} ${started.id}`);
       console.error(`Review ${started.id} started: ${started.runtimes.join(', ')}`);
+      const watch = watchRuntimes(daemon);
       const result = await poll<Review>(
         daemon,
         'review.read',
         'review_id',
         started.id,
         (value) => value.state !== 'running',
+        (value) => (value.state === 'running' ? watch(value) : undefined),
       );
       const blocking = result.findings.filter(unresolvedBlocking).length;
       settled.push({ label, id: result.id, code: printReview(result, started.runtimes), blocking });
@@ -407,7 +511,9 @@ const printReview = (result: Review, asked: string[]) => {
   );
   for (const runtime of reviewers) {
     const mine = verdicts.filter((verdict) => verdict.runtime === runtime);
-    if (!mine.length) console.log(`${runtime}: no verdict`);
+    const failed = result.executions?.find((execution) => execution.runtime === runtime);
+    const why = [failed?.error_code, failed?.error?.split('\n')[0]].filter(Boolean).join(': ');
+    if (!mine.length) console.log(`${runtime}: no verdict${why ? ` (${why})` : ''}`);
     for (const verdict of mine) console.log(`${runtime}: ${verdict.verdict} — ${verdict.summary}`);
   }
   if (result.incomplete) console.log(`incomplete: ${result.incomplete}`);

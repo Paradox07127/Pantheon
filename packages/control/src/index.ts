@@ -121,7 +121,12 @@ import { personalKeyList } from './personal-keys.js';
 import type { ProtectionPaths } from './protection.js';
 import { readProcess } from './process.js';
 import { stopChildProcesses } from './child-processes.js';
-import { reconnectRuntime, refreshRuntimeStatus, runtimeStatus } from './runtime-status.js';
+import {
+  reconnectRuntime,
+  refreshRuntimeStatus,
+  runtimeStatus,
+  stopRuntimeRetries,
+} from './runtime-status.js';
 import {
   mcpAppResource,
   mcpAppToolCall,
@@ -335,6 +340,11 @@ export class Control extends EventEmitter {
       failpoint,
       busy: false,
       closing: false,
+      runtimeChange: <T>(work: () => Promise<T>) => {
+        const next = this.runtimeConfigChanges.then(work, work);
+        this.runtimeConfigChanges = next;
+        return next;
+      },
       changed: () => {
         this.terminals.reapSessions();
         this.emit('events', this.store.cursor());
@@ -589,8 +599,7 @@ export class Control extends EventEmitter {
               );
         return apply(() => result);
       };
-      this.runtimeConfigChanges = this.runtimeConfigChanges.then(update, update);
-      return this.runtimeConfigChanges;
+      return this.ctx.runtimeChange(update);
     }
     if (command.type === 'mcp.app.tool_call') {
       if ([key, commandKey].some((k) => this.store.receipt(k))) return apply();
@@ -609,8 +618,7 @@ export class Control extends EventEmitter {
           command,
           input as ReturnType<(typeof inputSchemas)['runtime.config.set']['parse']>,
         ).then(apply);
-      this.runtimeConfigChanges = this.runtimeConfigChanges.then(update, update);
-      return this.runtimeConfigChanges;
+      return this.ctx.runtimeChange(update);
     }
     const refs = (input as { refs?: { kind: string; number?: number }[] }).refs;
     if (
@@ -1072,6 +1080,7 @@ export class Control extends EventEmitter {
   async shutdown(): Promise<void> {
     const ctx = this.ctx;
     ctx.closing = true;
+    stopRuntimeRetries(ctx);
     this.terminals.shutdown();
     await this.search.close();
     stopWorkspaceProvisioning(ctx);

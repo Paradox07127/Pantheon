@@ -148,3 +148,28 @@ it('routes runtime, MCP and GitHub requests and streams runtime loss to a projec
     vi.restoreAllMocks();
   }
 });
+
+it('asks for a restart on /health once the node the daemon runs is gone', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'pantheon-health-node-'));
+  const daemon = await startDaemon({
+    directory: path.join(root, 'state'),
+    adapters: [new FixtureAdapter()],
+    userConfigDir: path.join(root, 'config'),
+  });
+  const execPath = process.execPath;
+  try {
+    expect(await (await fetch(daemon.url + '/health')).json()).not.toHaveProperty(
+      'restart_required',
+    );
+    const gone = path.join(root, 'node-removed-by-upgrade');
+    process.execPath = gone;
+    expect(await (await fetch(daemon.url + '/health')).json()).toMatchObject({
+      service: 'pantheon',
+      restart_required: expect.stringContaining(gone),
+    });
+  } finally {
+    process.execPath = execPath;
+    await daemon.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});

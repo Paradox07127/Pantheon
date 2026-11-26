@@ -53,8 +53,11 @@ function spec(role: Role, nativeState = true): SessionSpec {
   };
 }
 
+/** `unanswered` names the requests the server reads and never answers; `answers` replaces results by method. */
 function fakeServer(
   mcpServers: { name: string; tools: Record<string, unknown> | null; toolsError?: string }[] = [],
+  unanswered: string[] = [],
+  answers: Record<string, unknown> = {},
 ) {
   const child = Object.assign(new EventEmitter(), {
     stdin: new PassThrough(),
@@ -67,7 +70,7 @@ function fakeServer(
   child.stdin.on('data', (data) => {
     const frame = JSON.parse(String(data)) as Frame;
     frames.push(frame);
-    if (!frame.method || frame.id === undefined) return;
+    if (!frame.method || frame.id === undefined || unanswered.includes(frame.method)) return;
     const config = frame.params?.config as Record<string, unknown> | undefined;
     const results: Record<string, unknown> = {
       initialize: {},
@@ -86,6 +89,7 @@ function fakeServer(
       'turn/start': { turn: { id: 'native-turn' } },
     };
     results['thread/resume'] = results['thread/start'];
+    Object.assign(results, answers);
     if (!(frame.method in results)) throw new Error(`Unexpected client request: ${frame.method}`);
     send({ id: frame.id, result: results[frame.method] } as Frame);
   });
@@ -107,7 +111,36 @@ function fakeServer(
 it('checks a fresh Codex connection without starting a thread or turn', async () => {
   const f = fakeServer();
   await new CodexAdapter('fake-codex').reconnect();
-  expect(f.frames.map((frame) => frame.method)).toEqual(['initialize', 'initialized']);
+  expect(f.frames.map((frame) => frame.method).sort()).toEqual([
+    'account/read',
+    'config/read',
+    'initialize',
+    'initialized',
+  ]);
+});
+
+it.each(['account/read', 'config/read'])(
+  'fails a Codex reconnect whose %s of the start check times out after initialize answers',
+  async (method) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    cleanup.push(() => void vi.useRealTimers());
+    const f = fakeServer([], [method]);
+    const reconnected = new CodexAdapter('fake-codex').reconnect().then(
+      () => 'reconnected',
+      (error: Error) => error.message,
+    );
+    await vi.waitFor(() => expect(f.frames.map((frame) => frame.method)).toContain(method));
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(await reconnected).toBe(`RPC timeout: ${method}`);
+  },
+);
+
+it.each([
+  ['an API key account', { 'account/read': { account: { type: 'apiKey' } } }],
+  ['a custom provider', { 'config/read': { config: { model_provider: 'custom' } } }],
+])('reconnects a Codex server that answers the start check with %s', async (_, answers) => {
+  fakeServer([], [], answers);
+  await expect(new CodexAdapter('fake-codex').reconnect()).resolves.toBeUndefined();
 });
 
 it('reports Codex MCP catalog success and its reported failure reason', async () => {

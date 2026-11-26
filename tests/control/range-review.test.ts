@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, it } from 'vitest';
 import { FixtureAdapter } from '@pantheon/adapters';
+import { DomainError } from '@pantheon/domain';
 import type {
   AgentEvent,
   AgentEventSink,
@@ -283,6 +284,25 @@ it('reads a settled range review with its verdict and findings and tells no lead
   expect(() => w.control.reviewRead(user, 'no-such-review')).toThrow(
     expect.objectContaining({ code: 'not_found' }),
   );
+});
+
+it('reads the error code of a reviewer that failed before it launched', async () => {
+  const { w, request } = await rangeFixture();
+  const unlaunched = addReviewer(w, 'unlaunched-reviewer');
+  unlaunched.start = () =>
+    Promise.reject(new DomainError('runtime_unavailable', 'unlaunched-reviewer is signed out'));
+  const review = await request({ runtimes: [unlaunched.name] });
+  await eventually(
+    () => w.control.reviewRead(user, review.id).executions?.[0]?.state === 'failed',
+    () => w.control.tick(),
+  );
+  expect(w.control.reviewRead(user, review.id).executions).toEqual([
+    expect.objectContaining({
+      runtime: unlaunched.name,
+      state: 'failed',
+      error_code: 'runtime_unavailable',
+    }),
+  ]);
 });
 
 const usageLimitHit = {

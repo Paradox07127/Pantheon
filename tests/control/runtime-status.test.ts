@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -9,6 +9,8 @@ import { ArtifactFiles, Store } from '@pantheon/store';
 import { user } from '../helpers.js';
 import type { ControlContext } from '../../packages/control/dist/context.js';
 import {
+  reconnectRuntime,
+  refreshRuntimeStatus,
   runtimeConnection,
   updateRuntimeConnection,
 } from '../../packages/control/dist/runtime-status.js';
@@ -31,23 +33,29 @@ const found = (version: string): Found => ({
 class CheckedAdapter extends FixtureAdapter {
   name = 'checked';
   preflight = vi.fn<() => Promise<Found>>();
+  reconnect = vi.fn<() => Promise<void>>();
 }
 
-function setup() {
+function setup(config?: Record<string, unknown>) {
   const root = mkdtempSync(path.join(os.tmpdir(), 'pantheon-runtime-status-'));
+  if (config) writeFileSync(path.join(root, 'config.json'), JSON.stringify(config));
   let clock = Date.UTC(2026, 0, 2, 3, 4, 5);
   const store = new Store(path.join(root, 'state/control.sqlite'), () => clock),
     checked = new CheckedAdapter(),
-    control = new Control(store, new ArtifactFiles(path.join(root, 'state/artifacts')), [
-      new FixtureAdapter(),
-      checked,
-    ]);
+    control = new Control(
+      store,
+      new ArtifactFiles(path.join(root, 'state/artifacts')),
+      [new FixtureAdapter(), checked],
+      undefined,
+      { userConfigDir: root },
+    );
   cleanups.push(async () => {
     await control.shutdown();
     store.close();
     rmSync(root, { recursive: true, force: true });
   });
   return {
+    root,
     control,
     checked,
     store,
@@ -298,4 +306,225 @@ it('does not store or publish a connected update for a runtime that was never ma
   updateRuntimeConnection(f.ctx, 'checked', true);
   expect(f.ctx.runtimeStatus.has('checked')).toBe(false);
   expect(f.store.cursor()).toBe(cursor);
+});
+
+const RETRY_WAITS = [30_000, 60_000, 120_000, 300_000, 600_000, 600_000];
+
+it('retries a disconnected runtime after 30 s, 1, 2 and 5 min, then every 10 min, and from 30 s again once it connected', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  try {
+    const f = setup();
+    f.checked.reconnect.mockRejectedValue(new Error('account/read timed out'));
+    updateRuntimeConnection(f.ctx, 'checked', false, 'transport closed');
+    let cursor = f.store.cursor();
+    for (const [index, wait] of RETRY_WAITS.entries()) {
+      await vi.advanceTimersByTimeAsync(wait - 1);
+      expect(f.checked.reconnect).toHaveBeenCalledTimes(index);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(f.checked.reconnect).toHaveBeenCalledTimes(index + 1);
+      // Only the first failure changes the reason, so only it publishes.
+      expect(f.store.cursor() > cursor).toBe(index === 0);
+      cursor = f.store.cursor();
+    }
+    expect(runtimeConnection(f.ctx, 'checked')).toMatchObject({
+      connected: false,
+      reason: 'account/read timed out',
+    });
+    f.checked.reconnect.mockResolvedValue(undefined);
+    await vi.advanceTimersByTimeAsync(600_000);
+    expect(f.checked.reconnect).toHaveBeenCalledTimes(RETRY_WAITS.length + 1);
+    expect(runtimeConnection(f.ctx, 'checked').connected).toBe(true);
+    await vi.advanceTimersByTimeAsync(3_600_000);
+    expect(f.checked.reconnect).toHaveBeenCalledTimes(RETRY_WAITS.length + 1);
+    f.checked.reconnect.mockRejectedValue(new Error('transport closed'));
+    updateRuntimeConnection(f.ctx, 'checked', false, 'transport closed');
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(f.checked.reconnect).toHaveBeenCalledTimes(RETRY_WAITS.length + 1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(f.checked.reconnect).toHaveBeenCalledTimes(RETRY_WAITS.length + 2);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('waits 30 s again after a reconnect the user asked for fails', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  try {
+    const f = setup();
+    f.checked.reconnect.mockRejectedValue(new Error('transport closed'));
+    updateRuntimeConnection(f.ctx, 'checked', false, 'transport closed');
+    await vi.advanceTimersByTimeAsync(30_000 + 50_000);
+    expect(f.checked.reconnect).toHaveBeenCalledTimes(1);
+    await expect(reconnectRuntime(f.ctx, user, 'checked')).rejects.toThrow(
+      'checked: transport closed',
+    );
+    expect(f.checked.reconnect).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(f.checked.reconnect).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(f.checked.reconnect).toHaveBeenCalledTimes(3);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('keeps retrying on its own after a reconnect the user asked for cannot read the config', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  try {
+    const f = setup();
+    f.checked.reconnect.mockRejectedValue(new Error('transport closed'));
+    updateRuntimeConnection(f.ctx, 'checked', false, 'transport closed');
+    writeFileSync(path.join(f.root, 'config.json'), '{');
+    await expect(reconnectRuntime(f.ctx, user, 'checked')).rejects.toThrow();
+    rmSync(path.join(f.root, 'config.json'));
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(f.checked.reconnect).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('starts a retry only after the runtime changes queued before it end', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  try {
+    const f = setup();
+    f.checked.reconnect.mockRejectedValue(new Error('transport closed'));
+    updateRuntimeConnection(f.ctx, 'checked', false, 'transport closed');
+    let release!: () => void;
+    const change = f.ctx.runtimeChange(() => new Promise<void>((done) => (release = done)));
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(f.checked.reconnect).not.toHaveBeenCalled();
+    release();
+    await change;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.checked.reconnect).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('does not register an adapter a retry found after the daemon began to stop', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  try {
+    const f = setup();
+    let found!: (adapter: unknown) => void;
+    const create = vi.fn(() => new Promise((done) => (found = done)));
+    Object.assign(f.ctx, { createRuntimeAdapter: create });
+    updateRuntimeConnection(f.ctx, 'codex', false, 'codex is not installed');
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(create).toHaveBeenCalledTimes(1);
+    f.ctx.closing = true;
+    const cursor = f.store.cursor();
+    found({ name: 'codex', report: f.checked.report, reconnect: vi.fn() });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.ctx.adapters.has('codex')).toBe(false);
+    expect(f.store.cursor()).toBe(cursor);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('does not start a retry for a runtime that disconnects while the daemon stops', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  try {
+    const f = setup();
+    f.ctx.closing = true;
+    const timers = vi.getTimerCount();
+    updateRuntimeConnection(f.ctx, 'checked', false, 'transport closed');
+    expect(vi.getTimerCount()).toBe(timers);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('reads the preflight again once a runtime it found uninstalled reconnects', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  try {
+    const f = setup();
+    f.checked.preflight.mockResolvedValue({ ...found('1.0.0'), installed: false });
+    await refreshRuntimeStatus(f.ctx);
+    f.checked.preflight.mockResolvedValue(found('1.0.0'));
+    f.checked.reconnect.mockResolvedValue(undefined);
+    updateRuntimeConnection(f.ctx, 'checked', false, 'checked is not installed');
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(runtimeConnection(f.ctx, 'checked').connected).toBe(true);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('does not retry a disabled runtime on its own', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  try {
+    const f = setup({ version: 1, runtimes: { checked: { enabled: false } } });
+    f.checked.reconnect.mockRejectedValue(new Error('transport closed'));
+    updateRuntimeConnection(f.ctx, 'checked', false, 'transport closed');
+    await vi.advanceTimersByTimeAsync(3_600_000);
+    expect(f.checked.reconnect).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('retries again after a runtime whose status was reset reconnected on its own and then disconnects', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  try {
+    const f = setup();
+    updateRuntimeConnection(f.ctx, 'checked', false, 'transport closed');
+    // Setting a runtime's config forgets its status.
+    f.ctx.runtimeStatus.delete('checked');
+    f.checked.reconnect.mockResolvedValue(undefined);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(f.checked.reconnect).toHaveBeenCalledTimes(1);
+    f.checked.reconnect.mockRejectedValue(new Error('transport closed'));
+    updateRuntimeConnection(f.ctx, 'checked', false, 'transport closed');
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(f.checked.reconnect).toHaveBeenCalledTimes(2);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('keeps retrying at the next wait when the config cannot be read at a retry', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  try {
+    const f = setup();
+    f.checked.reconnect.mockRejectedValue(new Error('transport closed'));
+    updateRuntimeConnection(f.ctx, 'checked', false, 'transport closed');
+    writeFileSync(path.join(f.root, 'config.json'), '{');
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(f.checked.reconnect).not.toHaveBeenCalled();
+    rmSync(path.join(f.root, 'config.json'));
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(f.checked.reconnect).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(f.checked.reconnect).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('finds the adapter of a known runtime again at a retry, and never retries an unknown name', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  try {
+    const f = setup();
+    const reconnect = vi.fn().mockResolvedValue(undefined);
+    const create = vi.fn(async (_runtime: string) => ({
+      name: 'codex',
+      report: f.checked.report,
+      reconnect,
+    }));
+    Object.assign(f.ctx, { createRuntimeAdapter: create });
+    // An upgrade removed the binary, so the daemon holds no adapter for it.
+    updateRuntimeConnection(f.ctx, 'codex', false, 'codex is not installed');
+    updateRuntimeConnection(f.ctx, 'codx', false, 'Unknown runtime codx');
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(create.mock.calls.map(([runtime]) => runtime)).toEqual(['codex']);
+    expect(reconnect).toHaveBeenCalledTimes(1);
+    expect(f.ctx.runtimeStatus.get('codex')?.connection?.connected).toBe(true);
+    await vi.advanceTimersByTimeAsync(3_600_000);
+    expect(create).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.useRealTimers();
+  }
 });

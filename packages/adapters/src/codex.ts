@@ -1508,6 +1508,11 @@ export class CodexAdapter implements HarnessAdapter {
     const rpc = new JsonRpcProcess(this.binary, [...this.args, 'app-server']);
     try {
       await rpc.initialize();
+      // Preflight marks Codex down when these reads fail; a refused account or provider is not an outage.
+      await checkBillingChannel(rpc, { cwd: os.tmpdir() }).catch((error: unknown) => {
+        if (!(error instanceof DomainError && error.code === 'billing_channel_mismatch'))
+          throw error;
+      });
     } finally {
       await rpc.close();
     }

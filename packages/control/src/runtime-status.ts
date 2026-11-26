@@ -16,6 +16,10 @@ import { stopTurn } from './session.js';
 
 const refreshing = new WeakMap<ControlContext, Promise<void>>();
 const checking = new WeakMap<ControlContext, Map<string, Promise<void>>>();
+/** The waits before each reconnect the daemon tries on its own; the last one repeats until it connects. */
+const RETRY_MS = [30_000, 60_000, 120_000, 300_000, 600_000];
+type Retry = { timer?: ReturnType<typeof setTimeout> };
+const retrying = new WeakMap<ControlContext, Map<string, Retry>>();
 
 /**
  * Runs every runtime's preflight, and the ACP initialize of each ACP-profile runtime; a refresh
@@ -177,6 +181,13 @@ export function updateRuntimeConnection(
   reason?: string,
 ): void {
   const previous = ctx.runtimeStatus.get(runtime);
+  if (connected) stopRetry(ctx, runtime);
+  else if (
+    !ctx.closing &&
+    (ctx.adapters.has(runtime) || knownRuntime(runtime)) &&
+    !retrying.get(ctx)?.has(runtime)
+  )
+    retryLater(ctx, runtime, 0);
   if (
     (connected && !previous?.connection) ||
     (previous?.connection?.connected === connected && previous.connection.reason === reason)
@@ -210,6 +221,48 @@ export function updateRuntimeConnection(
     }
   });
   ctx.changed();
+}
+
+function stopRetry(ctx: ControlContext, runtime: string): void {
+  clearTimeout(retrying.get(ctx)?.get(runtime)?.timer);
+  retrying.get(ctx)?.delete(runtime);
+}
+
+/** Stops every reconnect the daemon would try on its own. */
+export function stopRuntimeRetries(ctx: ControlContext): void {
+  for (const runtime of retrying.get(ctx)?.keys() ?? []) stopRetry(ctx, runtime);
+}
+
+/** Tries the reconnect of a disconnected runtime after the wait of its attempt, and again while it fails. */
+function retryLater(ctx: ControlContext, runtime: string, attempt: number): void {
+  const runtimes = retrying.get(ctx) ?? new Map<string, Retry>();
+  retrying.set(ctx, runtimes);
+  stopRetry(ctx, runtime);
+  const retry: Retry = {};
+  runtimes.set(runtime, retry);
+  retry.timer = setTimeout(
+    () =>
+      void ctx
+        .runtimeChange(async () => {
+          // A reconnect or config change queued before this one may have settled the runtime.
+          if (runtimes.get(runtime) !== retry) return;
+          const enabled = readUserConfig(ctx.userConfigDir).runtimes?.[runtime]?.enabled !== false;
+          if (ctx.closing || !enabled) return stopRetry(ctx, runtime);
+          // A failure is stored on the runtime's connection.
+          await reconnectNow(ctx, runtime).catch(() => {});
+          if (
+            runtimes.get(runtime) === retry &&
+            ctx.runtimeStatus.get(runtime)?.connection?.connected === false
+          )
+            retryLater(ctx, runtime, attempt + 1);
+        })
+        .catch((error: unknown) => {
+          ctx.diagnostic(error);
+          if (runtimes.get(runtime) === retry) retryLater(ctx, runtime, attempt + 1);
+        }),
+    RETRY_MS[Math.min(attempt, RETRY_MS.length - 1)],
+  );
+  retry.timer.unref();
 }
 
 export function isRuntimeHeld(ctx: ControlContext, runtime: string): boolean {
@@ -253,6 +306,9 @@ function restoreRuntimeConnection(
             ctx.store.enqueue('session.turn', { turn_id: turn.id });
         }
       });
+      // The runtime runs again, but its last preflight still lists it as not installed.
+      if (!ctx.closing && ctx.runtimeStatus.get(runtime)?.installed === false)
+        await refreshRuntimeStatus(ctx).catch(ctx.diagnostic);
     })
     .catch((error: unknown) => {
       updateRuntimeConnection(
@@ -271,20 +327,31 @@ function restoreRuntimeConnection(
   return check;
 }
 
+const knownRuntime = (runtime: string) =>
+  (nativeRuntimes as readonly string[]).includes(runtime) || Object.hasOwn(acpProfiles, runtime);
+
 export async function reconnectRuntime(ctx: ControlContext, principal: Principal, runtime: string) {
   userOnly(principal);
+  try {
+    await reconnectNow(ctx, runtime);
+  } catch (error) {
+    // After a failure the user saw, the next retry waits the first step again.
+    if (retrying.get(ctx)?.has(runtime)) retryLater(ctx, runtime, 0);
+    throw error;
+  }
+  return { runtime, connected: true };
+}
+
+/** Finds the runtime's adapter again if it has none, and reconnects it; throws while it stays down. */
+async function reconnectNow(ctx: ControlContext, runtime: string): Promise<void> {
   const config = readUserConfig(ctx.userConfigDir).runtimes?.[runtime] ?? {};
   requireThat(config.enabled !== false, 'invalid_state', `${runtime} is disabled`);
   let adapter = ctx.adapters.get(runtime);
   try {
     if (!adapter && ctx.createRuntimeAdapter) {
-      requireThat(
-        (nativeRuntimes as readonly string[]).includes(runtime) ||
-          Object.hasOwn(acpProfiles, runtime),
-        'invalid_input',
-        `Unknown runtime ${runtime}`,
-      );
+      requireThat(knownRuntime(runtime), 'invalid_input', `Unknown runtime ${runtime}`);
       adapter = await ctx.createRuntimeAdapter(runtime, config);
+      requireThat(!ctx.closing, 'invalid_state', 'The daemon is stopping');
       if (adapter) ctx.adapters.set(runtime, adapter);
     }
     requireThat(
@@ -294,14 +361,13 @@ export async function reconnectRuntime(ctx: ControlContext, principal: Principal
     );
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    updateRuntimeConnection(ctx, runtime, false, reason);
+    if (!ctx.closing) updateRuntimeConnection(ctx, runtime, false, reason);
     throw new DomainError('runtime_reconnect_failed', `${runtime}: ${reason}`);
   }
   await restoreRuntimeConnection(ctx, runtime, adapter.reconnect.bind(adapter));
   const connection = ctx.runtimeStatus.get(runtime)?.connection;
   if (connection?.connected === false)
     throw new DomainError('runtime_reconnect_failed', `${runtime}: ${connection.reason}`);
-  return { runtime, connected: true };
 }
 
 /** Account-wide updates from any session replace the windows they report. */

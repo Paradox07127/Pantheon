@@ -491,10 +491,24 @@ export function reviewExecutionReader(ctx: ControlContext, projectId: string) {
     if (turn.project_id === projectId && turn.kind === 'send' && !turn.rolled_back)
       turns.set(turn.session_id, turn);
   const errors = new Map<string, string>();
+  const failureCodes = new Map<string, string>();
   for (const event of ctx.store.kindEvents(projectId, ['turn.failed', 'turn.cancelled'])) {
-    const error = (event.payload as { error?: unknown } | undefined)?.error;
+    const { error, error_code } =
+      (event.payload as { error?: unknown; error_code?: unknown } | undefined) ?? {};
     if (typeof error === 'string') errors.set(event.aggregate_id, error.slice(0, 500));
+    if (event.kind === 'turn.failed' && typeof error_code === 'string')
+      failureCodes.set(event.aggregate_id, error_code);
   }
+  // The runtime's own code comes on the session's completion event of the turn; a turn that failed
+  // to launch has only the code of its failure.
+  const codeOf = (turn: SessionTurn) =>
+    (
+      ctx.store
+        .statement(
+          "SELECT payload ->> '$.error_code' AS code FROM events WHERE aggregate_id=? AND kind='agent.turn.completed' AND payload ->> '$.turn_id'=? ORDER BY sequence DESC LIMIT 1",
+        )
+        .get(turn.session_id, turn.id) as { code: string | null } | undefined
+    )?.code;
   return (review: Review): NonNullable<Review['executions']> =>
     review.runtimes.map((name, index) => {
       const session = review.session_ids
@@ -502,11 +516,14 @@ export function reviewExecutionReader(ctx: ControlContext, projectId: string) {
         .find((session) => session?.runtime === name);
       const turn = session && turns.get(session.id);
       const error = turn && (errors.get(turn.id) ?? turn.delivery_reason);
+      const code =
+        turn?.state === 'failed' ? (codeOf(turn) ?? failureCodes.get(turn.id)) : undefined;
       return {
         runtime: name,
         session_id: session?.id ?? review.session_ids[index],
         state: turn?.state ?? 'unknown',
         ...(error ? { error: error.slice(0, 500) } : {}),
+        ...(code ? { error_code: code } : {}),
       };
     });
 }

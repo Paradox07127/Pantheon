@@ -4,8 +4,12 @@ import {
   currentBranch,
   poll,
   projectRoot,
+  quote,
+  readHealth,
   sendCommand,
   sharedRef,
+  STATUS_MS,
+  stopForRestart,
   usageError,
   type Daemon,
 } from './review.js';
@@ -20,8 +24,6 @@ const findGate = (projectId: string) =>
   `Find gate commands: pantheon command --json '${JSON.stringify(
     command(USER_PRINCIPAL_ID, 'project.baseline.start', { project_id: projectId }),
   )}'`;
-
-const quote = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`;
 
 /** The line that lands the branch again, letting it change the files that protect the gate or drop tests. */
 const allowGateChange = (what: string, branch: string, message: string | undefined) =>
@@ -63,7 +65,7 @@ const cancel = async (daemon: Daemon, root: string, branch: string) => {
 };
 
 export const land = async (
-  connect: () => Daemon,
+  connect: () => Daemon | Promise<Daemon>,
   positionals: string[],
   values: { message?: string; 'allow-gate-change'?: boolean; cancel?: boolean },
 ) => {
@@ -72,7 +74,7 @@ export const land = async (
     ? sharedRef(positionals[0])
     : (currentBranch() ?? usageError('HEAD is detached; name the branch to land.'));
   const root = projectRoot(),
-    daemon = connect();
+    daemon = await connect();
   if (values.cancel) return cancel(daemon, root, branch);
   const sent = await sendCommand(
     daemon,
@@ -93,15 +95,21 @@ export const land = async (
   }
   const started = sent.body.receipt as Landing;
   console.error(`Landing ${started.id} ${started.state}`);
+  const ended = (value: Landing) => ['landed', 'no_changes', 'blocked'].includes(value.state);
   let state = started.state,
-    gates = 0;
+    gates = 0,
+    healthAt = -Infinity;
   const result = await poll<Landing>(
     daemon,
     'project.landing.read',
     'landing_id',
     started.id,
-    (value) => ['landed', 'no_changes', 'blocked'].includes(value.state),
-    (value) => {
+    ended,
+    async (value) => {
+      if (!ended(value) && Date.now() - healthAt >= STATUS_MS) {
+        healthAt = Date.now();
+        stopForRestart(await readHealth(daemon.url));
+      }
       if (value.state !== state) console.error(`Landing ${value.state}`);
       state = value.state;
       const results = value.gate_results ?? [];
