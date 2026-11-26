@@ -12,6 +12,7 @@ import { useShell } from '../../store';
 import { IntroView } from '../memory/IntroView';
 import { AgentList } from './AgentList';
 import { ConductorComposer } from './ConductorComposer';
+import { PlanList } from './PlanList';
 import { mainAgent } from './project-model';
 import { StatusPanel } from './StatusPanel';
 import { UnplannedList } from './UnplannedList';
@@ -86,6 +87,7 @@ export function ProjectScreen({
             )}
             {summaries.error && <Failure error={summaries.error} onRetry={summaries.reload} />}
             {plan.error && <Failure error={plan.error} onRetry={plan.reload} />}
+            <PlanList plan={plan.read?.plan} sessions={sessions} />
             <UnplannedList rows={plan.read?.unplanned ?? null} />
             {main && <ConductorComposer key={main.id} main={main} />}
           </div>
