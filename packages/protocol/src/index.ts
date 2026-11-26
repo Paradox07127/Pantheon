@@ -2268,6 +2268,8 @@ export interface ProjectChanges {
 export interface PlanItemView extends PlanItem {
   stage: 'plan' | 'write' | 'checks' | 'review' | 'merge' | 'landed' | 'abandoned' | 'dropped';
   status: ChangeRow['status'] | 'not_started' | 'abandoned';
+  /** The session the row describes, the one furthest along of those the item names; absent without one. */
+  session_id?: string;
   change?: ChangeRow;
   diff?: { files: number; additions: number; deletions: number };
   /** The newest 5 gate runs, oldest first. */

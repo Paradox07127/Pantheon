@@ -466,6 +466,18 @@ it.each<
   expect((await h.itemOf()).evidence).toEqual(expected);
 });
 
+it('grades an accepted item no session worked on as accepted', async () => {
+  const h = await planFixture();
+  await h.write([item([])]);
+  await h.f.call(
+    'project.plan.accept',
+    { project_id: h.f.project.id, item_id: 'parser', accepted: true },
+    h.f.store.must<ProjectPlan>('project_plans', h.f.project.id).revision,
+  );
+
+  expect((await h.itemOf()).evidence).toEqual({ level: 'accepted' });
+});
+
 function reviewedAt(h: Harness, sessionId: string, toSha: string) {
   const review = h.review(sessionId, 'completed');
   h.f.store.update<Review>(
@@ -514,6 +526,7 @@ it('takes the session furthest along of an item that names three', async () => {
 
   expect(read).toMatchObject({ stage: 'merge', status: 'ready' });
   expect(read.change?.id).toBe(`session:${ready.id}`);
+  expect(read.session_id).toBe(ready.id);
   expect(read.diff).toEqual(read.change?.changes);
   expect(read.diff?.files).toBe(1);
 });

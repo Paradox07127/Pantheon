@@ -3,7 +3,6 @@ import type { ProjectPlanView, WorkbenchSession } from '@pantheon/protocol';
 import { Clip } from '../../components/Clip';
 import { DiffCounts } from '../../components/DiffCounts';
 import { StateGlyph } from '../../components/SessionStateIcon';
-import { changeSessionId } from '../../data/changes';
 import { useNow } from '../../data/needs-you';
 import { t } from '../../i18n';
 import { durationText } from '../../lib/time-text';
@@ -100,7 +99,7 @@ export function PlanRow({
   reason: PlanReason | null;
   now: number;
 }) {
-  const sessionId = item.change ? changeSessionId(item.change) : null;
+  const sessionId = item.session_id ?? null;
   const stage = planStage(item);
   return (
     // The title button is the keyboard path; a click elsewhere on the row opens the same session.

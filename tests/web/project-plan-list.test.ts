@@ -49,6 +49,8 @@ const item = (id: string, extra: Partial<PlanItemView> = {}): ShownPlanItem =>
     stage: 'plan',
     status: 'not_started',
     gate_runs: [],
+    // The view names the session of its change row.
+    ...(extra.change ? { session_id: extra.change.id.replace('session:', '') } : {}),
     ...extra,
   }) as ShownPlanItem;
 
@@ -310,6 +312,15 @@ describe('the plan list', () => {
     (rows[0] as ReactElement<{ onClick: () => void }>).props.onClick();
     expect(useShell.getState()).toMatchObject({ screen: 'sessions', sessionId: 'worker' });
     expect((rows[1] as ReactElement<{ onClick?: unknown }>).props.onClick).toBeUndefined();
+  });
+
+  it('opens the session the row describes, not the first the item names, while it has no change row', () => {
+    const h = list(
+      plan([item('self', { stage: 'write', session_ids: ['worker', 'lead'], session_id: 'lead' })]),
+    );
+    const button = nodes(rendered(h.value, PlanRow)[0]).find((n) => n.type === 'button')!;
+    button.props.onClick();
+    expect(useShell.getState()).toMatchObject({ screen: 'sessions', sessionId: 'lead' });
   });
 
   it('opens the waiting session from the handle button of its reason', () => {

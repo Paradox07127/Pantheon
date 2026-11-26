@@ -322,6 +322,7 @@ function itemView(ctx: ControlContext, item: PlanItem, facts: PlanFacts): PlanIt
       stage: item.dropped ? 'dropped' : 'plan',
       status: 'not_started',
       gate_runs: [],
+      ...(item.accepted ? { evidence: { level: 'accepted' } } : {}),
     };
   const place = sessionIds
     .map((each) => sessionPlace(ctx, item, each, facts))
@@ -368,6 +369,7 @@ function itemView(ctx: ControlContext, item: PlanItem, facts: PlanFacts): PlanIt
     ...item,
     stage: item.dropped ? 'dropped' : place.stage,
     status: place.status,
+    session_id: place.session_id,
     ...(change ? { change } : {}),
     ...(diff ? { diff } : {}),
     gate_runs: checks.slice(-5).map(runVerdict),
