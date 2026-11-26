@@ -7,6 +7,8 @@
   gap: var(--sp-4);
   padding: var(--sp-3) var(--sp-4) var(--sp-4);
   overflow-y: auto;
+  /* Lets the item details below take the visible height of the page. */
+  container-type: size;
   color: var(--tx);
   font-size: var(--fs-sm);
 }
@@ -75,6 +77,13 @@
   grid-template-columns: minmax(0, 1fr) 360px;
   gap: var(--sp-4);
   align-items: start;
+}
+.pj-grid[data-inspector] {
+  grid-template-columns: minmax(0, 1fr) clamp(280px, 34%, 400px);
+}
+/* The details' column runs the plan's height, so the details can stick in it. */
+.pj-grid[data-inspector] > .pj-pane:last-child {
+  align-self: stretch;
 }
 .pj-pane {
   display: flex;
@@ -224,8 +233,11 @@
   border-top: var(--hair) solid var(--bd2);
   transition: background-color var(--dur-1) var(--ease-std);
 }
-.pj-it[data-open]:hover {
+.pj-it:hover {
   background: var(--sf2);
+}
+.pj-it[aria-current='true'] {
+  background: var(--sel);
 }
 .pj-t {
   display: flex;
@@ -475,6 +487,119 @@
   color: var(--tx2);
   overflow-wrap: anywhere;
   text-wrap: pretty;
+}
+/* One plan item's details, in place of the agents and the introduction. */
+.pj-ins {
+  /* Stays in view while a long plan scrolls beside it. */
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-height: 100cqh;
+  overflow-y: auto;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+  background: var(--sf);
+}
+.pj-sec {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: var(--sp-4);
+  border-top: var(--hair) solid var(--bd2);
+}
+.pj-sec:first-child {
+  border-top: 0;
+}
+.pj-ins-h {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.pj-ins-t {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+.pj-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.pj-txt {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.pj-acc {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0 0 0 var(--sp-4);
+  color: var(--tx2);
+  overflow-wrap: anywhere;
+}
+.pj-cd {
+  display: flex;
+  flex-direction: column;
+  border-top: var(--hair) solid var(--bd2);
+}
+.pj-kpi {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  line-height: var(--lh-lg);
+  font-variant-numeric: tabular-nums;
+}
+.pj-dg {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.pj-dg > svg {
+  flex: none;
+}
+.pj-dg path {
+  fill: none;
+  stroke: var(--bd3);
+  stroke-width: 1;
+}
+.pj-dg path[data-landed] {
+  stroke: var(--ok);
+}
+.pj-dg-c {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.pj-dg-n {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  min-width: 0;
+  height: 28px;
+  padding: 0 var(--sp-2);
+  border: var(--hair) solid var(--idle);
+  border-radius: var(--r-sm);
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+}
+.pj-dg-c > .pj-dg-n {
+  flex: none;
+}
+.pj-dg-n[data-landed] {
+  border-color: var(--ok);
 }
 /* Too narrow for one line: the title and reason take the first line, the measures the second. */
 @container pj-list (width < 640px) {

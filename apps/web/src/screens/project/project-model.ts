@@ -296,3 +296,68 @@ export const gateRunsLabel = (runs: PlanItemView['gate_runs']): string =>
     },
     { count: runs.length, results: listText(...runs.map((run) => GATE_RUN_TEXT[run]())) },
   );
+
+export interface Upstream {
+  id: string;
+  title: string;
+  landed: boolean;
+}
+
+/** The items an item depends on that the plan knows, in its order, each with whether it landed. */
+export const upstreamOf = (item: PlanItemView, items: readonly PlanItemView[]): Upstream[] =>
+  (item.depends_on ?? []).flatMap((id) => {
+    const other = items.find((each) => each.id === id);
+    return other ? [{ id, title: other.title, landed: other.stage === 'landed' }] : [];
+  });
+
+/** The name of an item's dependency graph: each upstream item and whether it landed, then the item. */
+export const dependencyLabel = (ups: readonly Upstream[]): string =>
+  t(
+    {
+      id: 'project.inspector.deps.label',
+      defaultMessage: 'Depends on: {upstream}, then this item',
+    },
+    {
+      upstream: listText(
+        ...ups.map((up) =>
+          up.landed
+            ? t(
+                { id: 'project.inspector.deps.landed', defaultMessage: '{title} landed' },
+                { title: up.title },
+              )
+            : t(
+                { id: 'project.inspector.deps.notLanded', defaultMessage: '{title} not landed' },
+                { title: up.title },
+              ),
+        ),
+      ),
+    },
+  );
+
+export interface AcceptAction {
+  /** What the button sends as accepted. */
+  accepted: boolean;
+  label: string;
+  /** Why the button is off; null while it can be pressed. */
+  blocked: string | null;
+}
+
+/** The accept button of an item: take back an accepted item, else accept it once no failure stands. */
+export function acceptAction(item: PlanItemView): AcceptAction {
+  if (item.accepted)
+    return {
+      accepted: false,
+      label: t({ id: 'project.inspector.unaccept', defaultMessage: 'Take back acceptance' }),
+      blocked: null,
+    };
+  return {
+    accepted: true,
+    label: t({ id: 'project.inspector.accept', defaultMessage: 'Accept' }),
+    blocked: item.failure
+      ? t({
+          id: 'project.inspector.acceptBlocked',
+          defaultMessage: 'The failure is not resolved yet, so it cannot be accepted',
+        })
+      : null,
+  };
+}

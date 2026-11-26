@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { WorkbenchSession } from '@pantheon/protocol';
 import { Failure } from '../../components/PanelBoundary';
 import { TopBar } from '../../components/TopBar';
@@ -12,8 +12,9 @@ import { useShell } from '../../store';
 import { IntroView } from '../memory/IntroView';
 import { AgentList } from './AgentList';
 import { ConductorComposer } from './ConductorComposer';
+import { ItemInspector } from './ItemInspector';
 import { PlanList } from './PlanList';
-import { mainAgent } from './project-model';
+import { mainAgent, type ShownPlanItem } from './project-model';
 import { StatusPanel } from './StatusPanel';
 import { UnplannedList } from './UnplannedList';
 import './project.css';
@@ -65,12 +66,25 @@ export function ProjectScreen({
   const summaries = useProjectsSummary();
   const summary = summaries.data?.find((s) => s.project_id === projectId);
   const main = mainAgent(sessions);
+  // The screen stays mounted across projects, so a selection belongs to the project it was made in.
+  const [selection, setSelection] = useState<{ projectId: string; itemId: string } | null>(null);
+  const selected = selection?.projectId === projectId ? selection.itemId : null;
+  const setSelected = (itemId: string | null) =>
+    setSelection(itemId && projectId ? { projectId, itemId } : null);
+  const shown = plan.read?.plan;
+  const chosen = shown?.items.find(
+    (item): item is ShownPlanItem => item.id === selected && !item.dropped,
+  );
+  const gone = selected !== null && !!plan.read && !chosen;
+  useEffect(() => {
+    if (gone) setSelected(null);
+  }, [gone]);
   return (
     <div className="tb-pg">
       <TopBar title={SCREEN_NAMES.project} />
       <div className="pj">
         <StatusPanel summary={summary} main={main} latest={plan.read?.latest_landing} />
-        <div className="pj-grid">
+        <div className="pj-grid" data-inspector={chosen ? '' : undefined}>
           <div className="pj-pane">
             {sessions && !main && projectId && (
               <div className="pj-empty">
@@ -87,13 +101,31 @@ export function ProjectScreen({
             )}
             {summaries.error && <Failure error={summaries.error} onRetry={summaries.reload} />}
             {plan.error && <Failure error={plan.error} onRetry={plan.reload} />}
-            <PlanList plan={plan.read?.plan} sessions={sessions} />
+            <PlanList
+              plan={shown}
+              sessions={sessions}
+              selected={chosen ? chosen.id : null}
+              onSelect={setSelected}
+            />
             <UnplannedList rows={plan.read?.unplanned ?? null} />
             {main && <ConductorComposer key={main.id} main={main} />}
           </div>
           <div className="pj-pane">
-            {main && <AgentList main={main} sessions={sessions} />}
-            {projectId && <IntroCard projectId={projectId} />}
+            {chosen && shown && projectId ? (
+              <ItemInspector
+                key={chosen.id}
+                item={chosen}
+                plan={shown}
+                projectId={projectId}
+                sessions={sessions}
+                onClose={() => setSelected(null)}
+              />
+            ) : (
+              <>
+                {main && <AgentList main={main} sessions={sessions} />}
+                {projectId && <IntroCard projectId={projectId} />}
+              </>
+            )}
           </div>
         </div>
       </div>

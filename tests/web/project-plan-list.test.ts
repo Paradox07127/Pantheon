@@ -13,6 +13,7 @@ vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
   (await import('./web-live-stores.js')).liveStores(actual as never),
 );
 import { EvidenceMark } from '@/screens/project/EvidenceMark';
+import { ItemInspector } from '@/screens/project/ItemInspector';
 import { MilestoneHead, PlanList, PlanRow, ReasonLine } from '@/screens/project/PlanList';
 import {
   milestoneCount,
@@ -23,7 +24,7 @@ import {
   type ShownPlanItem,
 } from '@/screens/project/project-model';
 import { useShell } from '@/store';
-import './i18n-setup.js';
+import { zh } from './i18n-setup.js';
 
 type Plan = NonNullable<ProjectPlanView['plan']>;
 
@@ -280,8 +281,10 @@ describe('the evidence mark', () => {
 });
 
 describe('the plan list', () => {
+  const onSelect = vi.fn();
+  beforeEach(() => onSelect.mockClear());
   const list = (shown: Plan | null, sessions: WorkbenchSession[] = []) =>
-    mount(() => PlanList({ plan: shown, sessions }) as ReactElement);
+    mount(() => PlanList({ plan: shown, sessions, selected: null, onSelect }) as ReactElement);
 
   it('draws nothing without a plan', () => {
     expect(list(null).value).toBeNull();
@@ -295,7 +298,7 @@ describe('the plan list', () => {
     expect(text(h.value).includes('主 agent 已关闭')).toBe(says);
   });
 
-  it('opens the session of a row, and a row without a session is not a button', () => {
+  it('selects the item of a row from its title or the row, a row without a session too', () => {
     const h = list(
       plan([
         item('running', { stage: 'write', status: 'running', change: change('worker', 'running') }),
@@ -304,21 +307,33 @@ describe('the plan list', () => {
     );
     const rows = rendered(h.value, PlanRow);
     const buttons = rows.map((row) => nodes(row).filter((n) => n.type === 'button'));
-    expect(text(buttons[0]![0])).toBe('Title of running');
-    expect(buttons[1]).toEqual([]);
+    expect(buttons.map((found) => text(found[0]))).toEqual(['Title of running', 'Title of queued']);
     buttons[0]![0]!.props.onClick();
-    expect(useShell.getState()).toMatchObject({ screen: 'sessions', sessionId: 'worker' });
-    useShell.setState({ screen: 'project', sessionId: null });
-    (rows[0] as ReactElement<{ onClick: () => void }>).props.onClick();
-    expect(useShell.getState()).toMatchObject({ screen: 'sessions', sessionId: 'worker' });
-    expect((rows[1] as ReactElement<{ onClick?: unknown }>).props.onClick).toBeUndefined();
+    expect(onSelect).toHaveBeenLastCalledWith('running');
+    (rows[1] as ReactElement<{ onClick: () => void }>).props.onClick();
+    expect(onSelect).toHaveBeenLastCalledWith('queued');
+    expect(useShell.getState()).toMatchObject({ screen: 'project', sessionId: null });
   });
 
-  it('opens the session the row describes, not the first the item names, while it has no change row', () => {
-    const h = list(
-      plan([item('self', { stage: 'write', session_ids: ['worker', 'lead'], session_id: 'lead' })]),
+  it('opens from the details the session the row describes, not the first the item names, while it has no change row', () => {
+    const self = item('self', {
+      stage: 'write',
+      session_ids: ['worker', 'lead'],
+      session_id: 'lead',
+    });
+    const h = mount(
+      () =>
+        ItemInspector({
+          item: self,
+          plan: plan([self]),
+          projectId: 'alpha',
+          sessions: [],
+          onClose() {},
+        }) as ReactElement,
     );
-    const button = nodes(rendered(h.value, PlanRow)[0]).find((n) => n.type === 'button')!;
+    const button = nodes(h.value).find(
+      (n) => n.type === 'button' && text(n) === zh('project.inspector.openSession'),
+    )!;
     button.props.onClick();
     expect(useShell.getState()).toMatchObject({ screen: 'sessions', sessionId: 'lead' });
   });

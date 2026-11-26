@@ -54,5 +54,20 @@
   "project.evidence.reviewedOtherVendor": "另一家审过",
   "project.evidence.reviewedOtherRuntime": "同家另一运行时审过",
   "project.evidence.reviewed": "审过",
-  "project.evidence.accepted": "你已接受"
+  "project.evidence.accepted": "你已接受",
+  "project.inspector.label": "{title} 的详情",
+  "project.inspector.close": "关闭详情",
+  "project.inspector.openSession": "打开会话",
+  "project.inspector.accept": "接受",
+  "project.inspector.unaccept": "取消接受",
+  "project.inspector.acceptBlocked": "失败没解决，还不能接受",
+  "project.inspector.failure": "失败原因",
+  "project.inspector.acceptance": "验收",
+  "project.inspector.usage": "上下文和用量",
+  "project.inspector.tokens": "{tokens} tokens",
+  "project.inspector.turns": "{count, plural, other {# 回合}}",
+  "project.inspector.deps": "依赖",
+  "project.inspector.deps.label": "依赖：{upstream}，之后是这一项",
+  "project.inspector.deps.landed": "{title} 已落地",
+  "project.inspector.deps.notLanded": "{title} 没落地"
 }

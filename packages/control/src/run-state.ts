@@ -169,6 +169,29 @@ function turnPause(
     return { phase: 'retrying', since: retrying.created_at };
 }
 
+/** A blocked merge, else a failed gate, whatever else the session waits on first. */
+export function blockedWait(
+  ctx: ControlContext,
+  sessionId: string,
+  listed: Pick<WorkbenchSession, 'gate' | 'merge'>,
+  progress: number,
+): Wait | undefined {
+  if (listed.merge?.state === 'blocked')
+    return {
+      reason: 'merge_blocked',
+      since:
+        newestAt(ctx, sessionId, ['session.merge_blocked', 'session.merge_cancelled']) ?? progress,
+    };
+  if (listed.gate?.state === 'failed')
+    return {
+      reason: 'gate_failed',
+      since: listed.gate.finished_at
+        ? Date.parse(listed.gate.finished_at)
+        : (newestAt(ctx, sessionId, ['session.gate_checked', 'session.gate_run_failed']) ??
+          progress),
+    };
+}
+
 /**
  * The first of what the session waits on: an answer to its pending permission requests (question
  * when every one is an AskUserQuestion), the review of its baseline, a blocked merge, a failed
@@ -197,20 +220,8 @@ function runWait(
       since:
         newestAt(ctx, session.baseline.baseline_id, ['project.baseline_submitted']) ?? progress,
     };
-  if (listed.merge?.state === 'blocked')
-    return {
-      reason: 'merge_blocked',
-      since:
-        newestAt(ctx, session.id, ['session.merge_blocked', 'session.merge_cancelled']) ?? progress,
-    };
-  if (listed.gate?.state === 'failed')
-    return {
-      reason: 'gate_failed',
-      since: listed.gate.finished_at
-        ? Date.parse(listed.gate.finished_at)
-        : (newestAt(ctx, session.id, ['session.gate_checked', 'session.gate_run_failed']) ??
-          progress),
-    };
+  const blocked = blockedWait(ctx, session.id, listed, progress);
+  if (blocked) return blocked;
   if (session.state === 'reconciling')
     return {
       reason: 'reconciling',

@@ -66,6 +66,24 @@ const evidenceText = (e) =>
   e?.level === 'reviewed' ? (REVIEWED[e.reviewer] ?? '审过') : EVIDENCE[e?.level];
 const GATE = { passed: '通过', failed: '失败', skipped: '跳过' };
 const gateText = (runs) => `门禁 ${runs.length} 次，${runs.map((r) => GATE[r]).join('，')}`;
+// Selecting a row opens its details beside the plan; the session opens from there.
+const selectRow = async (title) => {
+  await page.evaluate(
+    `[...document.querySelectorAll('section[aria-label="计划"] li.pj-it')].find((li) => li.textContent.includes(${JSON.stringify(title)}))?.querySelector('.pj-open')?.click()`,
+  );
+  return poll(
+    () =>
+      page.evaluate(`(() => {
+        const a = [...document.querySelectorAll('aside')].find((e) => e.getClientRects().length && e.getAttribute('aria-label') === ${JSON.stringify(`${title} 的详情`)});
+        return a ? { open: [...a.querySelectorAll('button')].some((b) => b.textContent.trim() === '打开会话') } : null;
+      })()`),
+    10_000,
+  );
+};
+const openFromDetails = (title) =>
+  page.evaluate(
+    `[...[...document.querySelectorAll('aside')].find((e) => e.getAttribute('aria-label') === ${JSON.stringify(`${title} 的详情`)})?.querySelectorAll('button') ?? []].find((b) => b.textContent.trim() === '打开会话')?.click()`,
+  );
 const T = {
   busy: `plan-busy-${stamp}`,
   done: `plan-done-${stamp}`,
@@ -185,7 +203,7 @@ const readPlan = () =>
           return {
             title: t?.textContent.trim(),
             titleWidth: t?.getBoundingClientRect().width ?? 0,
-            opens: li.hasAttribute('data-open'),
+            opens: !!li.querySelector('.pj-open'),
             glyph: !!li.firstElementChild?.matches('svg, [role=img], span, i'),
             stage: li.querySelector('.pj-pips')?.getAttribute('aria-label'),
             stageName: li.querySelector('.pj-stg')?.textContent.trim(),
@@ -221,7 +239,7 @@ const rowsMatch = (view, shown) => {
         evidence: i?.evidence
           ? r.evidence === `证据：${evidenceText(i.evidence)}`
           : r.evidence === '—',
-        opens: r.title === T.self || r.opens === Boolean(i?.session_ids?.length),
+        opens: r.opens,
         width: r.titleWidth > 0,
       };
     });
@@ -283,7 +301,8 @@ check(
 );
 const otherRow = shown?.groups.flatMap((g) => g.rows).find((r) => r.title === T.other);
 const selfRow = shown?.groups.flatMap((g) => g.rows).find((r) => r.title === T.self);
-check('session_ids 只有主 agent 自己的项也是有会话的行，可点开', selfRow?.opens, {
+const selfDetails = await selectRow(T.self);
+check('session_ids 只有主 agent 自己的项，详情里有 "打开会话"', selfDetails?.open, {
   row: selfRow,
   item: byTitle[T.self] && {
     stage: byTitle[T.self].stage,
@@ -292,7 +311,12 @@ check('session_ids 只有主 agent 自己的项也是有会话的行，可点开
   },
 });
 check('前置：主 agent 自己做的项没有改动行', byTitle[T.self] && !byTitle[T.self].change);
-check('对照组：没有会话的项不可点开', otherRow && !otherRow.opens, otherRow?.opens);
+const otherDetails = await selectRow(T.other);
+check(
+  '对照组：没有会话的项能打开详情，详情里没有 "打开会话"',
+  otherDetails && !otherDetails.open,
+  otherDetails,
+);
 check(
   '后端对照：接受的无会话项证据是 "证据：你已接受"',
   byTitle[T.other]?.evidence?.level === 'accepted' && otherRow?.evidence === '证据：你已接受',
@@ -349,10 +373,9 @@ check(
 );
 result.shot = await page.screenshot(result.id);
 
-// A row with a session opens that session.
-await page.evaluate(
-  `[...document.querySelectorAll('section[aria-label="计划"] li.pj-it')].find((li) => li.textContent.includes(${JSON.stringify(T.busy)}))?.querySelector('.pj-open')?.click()`,
-);
+// A row with a session opens its details, and the details open that session.
+check('选中有会话的行出现它的详情', (await selectRow(T.busy))?.open);
+await openFromDetails(T.busy);
 const opened = await poll(
   () =>
     page.evaluate(`(() => {
@@ -364,7 +387,7 @@ const opened = await poll(
 );
 result.opened = opened;
 const currentRow = (title) => opened?.current.some((c) => c.startsWith(`${title}，fixture`));
-check('点有会话的行打开那个会话(侧栏它的行 aria-current)', currentRow(BUSY), opened);
+check('详情里的 "打开会话" 打开那个会话(侧栏它的行 aria-current)', currentRow(BUSY), opened);
 check('对照组：打开的不是另一个会话', opened && !currentRow(DONE), opened?.current);
 
 // The main agent's own item, with no change row, opens the main agent.
@@ -374,9 +397,8 @@ await poll(() =>
     `[...document.querySelectorAll('section[aria-label="计划"]')].some((e) => e.getClientRects().length)`,
   ),
 );
-await page.evaluate(
-  `[...document.querySelectorAll('section[aria-label="计划"] li.pj-it')].find((li) => li.textContent.includes(${JSON.stringify(T.self)}))?.querySelector('.pj-open')?.click()`,
-);
+await selectRow(T.self);
+await openFromDetails(T.self);
 const openedSelf = await poll(
   () =>
     page.evaluate(`(() => {
@@ -388,7 +410,7 @@ const openedSelf = await poll(
 );
 result.openedSelf = openedSelf;
 check(
-  '点主 agent 自己做的项打开主 agent',
+  '主 agent 自己做的项，详情里的 "打开会话" 打开主 agent',
   // A main agent's sidebar row reads "title，主 agent，fixture，…".
   openedSelf?.current.some((c) => c.startsWith(`${MAIN}，`)),
   openedSelf,

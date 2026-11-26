@@ -478,6 +478,26 @@ it('grades an accepted item no session worked on as accepted', async () => {
   expect((await h.itemOf()).evidence).toEqual({ level: 'accepted' });
 });
 
+it.each([
+  [
+    'reads the acceptance its sessions were given when it names none',
+    undefined,
+    ['Stale timestamps get a 400', 'The public API stays'],
+  ],
+  ['keeps an acceptance it names, an empty one too', [], []],
+] as const)('%s', async (_case, named, expected) => {
+  const h = await planFixture();
+  const first = await h.worker('Write the parser', { commit: true });
+  const second = await h.worker('Write the parser too', { commit: true });
+  h.patch(first.id, { contract: { acceptance: ['Stale timestamps get a 400'] } });
+  h.patch(second.id, {
+    contract: { acceptance: ['Stale timestamps get a 400', 'The public API stays'] },
+  });
+  await h.write([item([first.id, second.id], named ? { acceptance: named } : {})]);
+
+  expect((await h.itemOf()).acceptance).toEqual(expected);
+});
+
 function reviewedAt(h: Harness, sessionId: string, toSha: string) {
   const review = h.review(sessionId, 'completed');
   h.f.store.update<Review>(
@@ -585,6 +605,40 @@ it.each<[string, (h: Harness, sessionId: string) => void | Promise<void>, string
     },
     'The notes lose their header',
   ],
+  [
+    'a blocking finding of an earlier review while the next review runs',
+    (h, sessionId) => {
+      h.review(sessionId, 'completed', true);
+      h.review(sessionId, 'running');
+    },
+    'The notes lose their header',
+  ],
+  [
+    'a blocked merge behind a permission request',
+    (h, sessionId) => {
+      h.patch(sessionId, { merge: { state: 'blocked', reason: 'conflict' } });
+      pendingRequest(h, sessionId);
+    },
+    'merge_blocked',
+  ],
+  [
+    'a failed gate run behind a permission request',
+    async (h, sessionId) => {
+      await h.gateCommands();
+      const now = h.f.store.now();
+      h.patch(sessionId, {
+        gate_run: {
+          id: 'run',
+          state: 'failed',
+          started_at: now,
+          finished_at: now,
+          error: 'exited',
+        },
+      });
+      pendingRequest(h, sessionId);
+    },
+    'gate_failed',
+  ],
 ])('names %s first as the failure', async (_case, fail, reason) => {
   const h = await planFixture();
   const session = await h.worker('Write the parser', { commit: true });
@@ -618,6 +672,96 @@ it.each([
     handled_by: handledBy,
   });
 });
+
+it('keeps the time of a blocked merge, and who was told, when a request comes after it', async () => {
+  const h = await planFixture();
+  const session = await h.worker('Write the parser', { commit: true });
+  await h.write([item([session.id])]);
+  const blockedAt = h.f.store.now();
+  const clock = vi.spyOn(h.f.store, 'now').mockReturnValue(blockedAt);
+  h.patch(session.id, { merge: { state: 'blocked', reason: 'conflict' } });
+  h.event('session.merge_blocked', session.id, { reason: 'conflict' });
+  clock.mockReturnValue(blockedAt + 1);
+  h.event('session.spawner_notified', session.id, { session_id: h.conductor.id, kind: 'failed' });
+  clock.mockReturnValue(blockedAt + 60_000);
+  pendingRequest(h, session.id);
+  clock.mockRestore();
+
+  expect((await h.itemOf()).failure).toEqual({
+    reason: 'merge_blocked',
+    at: new Date(blockedAt).toISOString(),
+    handled_by: 'main_agent',
+  });
+});
+
+it.each([
+  ['', false],
+  [' while the merge stays blocked', true],
+] as const)(
+  'names a gate run that failed after an earlier failed check, at its own time%s',
+  async (_case, mergeBlocked) => {
+    const h = await planFixture();
+    const session = await h.worker('Write the parser', { commit: true });
+    await h.write([item([session.id])]);
+    await h.gateCommands();
+    const checkedAt = h.f.store.now();
+    const clock = vi.spyOn(h.f.store, 'now').mockReturnValue(checkedAt);
+    h.gateChecked(session.id, [failedStep]);
+    clock.mockRestore();
+    const ranAt = checkedAt + 60_000;
+    h.patch(session.id, {
+      gate_run: {
+        id: 'run',
+        state: 'failed',
+        started_at: ranAt,
+        finished_at: ranAt,
+        error: 'exited',
+      },
+      ...(mergeBlocked ? { merge: { state: 'blocked' as const, reason: 'gate' } } : {}),
+    });
+
+    expect((await h.itemOf()).failure).toMatchObject({
+      reason: 'gate_failed',
+      at: new Date(ranAt).toISOString(),
+    });
+  },
+);
+
+it.each(['review.completed', 'review.failed'])(
+  'dates a blocking finding by the %s of its review, not by a request',
+  async (ended) => {
+    const h = await planFixture();
+    const session = await h.worker('Write the parser', { commit: true });
+    await h.write([item([session.id])]);
+    const reviewedAt = h.f.store.now();
+    const clock = vi.spyOn(h.f.store, 'now').mockReturnValue(reviewedAt);
+    const review = h.review(session.id, 'completed', true);
+    h.f.store.event('review.requested', review, h.f.project.id, {});
+    clock.mockReturnValue(reviewedAt + 30_000);
+    h.f.store.event(ended, review, h.f.project.id, {});
+    clock.mockReturnValue(reviewedAt + 60_000);
+    pendingRequest(h, session.id);
+    clock.mockRestore();
+
+    expect((await h.itemOf()).failure?.at).toBe(new Date(reviewedAt + 30_000).toISOString());
+  },
+);
+
+function pendingRequest(h: Harness, sessionId: string) {
+  h.f.store.insert<Approval>('approvals', {
+    id: 'unanswered-request',
+    revision: 1,
+    project_id: h.f.project.id,
+    kind: 'permission',
+    session_id: sessionId,
+    request_id: 'unanswered-request',
+    tool: 'Bash',
+    input_hash: 'a'.repeat(64),
+    decider: 'user',
+    state: 'pending',
+    created_at: h.f.store.now(),
+  });
+}
 
 it('lists the change rows no item names, the sessions the user opened among them', async () => {
   const h = await planFixture();

@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react';
 import { Tabs } from '@base-ui/react/tabs';
 import { Eye, FileText, Flag, GitBranch, ShieldCheck, X } from 'lucide-react';
 import type { Review } from '@pantheon/domain';
@@ -385,6 +392,51 @@ export function ChangeInspector({
   onClose: () => void;
 }) {
   const sessionId = changeSessionId(row);
+  return (
+    <aside className="chg-insp" aria-label={row.title}>
+      <div className="chg-insp-h">
+        <StateGlyph name={STATUS_GLYPH[row.status]} />
+        <h2>
+          <Clip text={row.title} />
+        </h2>
+        <button
+          type="button"
+          className="ib"
+          aria-label={t({ id: 'changes.inspector.close', defaultMessage: 'Close' })}
+          onClick={onClose}
+        >
+          <X aria-hidden="true" />
+        </button>
+      </div>
+      <ChangeDetails row={row} sessions={sessions}>
+        {sessionId && (
+          <button
+            type="button"
+            className="btn"
+            onClick={() => useShell.getState().openSession(sessionId)}
+          >
+            {t({ id: 'changes.inspector.openSession', defaultMessage: 'Open session' })}
+          </button>
+        )}
+      </ChangeDetails>
+    </aside>
+  );
+}
+
+/**
+ * A change's gate and the rerun of its failed steps, its files, its reviews, a box to its agent and
+ * the cancel of its landing; children join the cancel at the foot.
+ */
+export function ChangeDetails({
+  row,
+  sessions,
+  children,
+}: {
+  row: ChangeRow;
+  sessions?: readonly WorkbenchSession[] | null;
+  children?: ReactNode;
+}) {
+  const sessionId = changeSessionId(row);
   const session = (sessionId && sessions?.find((s) => s.id === sessionId)) || null;
   const mainId = session?.spawned_by?.session_id;
   const main = (mainId && sessions?.find((s) => s.id === mainId)) || null;
@@ -434,21 +486,7 @@ export function ChangeInspector({
   const gateName = t({ id: 'changes.inspector.gate', defaultMessage: 'Gate' });
   const reviewName = t({ id: 'changes.inspector.review', defaultMessage: 'Review' });
   return (
-    <aside className="chg-insp" aria-label={row.title}>
-      <div className="chg-insp-h">
-        <StateGlyph name={STATUS_GLYPH[row.status]} />
-        <h2>
-          <Clip text={row.title} />
-        </h2>
-        <button
-          type="button"
-          className="ib"
-          aria-label={t({ id: 'changes.inspector.close', defaultMessage: 'Close' })}
-          onClick={onClose}
-        >
-          <X aria-hidden="true" />
-        </button>
-      </div>
+    <>
       <div className="chg-insp-b">
         <section className="chg-sec" aria-label={gateName}>
           <div className="chg-sec-h">
@@ -521,7 +559,7 @@ export function ChangeInspector({
         )}
       </div>
       {session && <TellBox row={row} session={session} main={main} />}
-      {(landingId || sessionId) && (
+      {(landingId || children) && (
         <div className="chg-foot">
           {landingId && (
             <button
@@ -536,15 +574,7 @@ export function ChangeInspector({
                 : t({ id: 'changes.inspector.cancelLanding', defaultMessage: 'Cancel landing' })}
             </button>
           )}
-          {sessionId && (
-            <button
-              type="button"
-              className="btn"
-              onClick={() => useShell.getState().openSession(sessionId)}
-            >
-              {t({ id: 'changes.inspector.openSession', defaultMessage: 'Open session' })}
-            </button>
-          )}
+          {children}
           {cancel.error && (
             <span className="chg-err" role="alert">
               {cancel.error}
@@ -552,7 +582,7 @@ export function ChangeInspector({
           )}
         </div>
       )}
-    </aside>
+    </>
   );
 }
 

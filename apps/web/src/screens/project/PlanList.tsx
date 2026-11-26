@@ -94,29 +94,24 @@ export function PlanRow({
   item,
   reason,
   now,
+  selected,
+  onSelect,
 }: {
   item: ShownPlanItem;
   reason: PlanReason | null;
   now: number;
+  selected: boolean;
+  onSelect: () => void;
 }) {
-  const sessionId = item.session_id ?? null;
   const stage = planStage(item);
   return (
-    // The title button is the keyboard path; a click elsewhere on the row opens the same session.
-    <li
-      className="pj-it"
-      data-open={sessionId ? '' : undefined}
-      onClick={sessionId ? () => openSession(sessionId) : undefined}
-    >
+    // The title button is the keyboard path; a click elsewhere on the row selects the same item.
+    <li className="pj-it" aria-current={selected ? 'true' : undefined} onClick={onSelect}>
       <StateGlyph name={planGlyph(item)} />
       <span className="pj-t">
-        {sessionId ? (
-          <button type="button" className="pj-open" onClick={() => openSession(sessionId)}>
-            <Clip text={item.title} />
-          </button>
-        ) : (
+        <button type="button" className="pj-open" onClick={onSelect}>
           <Clip text={item.title} />
-        )}
+        </button>
         {reason && <ReasonLine reason={reason} now={now} />}
       </span>
       <span className="pj-stg">
@@ -153,9 +148,14 @@ export function PlanRow({
 export function PlanList({
   plan,
   sessions,
+  selected,
+  onSelect,
 }: {
   plan: ProjectPlanView['plan'] | undefined;
   sessions: readonly WorkbenchSession[] | null;
+  /** The item whose details are open. */
+  selected: string | null;
+  onSelect: (itemId: string) => void;
 }) {
   const now = useNow(60_000);
   if (!plan) return null;
@@ -180,6 +180,8 @@ export function PlanList({
                 item={item}
                 reason={planReason(item, plan.items, sessions)}
                 now={now}
+                selected={item.id === selected}
+                onSelect={() => onSelect(item.id)}
               />
             ))}
           </ul>

@@ -163,11 +163,22 @@ export function reviewsSinceLanding(ctx: ControlContext, sessionId: string): Rev
  * Refuses landing the session while the latest clean review since it last landed, or any failed,
  * incomplete or running review after it, has an unresolved blocking finding.
  */
-export function requireNoBlockingReview(ctx: ControlContext, sessionId: string): void {
+/** The first unresolved blocking finding of the reviews since the newest complete one. */
+export function openBlockingFinding(
+  ctx: ControlContext,
+  sessionId: string,
+): { review: Review; finding: ReviewFinding } | undefined {
   const reviews = reviewsSinceLanding(ctx, sessionId);
   const clean = reviews.findLastIndex((each) => each.state === 'completed' && !each.incomplete);
+  for (const review of reviews.slice(Math.max(clean, 0))) {
+    const finding = review.findings.find(blockingUnresolved);
+    if (finding) return { review, finding };
+  }
+}
+
+export function requireNoBlockingReview(ctx: ControlContext, sessionId: string): void {
   requireThat(
-    !reviews.slice(Math.max(clean, 0)).some((each) => each.findings.some(blockingUnresolved)),
+    !openBlockingFinding(ctx, sessionId),
     'review_blocking_open',
     'A review of this work has open blocking findings; fix them and request another review first',
   );

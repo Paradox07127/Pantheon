@@ -20,6 +20,7 @@ const PLAN_KINDS: ReadonlySet<string> = new Set([
   'session.gate_started',
   'session.gate_checked',
   'session.gate_run_cancelled',
+  'session.gate_run_failed',
   'session.turn_stalled',
   'session.merge_started',
   'session.merge_blocked',

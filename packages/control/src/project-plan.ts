@@ -30,6 +30,8 @@ import { planItemEvidence } from './evidence-level.js';
 import { gateFailed } from './landing.js';
 import { latestEvent, needsYou } from './needs-you.js';
 import { landedSince } from './project-brief.js';
+import { openBlockingFinding } from './review.js';
+import { blockedWait } from './run-state.js';
 import { sessionStall } from './session-stall.js';
 import { sessionList } from './workbench-session.js';
 
@@ -281,16 +283,20 @@ function placeFailure(
   const failedStep = (lastCheck?.payload as { results?: GateResults } | undefined)?.results?.find(
     gateFailed,
   )?.name;
-  const wait = listed?.run?.wait;
-  const review = change?.review?.blocking_open
-    ? ctx.store.get<Review>('reviews', change.review.id)
-    : undefined;
-  const finding = review?.findings.find(
-    (each) =>
-      (each.status === 'open' || each.status === 'stale') && each.blocking && !each.resolution,
-  );
+  const blocked =
+    listed && blockedWait(ctx, place.session_id, listed, Date.parse(listed.last_activity_at));
+  // A gate run that failed after the check, as a runner error does, is the newer failure.
+  const runFailedLater =
+    listed?.gate?.state === 'failed' &&
+    listed.gate.finished_at !== undefined &&
+    lastCheck !== undefined &&
+    Date.parse(listed.gate.finished_at) > lastCheck.created_at;
+  const open =
+    !failedStep && !listed?.last_turn?.error && !blocked
+      ? openBlockingFinding(ctx, place.session_id)
+      : undefined;
   const found =
-    failedStep && lastCheck
+    failedStep && lastCheck && !runFailedLater
       ? { reason: failedStep, at: lastCheck.created_at }
       : listed?.last_turn?.error
         ? {
@@ -299,14 +305,22 @@ function placeFailure(
               latestEvent(ctx, listed.last_turn.id, 'turn.failed')?.created_at ??
               Date.parse(listed.last_activity_at),
           }
-        : wait && (wait.reason === 'gate_failed' || wait.reason === 'merge_blocked')
-          ? { reason: wait.reason, at: wait.since }
-          : finding
-            ? {
-                reason: finding.impact,
-                at: review!.ended_at ?? review!.started_at ?? Date.parse(change!.updated_at),
-              }
-            : undefined;
+        : runFailedLater
+          ? { reason: 'gate_failed', at: Date.parse(listed.gate!.finished_at!) }
+          : blocked
+            ? { reason: blocked.reason, at: blocked.since }
+            : open
+              ? {
+                  reason: open.finding.impact,
+                  at:
+                    (
+                      latestEvent(ctx, open.review.id, 'review.completed') ??
+                      latestEvent(ctx, open.review.id, 'review.failed')
+                    )?.created_at ??
+                    ctx.store.eventSpan(open.review.id)?.first ??
+                    Date.parse(listed!.last_activity_at),
+                }
+              : undefined;
   if (!found) return;
   const told = facts.notices.some(
     (event) => event.aggregate_id === place.session_id && event.created_at >= found.at,
@@ -365,8 +379,16 @@ function itemView(ctx: ControlContext, item: PlanItem, facts: PlanFacts): PlanIt
       : {}),
     ...(session ? { writer: session.runtime } : {}),
   });
+  const acceptance = item.acceptance ?? [
+    ...new Set(
+      sessionIds.flatMap(
+        (id) => ctx.store.get<Session>('sessions', id)?.contract?.acceptance ?? [],
+      ),
+    ),
+  ];
   return {
     ...item,
+    ...(acceptance.length || item.acceptance ? { acceptance } : {}),
     stage: item.dropped ? 'dropped' : place.stage,
     status: place.status,
     session_id: place.session_id,

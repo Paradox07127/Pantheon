@@ -23,7 +23,12 @@ vi.mock('@/data/commands', () => ({
   runCommand: vi.fn(async () => ({ ok: true, value: null })),
 }));
 import { runCommand } from '@/data/commands';
-import { ChangeInspector, ChangesScreen, ReviewGuide } from '@/screens/changes/ChangesScreen';
+import {
+  ChangeDetails,
+  ChangeInspector,
+  ChangesScreen,
+  ReviewGuide,
+} from '@/screens/changes/ChangesScreen';
 import { GateResults } from '@/screens/sessions/GateResults';
 import { zh, zhf } from './i18n-setup.js';
 
@@ -453,8 +458,13 @@ describe('review guide', () => {
 });
 
 describe('change inspector', () => {
+  // The host draws one component, so the details are drawn beside the inspector in the same host.
   const inspector = async (target: ChangeRow) => {
-    const h = mount(() => ChangeInspector({ row: target, onClose() {} }));
+    const h = mount(() => {
+      const drawn = ChangeInspector({ row: target, onClose() {} });
+      const details = nodes(drawn).find((n) => n.type === ChangeDetails)!;
+      return [drawn, ChangeDetails(details.props)];
+    });
     await h.flush();
     return h;
   };
@@ -590,7 +600,8 @@ describe('change inspector', () => {
     const guide = nodes(h.value).find((n) => n.type === ReviewGuide)!;
     expect(guide.props.review.findings).toHaveLength(1);
     expect(button(h.value, zh('changes.inspector.cancelLanding'))).toBeUndefined();
-    button(h.value, zh('changes.inspector.openSession'))!.props.onClick();
+    // The button is looked up in what ChangeDetails drew, not in the children handed to it.
+    button((h.value as unknown[])[1], zh('changes.inspector.openSession'))!.props.onClick();
     expect(mock.shell.openSession).toHaveBeenCalledWith('refund-list');
   });
 });
