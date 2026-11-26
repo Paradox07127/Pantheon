@@ -540,12 +540,12 @@ describe('graph diagram', () => {
   const architecture = fixture('service-architecture');
   const workflow = fixture('agent-workflow');
 
-  // ELK runs for real; a layout takes more turns than the other renderers' draws.
+  // ELK runs for real, and the first draw loads modules, which on a loaded machine takes any
+  // number of turns; a failed layout throws out of `settle`, so this ends.
   async function drawn(spec: Spec, width: number, height: number, more: object = {}) {
     const h = mount(() => GraphDiagram({ spec, height, ...more }));
     sized(h, width, height);
-    for (let i = 0; i < 10 && !nodes(h.value).some((n) => n.type === xy.ReactFlow); i++)
-      await settle(h);
+    while (!nodes(h.value).some((n) => n.type === xy.ReactFlow)) await settle(h);
     return h;
   }
   const flowOf = (h: HookHost<any>) => find(h.value, (n) => n.type === xy.ReactFlow);
