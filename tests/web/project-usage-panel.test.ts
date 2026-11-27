@@ -95,7 +95,19 @@ beforeEach(() => {
     resync: 0,
   };
   mock.queries = [];
-  mock.answers = {};
+  // Read, with no resident: the main agent is the one active last.
+  mock.answers = {
+    'project.resident': {
+      read: {
+        session_id: null,
+        since: null,
+        turns: { pantheon: 0, user: 0 },
+        budget: null,
+        wakes: [],
+      },
+      error: null,
+    },
+  };
   mock.roles = { read: null, error: null, loading: false };
   mock.daily = { read: null, error: null, loading: false };
   storage.clear();

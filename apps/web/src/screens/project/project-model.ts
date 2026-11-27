@@ -16,11 +16,20 @@ import { spawnedOf } from '../sessions/RunMap';
 // A listed session in one of these states no longer takes messages.
 const CLOSED: readonly WorkbenchSession['state'][] = ['failed', 'merged', 'discarded', 'done'];
 
-/** The project's main agent: of its open, unarchived main agents, the one active last; null when none. */
-export function mainAgent(sessions: readonly WorkbenchSession[] | null): WorkbenchSession | null {
+/**
+ * The project's main agent: the resident one while it is open, else of its open, unarchived main
+ * agents the one active last; null when none.
+ */
+export function mainAgent(
+  sessions: readonly WorkbenchSession[] | null,
+  residentId: string | null = null,
+): WorkbenchSession | null {
   let best: WorkbenchSession | null = null;
   for (const s of sessions ?? []) {
-    if (!s.conductor || s.archived_at || CLOSED.includes(s.state)) continue;
+    if (!s.conductor || CLOSED.includes(s.state)) continue;
+    // Archiving leaves the resident open and marked; only the fallback skips archived ones.
+    if (s.id === residentId) return s;
+    if (s.archived_at) continue;
     if (!best || Date.parse(s.last_activity_at) > Date.parse(best.last_activity_at)) best = s;
   }
   return best;

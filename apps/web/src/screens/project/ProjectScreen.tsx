@@ -8,6 +8,7 @@ import { draftKey, useDrafts } from '../../data/drafts';
 import { useIntroRead } from '../../data/intro-read';
 import { useProjectOverlap } from '../../data/project-overlap';
 import { useProjectPlan } from '../../data/project-plan';
+import { useProjectResident } from '../../data/project-resident';
 import { useProjectsSummary } from '../../data/projects-summary';
 import { t } from '../../i18n';
 import { SCREEN_NAMES } from '../../screens';
@@ -20,6 +21,7 @@ import { hasDependencies } from './plan-flow';
 import { PlanHistory } from './PlanHistory';
 import { PlanList } from './PlanList';
 import { mainAgent, type ShownPlanItem } from './project-model';
+import { ResidentCard } from './ResidentCard';
 import { StatusPanel } from './StatusPanel';
 import { UnplannedList } from './UnplannedList';
 import { UsagePanel } from './UsagePanel';
@@ -102,7 +104,10 @@ export function ProjectScreen({
   const shared = overlap.error ? null : overlap.read;
   const summaries = useProjectsSummary();
   const summary = summaries.data?.find((s) => s.project_id === projectId);
-  const main = mainAgent(sessions);
+  const resident = useProjectResident(projectId);
+  // Until the resident is read, the main agent is unknown: a fallback would take the composer.
+  const mainKnown = !!resident.read || !!resident.error;
+  const main = mainKnown ? mainAgent(sessions, resident.read?.session_id) : null;
   // The screen stays mounted across projects, so a selection belongs to the project it was made in.
   const [selection, setSelection] = useState<{ projectId: string; itemId: string } | null>(null);
   const selected = selection?.projectId === projectId ? selection.itemId : null;
@@ -149,7 +154,7 @@ export function ProjectScreen({
         <StatusPanel summary={summary} main={main} latest={plan.read?.latest_landing} />
         <div className="pj-grid" data-inspector={chosen ? '' : undefined}>
           <div className="pj-pane">
-            {sessions && !main && projectId && (
+            {sessions && mainKnown && !main && projectId && (
               <div className="pj-empty">
                 <p className="pj-et">
                   {t({
@@ -203,6 +208,15 @@ export function ProjectScreen({
             ) : (
               <>
                 {main && <AgentList main={main} sessions={sessions} overlap={shared} />}
+                {main && projectId && (
+                  <ResidentCard
+                    key={projectId}
+                    projectId={projectId}
+                    main={main}
+                    sessions={sessions}
+                    resident={resident}
+                  />
+                )}
                 {projectId && <IntroCard projectId={projectId} />}
               </>
             )}

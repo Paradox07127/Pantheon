@@ -29,7 +29,12 @@ const readPane = () =>
       regions: [...root.querySelectorAll('section[aria-label]')].filter(visible).map((s) => s.getAttribute('aria-label')),
     };
   })()`);
-const pane = await poll(readPane, 10_000);
+// The main agent is decided once the resident read lands: wait for the start button or a composer.
+const pane =
+  (await poll(async () => {
+    const v = await readPane();
+    return v && (v.start || v.composer.length > 0) && v;
+  }, 10_000)) || (await readPane());
 result.pane = pane && { ...pane, text: pane.text.slice(0, 400) };
 check(
   '主栏写 "这个项目还没有主 agent。"',

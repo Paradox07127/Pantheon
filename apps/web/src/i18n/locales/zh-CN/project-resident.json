@@ -1,0 +1,20 @@
+{
+  "project.resident.title": "常驻",
+  "project.resident.unset": "取消常驻",
+  "project.resident.none": "还没有常驻主 agent",
+  "project.resident.set": "把 {title} 设为常驻",
+  "project.resident.since": "自 {time} 起",
+  "project.resident.pantheonTurns": "Pantheon 起的回合",
+  "project.resident.userTurns": "你打的回合",
+  "project.resident.budget": "预算",
+  "project.resident.noBudget": "没有上限",
+  "project.resident.budgetUse": "{used} / {limit}",
+  "project.resident.budgetReached": "预算已用完，Pantheon 不再唤醒它",
+  "project.resident.wakes": "最近唤醒",
+  "project.resident.noWakes": "还没有唤醒过",
+  "project.resident.woken": "已唤醒",
+  "project.resident.skippedBudget": "没唤醒：预算用完",
+  "project.resident.skippedNotAccepting": "没唤醒：会话不接收",
+  "project.resident.more": "更多",
+  "project.resident.fewer": "收起"
+}

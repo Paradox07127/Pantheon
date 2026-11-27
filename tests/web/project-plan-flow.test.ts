@@ -13,6 +13,21 @@ vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
 vi.mock('@/data/project-plan', () => ({
   useProjectPlan: () => ({ ...mock.plan, reload() {} }),
 }));
+vi.mock('@/data/project-resident', () => ({
+  // Read, with no resident: the main agent is the one active last.
+  useProjectResident: () => ({
+    read: {
+      session_id: null,
+      since: null,
+      turns: { pantheon: 0, user: 0 },
+      budget: null,
+      wakes: [],
+    },
+    error: null,
+    loading: false,
+    reload() {},
+  }),
+}));
 vi.mock('@/data/projects-summary', () => ({
   useProjectsSummary: () => ({ data: [], loading: false, error: null }),
 }));

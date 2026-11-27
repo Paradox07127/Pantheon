@@ -488,6 +488,66 @@
   overflow-wrap: anywhere;
   text-wrap: pretty;
 }
+/* The resident main agent's card, under the agents. */
+.pj-rnone {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+}
+.pj-rwho {
+  grid-template-columns: minmax(0, 1fr);
+  width: calc(100% + 2 * var(--sp-2));
+  margin: 0 calc(-1 * var(--sp-2));
+}
+.pj-rk {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-3);
+}
+.pj-rkc {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.pj-rb {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.pj-rbv {
+  min-width: 0;
+  color: var(--tx2);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.pj-rws {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pj-rw {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: var(--sp-2);
+  min-width: 0;
+}
+.pj-rw > .pj-sub {
+  grid-column: 2;
+}
+.pj-rws-st {
+  min-width: 0;
+  color: var(--tx2);
+  overflow-wrap: anywhere;
+}
+.pj-rmore {
+  align-self: flex-start;
+}
 /* One plan item's details, in place of the agents and the introduction. */
 .pj-ins {
   /* Stays in view while a long plan scrolls beside it. */
