@@ -1,9 +1,14 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
 import { Hourglass, X } from 'lucide-react';
-import type { LandingRecord, RoleUsage } from '@pantheon/domain';
-import type { ProjectStatusRead } from '@pantheon/protocol';
+import type { LandingRecord, RoleUsage, SettingProposal } from '@pantheon/domain';
+import type {
+  LandingStatistics,
+  ProjectLandingsCompare,
+  ProjectSettingProposals,
+  ProjectStatusRead,
+} from '@pantheon/protocol';
 import { Clip } from '../../components/Clip';
 import { EmptyState } from '../../components/EmptyState';
 import { Failure, Skeleton } from '../../components/PanelBoundary';
@@ -53,8 +58,7 @@ export function reviewWindow(range: ReviewRange, now: number): { from: number; t
   return { from: at(1 - RANGE_DAYS[range]), to: at(1) };
 }
 
-/** Landings, the user's answers to approvals, gates and turns. */
-const STATUS_KINDS: ReadonlySet<string> = new Set([
+const LANDING_KINDS = [
   'session.merged',
   'session.merge_blocked',
   'session.merge_cancelled',
@@ -62,6 +66,11 @@ const STATUS_KINDS: ReadonlySet<string> = new Set([
   'workspace.repository_changed',
   // A branch landing writes no event of its own; removing its worktree follows its end.
   'workspace.removed',
+];
+
+/** Landings, the user's answers to approvals, gates and turns. */
+const STATUS_KINDS: ReadonlySet<string> = new Set([
+  ...LANDING_KINDS,
   'session.gate_started',
   'session.gate_checked',
   'session.gate_run_cancelled',
@@ -90,6 +99,36 @@ const isStatus = (value: unknown): boolean => {
   );
 };
 
+const COMPARE_KINDS: ReadonlySet<string> = new Set(LANDING_KINDS);
+const PROPOSAL_KINDS: ReadonlySet<string> = new Set(['setting.proposal_decided']);
+
+/** How many landings on each side of an approval the comparison reads. */
+const COMPARE_COUNT = 10;
+
+const isProposals = (value: unknown): boolean =>
+  Array.isArray((value as Partial<ProjectSettingProposals> | null)?.proposals);
+
+const isCompare = (value: unknown): boolean => {
+  const read = value as Partial<ProjectLandingsCompare> | null;
+  return typeof read?.before?.count === 'number' && typeof read.after?.count === 'number';
+};
+
+/** The short name of the setting a proposal changes; an unknown command shows as it is. */
+function settingName(command: SettingProposal['command']): string {
+  switch (command) {
+    case 'project.gate.set':
+      return t({ id: 'trace.recap.setting.gate', defaultMessage: 'Gate commands' });
+    case 'workflow.policy.set':
+      return t({ id: 'trace.recap.setting.budget', defaultMessage: 'Budget' });
+    case 'project.sessionDefaults.set':
+      return t({ id: 'trace.recap.setting.sessionDefaults', defaultMessage: 'Session defaults' });
+    case 'project.extensions.set':
+      return t({ id: 'trace.recap.setting.extensions', defaultMessage: 'Extensions' });
+    default:
+      return command;
+  }
+}
+
 const STATE_TEXT: Partial<Record<LandingRecord['state'], string>> = {
   get landed() {
     return t({ id: 'trace.recap.state.landed', defaultMessage: 'Landed' });
@@ -110,6 +149,43 @@ const num = (label: string, value: string) => (
     <span aria-hidden="true">{label}</span>
   </div>
 );
+
+const firstPassText = (rate: number | null) =>
+  rate === null
+    ? t({ id: 'trace.recap.noGates', defaultMessage: 'No gate runs' })
+    : t(
+        { id: 'trace.recap.rate', defaultMessage: '{percent}%' },
+        { percent: Math.round(rate * 100) },
+      );
+
+/** One side of the comparison: its landing count heads the numbers. */
+const compareSide = (heading: string, stats: LandingStatistics) => {
+  const none = t({ id: 'trace.recap.setting.none', defaultMessage: 'None' });
+  return (
+    <div className="rcp-side" role="group" aria-label={heading}>
+      <h4>{heading}</h4>
+      <div className="trc-nums">
+        {num(STATE_TEXT.landed!, String(stats.landed))}
+        {num(STATE_TEXT.blocked!, String(stats.blocked))}
+        {num(STATE_TEXT.no_changes!, String(stats.no_changes))}
+        {num(
+          t({ id: 'trace.recap.firstPass', defaultMessage: 'Gates passed first time' }),
+          firstPassText(stats.first_gate_pass_rate),
+        )}
+        {num(
+          t({ id: 'trace.recap.reviewRounds', defaultMessage: 'Mean review rounds' }),
+          stats.mean_review_rounds === null
+            ? none
+            : String(Math.round(stats.mean_review_rounds * 10) / 10),
+        )}
+        {num(
+          t({ id: 'trace.recap.medianTime', defaultMessage: 'Median time' }),
+          stats.median_wall_ms === null ? none : durationText(stats.median_wall_ms),
+        )}
+      </div>
+    </div>
+  );
+};
 
 const sessionRef = (id: string, title: string, exists: boolean) =>
   exists ? (
@@ -159,6 +235,23 @@ export function StatusReview({
     const timer = setInterval(reload, 60_000);
     return () => clearInterval(timer);
   }, [waitOpen, reload]);
+  const approved = useProjectQuery<ProjectSettingProposals>(
+    'project.setting_proposals',
+    projectId,
+    isProposals,
+    undefined,
+    { kinds: PROPOSAL_KINDS },
+  );
+  const proposals = approved.read?.proposals ?? [];
+  const [picked, setPicked] = useState<string | null>(null);
+  const chosen = (proposals.find((row) => row.id === picked) ?? proposals[0])?.id;
+  const compare = useProjectQuery<ProjectLandingsCompare>(
+    'project.landings.compare',
+    chosen ? projectId : null,
+    isCompare,
+    { proposal_id: chosen ?? '', count: String(COMPARE_COUNT) },
+    { kinds: COMPARE_KINDS },
+  );
   const now = Date.now();
   const name = t({ id: 'trace.recap.title', defaultMessage: 'Recap' });
 
@@ -166,6 +259,10 @@ export function StatusReview({
   const waiting = t({ id: 'trace.recap.waiting', defaultMessage: 'Waiting on you' });
   const timeName = t({ id: 'trace.recap.time', defaultMessage: 'Where the time went' });
   const usageName = t({ id: 'trace.recap.usage', defaultMessage: 'Tokens by role' });
+  const settingsName = t({
+    id: 'trace.recap.settings',
+    defaultMessage: 'Before and after a setting change',
+  });
 
   const timeRows = read
     ? [
@@ -251,12 +348,7 @@ export function StatusReview({
                   {num(STATE_TEXT.no_changes!, String(read.landings.no_changes))}
                   {num(
                     t({ id: 'trace.recap.firstPass', defaultMessage: 'Gates passed first time' }),
-                    read.landings.first_gate_pass_rate === null
-                      ? t({ id: 'trace.recap.noGates', defaultMessage: 'No gate runs' })
-                      : t(
-                          { id: 'trace.recap.rate', defaultMessage: '{percent}%' },
-                          { percent: Math.round(read.landings.first_gate_pass_rate * 100) },
-                        ),
+                    firstPassText(read.landings.first_gate_pass_rate),
                   )}
                   {read.landings.mean_review_rounds !== null &&
                     num(
@@ -293,6 +385,67 @@ export function StatusReview({
               </>
             )}
           </section>
+          {(approved.error || proposals.length > 0) && (
+            <section className="rcp-s" aria-label={settingsName}>
+              <h3>{settingsName}</h3>
+              {approved.error && <Failure error={approved.error} onRetry={approved.reload} />}
+              {chosen && (
+                <>
+                  <RadioGroup<string>
+                    className="rcp-pl"
+                    aria-label={t({
+                      id: 'trace.recap.settings.list',
+                      defaultMessage: 'Approved setting changes',
+                    })}
+                    value={chosen}
+                    onValueChange={(value) => setPicked(value)}
+                  >
+                    {proposals.map((row) => (
+                      <Radio.Root key={row.id} value={row.id} className="rcp-pr">
+                        <span className="rcp-pn">{settingName(row.command)}</span>
+                        <Clip text={row.reason} />
+                        {row.decided_at !== undefined && (
+                          <span className="rcp-at">
+                            {dayText(row.decided_at, now, { time: true })}
+                          </span>
+                        )}
+                      </Radio.Root>
+                    ))}
+                  </RadioGroup>
+                  {compare.error ? (
+                    <Failure error={compare.error} onRetry={compare.reload} />
+                  ) : compare.read === null ? (
+                    <Skeleton />
+                  ) : (
+                    <div className="rcp-cmp">
+                      {compareSide(
+                        t(
+                          {
+                            id: 'trace.recap.settings.before',
+                            defaultMessage:
+                              '{count, plural, one {# landing before} other {# landings before}}',
+                          },
+                          { count: compare.read.before.count },
+                        ),
+                        compare.read.before,
+                      )}
+                      {compareSide(
+                        t(
+                          {
+                            id: 'trace.recap.settings.after',
+                            defaultMessage:
+                              '{count, plural, one {# landing after} other {# landings after}}',
+                          },
+                          { count: compare.read.after.count },
+                        ),
+                        compare.read.after,
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </section>
+          )}
           <section className="rcp-s" aria-label={waiting}>
             <h3>{waiting}</h3>
             {read.waiting.count === 0 ? (

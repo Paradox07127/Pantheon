@@ -36,6 +36,7 @@ import type {
   TestCounts,
   RuntimeDiagnostics,
   RuntimeReviewHistory,
+  SettingProposal,
   TraceLane,
   TraceSpan,
   WorkflowPolicy,
@@ -2016,6 +2017,8 @@ export const querySchemas = {
     proposal_id: str,
     count: z.coerce.number().int().positive(),
   }),
+  /** ProjectSettingProposals; the approved setting proposals, latest approval first. */
+  'project.setting_proposals': z.strictObject({ project_id: str }),
   /** DecisionsForUser; what a stored rule decided without the user from since on, Unix milliseconds, newest first. */
   'project.decisions': z.strictObject({
     project_id: str,
@@ -2373,6 +2376,9 @@ export interface ProjectLandingsRead {
 }
 export interface LandingStatistics {
   count: number;
+  landed: number;
+  blocked: number;
+  no_changes: number;
   first_gate_pass_rate: number | null;
   mean_review_rounds: number | null;
   median_wall_ms: number | null;
@@ -2416,6 +2422,9 @@ export interface ProjectStatusRead {
 export interface ProjectLandingsCompare {
   before: LandingStatistics;
   after: LandingStatistics;
+}
+export interface ProjectSettingProposals {
+  proposals: SettingProposal[];
 }
 /** GET /v1/project.plan. */
 export interface ProjectPlanView {

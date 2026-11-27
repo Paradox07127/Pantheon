@@ -74,6 +74,7 @@ import { landingFind, landingRead } from './branch-landing.js';
 import { changesRead } from './changes.js';
 import { projectLandingsRead, projectLandingsCompare } from './project-landings.js';
 import { projectPlanHistory, projectPlanView } from './project-plan.js';
+import { projectSettingProposals } from './setting-proposal.js';
 import {
   changeStoryDiff,
   changeStoryList,
@@ -888,6 +889,9 @@ export class Control extends EventEmitter {
     count: number,
   ) {
     return projectLandingsCompare(this.ctx, principal, projectId, proposalId, count);
+  }
+  projectSettingProposals(principal: Principal, projectId: string) {
+    return projectSettingProposals(this.ctx, principal, projectId);
   }
   projectPlan(principal: Principal, projectId: string) {
     return projectPlanView(this.ctx, principal, projectId);

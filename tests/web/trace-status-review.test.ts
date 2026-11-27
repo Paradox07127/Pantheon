@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ProjectStatusRead } from '@pantheon/protocol';
+import type { SettingProposal } from '@pantheon/domain';
+import type { ProjectLandingsCompare, ProjectStatusRead } from '@pantheon/protocol';
 import { find, mount, named, nodes, text, unmountAll } from './web-hook-host.js';
 
 const mock = vi.hoisted(() => ({ board: {} as any, shell: {} as any }));
@@ -132,6 +133,10 @@ const empty = (): ProjectStatusRead => ({
 
 let answer: () => unknown;
 let query: ReturnType<typeof vi.fn>;
+// The setting comparison's reads, kept apart so query counts only project.status.read.
+type Read = (method: string, input?: unknown) => Promise<unknown>;
+let settingAnswer: (method: string) => unknown;
+let settingQuery: ReturnType<typeof vi.fn<Read>>;
 // Each test reads its own project, so no answer cached by another test shows first.
 let projects = 0;
 let projectId: string;
@@ -141,8 +146,18 @@ beforeEach(() => {
   vi.setSystemTime(NOW);
   projectId = `project-${++projects}`;
   answer = () => ({ ok: true, value: status() });
-  query = vi.fn(async () => answer());
-  vi.stubGlobal('window', { addEventListener() {}, removeEventListener() {}, pantheon: { query } });
+  const statusQuery = vi.fn<Read>(async () => answer());
+  query = statusQuery;
+  settingAnswer = () => ({ ok: true, value: { proposals: [] } });
+  settingQuery = vi.fn<Read>(async (method) => settingAnswer(method));
+  vi.stubGlobal('window', {
+    addEventListener() {},
+    removeEventListener() {},
+    pantheon: {
+      query: (method: string, input: unknown) =>
+        (method === 'project.status.read' ? statusQuery : settingQuery)(method, input),
+    },
+  });
   mock.board = {
     board: { cursor: 1, projects: [], sessions: [] },
     events: [],
@@ -409,5 +424,186 @@ describe('the recap', () => {
     const row = items(section(h.value, 'trace.recap.waiting'))[1]!;
     expect(nodes(row).some((n) => n.type === 'button')).toBe(false);
     expect(text(row)).toMatch(/^Export docs/);
+  });
+});
+
+const proposal = (
+  id: string,
+  command: SettingProposal['command'],
+  reason: string,
+  decided_at: number,
+): SettingProposal => ({
+  id,
+  revision: 2,
+  project_id: 'p',
+  session_id: 'conductor',
+  command,
+  input: {},
+  reason,
+  state: 'approved',
+  before: {},
+  created_at: decided_at - MIN,
+  decided_at,
+});
+const PROPOSALS = [
+  proposal('proposal-gate', 'project.gate.set', 'Run the type check before tests', NOW - 10 * MIN),
+  proposal('proposal-extensions', 'project.extensions.set', 'Turn off the browser', NOW - 90 * MIN),
+];
+const comparison = (): ProjectLandingsCompare => ({
+  before: {
+    count: 10,
+    landed: 9,
+    blocked: 1,
+    no_changes: 0,
+    first_gate_pass_rate: 0.4,
+    mean_review_rounds: 2.25,
+    median_wall_ms: 30 * MIN,
+    mean_tokens: 9000,
+  },
+  after: {
+    count: 3,
+    landed: 1,
+    blocked: 2,
+    no_changes: 0,
+    first_gate_pass_rate: null,
+    mean_review_rounds: 1,
+    median_wall_ms: 12 * MIN,
+    mean_tokens: 4000,
+  },
+});
+const withProposals = (compare: () => unknown = () => ({ ok: true, value: comparison() })) => {
+  settingAnswer = (method) =>
+    method === 'project.setting_proposals'
+      ? { ok: true, value: { proposals: PROPOSALS } }
+      : compare();
+};
+const settingCalls = (method: string) =>
+  settingQuery.mock.calls.filter(([called]) => called === method).map(([, input]) => input);
+const proposalList = (tree: unknown) =>
+  find(
+    section(tree, 'trace.recap.settings'),
+    (n) => n.props['aria-label'] === zh('trace.recap.settings.list'),
+  );
+const side = (tree: unknown, heading: string) =>
+  find(
+    section(tree, 'trace.recap.settings'),
+    (n) => n.props.role === 'group' && n.props['aria-label'] === heading,
+  );
+
+describe('the setting comparison', () => {
+  it('leaves the block out while no setting change was approved', async () => {
+    const h = await panel();
+    expect(settingCalls('project.setting_proposals')).toEqual([{ project_id: projectId }]);
+    expect(() => section(h.value, 'trace.recap.settings')).toThrow();
+    expect(nodes(h.value).filter((n) => n.type === 'section')).toHaveLength(4);
+    expect(settingCalls('project.landings.compare')).toEqual([]);
+  });
+
+  it('lists the approved changes after the landings and compares the newest first', async () => {
+    withProposals();
+    const h = await panel();
+    const blocks = nodes(h.value)
+      .filter((n) => n.type === 'section')
+      .map((n) => n.props['aria-label']);
+    expect(blocks.slice(0, 3)).toEqual([
+      zh('trace.recap.landings'),
+      zh('trace.recap.settings'),
+      zh('trace.recap.waiting'),
+    ]);
+    const list = proposalList(h.value);
+    expect(list.props.value).toBe('proposal-gate');
+    expect(
+      nodes(list)
+        .filter((n) => n.props.value !== undefined && n !== list)
+        .map((n) => text(n)),
+    ).toEqual([
+      expect.stringMatching(
+        new RegExp(`^${zh('trace.recap.setting.gate')}Run the type check before tests`),
+      ),
+      expect.stringMatching(
+        new RegExp(`^${zh('trace.recap.setting.extensions')}Turn off the browser`),
+      ),
+    ]);
+    expect(settingCalls('project.landings.compare')).toEqual([
+      { project_id: projectId, proposal_id: 'proposal-gate', count: '10' },
+    ]);
+    list.props.onValueChange('proposal-extensions');
+    h.render();
+    await h.flush();
+    expect(proposalList(h.value).props.value).toBe('proposal-extensions');
+    expect(settingCalls('project.landings.compare').at(-1)).toEqual({
+      project_id: projectId,
+      proposal_id: 'proposal-extensions',
+      count: '10',
+    });
+  });
+
+  it('shows the numbers of both sides, the real count of a short side and no gate runs', async () => {
+    withProposals();
+    const h = await panel();
+    const before = zhf('trace.recap.settings.before', { count: 10 });
+    const after = zhf('trace.recap.settings.after', { count: 3 });
+    expect(after).toContain('3');
+    expect(labels(side(h.value, before))).toEqual([
+      `${zh('trace.recap.state.landed')} 9`,
+      `${zh('trace.recap.state.blocked')} 1`,
+      `${zh('trace.recap.state.noChanges')} 0`,
+      `${zh('trace.recap.firstPass')} ${zhf('trace.recap.rate', { percent: 40 })}`,
+      `${zh('trace.recap.reviewRounds')} 2.3`,
+      `${zh('trace.recap.medianTime')} ${durationText(30 * MIN)}`,
+    ]);
+    expect(labels(side(h.value, after))).toEqual([
+      `${zh('trace.recap.state.landed')} 1`,
+      `${zh('trace.recap.state.blocked')} 2`,
+      `${zh('trace.recap.state.noChanges')} 0`,
+      `${zh('trace.recap.firstPass')} ${zh('trace.recap.noGates')}`,
+      `${zh('trace.recap.reviewRounds')} 1`,
+      `${zh('trace.recap.medianTime')} ${durationText(12 * MIN)}`,
+    ]);
+    expect(text(side(h.value, after))).toMatch(new RegExp(`^${after}`));
+  });
+
+  it.each([
+    ['setting.proposal_decided', 2, 1],
+    ['session.merged', 1, 2],
+    ['turn.completed', 1, 1],
+  ])('reads again after %s', async (kind, lists, compares) => {
+    withProposals();
+    const h = await panel();
+    mock.board = { ...mock.board, events: [{ sequence: 9, kind, project_id: projectId }] };
+    h.render();
+    await h.flush();
+    expect(settingCalls('project.setting_proposals')).toHaveLength(lists);
+    expect(settingCalls('project.landings.compare')).toHaveLength(compares);
+  });
+
+  it('shows a failed list on one line with a retry that reads again', async () => {
+    settingAnswer = () => ({ ok: false, error: { code: 'internal', message: 'disk full' } });
+    const h = await panel();
+    const failure = named(section(h.value, 'trace.recap.settings'), 'Failure');
+    expect(failure.props.error).toContain('disk full');
+    withProposals();
+    failure.props.onRetry();
+    h.render();
+    await h.flush();
+    expect(settingCalls('project.setting_proposals')).toHaveLength(2);
+    expect(() => named(section(h.value, 'trace.recap.settings'), 'Failure')).toThrow();
+    expect(proposalList(h.value).props.value).toBe('proposal-gate');
+  });
+
+  it('shows a failed comparison on one line with a retry that reads again', async () => {
+    withProposals(() => ({ ok: false, error: { code: 'internal', message: 'locked' } }));
+    const h = await panel();
+    const failure = named(section(h.value, 'trace.recap.settings'), 'Failure');
+    expect(failure.props.error).toContain('locked');
+    withProposals();
+    failure.props.onRetry();
+    h.render();
+    await h.flush();
+    expect(settingCalls('project.landings.compare')).toHaveLength(2);
+    expect(() => named(section(h.value, 'trace.recap.settings'), 'Failure')).toThrow();
+    expect(labels(side(h.value, zhf('trace.recap.settings.after', { count: 3 })))[3]).toBe(
+      `${zh('trace.recap.firstPass')} ${zh('trace.recap.noGates')}`,
+    );
   });
 });

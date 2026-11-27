@@ -8,7 +8,12 @@ import {
   type SettingProposal,
   type WorkflowPolicy,
 } from '@pantheon/domain';
-import { inputSchemas, prettifyError, type Command } from '@pantheon/protocol';
+import {
+  inputSchemas,
+  prettifyError,
+  type Command,
+  type ProjectSettingProposals,
+} from '@pantheon/protocol';
 import { tellAnswers } from './conductor.js';
 import {
   insert,
@@ -250,6 +255,22 @@ function prepareRespond(
     };
   }
   return prepared instanceof Promise ? prepared.then(approve) : approve(prepared);
+}
+
+/** project.setting_proposals */
+export function projectSettingProposals(
+  ctx: ControlContext,
+  p: Principal,
+  projectId: string,
+): ProjectSettingProposals {
+  projectAccess(ctx, p, projectId, 'project.read');
+  ctx.store.must('projects', projectId);
+  return {
+    proposals: ctx.store
+      .list<SettingProposal>(TABLE)
+      .filter((row) => row.project_id === projectId && row.state === 'approved')
+      .sort((a, b) => b.decided_at! - a.decided_at!),
+  };
 }
 
 export const settingProposalPreparers: Preparers = {

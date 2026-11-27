@@ -164,8 +164,12 @@ export function landingStatistics(landings: LandingRecord[]): LandingStatistics 
   const walls = landings
     .flatMap((r) => (r.wall_ms === null ? [] : [r.wall_ms]))
     .sort((a, b) => a - b);
+  const ended = (state: LandingRecord['state']) => landings.filter((r) => r.state === state).length;
   return {
     count,
+    landed: ended('landed'),
+    blocked: ended('blocked'),
+    no_changes: ended('no_changes'),
     first_gate_pass_rate: gated.length
       ? gated.filter((r) => r.first_gate_passed).length / gated.length
       : null,

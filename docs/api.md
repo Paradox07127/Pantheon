@@ -589,6 +589,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `project.plan.history` | `project_id`: string<br>`limit?`: integer |
 | `project.read` | `project_id`: string |
 | `project.review.metrics` | `project_id`: string |
+| `project.setting_proposals` | `project_id`: string |
 | `project.status.read` | `project_id`: string<br>`from`: integer<br>`to`: integer |
 | `project.timeline` | `project_id`: string<br>`since?`: string |
 | `project.trace` | `project_id`: string<br>`from?`: string<br>`to?`: string<br>`bucket_ms?`: integer |

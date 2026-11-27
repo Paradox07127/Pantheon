@@ -30,7 +30,7 @@ it('compares the nearest landings on either side of the approval', async () => {
       revision: 1,
       project_id: f.project.id,
       session_id: String(i),
-      state: 'landed',
+      state: i === 2 ? 'blocked' : i === 3 ? 'no_changes' : 'landed',
       reason: null,
       landed_sha: 'commit',
       ended_at,
@@ -47,6 +47,9 @@ it('compares the nearest landings on either side of the approval', async () => {
   expect(compare(2)).toEqual({
     before: {
       count: 2,
+      landed: 2,
+      blocked: 0,
+      no_changes: 0,
       first_gate_pass_rate: 0.5,
       mean_review_rounds: 0.5,
       median_wall_ms: 10,
@@ -54,6 +57,9 @@ it('compares the nearest landings on either side of the approval', async () => {
     },
     after: {
       count: 2,
+      landed: 0,
+      blocked: 1,
+      no_changes: 1,
       first_gate_pass_rate: 1,
       mean_review_rounds: 2.5,
       median_wall_ms: 50,
