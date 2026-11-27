@@ -186,7 +186,7 @@ it('keeps the paragraph of a brief when only the count of what was decided for t
     kind: 'decided',
     ref: { kind: 'decided', id: 'project-a' },
     count,
-    types: { permission: count },
+    types: { permission: count, question: 0 },
   });
   expect(briefItemsKey([merged, decided(2)])).toBe(briefItemsKey([merged]));
   expect(briefItemsKey([merged, decided(3)])).toBe(briefItemsKey([merged, decided(2)]));

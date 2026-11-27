@@ -137,21 +137,21 @@ let todayAll = 0;
 for (const p of projects)
   todayAll += (
     await query('project.decisions', { project_id: p.id, since: String(since('today')) })
-  ).items.filter((i) => i.kind === 'prompt_by_rule').length;
+  ).items.length;
 const footerText = () =>
   page.evaluate(
     `(() => { const f = document.querySelector('.np .np-f'); return f && f.getClientRects().length ? f.textContent.replace(/\\s+/g, ' ').trim() : null; })()`,
   );
 // The footer adds up each project's read as it lands; wait for the sum.
 let footer = null;
-await poll(async () => (footer = await footerText()) === `替你批准了 ${todayAll} 项今天`);
+await poll(async () => (footer = await footerText()) === `替你定了 ${todayAll} 项今天`);
 result.footer_daemon = { this_project: decided.length, all_projects: todayAll };
 check(
-  'popover 底部是 "替你批准了 N 项今天"，N 等于各项目 project.decisions 今天按规则批准的条数之和',
-  footer === `替你批准了 ${todayAll} 项今天`,
+  'popover 底部是 "替你定了 N 项今天"，N 等于各项目 project.decisions 今天按规则批准的条数之和',
+  footer === `替你定了 ${todayAll} 项今天`,
   { footer, daemon: result.footer_daemon },
 );
-check('对照组：N 加一时判 false', footer !== `替你批准了 ${todayAll + 1} 项今天`, footer);
+check('对照组：N 加一时判 false', footer !== `替你定了 ${todayAll + 1} 项今天`, footer);
 const popoverOpen = () =>
   page.evaluate(
     `(() => { const f = document.querySelector('.np .np-f'); return !!f && f.getClientRects().length > 0; })()`,
@@ -169,7 +169,7 @@ if (!result.before_footer_click.popover_open)
   await page.click({ role: 'button', name: `${all.length} 件事等你`, exact: true });
 let viaFooter = true;
 try {
-  await page.click({ role: 'button', name: `替你批准了 ${todayAll} 项`, exact: false });
+  await page.click({ role: 'button', name: `替你定了 ${todayAll} 项`, exact: false });
 } catch (error) {
   // No footer to click: the trace page opens from the palette's recent activity, so the table can still be checked.
   viaFooter = false;
@@ -182,7 +182,7 @@ try {
   );
   await page.fill({ role: 'combobox', name: box, exact: true }, '最近动态');
   await page.click({ role: 'option', name: '最近动态', exact: true });
-  await page.click({ role: 'tab', name: '替你批准的', exact: false });
+  await page.click({ role: 'tab', name: '替你定的', exact: false });
 }
 const selectedTab = () =>
   page.evaluate(
@@ -191,14 +191,14 @@ const selectedTab = () =>
 const tab = await poll(async () => {
   const s = await selectedTab();
   // The tab's name is followed by today's count.
-  return s.some((name) => name.startsWith('替你批准的')) && s;
+  return s.some((name) => name.startsWith('替你定的')) && s;
 });
-check('点底部后轨迹页的 "替你批准的" 标签选中', viaFooter && tab, tab || (await selectedTab()));
+check('点底部后轨迹页的 "替你定的" 标签选中', viaFooter && tab, tab || (await selectedTab()));
 
 // The table against project.decisions.
 const table = () =>
   page.evaluate(`(() => {
-    const t = [...document.querySelectorAll('[role=table]')].find((el) => el.getAttribute('aria-label') === '替你批准的' && el.getClientRects().length);
+    const t = [...document.querySelectorAll('[role=table]')].find((el) => el.getAttribute('aria-label') === '替你定的' && el.getClientRects().length);
     if (!t) return null;
     return [...t.querySelectorAll('[role=row]')].filter((r) => !r.classList.contains('afy-hd')).map((r) => {
       const cells = [...r.querySelectorAll('[role=cell]')];
@@ -222,15 +222,15 @@ const rows = await poll(async () => {
   const r = await table();
   return r?.length === decided.length && r;
 });
-check('表名为 "替你批准的"', rows, rows || (await table()));
+check('表名为 "替你定的"', rows, rows || (await table()));
 check(
-  '行按顺序等于 project.decisions：操作是工具输入，批准者是 已存规则，规则列是那条规则',
+  '行按顺序等于 project.decisions：操作是工具输入，决定者是 已存规则，规则列是那条规则',
   rowsMatch(rows, decided),
   { ui: rows, daemon: decided.map((i) => [i.kind, i.input_summary, i.rule]) },
 );
 check('对照组：顺序倒过来时判 false', !rowsMatch(rows, [...decided].reverse()));
 check(
-  '对照组：批准者当成 lead 时判 false',
+  '对照组：决定者当成 lead 时判 false',
   !(Array.isArray(rows) && rows.length > 0 && rows.every((r) => r.by === 'lead')),
 );
 check(
@@ -281,7 +281,7 @@ for (const [name, range] of [
 // The row's session link opens that session.
 // Both rows link to the same session; the first row's link is clicked where it is drawn.
 const linkAt = await page.evaluate(`(() => {
-  const t = [...document.querySelectorAll('[role=table]')].find((el) => el.getAttribute('aria-label') === '替你批准的');
+  const t = [...document.querySelectorAll('[role=table]')].find((el) => el.getAttribute('aria-label') === '替你定的');
   const b = t?.querySelector('[role=row]:not(.afy-hd) .afy-ref');
   const r = b?.getBoundingClientRect();
   return r && { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), text: b.textContent.trim() };

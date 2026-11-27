@@ -373,8 +373,17 @@ export async function deliverPermissionAnswer(
     const current = ctx.store.must<Approval>('approvals', approval.id);
     if (current.state === 'approved' && current.resolved_at === undefined)
       ctx.store.transaction(() => {
-        const { decided_by, session_wide, project_wide, answers, delivery_error, ...rest } =
-          current;
+        const {
+          decided_by,
+          session_wide,
+          project_wide,
+          answers,
+          delivery_error,
+          conductor_reason,
+          decision_reason,
+          answered_by_rule,
+          ...rest
+        } = current;
         const next = ctx.store.update<Approval>(
           'approvals',
           {
@@ -518,7 +527,12 @@ export function settleApproval(
   ctx: ControlContext,
   p: Principal,
   approval: Approval,
-  { decision, reason, answers }: ApprovalAnswer,
+  {
+    decision,
+    reason,
+    answers,
+    conductor_reason,
+  }: ApprovalAnswer & Pick<Approval, 'conductor_reason'>,
   cause: string,
   expected?: Command,
 ): Approval | { error: 'revision_conflict'; message: string } {
@@ -567,6 +581,7 @@ export function settleApproval(
       ...(decision === 'approve_project' ? { project_wide: true } : {}),
       ...(reason ? { decision_reason: reason } : {}),
       ...(answers ? { answers } : {}),
+      ...(conductor_reason ? { conductor_reason } : {}),
     },
     approval.revision,
   );

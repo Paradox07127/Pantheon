@@ -23,6 +23,8 @@ vi.mock('@/data/commands', () => ({
 }));
 import { NeedsPopover } from '@/components/NeedsPopover';
 import { ApprovedForYou } from '@/screens/trace/ApprovedForYou';
+import { TellBox } from '@/screens/changes/TellBox';
+import { newestDecision } from '@/data/decisions-for-user';
 import { zh, zhf } from './i18n-setup.js';
 
 const AT = new Date(2026, 10, 17, 14, 2).getTime();
@@ -87,6 +89,18 @@ const dayStart = (daysBack: number) => {
   const day = new Date();
   return new Date(day.getFullYear(), day.getMonth(), day.getDate() - daysBack).getTime();
 };
+
+it.each([
+  'approval.approved',
+  'approval.rejected',
+  'approval.refused',
+  'approval.resolved',
+  'session.deleted',
+])('reads the decisions again after %s, which can add or remove a row', (kind) => {
+  const event = (sequence: number, kind: string) => ({ sequence, kind }) as never;
+  expect(newestDecision([event(1, 'approval.requested'), event(2, kind)])).toBe(2);
+  expect(newestDecision([event(1, 'session.turn.delivery')])).toBe(0);
+});
 
 describe('approved for you', () => {
   const page = async () => {
@@ -173,6 +187,46 @@ describe('approved for you', () => {
     expect(query).toHaveBeenLastCalledWith('project.decisions', {
       project_id: 'alpha',
       since: String(dayStart(6)),
+    });
+  });
+
+  it('shows what the main agent answered with its title, each question to its answer and the reason, and tells it about the answer from the row', async () => {
+    const byMain: DecisionForUser = {
+      kind: 'answered_by_main_agent',
+      at: AT - 120_000,
+      approval_id: 'approval-main',
+      session_id: 'session-worker',
+      tool: 'AskUserQuestion',
+      question: 'Which package manager?',
+      answers: { 'Which package manager?': 'pnpm', 'Which checks?': 'lint, test' },
+      decision: 'approve',
+      reason: 'The workspace uses pnpm',
+      main_agent_session_id: 'session-lead',
+    };
+    decisions.alpha = [byMain];
+    const h = await page();
+    const row = rowOf(h.value, 'Which package manager?');
+    expect(text(cell(h.value, row, zh('trace.approved.column.by')))).toContain('Refunds rollout');
+    expect(text(cell(h.value, row, zh('trace.approved.column.action')))).toBe(
+      [
+        zhf('trace.approved.answer', { question: 'Which package manager?', answer: 'pnpm' }),
+        zhf('trace.approved.answer', { question: 'Which checks?', answer: 'lint, test' }),
+        zhf('trace.approved.answered', { reason: 'The workspace uses pnpm' }),
+      ].join(''),
+    );
+    expect(text(cell(h.value, row, zh('trace.approved.column.rule')))).toBe('');
+
+    const tell = nodes(row).find(
+      (n) => n.type === 'button' && n.props['aria-label'] === zh('trace.approved.tellMain'),
+    )!;
+    expect(tell.props['aria-expanded']).toBe(false);
+    tell.props.onClick();
+    h.render();
+    const box = find(h.value, (n) => n.type === TellBox);
+    expect(box.props).toMatchObject({
+      session: { id: 'session-lead' },
+      main: null,
+      draft: zhf('trace.approved.tellDraft', { action: 'Which package manager?' }),
     });
   });
 

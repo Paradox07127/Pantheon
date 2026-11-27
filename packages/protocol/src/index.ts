@@ -207,6 +207,7 @@ export const sessionTools = {
     message_session: 'conductor.message',
     stop_session: 'conductor.stop',
     read_needs_you: 'conductor.needs_you',
+    answer_request: 'conductor.answer',
     propose_setting: 'conductor.propose_setting',
     write_plan: 'conductor.plan_set',
     project_read: 'project.read',
@@ -1764,6 +1765,25 @@ export const inputSchemas = {
       ),
   }),
   'conductor.needs_you': z.strictObject({}),
+  'conductor.answer': z.strictObject({
+    session_id: str.describe('A session you spawned.'),
+    approval_id: str.describe('Its question to answer, as read_needs_you lists it.'),
+    decision: z
+      .enum(['approve', 'reject'])
+      .describe('approve: answer the question with answers; reject: decline the question.'),
+    answers: z
+      .record(str, str)
+      .optional()
+      .describe(
+        'With approve: each question text to the chosen option labels joined by ", ", or to your own words where the question allows them.',
+      ),
+    reason: z
+      .string()
+      .min(1)
+      .max(500)
+      .refine((value) => value.trim().length > 0)
+      .describe('Why you answer so; the user reads it among the decisions made for them.'),
+  }),
   'conductor.propose_setting': z.strictObject({
     command: z
       .enum(PROPOSABLE_SETTING_COMMANDS)
@@ -2298,23 +2318,44 @@ export interface ProjectPlanView {
   /** at is ISO time. */
   latest_landing?: { sha: string; title: string; at: string };
 }
-/** A prompt answered by the stored permission rule; at is Unix milliseconds. */
-export interface DecisionForUser {
-  kind: 'prompt_by_rule';
-  at: number;
-  approval_id: string;
-  session_id?: string;
-  /** Absent for a personal principal: a stored rule can be a whole command line. */
-  rule?: string;
-  tool?: string;
-  input_summary?: string;
-}
+/**
+ * A prompt answered by the stored permission rule, or a question the main agent that spawned the
+ * session answered or declined; at is Unix milliseconds.
+ */
+export type DecisionForUser =
+  | {
+      kind: 'prompt_by_rule';
+      at: number;
+      approval_id: string;
+      session_id?: string;
+      /** Absent for a personal principal: a stored rule can be a whole command line. */
+      rule?: string;
+      tool?: string;
+      input_summary?: string;
+    }
+  | {
+      kind: 'answered_by_main_agent';
+      at: number;
+      approval_id: string;
+      session_id?: string;
+      tool?: string;
+      decision: 'approve' | 'reject';
+      main_agent_session_id: string;
+      /** Absent for a personal principal, as are input_summary, question and answers: each can quote tool input. */
+      reason?: string;
+      input_summary?: string;
+      /** The first question of an AskUserQuestion request. */
+      question?: string;
+      /** Question text to the main agent's answer. */
+      answers?: Record<string, string>;
+    };
 /** GET /v1/project.decisions. */
 export interface DecisionsForUser {
   items: DecisionForUser[];
 }
 /** The type the approved-for-you list is filtered by. */
-export type DecisionType = 'permission';
+/** permission: a stored rule allowed a request; question: the main agent answered one. */
+export type DecisionType = 'permission' | 'question';
 /** GET /v1/session.search; metadata first, then messages, newest first in each group. */
 export interface SessionSearchResult {
   hits: SessionSearchHit[];

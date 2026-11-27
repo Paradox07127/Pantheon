@@ -165,7 +165,8 @@ A session that you create with `"purpose": "conductor"` in its `session.create` 
 - `message_session`: sends a message to a session that it started, as a new turn (`send`) or into the running turn (`steer`). At most 2 messages a minute go to one session.
 - `stop_session`: interrupts the running turn of a session that it started. With `close` it closes that session and discards its worktree.
 - `read_state`: the changes of the project, their checks, the landing queue and the items that wait for you. It also lists every session that it started, with its state and the input, output and cache-read tokens, the turns and the time of the turns; a count the runtime did not report is left out.
-- `read_needs_you`: the items that wait for you, without the actions that answer them. Only you answer them.
+- `read_needs_you`: the items that wait for you, without the actions that answer them, and the questions of the sessions it started.
+- `answer_request`: answers or declines a question of a session it started, with a reason you read under "Decided for you". The first answer, its own or yours, counts. Only you answer permission requests and questions that ask for a secret.
 - `propose_setting`: proposes a change to the project's gate commands, protected paths, budget, session defaults or extension switches. It waits for you in needs-you with its value now and after, runs as your own command only when you approve it, and the session hears the outcome at once on a line that starts with `[setting]`.
 - `project_read`: the settings, the brief and the memory of the project.
 - `memory_context`, `memory_search`, `memory_related`, `memory_get`: read the project memory. Pantheon does not add the memory to the turns of this session.
@@ -176,11 +177,11 @@ The session can only message, interrupt and close the sessions that it started.
 
 ## Trace
 
-"Trace" shows what the sessions of a project did. It has five tabs: "Timeline", "Runs", "Activity", "Diagnose" and "Approved for you".
+"Trace" shows what the sessions of a project did. It has five tabs: "Timeline", "Runs", "Activity", "Diagnose" and "Decided for you".
 The timeline shows one lane for each session, including external sessions.
 You can replay a turn and see the file changes of one step.
 "Diagnose" starts a separate read-only analysis session on the recorded evidence.
-"Approved for you" lists what a stored rule approved without you, with the reason and the rule. "Notifications" opens the delivery choices of each kind of decision.
+"Decided for you" lists what a stored rule approved without you, with the reason and the rule, and each question the main agent answered or declined for a session it started, with its answer and reason. "Notifications" opens the delivery choices of each kind of decision.
 
 ## Memory
 

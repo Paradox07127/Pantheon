@@ -255,6 +255,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
+| `conductor.answer` | `session_id`: string<br>`approval_id`: string<br>`decision`: "approve" \| "reject"<br>`answers?`: object<br>`reason`: string | answer_request (conductor) |
 | `conductor.message` | `session_id`: string<br>`text`: string<br>`mode?`: "send" \| "steer" | message_session (conductor) |
 | `conductor.needs_you` | — | read_needs_you (conductor) |
 | `conductor.plan_set` | `milestones`: object[]<br>`items`: object[] | write_plan (conductor) |

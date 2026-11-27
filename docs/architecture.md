@@ -40,7 +40,8 @@ apps/daemon ──> packages/control ─> packages/adapters, packages/store, pac
 - `message_session`(`conductor.message`):给 `spawned_by` 是自己的会话发 `send` 或 `steer`,按用户的发送排回合;每个被起会话 60 秒内最多 2 条(数 `session.conductor_messaged` 事件),超了 `rate_limited`。
 - `stop_session`(`conductor.stop`):对自己起的会话，不带 `close` 是打断当前回合(`interruptSession`),带 `close` 是关闭并丢弃工作树(`stopWorktreeSession`,`by: 'agent'`)。
 - `read_state`(`conductor.state`):项目的改动(`changes.ts`,最多 30 条,24 小时前合并的不列)和等用户的事(最多 20 条);`spawned` 列出自己起的每个会话(一天前丢弃的不列)和它的 `usage`(会话累计的输入、输出、缓存读 token,跑过的回合数和这些回合从 `turn.running` 到结束的毫秒数;运行时没报的数不写，带 `tokens_unreported`)。
-- `read_needs_you`(`conductor.needs_you`):`needsYou` 的本项目条目，只留种类、原因、会话和时间，不带作答动作和请求输入。
+- `read_needs_you`(`conductor.needs_you`):`needsYou` 的本项目条目，只留种类、原因、会话和时间，不带作答动作和请求输入;它起的会话里解析出 questions 的提问另带 `approval_id` 和 `questions`。
+- `answer_request`(`conductor.answer`):回答或婉拒它起的会话的提问，理由记在审批的 `conductor_reason`,先答者为准;权限请求和带 `secret` 的提问返回 `invalid_state`。
 
 放行 `project.read` 也放行了按它检查的本项目只读查询(会话列表、文件、轨迹等),和规划会话一样。替用户批工具审批、设备、发现结论不在表里，主 agent 做不了。
 
@@ -70,7 +71,7 @@ apps/daemon ──> packages/control ─> packages/adapters, packages/store, pac
 
 ## web
 
-Trace 屏的“替你批准的”页(`screens/trace/ApprovedForYou.tsx`)按日期范围列出存下的规则没问你就做的决定，数据由 `data/decisions-for-user.ts` 读 `project.decisions`,旁边可展开按决定种类的通知规则。
+Trace 屏的“替你定的”页(`screens/trace/ApprovedForYou.tsx`)按日期范围列出存下的规则没问你就做的决定和主 agent 替它起的会话答的提问，数据由 `data/decisions-for-user.ts` 读 `project.decisions`,旁边可展开按决定种类的通知规则。
 
 `components/visual/` 是会话画的图和固定的图表卡片:`VisualCard.tsx` 的 `VisualFrame` 是带计数、缩放和源码操作的卡框;`GraphDiagram.tsx` 画 graph(ELK 布局在 `graph-layout.ts`),`MermaidDiagram.tsx` 画 mermaid,其中 ER 图和时序图由 `ErDiagram.tsx`、`SequenceDiagram.tsx` 用原生组件画(布局在 `mermaid-layout.ts`);`VegaChart.tsx`、`KlineChart.tsx`、`TableVisual.tsx` 画 vega-lite、K 线和表格;自定义 HTML 跑在 `SandboxFrame.tsx` 里。
 

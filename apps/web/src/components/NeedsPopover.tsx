@@ -556,7 +556,7 @@ export function NeedsPopover({
           {t(
             {
               id: 'components.needsPopover.approved',
-              defaultMessage: '{count, plural, other {# approved for you}}',
+              defaultMessage: '{count, plural, other {# decided for you}}',
             },
             { count: decidedCount },
           )}

@@ -21,17 +21,20 @@ export function TellBox({
   row,
   session,
   main,
+  draft = tellDraft(row),
 }: {
-  row: ChangeRow;
-  session: WorkbenchSession;
+  row: Pick<ChangeRow, 'id' | 'title' | 'branch'>;
+  session: Pick<WorkbenchSession, 'id'>;
   /** The main agent that spawned the session; null when none did or it is not listed. */
-  main: WorkbenchSession | null;
+  main: Pick<WorkbenchSession, 'id'> | null;
+  /** The message's first line; the change's title and branch by default. */
+  draft?: string;
 }) {
   const [choice, setChoice] = useState<Recipient>('session');
   const recipient = choice === 'main' && main ? main : session;
   const target = useBoard((s) => s.board?.sessions.find((x) => x.id === recipient.id));
   const key = draftKey(target?.project_id ?? '', recipient.id, row.id);
-  const text = useDrafts((s) => s.drafts[key]?.text) ?? tellDraft(row);
+  const text = useDrafts((s) => s.drafts[key]?.text) ?? draft;
   const setText = (value: string) => useDrafts.getState().update(key, () => ({ text: value }));
   const [busy, setBusy] = useState(false);
   const [sentTo, setSentTo] = useState<string | null>(null);
@@ -40,7 +43,7 @@ export function TellBox({
   const state = tellState(target);
   const input = text.trim();
   // The prefilled reference alone says nothing to the agent.
-  const empty = !input || input === tellDraft(row).trim();
+  const empty = !input || input === draft.trim();
   const send = async () => {
     if (busy || sent || empty || !target || !state.enabled) return;
     setBusy(true);

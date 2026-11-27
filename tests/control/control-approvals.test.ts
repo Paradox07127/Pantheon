@@ -995,11 +995,20 @@ it('keeps an approval pending when the runtime refuses its decision and refuses 
   try {
     const reason = 'The agent offers no allow-once option for this request';
     const approval = f.request();
-    f.respond(approval);
+    // The reason of the refused answer must not travel with the later decline.
+    f.respond(approval, 'approve', user, { reason: 'The cache is warm' });
+    // A rule's mark must not travel to the user's later answer either.
+    const answered = f.store.must<Approval>('approvals', approval.id);
+    f.store.update<Approval>(
+      'approvals',
+      { ...answered, answered_by_rule: 'Bash(pnpm test)' },
+      answered.revision,
+    );
     f.answer.mockResolvedValueOnce({ ok: false, reason, refused: true });
     await f.control.tick();
     const reopened = f.store.must<Approval>('approvals', approval.id);
     expect(reopened.state).toBe('pending');
+    expect(reopened).not.toHaveProperty('answered_by_rule');
     expect(f.store.pending().filter((out) => out.kind === 'permission.answer')).toHaveLength(0);
     expect(() => f.respond(reopened)).toThrow(reason);
     f.respond(f.store.must<Approval>('approvals', approval.id), 'reject');

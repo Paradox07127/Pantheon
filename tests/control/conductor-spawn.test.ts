@@ -3,6 +3,7 @@ import path from 'node:path';
 import { expect, it, vi } from 'vitest';
 import {
   id,
+  type AgentEvent,
   type Approval,
   type Principal,
   type Project,
@@ -12,6 +13,7 @@ import {
   type WorkflowPolicy,
   type Workspace,
 } from '@pantheon/domain';
+import { agentEvent } from '../../packages/control/dist/agent.js';
 import { NOTICE_HOLD_MS, afterSpawnedTurn } from '../../packages/control/dist/conductor.js';
 import { usesPantheonTools, type ControlContext } from '../../packages/control/dist/context.js';
 import { settleReview } from '../../packages/control/dist/review.js';
@@ -785,6 +787,114 @@ it('tells the main agent once that a session it spawned waits for the user, howe
   expect(waits).toHaveLength(1);
   expect(waits[0]).toContain(session_id);
   expect(waits[0]).toContain('waits for the user to allow Bash');
+});
+
+const QUESTIONS = [
+  {
+    question: 'Which package manager?',
+    header: 'Tooling',
+    options: [{ label: 'pnpm', description: 'Workspace default' }],
+    multiSelect: false,
+  },
+];
+
+/** A session the conductor spawned, with a running turn whose requests ask raises. */
+async function askingSession(f: Fixture, conductorId: string) {
+  const { session_id } = await spawn(f, conductorId, script({ hang: true }));
+  await awaitWorkspaceReady(f.control, row(f, session_id).workspace_id!);
+  await eventually(
+    () => f.turns(session_id).at(-1)?.state === 'running',
+    () => f.control.tick(),
+  );
+  const turn = f.turns(session_id).at(-1)!;
+  let sequence = 100;
+  const ask = (tool: string, detail: unknown) => {
+    sequence++;
+    agentEvent(ctxOf(f), session_id, {
+      key: `ask-${sequence}`,
+      provider_sequence: sequence,
+      turn_id: turn.id,
+      kind: 'permission.requested',
+      request_id: `request-${sequence}`,
+      tool,
+      detail,
+    } as AgentEvent);
+  };
+  return { session_id, ask };
+}
+
+/** The items of the conductor's notice turns that say a spawned session waits for the user. */
+const toldWaits = (f: Fixture, conductorId: string) =>
+  trackerTurns(f, conductorId)
+    .flatMap((turn) => turn.input.split('\n\n'))
+    .filter((item) => item.startsWith('[input_required] [Pantheon] '));
+
+const question = { input: { questions: QUESTIONS }, questions: QUESTIONS };
+
+it.each([
+  {
+    asked: 'a question',
+    tool: 'AskUserQuestion',
+    detail: question,
+    requests: 1,
+    told: 'waits for the user to answer a question. Answer it with answer_request',
+  },
+  {
+    asked: 'a request titled AskUserQuestion whose questions were not read',
+    tool: 'AskUserQuestion',
+    detail: { input: { questions: QUESTIONS } },
+    requests: 1,
+    told: 'waits for the user to allow AskUserQuestion. Only the user answers it',
+  },
+  {
+    asked: 'a shell command',
+    tool: 'Bash',
+    detail: { input: { command: 'pnpm test' } },
+    requests: 1,
+    told: 'waits for the user to allow Bash. Only the user answers it',
+  },
+  {
+    asked: 'two questions at once',
+    tool: 'AskUserQuestion',
+    detail: question,
+    requests: 2,
+    told: 'waits for the user on 2 requests. Answer those you may with answer_request',
+  },
+])(
+  'tells the main agent whether it may answer $asked',
+  async ({ tool, detail, requests, told }) => {
+    const f = await workbenchFixture();
+    const conductor = await openConductor(f);
+    const own = await askingSession(f, conductor.id);
+    for (let each = 0; each < requests; each++) own.ask(tool, detail);
+    passTime(f.store, NOTICE_HOLD_MS);
+    await ticks(f);
+    await settle(f, row(f, conductor.id));
+
+    expect(toldWaits(f, conductor.id)).toEqual([expect.stringContaining(told)]);
+  },
+);
+
+it('tells the main agent of a question that joins a wait it heard of for a permission request', async () => {
+  const f = await workbenchFixture();
+  const conductor = await openConductor(f);
+  const own = await askingSession(f, conductor.id);
+  own.ask('Bash', { input: { command: 'pnpm test' } });
+  passTime(f.store, NOTICE_HOLD_MS);
+  await ticks(f);
+  await settle(f, row(f, conductor.id));
+  own.ask('AskUserQuestion', question);
+  await tellAgain(f, own.session_id);
+  passTime(f.store, NOTICE_HOLD_MS);
+  await ticks(f);
+  await settle(f, row(f, conductor.id));
+
+  expect(toldWaits(f, conductor.id)).toEqual([
+    expect.stringContaining('waits for the user to allow Bash. Only the user answers it'),
+    expect.stringContaining(
+      'waits for the user to answer a question. Answer it with answer_request',
+    ),
+  ]);
 });
 
 it('tells a running main agent in one line how many requests a session it spawned asked of the user one after another', async () => {

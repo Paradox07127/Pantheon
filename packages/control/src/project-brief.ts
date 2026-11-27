@@ -122,7 +122,10 @@ export function projectBrief(
       kind: 'decided',
       ref: { kind: 'decided', id: projectId },
       count: decided.length,
-      types: { permission: decided.length },
+      types: {
+        permission: decided.filter((item) => item.kind === 'prompt_by_rule').length,
+        question: decided.filter((item) => item.kind === 'answered_by_main_agent').length,
+      },
     });
   const prose = cursor?.prose;
   return prose && prose.since === after && prose.items_key === briefItemsKey(items)

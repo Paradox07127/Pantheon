@@ -2,6 +2,8 @@ import { expect, it, vi } from 'vitest';
 import { FixtureAdapter } from '@pantheon/adapters';
 import {
   id,
+  type AgentEvent,
+  type Approval,
   type Principal,
   type Project,
   type Review,
@@ -9,6 +11,8 @@ import {
   type SessionTurn,
   type Workspace,
 } from '@pantheon/domain';
+import { agentEvent } from '../../packages/control/dist/agent.js';
+import type { ControlContext } from '../../packages/control/dist/context.js';
 import { awaitWorkspaceReady, eventually, settle, waitOutStatusReuse } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
@@ -98,6 +102,292 @@ async function running(f: Fixture, sessionId: string) {
     () => f.control.tick(),
   );
 }
+
+const ctxOf = (f: Fixture) => (f.control as unknown as { ctx: ControlContext }).ctx;
+
+const QUESTIONS = [
+  {
+    question: 'Which package manager?',
+    header: 'Tooling',
+    options: [
+      { label: 'pnpm', description: 'Workspace default' },
+      { label: 'npm', description: 'Bundled with node' },
+    ],
+    multiSelect: false,
+  },
+];
+
+/** A session the conductor spawned, with a running turn whose requests ask raises. */
+async function askingSession(f: Fixture, conductorId: string) {
+  const sessionId = await spawn(f, conductorId, script({ hang: true }));
+  await running(f, sessionId);
+  const turn = f.turns(sessionId).at(-1)!;
+  let sequence = 100;
+  const ask = (tool: string, detail: unknown) => {
+    sequence++;
+    agentEvent(ctxOf(f), sessionId, {
+      key: `ask-${sequence}`,
+      provider_sequence: sequence,
+      turn_id: turn.id,
+      kind: 'permission.requested',
+      request_id: `request-${sequence}`,
+      tool,
+      detail,
+    } as AgentEvent);
+    return f.store.list<Approval>('approvals').at(-1)!;
+  };
+  const question = () =>
+    ask('AskUserQuestion', { input: { questions: QUESTIONS }, questions: QUESTIONS });
+  return { sessionId, ask, question };
+}
+
+/** The conductor's answer to a request of the session. */
+const answer = (
+  f: Fixture,
+  conductorId: string,
+  sessionId: string,
+  approval: Approval,
+  decision: 'approve' | 'reject',
+  extra: Record<string, unknown> = {},
+) =>
+  asSession<Approval>(f, conductorId, 'conductor.answer', {
+    session_id: sessionId,
+    approval_id: approval.id,
+    decision,
+    reason: 'The task needs it',
+    ...extra,
+  });
+
+it('answers a question of a session the conductor spawned with its reason, and no request of another session', async () => {
+  const f = await workbenchFixture();
+  vi.spyOn(f.adapter, 'answerPermission').mockResolvedValue({ ok: true });
+  const conductor = await openConductor(f);
+  const second = await openConductor(f);
+  const own = await askingSession(f, conductor.id);
+  const theirs = await askingSession(f, second.id);
+  const asked = own.question();
+  const elsewhere = theirs.question();
+  const answers = { 'Which package manager?': 'pnpm' };
+
+  // The receipt leaves the request input out, as read_needs_you does.
+  expect(
+    answer(f, conductor.id, own.sessionId, asked, 'approve', {
+      answers,
+      reason: 'The workspace uses pnpm',
+    }),
+  ).toEqual({ approval_id: asked.id, state: 'approved' });
+  expect(f.store.must<Approval>('approvals', asked.id)).toMatchObject({
+    state: 'approved',
+    answers,
+    decided_by: `session:${conductor.id}`,
+    conductor_reason: 'The workspace uses pnpm',
+  });
+  expect(
+    f.store
+      .events(0, f.project.id, 10000, ['approval.approved'])
+      .find((event) => event.aggregate_id === asked.id)?.payload,
+  ).toMatchObject({
+    decided_by: `session:${conductor.id}`,
+    conductor_reason: 'The workspace uses pnpm',
+  });
+
+  expect(refusal(() => answer(f, conductor.id, theirs.sessionId, elsewhere, 'reject')).code).toBe(
+    'permission_denied',
+  );
+  expect(refusal(() => answer(f, conductor.id, own.sessionId, elsewhere, 'reject')).code).toBe(
+    'not_found',
+  );
+  expect(f.store.must<Approval>('approvals', elsewhere.id).state).toBe('pending');
+});
+
+it('leaves a permission request, a request titled AskUserQuestion whose questions were not read, and a secret question to the user', async () => {
+  const f = await workbenchFixture();
+  vi.spyOn(f.adapter, 'answerPermission').mockResolvedValue({ ok: true });
+  const conductor = await openConductor(f);
+  const own = await askingSession(f, conductor.id);
+  const edit = own.ask('Edit', {
+    input: { file_path: 'src/answer.ts', old_string: 'a', new_string: 'b' },
+  });
+  const unread = own.ask('AskUserQuestion', { input: { questions: QUESTIONS } });
+  const secretQuestions = [{ ...QUESTIONS[0]!, secret: true }];
+  const secret = own.ask('AskUserQuestion', {
+    input: { questions: secretQuestions },
+    questions: secretQuestions,
+  });
+  const answers = { 'Which package manager?': 'pnpm' };
+
+  for (const approval of [edit, unread, secret])
+    for (const decision of ['reject', 'approve'] as const)
+      expect(
+        refusal(() =>
+          answer(
+            f,
+            conductor.id,
+            own.sessionId,
+            approval,
+            decision,
+            approval !== edit && decision === 'approve' ? { answers } : {},
+          ),
+        ),
+        `${decision} ${approval.tool}`,
+      ).toMatchObject({ code: 'invalid_state', message: 'Only the user answers this request' });
+  for (const approval of [edit, unread, secret])
+    expect(f.store.must<Approval>('approvals', approval.id).state).toBe('pending');
+});
+
+it('answers a question that takes no own words only with its option labels, those of a multi-select one joined by ", "', async () => {
+  const f = await workbenchFixture();
+  vi.spyOn(f.adapter, 'answerPermission').mockResolvedValue({ ok: true });
+  const conductor = await openConductor(f);
+  const own = await askingSession(f, conductor.id);
+  const questions = [
+    { ...QUESTIONS[0]!, other: false },
+    {
+      question: 'Which checks?',
+      header: 'Checks',
+      options: [
+        { label: 'lint', description: 'Style' },
+        { label: 'test', description: 'Behaviour' },
+      ],
+      multiSelect: true,
+      other: false,
+    },
+  ];
+  const asked = own.ask('AskUserQuestion', { input: { questions }, questions });
+  const approve = (answers: Record<string, string>) =>
+    answer(f, conductor.id, own.sessionId, asked, 'approve', { answers });
+
+  expect(
+    refusal(() => approve({ 'Which package manager?': 'yarn', 'Which checks?': 'lint' })),
+  ).toMatchObject({
+    code: 'invalid_input',
+    message: expect.stringContaining('Which package manager?'),
+  });
+  expect(
+    refusal(() => approve({ 'Which package manager?': 'pnpm', 'Which checks?': 'lint, build' })),
+  ).toMatchObject({ code: 'invalid_input', message: expect.stringContaining('Which checks?') });
+  expect(f.store.must<Approval>('approvals', asked.id).state).toBe('pending');
+  const answers = { 'Which package manager?': 'pnpm', 'Which checks?': 'lint, test' };
+  expect(approve(answers)).toMatchObject({ state: 'approved' });
+  expect(f.store.must<Approval>('approvals', asked.id).answers).toEqual(answers);
+  expect(
+    refusal(() =>
+      answer(
+        f,
+        conductor.id,
+        own.sessionId,
+        own.ask('AskUserQuestion', { input: { questions }, questions }),
+        'approve',
+        {
+          answers: { 'Which package manager?': 'pnpm', 'Which checks?': 'lint, lint' },
+        },
+      ),
+    ).code,
+  ).toBe('invalid_input');
+
+  const text = [
+    { question: 'Which name?', header: 'Name', options: [], multiSelect: false, other: false },
+  ];
+  const named = own.ask('AskUserQuestion', { input: { questions: text }, questions: text });
+  expect(
+    answer(f, conductor.id, own.sessionId, named, 'approve', { answers: { 'Which name?': 'cli' } }),
+  ).toMatchObject({ state: 'approved' });
+});
+
+it('answers only the questions asked, declines without answers, and keeps its reason from the declined session', async () => {
+  const f = await workbenchFixture();
+  const delivered = vi.spyOn(f.adapter, 'answerPermission').mockResolvedValue({ ok: true });
+  const conductor = await openConductor(f);
+  const own = await askingSession(f, conductor.id);
+  const asked = own.question();
+  const answers = { 'Which package manager?': 'pnpm' };
+
+  expect(
+    refusal(() =>
+      answer(f, conductor.id, own.sessionId, asked, 'approve', {
+        answers: { ...answers, 'Which registry?': 'npmjs' },
+      }),
+    ).code,
+  ).toBe('invalid_input');
+  expect(
+    refusal(() => answer(f, conductor.id, own.sessionId, asked, 'reject', { answers })).code,
+  ).toBe('invalid_input');
+  expect(answer(f, conductor.id, own.sessionId, asked, 'reject')).toMatchObject({
+    state: 'rejected',
+  });
+  expect(f.store.must<Approval>('approvals', asked.id)).toMatchObject({
+    state: 'rejected',
+    conductor_reason: 'The task needs it',
+  });
+  await eventually(
+    () => delivered.mock.calls.length > 0,
+    () => f.control.tick(),
+  );
+  expect(JSON.stringify(delivered.mock.calls)).not.toContain('The task needs it');
+});
+
+it('takes whichever answer comes first, the user or the main agent', async () => {
+  const f = await workbenchFixture();
+  vi.spyOn(f.adapter, 'answerPermission').mockResolvedValue({ ok: true });
+  const conductor = await openConductor(f);
+  const own = await askingSession(f, conductor.id);
+  const answers = { 'Which package manager?': 'pnpm' };
+
+  const first = own.question();
+  f.call('approval.respond', { approval_id: first.id, decision: 'reject' }, first.revision);
+  expect(
+    refusal(() => answer(f, conductor.id, own.sessionId, first, 'approve', { answers })).code,
+  ).toBe('approval_not_pending');
+
+  const second = own.question();
+  answer(f, conductor.id, own.sessionId, second, 'approve', { answers });
+  const settled = f.store.must<Approval>('approvals', second.id);
+  expect(
+    refusal(() =>
+      f.call('approval.respond', { approval_id: second.id, decision: 'reject' }, settled.revision),
+    ).code,
+  ).toBe('approval_not_pending');
+  expect(f.store.must<Approval>('approvals', second.id)).toMatchObject({
+    state: 'approved',
+    decided_by: `session:${conductor.id}`,
+  });
+});
+
+it('shows a conductor the questions of the sessions it spawned, and no request input', async () => {
+  const f = await workbenchFixture();
+  const conductor = await openConductor(f);
+  const second = await openConductor(f);
+  const own = await askingSession(f, conductor.id);
+  const theirs = await askingSession(f, second.id);
+  const asked = own.question();
+  own.ask('Edit', { input: { file_path: 'src/answer.ts', old_string: 'a', new_string: 'b' } });
+  theirs.ask('Edit', { input: { file_path: 'src/other.ts', old_string: 'a', new_string: 'b' } });
+
+  const { items } = asSession<{ items: Record<string, unknown>[] }>(
+    f,
+    conductor.id,
+    'conductor.needs_you',
+    {},
+  );
+
+  expect(items).toContainEqual(
+    expect.objectContaining({
+      session_id: own.sessionId,
+      approval_id: asked.id,
+      request: 'AskUserQuestion',
+      questions: QUESTIONS,
+    }),
+  );
+  const permission = items.find(
+    (item) => item.request === 'Edit' && item.session_id === own.sessionId,
+  );
+  const foreign = items.find((item) => item.session_id === theirs.sessionId);
+  for (const item of [permission, foreign]) {
+    expect(item).toMatchObject({ kind: 'permission' });
+    for (const field of ['approval_id', 'input_summary', 'questions'])
+      expect(item).not.toHaveProperty(field);
+  }
+});
 
 it('sends a message to a session the conductor spawned, at most twice a minute to one session', async () => {
   const f = await workbenchFixture();

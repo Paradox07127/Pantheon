@@ -348,6 +348,8 @@ export interface Approval extends Entity {
   session_wide?: boolean;
   /** The user's reason, sent back with a denial. */
   decision_reason?: string;
+  /** Why the main agent that spawned the session answered the request as it did. */
+  conductor_reason?: string;
   /** The full questions of an AskUserQuestion request. */
   questions?: ApprovalQuestion[];
   /** Question text to the chosen labels joined by ", ", or to the user's own words. */

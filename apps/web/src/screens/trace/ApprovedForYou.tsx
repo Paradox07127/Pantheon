@@ -1,8 +1,8 @@
-import { useState, type ReactNode } from 'react';
+import { Fragment, useState, type ReactNode } from 'react';
 import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
 import { Tabs } from '@base-ui/react/tabs';
-import { Bell, KeyRound, ScrollText, X } from 'lucide-react';
+import { Bell, Bot, KeyRound, MessageSquare, ScrollText, X } from 'lucide-react';
 import { Clip } from '../../components/Clip';
 import { EmptyState } from '../../components/EmptyState';
 import { TopBar } from '../../components/TopBar';
@@ -10,6 +10,7 @@ import { useAppSettings } from '../../data/app-settings';
 import { useBoard } from '../../data/board';
 import {
   decisionRow,
+  tellDecisionDraft,
   useDecisionsForUser,
   type DecisionRange,
 } from '../../data/decisions-for-user';
@@ -20,6 +21,7 @@ import { dayText } from '../../lib/time-text';
 import { SCREEN_NAMES } from '../../screens';
 import { useShell } from '../../store';
 import { Failure, Skeleton } from '../../components/PanelBoundary';
+import { TellBox } from '../changes/TellBox';
 import { decisionDeliveryRows } from '../settings/NotificationsPage';
 import './approved-for-you.css';
 
@@ -51,12 +53,13 @@ function DeliveryRules() {
 }
 
 /**
- * What a stored rule decided without the user in the project, over a range of days, with
- * the delivery rules beside it on demand; `tabs` are the trace's own.
+ * What a stored rule or a main agent decided without the user in the project, over a range of
+ * days, with the delivery rules beside it on demand; `tabs` are the trace's own.
  */
 export function ApprovedForYou({ projectId, tabs }: { projectId: string | null; tabs: ReactNode }) {
   const [range, setRange] = useState<DecisionRange>('today');
   const [notifying, setNotifying] = useState(false);
+  const [telling, setTelling] = useState<string | null>(null);
   const read = useDecisionsForUser(projectId, range);
   const board = useBoard((s) => s.board);
   const items = read.read?.items ?? null;
@@ -66,7 +69,8 @@ export function ApprovedForYou({ projectId, tabs }: { projectId: string | null; 
     const session = board?.sessions.find((s) => s.id === sessionId);
     return session && board ? sessionTitle(session, board) : shortId(sessionId);
   };
-  const label = t({ id: 'trace.approved.label', defaultMessage: 'Approved for you' });
+  const tellMain = t({ id: 'trace.approved.tellMain', defaultMessage: 'Tell the main agent' });
+  const label = t({ id: 'trace.approved.label', defaultMessage: 'Decided for you' });
   const notifications = t({ id: 'trace.approved.notifications', defaultMessage: 'Notifications' });
   return (
     <>
@@ -107,7 +111,7 @@ export function ApprovedForYou({ projectId, tabs }: { projectId: string | null; 
                 inline
                 title={t({
                   id: 'trace.approved.empty',
-                  defaultMessage: 'Nothing was approved for you.',
+                  defaultMessage: 'Nothing was decided for you.',
                 })}
               />
             ) : (
@@ -117,7 +121,7 @@ export function ApprovedForYou({ projectId, tabs }: { projectId: string | null; 
                     {t({ id: 'trace.approved.column.action', defaultMessage: 'Action' })}
                   </span>
                   <span role="columnheader">
-                    {t({ id: 'trace.approved.column.by', defaultMessage: 'Approved by' })}
+                    {t({ id: 'trace.approved.column.by', defaultMessage: 'Decided by' })}
                   </span>
                   <span role="columnheader">
                     {t({ id: 'trace.approved.column.rule', defaultMessage: 'Rule' })}
@@ -129,37 +133,82 @@ export function ApprovedForYou({ projectId, tabs }: { projectId: string | null; 
                     {t({ id: 'trace.approved.column.when', defaultMessage: 'When' })}
                   </span>
                 </div>
-                {rows.map((row) => (
-                  <div key={row.key} className="afy-r" role="row">
-                    <span role="cell" className="afy-a">
-                      <KeyRound className="ic-sm" aria-hidden="true" />
-                      <span className="afy-what">
-                        <Clip text={row.action} className={row.code ? 'mono' : undefined} />
-                      </span>
-                    </span>
-                    <span role="cell" className="afy-by">
-                      <ScrollText className="ic-sm" aria-hidden="true" />
-                      {row.by}
-                    </span>
-                    <span role="cell" className="afy-c">
-                      {row.rule !== null && <Clip text={row.rule} className="mono" />}
-                    </span>
-                    <span role="cell" className="afy-c">
-                      {row.sessionId !== null && (
-                        <button
-                          type="button"
-                          className="afy-ref"
-                          onClick={() => useShell.getState().openSession(row.sessionId!)}
-                        >
-                          <Clip text={titleOf(row.sessionId)} />
-                        </button>
+                {rows.map((row) => {
+                  const main = row.mainAgent;
+                  const listed = main && board?.sessions.some((s) => s.id === main.sessionId);
+                  return (
+                    <Fragment key={row.key}>
+                      <div className="afy-r" role="row">
+                        <span role="cell" className="afy-a">
+                          <KeyRound className="ic-sm" aria-hidden="true" />
+                          <span className="afy-what">
+                            {main?.answers.length ? (
+                              main.answers.map((answer) => <Clip key={answer} text={answer} />)
+                            ) : (
+                              <Clip text={row.action} className={row.code ? 'mono' : undefined} />
+                            )}
+                            {main?.decided && <Clip text={main.decided} className="mu" />}
+                          </span>
+                        </span>
+                        <span role="cell" className="afy-by">
+                          {main ? (
+                            <>
+                              <Bot className="ic-sm" aria-hidden="true" />
+                              <Clip text={titleOf(main.sessionId)} />
+                              {listed && (
+                                <button
+                                  type="button"
+                                  className="ib"
+                                  aria-label={tellMain}
+                                  aria-expanded={telling === row.key}
+                                  onClick={() =>
+                                    setTelling((open) => (open === row.key ? null : row.key))
+                                  }
+                                >
+                                  <MessageSquare aria-hidden="true" />
+                                </button>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              <ScrollText className="ic-sm" aria-hidden="true" />
+                              {row.by}
+                            </>
+                          )}
+                        </span>
+                        <span role="cell" className="afy-c">
+                          {row.rule !== null && <Clip text={row.rule} className="mono" />}
+                        </span>
+                        <span role="cell" className="afy-c">
+                          {row.sessionId !== null && (
+                            <button
+                              type="button"
+                              className="afy-ref"
+                              onClick={() => useShell.getState().openSession(row.sessionId!)}
+                            >
+                              <Clip text={titleOf(row.sessionId)} />
+                            </button>
+                          )}
+                        </span>
+                        <span role="cell" className="afy-when">
+                          {dayText(row.at, now, { time: true })}
+                        </span>
+                      </div>
+                      {main && listed && telling === row.key && (
+                        <div role="row" aria-label={tellMain}>
+                          <div role="cell">
+                            <TellBox
+                              row={{ id: `decision:${row.key}`, title: row.action }}
+                              session={{ id: main.sessionId }}
+                              main={null}
+                              draft={tellDecisionDraft(row)}
+                            />
+                          </div>
+                        </div>
                       )}
-                    </span>
-                    <span role="cell" className="afy-when">
-                      {dayText(row.at, now, { time: true })}
-                    </span>
-                  </div>
-                ))}
+                    </Fragment>
+                  );
+                })}
               </div>
             )}
           </div>

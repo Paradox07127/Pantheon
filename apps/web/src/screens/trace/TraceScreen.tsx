@@ -268,7 +268,7 @@ const TABS: { tab: TraceTab; label: string }[] = [
   {
     tab: 'approved',
     get label() {
-      return t({ id: 'trace.tab.approved', defaultMessage: 'Approved for you' });
+      return t({ id: 'trace.tab.approved', defaultMessage: 'Decided for you' });
     },
   },
 ];

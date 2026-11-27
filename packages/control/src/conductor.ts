@@ -25,6 +25,7 @@ import {
 } from './context.js';
 import { runGit } from './git.js';
 import { runtime as admittedRuntime } from './admission.js';
+import { settleApproval } from './approvals.js';
 import { gateCommands, inScope } from './landing.js';
 import { sessionGoal } from './landing-diff.js';
 import { executed, latestEvent, needsYou } from './needs-you.js';
@@ -50,7 +51,7 @@ import { projectOverBudget } from './workflow-policy.js';
 
 /** The instructions Pantheon adds to a conductor session after the line on where it works. */
 export const CONDUCTOR_INSTRUCTIONS =
-  "Pantheon gives this session these tools. request_review: another vendor reviews your committed changes or those of a session you spawned; the result comes back to you as a message. report_ready: committed changes go through the project's gate and land. spawn_session: another vendor's session starts in a new worktree from your current commit, in permission mode ask or auto_edit; you hear when its turn ends. News of the sessions you spawned comes in batches while you are idle, at most 30 s after its first item; each item starts on a new line with its state in brackets: [completed], [failed], [input_required] when it waits for the user, [review], [landed] or [blocked]. News of sessions, reviews and landings reaches you only after your turn ends: once you have spawned sessions or requested reviews and have nothing else to do now, end your turn and wait; do not sleep or poll read_state to wait. Give it acceptance, what done means; its first message ends with the list, and request_review on it checks each item. Give it owns, the paths it may change; its first message names them, and read_state lists its changed files outside them. Give runtimes, two or three, to run the same task once on each. To keep the best result, review them, land one with report_ready and close the others with stop_session close. message_session: a message to a session you spawned, or a steer into its running turn; at most 2 a minute to one session. stop_session: interrupts the running turn of a session you spawned, or closes that session. read_state: this project's changes, checks, landing queue and items waiting for the user, and each session you spawned with its state and what it used. read_needs_you: the items waiting for the user; only the user answers them. propose_setting: a change to the project's gate commands, protected paths, budget, session defaults or extension switches, which waits for the user and runs only once the user approves it; the outcome comes back at once on a line that starts with [setting]. write_plan: the project's plan, milestones and items with stable ids and the sessions working on each; each call replaces the whole plan, so read it back with read_state first; items the user accepted must stay, marked dropped if you give one up. project_read: the project's settings, budget, session defaults, brief and memory. memory_context, memory_search, memory_related and memory_get: project memory, which Pantheon does not add to your turns. memory_propose: a memory entry; a decision stays a draft until the user confirms it. draw: a chart or diagram the user sees in this session. Plan, split work and run subagents with your own tools.";
+  "Pantheon gives this session these tools. request_review: another vendor reviews your committed changes or those of a session you spawned; the result comes back to you as a message. report_ready: committed changes go through the project's gate and land. spawn_session: another vendor's session starts in a new worktree from your current commit, in permission mode ask or auto_edit; you hear when its turn ends. News of the sessions you spawned comes in batches while you are idle, at most 30 s after its first item; each item starts on a new line with its state in brackets: [completed], [failed], [input_required] when it waits for the user, [review], [landed] or [blocked]. News of sessions, reviews and landings reaches you only after your turn ends: once you have spawned sessions or requested reviews and have nothing else to do now, end your turn and wait; do not sleep or poll read_state to wait. Give it acceptance, what done means; its first message ends with the list, and request_review on it checks each item. Give it owns, the paths it may change; its first message names them, and read_state lists its changed files outside them. Give runtimes, two or three, to run the same task once on each. To keep the best result, review them, land one with report_ready and close the others with stop_session close. message_session: a message to a session you spawned, or a steer into its running turn; at most 2 a minute to one session. stop_session: interrupts the running turn of a session you spawned, or closes that session. read_state: this project's changes, checks, landing queue and items waiting for the user, and each session you spawned with its state and what it used. read_needs_you: the items waiting for the user, with the questions of the sessions you spawned. answer_request: answers or declines a question of a session you spawned, with your reason, which the user reads; the first answer, yours or the user's, counts; only the user answers a permission request. propose_setting: a change to the project's gate commands, protected paths, budget, session defaults or extension switches, which waits for the user and runs only once the user approves it; the outcome comes back at once on a line that starts with [setting]. write_plan: the project's plan, milestones and items with stable ids and the sessions working on each; each call replaces the whole plan, so read it back with read_state first; items the user accepted must stay, marked dropped if you give one up. project_read: the project's settings, budget, session defaults, brief and memory. memory_context, memory_search, memory_related and memory_get: project memory, which Pantheon does not add to your turns. memory_propose: a memory entry; a decision stays a draft until the user confirms it. draw: a chart or diagram the user sees in this session. Plan, split work and run subagents with your own tools.";
 
 /** conductor.review; the session's committed range and its diff are read before the transaction. */
 function prepareConductorReview(
@@ -415,9 +416,81 @@ const conductorStop: Handler = (ctx, p, command) => {
   return { session_id: target.id, next: 'The session closes and its worktree is discarded.' };
 };
 
-/** What a conductor reads of an item waiting for the user: no actions that answer it, no request input. */
-function waitingItem(item: NeedsYouItem) {
+/**
+ * Whether the request is a question whose questions were read and none asks for a secret, the one
+ * kind a main agent answers.
+ */
+function isAnswerableQuestion(approval: Approval): boolean {
+  return (
+    approval.tool === 'AskUserQuestion' &&
+    !!approval.questions?.length &&
+    !approval.questions.some((question) => question.secret)
+  );
+}
+
+/** conductor.answer; the main agent's answer settles the question as the user's would, first answer first. */
+const conductorAnswer: Handler = (ctx, p, command) => {
+  const input = inputSchemas['conductor.answer'].parse(command.input);
+  const target = spawnedTarget(ctx, p, command, input.session_id);
+  const approval = ctx.store.get<Approval>('approvals', input.approval_id);
+  requireThat(
+    approval?.session_id === target.id,
+    'not_found',
+    'Name a request of the session you name',
+  );
+  requireThat(
+    isAnswerableQuestion(approval),
+    'invalid_state',
+    'Only the user answers this request',
+  );
+  const asked = new Set(approval.questions!.map((question) => question.question));
+  requireThat(
+    input.decision === 'approve'
+      ? Object.keys(input.answers ?? {}).every((question) => asked.has(question))
+      : input.answers === undefined,
+    'invalid_input',
+    'Answer only the questions asked, and decline without answers',
+  );
+  if (input.decision === 'approve')
+    for (const question of approval.questions!) {
+      const answer = input.answers?.[question.question];
+      // A question without options takes text, whatever other says.
+      if (question.other !== false || !question.options.length || !answer?.trim()) continue;
+      const labels = question.options.map((option) => option.label);
+      // Runtimes split a multi-select answer at ", " to map it to their options.
+      const parts = question.multiSelect ? answer.split(', ') : [answer];
+      requireThat(
+        new Set(parts).size === parts.length && parts.every((part) => labels.includes(part)),
+        'invalid_input',
+        `Answer "${question.question}" with its option labels only`,
+      );
+    }
+  const settled = settleApproval(
+    ctx,
+    p,
+    approval,
+    {
+      decision: input.decision,
+      ...(input.answers ? { answers: input.answers } : {}),
+      // Runtimes pass a denial reason on as the user's words, so the session gets a plain decline.
+      conductor_reason: input.reason,
+    },
+    command.command_id,
+  );
+  // The request input stays with the user, as read_needs_you leaves it out.
+  return 'error' in settled ? settled : { approval_id: settled.id, state: settled.state };
+};
+
+/**
+ * What a conductor reads of an item waiting for the user: no actions that answer it, no request
+ * input, and the questions of the sessions it spawned, which it may answer.
+ */
+function waitingItem(ctx: ControlContext, item: NeedsYouItem, spawned: ReadonlySet<string>) {
   const sessionId = item.source.table === 'sessions' ? item.source.id : item.session_id;
+  const asked =
+    item.source.table === 'approvals' && !!sessionId && spawned.has(sessionId)
+      ? ctx.store.get<Approval>('approvals', item.source.id)
+      : undefined;
   return {
     kind: item.kind,
     reason: item.reason,
@@ -425,6 +498,9 @@ function waitingItem(item: NeedsYouItem) {
     status: item.status,
     ...(sessionId ? { session_id: sessionId } : {}),
     ...(item.binding?.action ? { request: item.binding.action } : {}),
+    ...(asked?.state === 'pending' && isAnswerableQuestion(asked)
+      ? { approval_id: asked.id, questions: asked.questions }
+      : {}),
     ...(item.next_step ? { next_step: item.next_step } : {}),
     created_at: item.created_at,
   };
@@ -436,9 +512,18 @@ function prepareConductorNeedsYou(ctx: ControlContext, p: Principal, command: Co
   const projectId = p.project_id ?? '';
   projectAccess(ctx, p, projectId, command.type);
   // The conductor's access is checked above; the shared read then runs as for the user.
-  return (ctx) => ({
-    items: needsYou(ctx, { id: p.id, role: 'user' }, projectId).items.map(waitingItem),
-  });
+  return (ctx) => {
+    const spawned = new Set(
+      ctx.store
+        .list<Session>('sessions')
+        .flatMap((session) => (session.spawned_by?.session_id === p.session_id ? session.id : [])),
+    );
+    return {
+      items: needsYou(ctx, { id: p.id, role: 'user' }, projectId).items.map((item) =>
+        waitingItem(ctx, item, spawned),
+      ),
+    };
+  };
 }
 
 const DAY_MS = 24 * 60 * 60_000;
@@ -676,16 +761,22 @@ function untoldNews(ctx: ControlContext, session: Session): News | undefined {
           ]),
     ].join(' ');
   };
-  const asked = wait && !wait.told ? wait.untold[0] : undefined;
+  // A question the main agent may answer is told even within a wait it heard of.
+  const telling = !wait ? [] : wait.told ? wait.untold.filter(isAnswerableQuestion) : wait.untold;
+  const asked = telling[0];
   return {
     session,
     lines: [
       ...turns.map(notice),
       ...(asked
         ? [
-            wait!.untold.length > 1
-              ? waitsOn(`[input_required] [Pantheon] ${named}`, wait!.untold.length)
-              : `[input_required] [Pantheon] ${named} waits for the user to ${asked.questions?.length ? 'answer a question' : `allow ${asked.tool ?? 'a tool call'}`}. Only the user answers it; read it with read_needs_you.`,
+            telling.length > 1
+              ? waitsOn(
+                  `[input_required] [Pantheon] ${named}`,
+                  telling.length,
+                  telling.some(isAnswerableQuestion),
+                )
+              : `[input_required] [Pantheon] ${named} waits for the user to ${isAnswerableQuestion(asked) ? `answer a question. Answer it ${ANSWER_IT} or leave it to the user` : `allow ${asked.tool ?? 'a tool call'}. Only the user answers it`}; read it with read_needs_you.`,
           ]
         : []),
     ],
@@ -701,8 +792,11 @@ function untoldNews(ctx: ControlContext, session: Session): News | undefined {
   };
 }
 
-const waitsOn = (head: string, count: number) =>
-  `${head} waits for the user on ${count} requests. Only the user answers them; read them with read_needs_you.`;
+/** In the told item of a wait the main agent may answer; foldWaits looks for it. */
+const ANSWER_IT = 'with answer_request, giving your reason,';
+
+const waitsOn = (head: string, count: number, answerable: boolean) =>
+  `${head} waits for the user on ${count} requests. ${answerable ? `Answer those you may ${ANSWER_IT} or leave them to the user` : 'Only the user answers them'}; read them with read_needs_you.`;
 const WAIT_ITEM =
   /^(\[input_required\] \[Pantheon\] .*, which you spawned,) waits for the user (?:on (\d+) requests|to )/;
 
@@ -710,13 +804,17 @@ const WAIT_ITEM =
 function foldWaits(items: string[]): string[] {
   const heads = items.map((item) => WAIT_ITEM.exec(item));
   const counts = new Map<string, number>();
-  for (const head of heads)
-    if (head) counts.set(head[1]!, (counts.get(head[1]!) ?? 0) + Number(head[2] ?? 1));
+  const answerable = new Set<string>();
+  for (const [index, head] of heads.entries())
+    if (head) {
+      counts.set(head[1]!, (counts.get(head[1]!) ?? 0) + Number(head[2] ?? 1));
+      if (items[index]!.includes(ANSWER_IT)) answerable.add(head[1]!);
+    }
   return items.flatMap((item, index) => {
     const head = heads[index]?.[1];
     if (!head || heads.filter((each) => each?.[1] === head).length === 1) return [item];
     return heads.findIndex((each) => each?.[1] === head) === index
-      ? [waitsOn(head, counts.get(head)!)]
+      ? [waitsOn(head, counts.get(head)!, answerable.has(head))]
       : [];
   });
 }
@@ -918,4 +1016,5 @@ export const conductorPreparers: Preparers = {
   'conductor.message': () => conductorMessage,
   'conductor.stop': () => conductorStop,
   'conductor.needs_you': prepareConductorNeedsYou,
+  'conductor.answer': () => conductorAnswer,
 };

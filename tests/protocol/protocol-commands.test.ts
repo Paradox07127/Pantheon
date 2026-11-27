@@ -142,6 +142,7 @@ it('gives a conductor session exactly its tools with strict inputs', () => {
     message_session: 'conductor.message',
     stop_session: 'conductor.stop',
     read_needs_you: 'conductor.needs_you',
+    answer_request: 'conductor.answer',
     propose_setting: 'conductor.propose_setting',
     write_plan: 'conductor.plan_set',
     project_read: 'project.read',
@@ -211,6 +212,34 @@ it('gives a conductor session exactly its tools with strict inputs', () => {
       [{}, { session_id: 'spawned', close: 'yes' }],
     ],
     ['conductor.needs_you' as CommandType, {}, [{ project_id: 'project' }]],
+    [
+      'conductor.answer' as CommandType,
+      {
+        session_id: 'spawned',
+        approval_id: 'approval',
+        decision: 'approve',
+        answers: { 'Which package manager?': 'pnpm' },
+        reason: 'The workspace uses pnpm',
+      },
+      [
+        { session_id: 'spawned', approval_id: 'approval', decision: 'approve' },
+        { session_id: 'spawned', approval_id: 'approval', decision: 'approve', reason: '' },
+        { session_id: 'spawned', approval_id: 'approval', decision: 'approve', reason: '   ' },
+        {
+          session_id: 'spawned',
+          approval_id: 'approval',
+          decision: 'approve',
+          reason: 'x'.repeat(501),
+        },
+        {
+          session_id: 'spawned',
+          approval_id: 'approval',
+          decision: 'approve_session',
+          reason: 'For the session',
+        },
+        { approval_id: 'approval', decision: 'reject', reason: 'Not needed' },
+      ],
+    ],
     [
       'conductor.plan_set' as CommandType,
       {

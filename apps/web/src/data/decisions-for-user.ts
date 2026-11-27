@@ -12,8 +12,14 @@ export type DecisionRange = 'today' | 'week' | 'month';
 
 const RANGE_DAYS: Record<DecisionRange, number> = { today: 1, week: 7, month: 30 };
 
-/** The events that add a row. */
-const DECISION_KINDS: ReadonlySet<string> = new Set(['approval.approved']);
+/** The events that add or remove a row. */
+const DECISION_KINDS: ReadonlySet<string> = new Set([
+  'approval.approved',
+  'approval.rejected',
+  'approval.refused',
+  'approval.resolved',
+  'session.deleted',
+]);
 
 /** Local midnight of the range's first day, in Unix milliseconds. */
 export function rangeSince(range: DecisionRange, now: number): number {
@@ -41,7 +47,8 @@ export function useDecisionsForUser(projectId: string | null, range: DecisionRan
   );
 }
 
-function newestDecision(events: readonly DaemonEvent[]): number {
+/** The sequence of the newest event that can change the decisions, 0 without one. */
+export function newestDecision(events: readonly DaemonEvent[]): number {
   for (let i = events.length - 1; i >= 0; i--)
     if (DECISION_KINDS.has(events[i]!.kind)) return events[i]!.sequence;
   return 0;
@@ -83,17 +90,53 @@ export interface DecisionRow {
   rule: string | null;
   /** The session to open; null once it was deleted. */
   sessionId: string | null;
+  /**
+   * The main agent that decided, each question with its answer, and what it decided with its
+   * reason; null for a stored rule.
+   */
+  mainAgent: { sessionId: string; answers: string[]; decided: string | null } | null;
+}
+
+/** What the main agent decided, with its reason; null without one. */
+function decidedText(item: Extract<DecisionForUser, { kind: 'answered_by_main_agent' }>) {
+  const reason = item.reason;
+  if (reason === undefined) return null;
+  return item.decision === 'reject'
+    ? t({ id: 'trace.approved.refused', defaultMessage: 'Refused: {reason}' }, { reason })
+    : t({ id: 'trace.approved.answered', defaultMessage: 'Answered: {reason}' }, { reason });
 }
 
 export function decisionRow(item: DecisionForUser): DecisionRow {
+  const question = item.kind === 'answered_by_main_agent' ? item.question : undefined;
   const input = item.input_summary ?? item.tool;
   return {
     key: item.approval_id,
     at: item.at,
-    action: input ?? t({ id: 'trace.approved.prompt', defaultMessage: 'Permission request' }),
-    code: input !== undefined,
+    action:
+      question ?? input ?? t({ id: 'trace.approved.prompt', defaultMessage: 'Permission request' }),
+    code: question === undefined && input !== undefined,
     by: t({ id: 'trace.approved.by.rule', defaultMessage: 'Stored rule' }),
-    rule: item.rule ?? null,
+    rule: item.kind === 'prompt_by_rule' ? (item.rule ?? null) : null,
     sessionId: item.session_id ?? null,
+    mainAgent:
+      item.kind === 'answered_by_main_agent'
+        ? {
+            sessionId: item.main_agent_session_id,
+            answers: Object.entries(item.answers ?? {}).map(([question, answer]) =>
+              t(
+                { id: 'trace.approved.answer', defaultMessage: '{question} → {answer}' },
+                { question, answer },
+              ),
+            ),
+            decided: decidedText(item),
+          }
+        : null,
   };
 }
+
+/** The first line of a message to the main agent about its answer. */
+export const tellDecisionDraft = (row: DecisionRow) =>
+  t(
+    { id: 'trace.approved.tellDraft', defaultMessage: 'About your answer to “{action}”:\n' },
+    { action: row.action },
+  );
