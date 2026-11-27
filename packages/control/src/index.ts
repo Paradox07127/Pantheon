@@ -64,6 +64,7 @@ import { snapshot, snapshotAccess } from './snapshot.js';
 import { projectRead } from './project-facts.js';
 import { projectOverlap } from './project-overlap.js';
 import { sessionThread } from './session-thread.js';
+import { projectStatusRead } from './project-status.js';
 import { projectUsageDaily, projectUsageRead } from './usage-report.js';
 import { inheritedPolicy, workflowPolicy } from './workflow-policy.js';
 import { projectReviewMetrics, reviewExecutionReader, reviewTimeReader } from './review.js';
@@ -873,6 +874,12 @@ export class Control extends EventEmitter {
     input: ReturnType<(typeof querySchemas)['project.landings.read']['parse']>,
   ) {
     return projectLandingsRead(this.ctx, principal, input);
+  }
+  projectStatusRead(
+    principal: Principal,
+    input: ReturnType<(typeof querySchemas)['project.status.read']['parse']>,
+  ) {
+    return projectStatusRead(this.ctx, principal, input);
   }
   projectLandingsCompare(
     principal: Principal,

@@ -120,7 +120,7 @@ export function recordSessionLanding(
 
 type ReadInput = ReturnType<(typeof querySchemas)['project.landings.read']['parse']>;
 
-function records(
+export function landingRecords(
   ctx: ControlContext,
   { project_id, from, to, limit }: ReadInput,
   oldestFirst = false,
@@ -152,10 +152,10 @@ export function projectLandingsRead(
 ): ProjectLandingsRead {
   projectAccess(ctx, p, input.project_id, 'project.read');
   ctx.store.must('projects', input.project_id);
-  return { landings: records(ctx, input) };
+  return { landings: landingRecords(ctx, input) };
 }
 
-function statistics(landings: LandingRecord[]): LandingStatistics {
+export function landingStatistics(landings: LandingRecord[]): LandingStatistics {
   const count = landings.length;
   const mean = (values: number[]) =>
     values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
@@ -198,9 +198,11 @@ export function projectLandingsCompare(
   );
   const approval = proposal.decided_at!;
   return {
-    before: statistics(records(ctx, { project_id: projectId, to: approval - 1, limit: count })),
-    after: statistics(
-      records(ctx, { project_id: projectId, from: approval + 1, limit: count }, true),
+    before: landingStatistics(
+      landingRecords(ctx, { project_id: projectId, to: approval - 1, limit: count }),
+    ),
+    after: landingStatistics(
+      landingRecords(ctx, { project_id: projectId, from: approval + 1, limit: count }, true),
     ),
   };
 }

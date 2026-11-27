@@ -657,6 +657,7 @@ export async function startDaemon(options: DaemonOptions) {
         return timed('project.changes', () => control.projectChanges(p, i.project_id));
       },
       'project.plan.history': (p, i) => control.projectPlanHistory(p, i.project_id, i.limit),
+      'project.status.read': (p, i) => control.projectStatusRead(p, i),
       'project.landings.read': (p, i) => control.projectLandingsRead(p, i),
       'project.landings.compare': (p, i) =>
         control.projectLandingsCompare(p, i.project_id, i.proposal_id, i.count),

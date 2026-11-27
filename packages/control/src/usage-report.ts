@@ -17,6 +17,13 @@ function emptyRow(role: SessionRole): RoleUsage {
   };
 }
 
+function emptyRoleRows() {
+  const rows = new Map<SessionRole, RoleUsage>();
+  for (const role of ['baseline', 'conductor', 'reviewer', 'spawned', 'story', 'user'] as const)
+    rows.set(role, emptyRow(role));
+  return rows;
+}
+
 const lifecycle =
   "'turn.queued','turn.prepare_started','turn.running','turn.completed','turn.cancelled','turn.failed','session.turn.delivery'";
 const agentActivity =
@@ -26,10 +33,24 @@ function foldUsage(
   ctx: ControlContext,
   projectId: string,
   rowOf: (role: SessionRole, at?: number) => RoleUsage | undefined,
-  period?: { from: number; until: number },
+  period?: { from: number; until: number; clipTurnTime?: boolean },
 ): void {
   const dates = period ? 'AND created_at >= $from AND created_at < $until' : '';
-  const params = { project: projectId, ...period };
+  const params = { project: projectId, ...(period && { from: period.from, until: period.until }) };
+  // A turn spanning both edges has no required event inside the window.
+  const carryIn = period?.clipTurnTime
+    ? `UNION SELECT id FROM (
+        SELECT aggregate_id AS id FROM events INDEXED BY events_diagnostic_window
+        WHERE project_id=$project AND kind IN ('turn.completed','turn.cancelled','turn.failed','session.turn.delivery')
+          AND created_at >= $until
+        UNION ALL
+        SELECT id FROM session_turns WHERE json_extract(data,'$.state') IN ('queued','running')
+          AND data->>'$.project_id'=$project
+      ) AS later WHERE EXISTS (
+        SELECT 1 FROM events INDEXED BY events_aggregate WHERE aggregate_id=later.id
+          AND project_id=$project AND kind='turn.running' AND created_at<$from
+      )`
+    : '';
   // Select turns by activity, then recover their timing across both edges of the window.
   const turns = ctx.store
     .statement(
@@ -40,6 +61,7 @@ function foldUsage(
       UNION
       SELECT payload->>'$.turn_id' FROM events INDEXED BY events_diagnostic_window
       WHERE project_id=$project AND kind IN (${agentActivity}) ${dates} AND payload->>'$.turn_id' IS NOT NULL
+      ${carryIn}
       ${period ? '' : "UNION SELECT id FROM session_turns WHERE data->>'$.project_id'=$project"}
     )
     SELECT c.id, t.data->>'$.state' AS state,
@@ -176,10 +198,16 @@ function foldUsage(
         ? turn.delivered
         : null;
     const end = turn.end ?? deliveryEnd ?? delivered;
+    if (period?.clipTurnTime && turn.start !== null) {
+      const start = Math.max(turn.start, period.from);
+      const stop = Math.min(end ?? ctx.store.now(), period.until);
+      if (stop > start) rowOf(session.role, start)!.turn_ms += stop - start;
+    }
     const row = rowOf(session.role, end ?? turn.start ?? turn.queued ?? undefined);
     if (!row) continue;
     row.turns++;
-    if (end !== null && turn.start !== null) row.turn_ms += end - turn.start;
+    if (!period?.clipTurnTime && end !== null && turn.start !== null)
+      row.turn_ms += end - turn.start;
     if (session.deleted) {
       const reports = ctx.store
         .statement(
@@ -209,6 +237,22 @@ function foldUsage(
         row.cached_input_tokens = (row.cached_input_tokens ?? 0) + turn.cached;
     }
   }
+}
+
+export function projectUsageWindow(
+  ctx: ControlContext,
+  projectId: string,
+  from: number,
+  until: number,
+): RoleUsage[] {
+  const rows = emptyRoleRows();
+  foldUsage(
+    ctx,
+    projectId,
+    (role, at) => (at !== undefined && at >= from && at < until ? rows.get(role) : undefined),
+    { from, until, clipTurnTime: true },
+  );
+  return [...rows.values()];
 }
 
 export function projectUsageRead(
@@ -241,12 +285,7 @@ export function projectUsageDaily(
     .toPlainDate();
   const first = today.subtract({ days: days - 1 });
   const byDate = new Map<string, Map<SessionRole, RoleUsage>>();
-  for (let i = 0; i < days; i++) {
-    const roles = new Map<SessionRole, RoleUsage>();
-    for (const role of ['baseline', 'conductor', 'reviewer', 'spawned', 'story', 'user'] as const)
-      roles.set(role, emptyRow(role));
-    byDate.set(first.add({ days: i }).toString(), roles);
-  }
+  for (let i = 0; i < days; i++) byDate.set(first.add({ days: i }).toString(), emptyRoleRows());
   const calendar = new Intl.DateTimeFormat('en-CA', {
     timeZone: timezone,
     year: 'numeric',

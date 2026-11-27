@@ -15,6 +15,7 @@ import type {
   GraphStatus,
   EffortLevel,
   McpServerStatus,
+  Approval,
   LandingRecord,
   NeedsYouItem,
   PermissionMode,
@@ -2004,6 +2005,12 @@ export const querySchemas = {
     to: z.coerce.number().int().optional(),
     limit: z.coerce.number().int().positive().optional(),
   }),
+  /** ProjectStatusRead over [from, to) in Unix milliseconds, up to 92 days. */
+  'project.status.read': z.strictObject({
+    project_id: str,
+    from: z.coerce.number().int(),
+    to: z.coerce.number().int(),
+  }),
   'project.landings.compare': z.strictObject({
     project_id: str,
     proposal_id: str,
@@ -2370,6 +2377,41 @@ export interface LandingStatistics {
   mean_review_rounds: number | null;
   median_wall_ms: number | null;
   mean_tokens: number | null;
+}
+export interface ProjectStatusRead {
+  landings: Pick<
+    LandingStatistics,
+    'first_gate_pass_rate' | 'mean_review_rounds' | 'median_wall_ms'
+  > & {
+    landed: number;
+    blocked: number;
+    no_changes: number;
+    records: LandingRecord[];
+  };
+  /** User waits run from request to decision, clipped to the window. Unanswered waits accrue through now. */
+  waiting: {
+    count: number;
+    total_ms: number;
+    /** Longest clipped waits first. Open is evaluated at the end of the window. */
+    longest: {
+      session_id: string | null;
+      kind: Approval['kind'];
+      wait_ms: number;
+      open: boolean;
+    }[];
+  };
+  time: {
+    roles: Pick<RoleUsage, 'role' | 'turn_ms'>[];
+    /** Branch landings retain timing for their latest gate run. */
+    gate_ms: number;
+    /** Subtotal of reviewer turns, already included in roles. */
+    review_ms: number;
+  };
+  /** Turns and their reported tokens follow project.usage.daily attribution. */
+  usage: Pick<
+    RoleUsage,
+    'role' | 'turns' | 'input_tokens' | 'cached_input_tokens' | 'output_tokens'
+  >[];
 }
 export interface ProjectLandingsCompare {
   before: LandingStatistics;
