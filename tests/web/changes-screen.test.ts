@@ -179,6 +179,7 @@ describe('changes screen', () => {
       `${zh('changes.filter.ready')}1`,
       `${zh('changes.filter.needsYou')}1`,
       `${zh('changes.filter.merged')}2`,
+      zh('changes.local.tab'),
       zh('changes.commits.tab'),
       zh('changes.pulls.tab'),
     ]);

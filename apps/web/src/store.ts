@@ -92,7 +92,7 @@ function writePlace(projectId: string, place: ProjectPlace) {
   }
 }
 
-interface ShellState {
+export interface ShellState {
   screen: Screen;
   theme: Theme;
   // The Sessions screen's session: null follows the first open session, '' is the new-session composer.
@@ -126,6 +126,8 @@ interface ShellState {
   // The tab the trace and memory pages show; other pages set them before switching there.
   traceTab: TraceTab;
   memoryTab: MemoryTab;
+  // Per project, the last discard the changes screen's local tab offers to undo; at is Unix milliseconds.
+  lastDiscard: Record<string, { undoId: string; title: string; toast: string; at: number }>;
   // The one session the trace's runs tab shows; null shows them all.
   runsSession: string | null;
   runsView: 'now' | 'history';
@@ -277,6 +279,7 @@ export const useShell = create<ShellState>((set) => ({
   ...ONE_PANE,
   history: [start],
   historyIndex: 0,
+  lastDiscard: {},
   traceTab: 'timeline',
   memoryTab: 'overview',
   runsSession: null,

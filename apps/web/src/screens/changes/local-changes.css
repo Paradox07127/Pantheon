@@ -1,0 +1,139 @@
+/* The project folder's uncommitted changes: the branch above, the files and commit box beside the diff. */
+.chl-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--bar);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--fs-xs);
+}
+.chl-n {
+  color: var(--tx2);
+  font-variant-numeric: tabular-nums;
+}
+.chl-push {
+  margin-left: auto;
+}
+.chl {
+  display: grid;
+  grid-template-columns: minmax(240px, 360px) minmax(0, 1fr);
+  align-items: start;
+  gap: 24px;
+  padding-top: 8px;
+}
+.chl-side {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+/* Each file's tick box, its bar from fileBars and its discard button share one row. */
+.chl-files {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 4px;
+}
+.chl-files > .chg-dfl {
+  display: contents;
+}
+.chl-files > .chg-dfl > li {
+  grid-column: 2;
+}
+.chl-ck,
+.chl-lk {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 1px solid var(--bd3);
+  border-radius: 4px;
+  background: var(--sf);
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    border-color var(--dur-1) var(--ease-std);
+}
+.chl-ck {
+  grid-column: 1;
+}
+.chl-ck:focus-visible,
+.chl-lk:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+.chl-ck[aria-checked='true'],
+.chl-lk[aria-checked='true'] {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+.chl-ck[aria-checked='true']::after,
+.chl-lk[aria-checked='true']::after {
+  content: '';
+  width: 10px;
+  height: 10px;
+  background: var(--on-ink);
+  mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'><path d='M5.5 12.5l4.2 4.2L18.5 7.5'/></svg>")
+    center / 10px no-repeat;
+}
+.chl-drop {
+  grid-column: 3;
+}
+.chl-commit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: var(--hair) solid var(--bd2);
+}
+.chl-diff {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.chl-dh {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--h-ctl);
+  overflow-wrap: anywhere;
+}
+.chl-dh > .mono {
+  flex: 1;
+  min-width: 0;
+  user-select: text;
+}
+.chl-hunk {
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+}
+.chl-ln {
+  display: grid;
+  grid-template-columns: 14px 12px max-content;
+  align-items: center;
+  gap: 4px;
+}
+.chl-pk {
+  display: grid;
+  place-items: center;
+}
+.chl-code {
+  user-select: text;
+}
+.chl-undo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--row);
+  min-width: 0;
+  font-size: var(--fs-xs);
+}
+.chl-undo-what {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--tx2);
+}

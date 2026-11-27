@@ -69,6 +69,16 @@ it('lists modified, added, deleted and untracked files against HEAD with untrack
   );
 });
 
+it('lists a tracked text change larger than the patch bound with the patch left out', async () => {
+  const { f, write } = await checkout();
+  const line = 'x'.repeat(99);
+  write('lines.txt', `${Array.from({ length: 60_000 }, () => line).join('\n')}\n`);
+  const diff = await f.control.repoWorkingDiff(user, f.project.id);
+  expect(diff.truncated).toBe(true);
+  expect(diff.patch).toBeNull();
+  expect(diff.files.map((file) => [file.path, file.status])).toEqual([['lines.txt', 'modified']]);
+});
+
 it('discards tracked and untracked files back to HEAD and undoes the discard', async () => {
   const { f, root, read, write, send } = await checkout();
   write('answer.txt', 'base\nstaged\n');
@@ -135,31 +145,38 @@ it('hashes the discarded file without reading it into a single buffer', async ()
   expect(vi.mocked(readFile).mock.calls.map(([file]) => file)).not.toContain(target);
 });
 
-it('discards only the lines a patch selects and leaves a patch that does not apply unapplied', async () => {
-  const { f, read, write, send } = await checkout();
-  const changed = LINES.map((line, index) =>
-    index === 1 ? 'second changed' : index === 16 ? 'seventeenth changed' : line,
-  );
-  write('lines.txt', `${changed.join('\n')}\n`);
-  write('answer.txt', 'base\nkept\n');
-  const { patch } = await f.control.repoWorkingDiff(user, f.project.id);
-  const file = patch!.slice(patch!.indexOf('diff --git a/lines.txt'));
-  const hunks = file.split(/(?=^@@ )/m);
-  expect(hunks).toHaveLength(3);
-  const selected = `${hunks[0]}${hunks[1]}`;
-  const { undo_id } = await send<{ undo_id: string }>('repo.discard_patch', { patch: selected });
-  expect(read('lines.txt').split('\n')[1]).toBe('line 2');
-  expect(read('lines.txt').split('\n')[16]).toBe('seventeenth changed');
-  expect(read('answer.txt')).toBe('base\nkept\n');
-  const afterDiscard = read('lines.txt');
-  await expect(send('repo.discard_patch', { patch: selected })).rejects.toMatchObject({
-    code: 'patch_failed',
-    message: expect.stringContaining('patch does not apply'),
-  });
-  expect(read('lines.txt')).toBe(afterDiscard);
-  await send('repo.discard_undo', { undo_id });
-  expect(read('lines.txt')).toBe(`${changed.join('\n')}\n`);
-});
+it.each([
+  ['the default diff context', undefined],
+  ['diff.context set to 0', '0'],
+])(
+  'discards only the lines a patch selects and leaves a patch that does not apply unapplied, with %s',
+  async (_, context) => {
+    const { f, root, read, write, send } = await checkout();
+    if (context !== undefined) git(root, 'config', 'diff.context', context);
+    const changed = LINES.map((line, index) =>
+      index === 1 ? 'second changed' : index === 16 ? 'seventeenth changed' : line,
+    );
+    write('lines.txt', `${changed.join('\n')}\n`);
+    write('answer.txt', 'base\nkept\n');
+    const { patch } = await f.control.repoWorkingDiff(user, f.project.id);
+    const file = patch!.slice(patch!.indexOf('diff --git a/lines.txt'));
+    const hunks = file.split(/(?=^@@ )/m);
+    expect(hunks).toHaveLength(3);
+    const selected = `${hunks[0]}${hunks[1]}`;
+    const { undo_id } = await send<{ undo_id: string }>('repo.discard_patch', { patch: selected });
+    expect(read('lines.txt').split('\n')[1]).toBe('line 2');
+    expect(read('lines.txt').split('\n')[16]).toBe('seventeenth changed');
+    expect(read('answer.txt')).toBe('base\nkept\n');
+    const afterDiscard = read('lines.txt');
+    await expect(send('repo.discard_patch', { patch: selected })).rejects.toMatchObject({
+      code: 'patch_failed',
+      message: expect.stringContaining('patch does not apply'),
+    });
+    expect(read('lines.txt')).toBe(afterDiscard);
+    await send('repo.discard_undo', { undo_id });
+    expect(read('lines.txt')).toBe(`${changed.join('\n')}\n`);
+  },
+);
 
 it('reverses tracked and untracked binary patches and undoes them byte for byte', async () => {
   const { f, root, read, send } = await checkout();

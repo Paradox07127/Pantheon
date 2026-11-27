@@ -49,6 +49,8 @@ const PLAIN_DIFF = [
   '--src-prefix=a/',
   '--dst-prefix=b/',
 ];
+// git apply -R needs context lines around an interior hunk, whatever diff.context the user set; only patch reads take it, as it turns patch output on.
+const PATCH_CONTEXT = '--unified=3';
 
 /** A file as a discard found it: a copy of its bytes and its mode, its link target, or neither when it was absent. */
 interface SavedFile {
@@ -626,7 +628,7 @@ export async function repoWorkingDiff(
   const [upstream, whole, untracked] = await Promise.all([
     upstreamOf(root),
     // The user's git, so clean filters and autocrlf compare the worktree as a commit would.
-    userGit(root, tracked('-p', '--binary')),
+    userGit(root, tracked('-p', PATCH_CONTEXT, '--binary')),
     userRead(root, ['ls-files', '--others', '--exclude-standard', '-z']),
   ]);
   let patch = '',
@@ -715,7 +717,7 @@ export async function repoWorkingDiff(
         else {
           const result = await userGit(
             root,
-            ['diff', ...PLAIN_DIFF, '--binary', '--'],
+            ['diff', ...PLAIN_DIFF, PATCH_CONTEXT, '--binary', '--'],
             undefined,
             remaining,
             env,
