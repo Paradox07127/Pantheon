@@ -4,18 +4,10 @@ import type { GateFailureClass } from './planning.js';
 export type * from './change-story.js';
 export type * from './trace.js';
 import { createHash, randomUUID } from 'node:crypto';
+import { canonical } from './canonical.js';
+export { canonical };
 
 export const id = (): string => randomUUID();
-export function canonical(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
-  if (value && typeof value === 'object')
-    return `{${Object.entries(value)
-      .filter(([, v]) => v !== undefined)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`)
-      .join(',')}}`;
-  return JSON.stringify(value) ?? 'null';
-}
 export const hash = (value: unknown): string =>
   createHash('sha256').update(canonical(value)).digest('hex');
 export class DomainError extends Error {
