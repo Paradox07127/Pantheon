@@ -23,7 +23,12 @@ try {
 
   // Settings > Projects > the project.
   await page.click({ role: 'button', name: '设置', exact: true });
-  await page.click({ role: 'button', name: '项目', exact: true });
+  await page.click({
+    role: 'button',
+    name: '项目',
+    exact: true,
+    within: { name: '设置分区', exact: true },
+  });
   result.all_projects_button = (await names('所有项目')).some((n) => n.role === 'button');
   if (result.all_projects_button)
     await page.click({ role: 'button', name: '所有项目', exact: true });

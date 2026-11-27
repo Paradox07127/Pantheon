@@ -115,7 +115,10 @@ export function patchedPolicy(
   patch: PolicyPatch,
 ): PolicySettings {
   const { project_budget: _budget, ...rest } = patch;
-  return { ...global, ...rest };
+  // A null setting is dropped, so it follows the built-in value.
+  return Object.fromEntries(
+    Object.entries({ ...global, ...rest }).filter(([, value]) => value !== null),
+  ) as PolicySettings;
 }
 
 /** The project's session defaults, else the global ones whole, as the daemon starts a session with. */

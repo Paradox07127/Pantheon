@@ -37,6 +37,7 @@ import {
   type GateRun,
 } from './gate';
 import { failureText, Section, type Failure } from './ProjectSettingsScreen';
+import { SpawnPolicy } from './SpawnPolicy';
 import { EmptyState } from '../../components/EmptyState';
 import './gates.css';
 import './policy-rows.css';
@@ -85,6 +86,7 @@ export function ProjectGate({ project }: { project: Project }) {
         />
       ))}
       <GatePolicy project={project} />
+      <SpawnPolicy project={project} />
     </>
   );
 }

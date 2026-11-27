@@ -93,6 +93,13 @@ it('stores a value equal to the one it follows as the project setting', async ()
   ]);
 });
 
+it('reads back a value equal to the global one among the settings the project sets', async () => {
+  const f = await opened();
+  const { defaults } = f.control.workflowPolicy(user, f.project.id);
+  set(f, { max_spawned: defaults.max_spawned });
+  expect(f.control.workflowPolicy(user, f.project.id).overridden).toEqual(['max_spawned']);
+});
+
 it('reads a stored policy that still holds removed settings without them, and saves another parameter', async () => {
   const f = await opened();
   const stored = {
@@ -207,8 +214,9 @@ it('resets a changed policy to the defaults exposed by the query at the current 
   ).toThrowError(expect.objectContaining({ code: 'permission_denied' }));
   f.call('workflow.policy.reset', { project_id: f.project.id }, changed.revision);
   const reset = f.control.workflowPolicy(user, f.project.id);
-  const { id, revision, project_id, policy_version, defaults, ...settings } = reset;
+  const { id, revision, project_id, policy_version, defaults, overridden, ...settings } = reset;
   expect(settings).toEqual(defaults);
+  expect(overridden).toEqual([]);
   expect(reset.policy_version).toBe(changed.policy_version + 1);
   expect(reset.revision).toBeGreaterThan(changed.revision);
   expect(changes(f).at(-1)?.payload).toMatchObject({

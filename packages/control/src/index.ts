@@ -80,7 +80,7 @@ import { projectOverlap } from './project-overlap.js';
 import { sessionThread } from './session-thread.js';
 import { projectStatusRead } from './project-status.js';
 import { projectUsageDaily, projectUsageRead } from './usage-report.js';
-import { inheritedPolicy, workflowPolicy } from './workflow-policy.js';
+import { inheritedPolicy, ownParams, workflowPolicy } from './workflow-policy.js';
 import { projectReviewMetrics, reviewExecutionReader, reviewTimeReader } from './review.js';
 import { projectBaselineRead, projectFactsRead } from './baseline.js';
 import { environmentChecks } from './environment-check.js';
@@ -731,6 +731,7 @@ export class Control extends EventEmitter {
     this.ctx.store.must<Project>('projects', projectId);
     return {
       ...workflowPolicy(this.ctx, projectId),
+      overridden: ownParams(this.ctx, projectId),
       defaults: inheritedPolicy(this.ctx),
     };
   }

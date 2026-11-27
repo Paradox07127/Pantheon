@@ -1,0 +1,45 @@
+/* A number field and, when it holds no limit, why under it. */
+.spw-num {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+.spw-num input {
+  width: 64px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Holds the place of a row's way back to the global value while it follows it. */
+.spw-slot {
+  width: var(--ctl);
+  flex: none;
+}
+
+/* One route: kind, preferred choice and removal, then its fallbacks in order under it. */
+.ps-rows > .ps-row.spw-route {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.spw-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.spw-kind {
+  width: 160px;
+}
+.spw-fallback {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding-left: 168px;
+}
+.spw-add {
+  align-self: flex-start;
+}

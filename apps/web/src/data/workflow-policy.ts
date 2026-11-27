@@ -9,6 +9,12 @@ export type { WorkflowPolicy, WorkflowPolicyView };
 export interface PolicyPatch {
   gate_on_fail?: WorkflowPolicy['gate_on_fail'];
   gate_runner?: WorkflowPolicy['gate_runner'];
+  /** null on any of these five follows the global value. */
+  max_spawned?: WorkflowPolicy['max_spawned'] | null;
+  runtime_parallel?: WorkflowPolicy['runtime_parallel'] | null;
+  task_size?: WorkflowPolicy['task_size'] | null;
+  verify_timing?: WorkflowPolicy['verify_timing'] | null;
+  kind_routes?: WorkflowPolicy['kind_routes'] | null;
   /** null clears the budget. */
   project_budget?: { input_tokens: number } | null;
 }

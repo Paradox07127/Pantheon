@@ -73,7 +73,7 @@ export function workflowPolicy(ctx: ControlContext, projectId: string): Workflow
   return { ...settings, id: projectId, revision: 0, project_id: projectId, policy_version: 0 };
 }
 
-const ownParams = (ctx: ControlContext, projectId: string) =>
+export const ownParams = (ctx: ControlContext, projectId: string) =>
   Object.keys(
     ownPolicySettings(ctx.store.get<WorkflowPolicy>('workflow_policies', projectId)),
   ) as InheritedParam[];
