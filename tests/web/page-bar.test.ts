@@ -31,7 +31,7 @@ function split(node: ReactElement) {
   return { bar: bars[0]!, body: html.replace(bars[0]!, '') };
 }
 
-const traceTabs = ['timeline', 'runs', 'activity', 'diagnose', 'approved'].map((tab) =>
+const traceTabs = ['timeline', 'runs', 'activity', 'diagnose', 'approved', 'workflow'].map((tab) =>
   zh(`trace.tab.${tab}`),
 );
 const tabs = (html: string) => [...html.matchAll(/role="tab"[^>]*>([^<]*)</g)].map((m) => m[1]);

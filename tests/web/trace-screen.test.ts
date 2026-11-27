@@ -699,14 +699,27 @@ describe('trace screen tabs', () => {
       (n) => n.type === 'button' && text(n) === zh('trace.replay.back'),
     );
 
-  it('names the timeline, runs, activity, diagnose and approved-for-you tabs in that order', () => {
+  it('names the timeline, runs, activity, diagnose, approved-for-you and workflow tabs in that order', () => {
     expect(tabs(screen().value)).toEqual([
       ['timeline', zh('trace.tab.timeline')],
       ['runs', zh('trace.tab.runs')],
       ['activity', zh('trace.tab.activity')],
       ['diagnose', zh('trace.tab.diagnose')],
       ['approved', zh('trace.tab.approved')],
+      ['workflow', zh('trace.tab.workflow')],
     ]);
+  });
+
+  it("shows the project's workflow path on the workflow tab, and the empty state without a project", () => {
+    const h = screen();
+    tabTo(h, 'workflow');
+    expect(useShell.getState().traceTab).toBe('workflow');
+    expect(named(h.value, 'WorkflowPath').props.projectId).toBe('project-a');
+    expect(has(h.value, 'Lanes')).toBe(false);
+    const el = TraceScreen({ projectId: null, sessions: null }) as ReactElement<any>;
+    const none = mount(() => (el.type as (props: unknown) => ReactElement)(el.props));
+    expect(has(none.value, 'WorkflowPath')).toBe(false);
+    expect(has(none.value, 'Skeleton')).toBe(true);
   });
 
   it("follows the approved-for-you tab's name with what was approved today", async () => {

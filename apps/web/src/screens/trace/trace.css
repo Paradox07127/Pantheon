@@ -147,6 +147,18 @@ button.trc-kpi:focus-visible {
   flex-direction: column;
   gap: var(--sp-3);
 }
+/* The workflow tab scrolls as a whole, so a tall graph keeps its height. */
+.trc-flow {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.trc-flow > * {
+  flex: none;
+}
 
 /* Bars stand on the bottom edge; the band above the tallest one holds the error marks. */
 .trc-strip {

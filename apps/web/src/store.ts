@@ -16,7 +16,7 @@ import { shownWindow } from './shell/window-kind';
 
 export type Screen = 'sessions' | 'project' | 'changes' | 'flow' | 'trace' | 'memory' | 'projects';
 
-export type TraceTab = 'timeline' | 'runs' | 'activity' | 'diagnose' | 'approved';
+export type TraceTab = 'timeline' | 'runs' | 'activity' | 'diagnose' | 'approved' | 'workflow';
 export type MemoryTab = 'overview' | 'entries' | 'diagrams' | 'graph';
 
 export type Theme = 'light' | 'dark' | 'system';

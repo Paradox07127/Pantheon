@@ -8,12 +8,15 @@ const isHistory = (value: unknown): boolean =>
 const historyParams = { limit: '100' };
 
 /** The project's newest gate runs, of its sessions and its branch landings. */
-export function useGateHistory(projectId: string | null) {
+export function useGateHistory(
+  projectId: string | null,
+  params: Record<string, string> = historyParams,
+) {
   return useProjectQuery<ProjectGatesHistory>(
     'project.gates.history',
     projectId,
     isHistory,
-    historyParams,
+    params,
   );
 }
 

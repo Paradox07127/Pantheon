@@ -118,6 +118,7 @@ import {
 import { StepReplay } from './StepReplay';
 import { AnalyzeMenu } from './AnalyzeMenu';
 import { ApprovedForYou } from './ApprovedForYou';
+import { WorkflowPath } from './WorkflowPath';
 import { type ReviewRange, StatusReview } from './StatusReview';
 import { RuntimePanel } from './RuntimeDiagnostics';
 import { TraceTimeChart } from './TraceTimeChart';
@@ -270,6 +271,12 @@ const TABS: { tab: TraceTab; label: string }[] = [
     tab: 'approved',
     get label() {
       return t({ id: 'trace.tab.approved', defaultMessage: 'Decided for you' });
+    },
+  },
+  {
+    tab: 'workflow',
+    get label() {
+      return t({ id: 'trace.tab.workflow', defaultMessage: 'Workflow' });
     },
   },
 ];
@@ -937,6 +944,21 @@ function TraceView({
     return (
       <Tabs.Root className="tb-pg" value={tab} onValueChange={(value) => setTab(value as TraceTab)}>
         <ApprovedForYou projectId={projectId} tabs={tabList} end={recapButton} />
+        {recapPanel}
+      </Tabs.Root>
+    );
+  if (tab === 'workflow')
+    return (
+      <Tabs.Root className="tb-pg" value={tab} onValueChange={(value) => setTab(value as TraceTab)}>
+        <TopBar title={SCREEN_NAMES.trace}>
+          {tabList}
+          <div className="tb-end">{recapButton}</div>
+        </TopBar>
+        <main className="trc">
+          <Tabs.Panel className="trc-body" value={tab}>
+            {projectId ? <WorkflowPath key={projectId} projectId={projectId} /> : <Skeleton />}
+          </Tabs.Panel>
+        </main>
         {recapPanel}
       </Tabs.Root>
     );
