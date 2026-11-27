@@ -289,6 +289,8 @@ export interface SessionDefaults extends RuntimeChoice {
 }
 export interface Project extends Entity {
   name: string;
+  /** The main agent session the user marked resident; since is Unix milliseconds of marking it. */
+  resident?: { session_id: string; since: number };
   /** Real, pairwise non-nested folders of equal standing; the order is the user's and carries no priority. */
   roots: string[];
   permission_rules?: { rule: string; session_id: string; added_at: number }[];

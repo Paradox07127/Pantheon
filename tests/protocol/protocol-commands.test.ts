@@ -68,6 +68,7 @@ it('defines a strict input schema for each unimplemented command and the queries
     'project.plan',
     'project.plan.history',
     'project.read',
+    'project.resident',
     'project.review.metrics',
     'project.setting_proposals',
     'project.status.read',

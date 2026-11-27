@@ -1161,5 +1161,5 @@ function notifyRequestingSession(ctx: ControlContext, review: Review, turns: Ses
       ? ['report_ready is refused until a later review has no open blocking findings.']
       : []),
   ];
-  notifySession(ctx, review.notify_session_id, lines.join('\n'), '');
+  notifySession(ctx, review.notify_session_id, lines.join('\n'), review.id);
 }

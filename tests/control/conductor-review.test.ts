@@ -203,6 +203,11 @@ it('returns a blocking finding to the conductor once, as a message without a pla
       .filter((turn) => turn.origin === 'notice')
       .map((turn) => turn.state),
   ).toEqual(['queued']);
+  const notice = f.turns(conductor.id).find((turn) => turn.origin === 'notice')!;
+  expect(
+    f.store.kindEvents(f.project.id, ['turn.queued']).find((e) => e.aggregate_id === notice.id)
+      ?.causation_id,
+  ).toBe(review_id);
   expect(planRows()).toBe(0);
 });
 

@@ -38,7 +38,7 @@ import {
   startSessionReview,
 } from './review.js';
 import { interruptSession, queueInput } from './session.js';
-import { notifySession, takesNotice, waitingNotice } from './session-wake.js';
+import { notifySession, takesNotice } from './session-wake.js';
 import {
   checkWorktreeSession,
   openWorktreeSession,
@@ -858,33 +858,28 @@ function tellCaller(ctx: ControlContext, callerId: string): void {
     .flatMap((session) => untoldNews(ctx, session) ?? [])
     .sort((a, b) => a.since - b.since);
   if (!news.length) return;
-  if (!takesNotice(ctx, caller)) return unreachedCaller(ctx, callerId);
   const lines = news.flatMap((each) => each.lines);
   if (
     lines.length &&
     caller.conductor &&
     caller.state !== 'running' &&
-    ctx.store.now() - news[0]!.since < NOTICE_HOLD_MS
+    ctx.store.now() - news[0]!.since < NOTICE_HOLD_MS &&
+    // A caller that takes no notice now goes on to the refusal, which a resident records.
+    takesNotice(ctx, caller)
   )
     return unreachedCaller(ctx, callerId);
   ctx.store.transaction(() => {
-    // Notices for a running caller join the turn queued for them, where its waits fold into one.
-    const queued =
-      caller.state === 'running'
-        ? ctx.store
-            .list<SessionTurn>('session_turns')
-            .find((turn) => turn.session_id === callerId && waitingNotice(turn))
-        : undefined;
-    const items = queued ? [...queued.input.split('\n\n'), ...lines] : [];
-    const folded = foldWaits(items);
-    if (folded.length < items.length)
-      ctx.store.update(
-        'session_turns',
-        { ...queued!, input: folded.join('\n\n') },
-        queued!.revision,
-      );
-    else if (lines.length && !notifySession(ctx, callerId, lines.join('\n\n'), news[0]!.cause))
-      return unreachedCaller(ctx, callerId);
+    if (lines.length) {
+      // The newest news is what reached the caller now; older ones were refused before.
+      const turn = notifySession(ctx, callerId, lines.join('\n\n'), news.at(-1)!.cause);
+      if (!turn) return unreachedCaller(ctx, callerId);
+      if (caller.state === 'running') {
+        const items = turn.input.split('\n\n');
+        const folded = foldWaits(items);
+        if (folded.length < items.length)
+          ctx.store.update('session_turns', { ...turn, input: folded.join('\n\n') }, turn.revision);
+      }
+    } else if (!takesNotice(ctx, caller)) return unreachedCaller(ctx, callerId);
     for (const each of news)
       for (const told of each.told)
         ctx.store.event(

@@ -1431,6 +1431,7 @@ export const inputSchemas = {
   }),
   /** The user only; stops a queued or running landing, which ends blocked with the reason `cancelled`, and returns the Landing. */
   'project.landing.cancel': z.strictObject({ landing_id: str }),
+  'project.resident.set': z.strictObject({ project_id: str, session_id: str.nullable() }),
   'project.worktree.set': z.strictObject({
     project_id: str,
     copy_paths: z.array(worktreePath),
@@ -2057,6 +2058,7 @@ export const querySchemas = {
     proposal_id: str,
     count: z.coerce.number().int().positive(),
   }),
+  'project.resident': z.strictObject({ project_id: str }),
   /** ProjectSettingProposals; the approved setting proposals, latest approval first. */
   'project.setting_proposals': z.strictObject({ project_id: str }),
   /** DecisionsForUser; what a stored rule decided without the user from since on, Unix milliseconds, newest first. */
@@ -2462,6 +2464,16 @@ export interface ProjectStatusRead {
 export interface ProjectLandingsCompare {
   before: LandingStatistics;
   after: LandingStatistics;
+}
+export interface ProjectResident {
+  session_id: string | null;
+  since: number | null;
+  turns: { pantheon: number; user: number };
+  budget: { used_input_tokens: number; input_tokens: number; reached_at?: number } | null;
+  wakes: (
+    | { at: number; kind: 'woken'; cause: string; turn_id: string; preview?: string }
+    | { at: number; kind: 'skipped'; cause: string; reason: 'budget' | 'not_accepting' }
+  )[];
 }
 export interface ProjectSettingProposals {
   proposals: SettingProposal[];

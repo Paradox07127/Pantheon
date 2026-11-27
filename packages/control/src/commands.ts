@@ -7,6 +7,7 @@ import { branchLandingHandlers, branchLandingPreparers } from './branch-landing.
 import { conductorPreparers } from './conductor.js';
 import { changeStoryHandlers } from './change-story.js';
 import type { Handlers, Preparers } from './context.js';
+import { residentHandlers } from './resident.js';
 import { projectFactHandlers } from './project-facts.js';
 import { projectHandlers, projectPreparers } from './project.js';
 import { prepareResolve, sessionHandlers } from './session.js';
@@ -27,6 +28,7 @@ import { personalKeyHandlers } from './personal-keys.js';
 export const handlers: Handlers = {
   ...memoryHandlers,
   ...projectHandlers,
+  ...residentHandlers,
   ...projectFactHandlers,
   ...environmentCheckHandlers,
   ...branchLandingHandlers,
