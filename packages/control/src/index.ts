@@ -71,7 +71,8 @@ import { projectBaselineRead, projectFactsRead } from './baseline.js';
 import { environmentChecks } from './environment-check.js';
 import { landingFind, landingRead } from './branch-landing.js';
 import { changesRead } from './changes.js';
-import { projectPlanView } from './project-plan.js';
+import { projectLandingsRead, projectLandingsCompare } from './project-landings.js';
+import { projectPlanHistory, projectPlanView } from './project-plan.js';
 import {
   changeStoryDiff,
   changeStoryList,
@@ -863,6 +864,23 @@ export class Control extends EventEmitter {
   }
   projectChanges(principal: Principal, projectId: string) {
     return changesRead(this.ctx, principal, projectId);
+  }
+  projectPlanHistory(principal: Principal, projectId: string, limit?: number) {
+    return projectPlanHistory(this.ctx, principal, projectId, limit);
+  }
+  projectLandingsRead(
+    principal: Principal,
+    input: ReturnType<(typeof querySchemas)['project.landings.read']['parse']>,
+  ) {
+    return projectLandingsRead(this.ctx, principal, input);
+  }
+  projectLandingsCompare(
+    principal: Principal,
+    projectId: string,
+    proposalId: string,
+    count: number,
+  ) {
+    return projectLandingsCompare(this.ctx, principal, projectId, proposalId, count);
   }
   projectPlan(principal: Principal, projectId: string) {
     return projectPlanView(this.ctx, principal, projectId);

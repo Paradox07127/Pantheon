@@ -582,8 +582,11 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `project.intro.read` | `project_id`: string |
 | `project.landing.find` | `root`: string<br>`branch`: string |
 | `project.landing.read` | `landing_id`: string |
+| `project.landings.compare` | `project_id`: string<br>`proposal_id`: string<br>`count`: integer |
+| `project.landings.read` | `project_id`: string<br>`from?`: integer<br>`to?`: integer<br>`limit?`: integer |
 | `project.overlap` | `project_id`: string |
 | `project.plan` | `project_id`: string |
+| `project.plan.history` | `project_id`: string<br>`limit?`: integer |
 | `project.read` | `project_id`: string |
 | `project.review.metrics` | `project_id`: string |
 | `project.timeline` | `project_id`: string<br>`since?`: string |

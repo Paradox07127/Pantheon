@@ -27,6 +27,7 @@ import {
   type GateCommands,
   type LandingOwner,
 } from './landing.js';
+import { gateRunPassed, insertLandingRecord, recordEndSequence } from './project-landings.js';
 import { mergeBase } from './merge-preview.js';
 import { commitOf, projectAtRoot } from './review.js';
 import { userGit } from './source-git.js';
@@ -137,6 +138,18 @@ export const branchLandingHandlers: Handlers = {
   },
 };
 
+function gateHistory(row: Landing) {
+  return {
+    gate_runs: row.gate_runs ?? Number(row.gate_started_at !== undefined),
+    first_gate_passed:
+      row.first_gate_passed ??
+      (row.gate_finished_at !== undefined && gateRunPassed(row.gate_results!)),
+  };
+}
+
+type LandingOutcome = Partial<Landing> & { state: 'landed' | 'no_changes' | 'blocked' };
+type FinishLanding = (fields: LandingOutcome, commands?: GateCommands) => void;
+
 /**
  * Ends the row, marks its job done and queues the removal of its worktree, in one transaction; a
  * landed row records the results of the gate commands as the baseline of the target branch.
@@ -145,7 +158,8 @@ function finish(
   ctx: ControlContext,
   landingId: string,
   jobId: string,
-  fields: Partial<Landing> & { state: 'landed' | 'no_changes' | 'blocked' },
+  commits: string[] | null,
+  fields: LandingOutcome,
   commands?: GateCommands,
 ): void {
   ctx.store.transaction(() => {
@@ -155,6 +169,50 @@ function finish(
       { ...row, ...fields, landing: undefined, finished_at: ctx.store.now() },
       row.revision,
     );
+    const workspace = ctx.store.get<Workspace>('workspaces', row.workspace_id);
+    const branch = row.branch.replace(/^refs\/heads\//, '');
+    const reviews = ctx.store
+      .statement(
+        `
+      WITH previous AS (
+        SELECT ${recordEndSequence} AS cutoff
+        FROM landing_records r JOIN landings l ON l.id=r.id
+        WHERE r.data->>'$.project_id'=$project AND l.data->>'$.root'=$root
+          AND r.data->>'$.branch' IN ($branch,$ref)
+        ORDER BY r.rowid DESC LIMIT 1
+      )
+      SELECT count(*) AS rounds FROM reviews
+      WHERE json_extract(data,'$.project_id')=$project AND data->>'$.range.source'=$root
+        AND (NOT EXISTS (SELECT 1 FROM previous) OR EXISTS (
+          SELECT 1 FROM events WHERE aggregate_id=reviews.id AND kind='review.requested'
+            AND sequence>(SELECT cutoff FROM previous)
+        ))
+        AND data->>'$.range.to_sha' IN (SELECT value FROM json_each($commits))
+    `,
+      )
+      .get({
+        $project: row.project_id,
+        $root: row.root,
+        $branch: branch,
+        $ref: `refs/heads/${branch}`,
+        $commits: JSON.stringify(commits),
+      });
+    insertLandingRecord(ctx, {
+      id: row.id,
+      revision: 1,
+      project_id: row.project_id,
+      branch: row.branch,
+      state: fields.state,
+      reason: next.reason ?? null,
+      ended_at: next.finished_at!,
+      landed_sha: fields.state === 'landed' ? next.to_sha! : null,
+      ...gateHistory(next),
+      review_rounds: commits === null ? null : Number(reviews!.rounds),
+      turns: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      wall_ms: null,
+    });
     if (next.state === 'landed')
       recordGateBaseline(
         ctx,
@@ -166,14 +224,19 @@ function finish(
         commands,
       );
     ctx.store.mark(jobId, 'done');
-    ctx.store.enqueue('workspace.remove', { workspace_id: row.workspace_id, reason: 'landing' });
+    if (workspace && workspace.removed_at === undefined)
+      ctx.store.enqueue('workspace.remove', { workspace_id: row.workspace_id, reason: 'landing' });
   });
 }
 
-function updateRow(ctx: ControlContext, landingId: string, fields: Partial<Landing>): void {
+function updateRow(
+  ctx: ControlContext,
+  landingId: string,
+  fields: (row: Landing) => Partial<Landing>,
+): void {
   ctx.store.transaction(() => {
     const row = ctx.store.must<Landing>('landings', landingId);
-    ctx.store.update<Landing>('landings', { ...row, ...fields }, row.revision);
+    ctx.store.update<Landing>('landings', { ...row, ...fields(row) }, row.revision);
   });
 }
 
@@ -255,22 +318,26 @@ async function squashedAncestor(
   }
 }
 
-async function landBranch(ctx: ControlContext, landingId: string, jobId: string): Promise<void> {
+async function landBranch(
+  ctx: ControlContext,
+  landingId: string,
+  finish: FinishLanding,
+  collectCommits: (base: string) => Promise<void>,
+): Promise<void> {
   const workspaceId = ctx.store.must<Landing>('landings', landingId).workspace_id;
-  const cancelled = () => ctx.store.must<Landing>('landings', landingId).cancel_requested === true;
-  const stop = () => finish(ctx, landingId, jobId, { state: 'blocked', reason: 'cancelled' });
   let workspace = ctx.store.must<Workspace>('workspaces', workspaceId);
+  const cancelled = () => ctx.store.must<Landing>('landings', landingId).cancel_requested === true;
+  const block = (reason: string) => finish({ state: 'blocked', reason });
   while (['queued', 'running'].includes(workspace.provisioning!.state)) {
-    if (cancelled()) return stop();
+    if (cancelled()) return block('cancelled');
     await new Promise((resolve) => setTimeout(resolve, 250));
     if (ctx.closing) return;
     workspace = ctx.store.must<Workspace>('workspaces', workspaceId);
   }
-  if (cancelled()) return stop();
-  if (workspace.provisioning!.state !== 'ready')
-    return finish(ctx, landingId, jobId, { state: 'blocked', reason: 'workspace_failed' });
+  if (cancelled()) return block('cancelled');
+  if (workspace.provisioning!.state !== 'ready') return block('workspace_failed');
   if (ctx.store.must<Landing>('landings', landingId).state === 'queued')
-    updateRow(ctx, landingId, { state: 'running', started_at: ctx.store.now() });
+    updateRow(ctx, landingId, () => ({ state: 'running', started_at: ctx.store.now() }));
   let entered = false,
     ended = false;
   const landed = afterSourceLandings(
@@ -279,20 +346,22 @@ async function landBranch(ctx: ControlContext, landingId: string, jobId: string)
     async () => {
       entered = true;
       if (ended || ctx.closing) return;
-      if (cancelled()) return stop();
       const row = ctx.store.must<Landing>('landings', landingId);
+      // Commits of a branch that landed squashed would replay onto their own squashed commit.
+      const squashedTip = await squashedAncestor(ctx, row, workspace.path);
+      await collectCommits(
+        squashedTip ?? row.landing?.from_sha ?? `refs/heads/${row.target_branch}`,
+      );
+      if (cancelled()) return block('cancelled');
       const project = ctx.store.must<Project>('projects', row.project_id);
       // The gate can be cleared while the landing waits for the root.
       const commands = projectGateCommands(project, row.root);
-      if (!commands?.length)
-        return finish(ctx, landingId, jobId, { state: 'blocked', reason: 'no_gate_commands' });
-      // Commits of a branch that landed squashed would replay onto their own squashed commit.
-      const squashedTip = await squashedAncestor(ctx, row, workspace.path);
+      if (!commands?.length) return block('no_gate_commands');
       if (row.message !== undefined) {
         const worktree = ctx.store.must<Workspace>('workspaces', workspaceId);
         const failed = await squash(worktree, squashedTip ?? worktree.base_sha!, row.message);
         if (failed !== undefined)
-          return finish(ctx, landingId, jobId, {
+          return finish({
             state: 'blocked',
             reason: `commit_failed: ${failed}`,
           });
@@ -313,19 +382,29 @@ async function landBranch(ctx: ControlContext, landingId: string, jobId: string)
         squashedTip,
         // A gate that starts again, after the root moved, drops the results of the earlier run.
         event: (kind, payload) =>
-          updateRow(
-            ctx,
-            landingId,
-            kind === 'gate_started'
-              ? { gate_results: [], gate_started_at: ctx.store.now(), gate_finished_at: undefined }
-              : {
-                  gate_results: payload.results as NonNullable<LandingItem['gate_results']>,
-                  ...(kind === 'gate_checked' ? { gate_finished_at: ctx.store.now() } : {}),
-                },
-          ),
+          updateRow(ctx, landingId, (current) => {
+            if (kind === 'gate_started') {
+              const { gate_runs, first_gate_passed } = gateHistory(current);
+              return {
+                gate_runs: gate_runs + 1,
+                first_gate_passed,
+                gate_results: [],
+                gate_started_at: ctx.store.now(),
+                gate_finished_at: undefined,
+              };
+            }
+            const results = payload.results as NonNullable<LandingItem['gate_results']>;
+            if (kind === 'gate_step_checked') return { gate_results: results };
+            return {
+              gate_results: results,
+              gate_finished_at: ctx.store.now(),
+              first_gate_passed:
+                (current.gate_runs ?? 1) === 1 ? gateRunPassed(results) : current.first_gate_passed,
+            };
+          }),
         progress: {
           saved: row.landing,
-          save: (landing) => updateRow(ctx, landingId, { landing }),
+          save: (landing) => updateRow(ctx, landingId, () => ({ landing })),
         },
       };
       const item = await landWorkspace(
@@ -342,9 +421,6 @@ async function landBranch(ctx: ControlContext, landingId: string, jobId: string)
         conflict_commits?: string[];
       };
       finish(
-        ctx,
-        landingId,
-        jobId,
         {
           // A rebase can drop every commit, when the target already has their changes.
           state:
@@ -365,7 +441,7 @@ async function landBranch(ctx: ControlContext, landingId: string, jobId: string)
     await Promise.race([landed, new Promise((resolve) => setTimeout(resolve, 250))]);
     if (!entered && !ctx.closing && cancelled()) {
       ended = true;
-      return stop();
+      return block('cancelled');
     }
   }
   await landed;
@@ -381,29 +457,31 @@ export function runLanding(ctx: ControlContext, landingId: string, jobId: string
   if (ctx.closing || running.has(jobId)) return;
   const row = ctx.store.get<Landing>('landings', landingId),
     workspace = row && ctx.store.get<Workspace>('workspaces', row.workspace_id);
-  if (!row || !workspace || workspace.removed_at !== undefined) {
-    ctx.store.transaction(() => {
-      if (row)
-        ctx.store.update<Landing>(
-          'landings',
-          {
-            ...row,
-            state: 'blocked',
-            reason: 'workspace_missing',
-            landing: undefined,
-            finished_at: ctx.store.now(),
-          },
-          row.revision,
-        );
-      ctx.store.mark(jobId, 'done');
-    });
+  if (!row) {
+    ctx.store.mark(jobId, 'done');
+    return;
+  }
+  let commits: string[] | null = [];
+  const finishAttempt: FinishLanding = (fields, commands) =>
+    finish(ctx, landingId, jobId, commits, fields, commands);
+  if (!workspace || workspace.removed_at !== undefined) {
+    finishAttempt({ state: 'blocked', reason: 'workspace_missing' });
     return;
   }
   running.add(jobId);
-  const work: Promise<void> = landBranch(ctx, landingId, jobId)
+  const work: Promise<void> = landBranch(ctx, landingId, finishAttempt, async (base) => {
+    const result = await runGit(
+      row.root,
+      ['rev-list', `${base}..${workspace.provisioning!.base_ref}`],
+      undefined,
+      true,
+    );
+    commits =
+      result.exit_code === 0 ? result.stdout.toString().trim().split('\n').filter(Boolean) : null;
+  })
     .catch((error: unknown) => {
       if (ctx.closing) return;
-      finish(ctx, landingId, jobId, {
+      finishAttempt({
         state: 'blocked',
         reason: `landing_failed: ${(error as Error).message.split('\n')[0]}`,
       });

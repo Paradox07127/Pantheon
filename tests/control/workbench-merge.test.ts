@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, it, onTestFinished, vi } from 'vitest';
-import type { Principal, Project, Session, SessionTurn, Workspace } from '@pantheon/domain';
+import type { Principal, Project, Review, Session, SessionTurn, Workspace } from '@pantheon/domain';
 import { readProcessIdentity } from '../../packages/adapters/dist/index.js';
 import type { ControlContext } from '../../packages/control/src/context.js';
 import * as validation from '../../packages/control/dist/validation-executor.js';
@@ -311,6 +311,26 @@ it.skipIf(insideSandbox)(
     expect(payloads(f, session.id, 'session.gate_checked')).toHaveLength(1);
     expect(existsSync(workspace.path)).toBe(true);
     expect(current(f, session.id).outcome).toBeUndefined();
+    const records = () =>
+      f.control.projectLandingsRead(user, { project_id: f.project.id }).landings;
+    const blockedRecords = records();
+    expect(blockedRecords).toMatchObject([
+      {
+        session_id: session.id,
+        state: 'blocked',
+        reason: 'gate_failed',
+        first_gate_passed: false,
+        gate_runs: 1,
+        landed_sha: null,
+      },
+    ]);
+    f.call('session.delete', { session_id: session.id }, current(f, session.id).revision);
+    await eventually(
+      () => !f.store.get('sessions', session.id),
+      () => f.control.tick(),
+      1000,
+    );
+    expect(records()).toEqual(blockedRecords);
   },
 );
 
@@ -319,6 +339,23 @@ it.skipIf(insideSandbox)(
   async () => {
     const f = await mergeFixture();
     const { session, workspace } = await idleSession(f);
+    const turn = f.turns(session.id)[0]!;
+    f.store.update(
+      'session_turns',
+      { ...turn, usage: { input_tokens: 30, output_tokens: 7 } },
+      turn.revision,
+    );
+    f.store.insert<Review>('reviews', {
+      id: 'review',
+      revision: 1,
+      project_id: f.project.id,
+      session_id: session.id,
+      round: 1,
+      state: 'completed',
+      runtimes: ['one', 'two'],
+      findings: [],
+      session_ids: [],
+    });
     // The gate passes only once the source's fix is under the session commit.
     await setGate(f, [
       {
@@ -337,6 +374,23 @@ it.skipIf(insideSandbox)(
     expect(current(f, session.id).merge?.state).not.toBe('blocked');
     expect(git(f.source, 'rev-parse', 'main~1')).toBe(fixed);
     expect(payloads(f, session.id, 'session.gate_started')).toHaveLength(1);
+    const records = () =>
+      f.control.projectLandingsRead(user, { project_id: f.project.id }).landings;
+    const landed = records();
+    expect(landed).toMatchObject([
+      {
+        session_id: session.id,
+        state: 'landed',
+        landed_sha: git(f.source, 'rev-parse', 'HEAD'),
+        gate_runs: 1,
+        first_gate_passed: true,
+        review_rounds: 1,
+        turns: 1,
+        input_tokens: 30,
+        output_tokens: 7,
+        wall_ms: landed[0]!.ended_at - f.store.eventSpan(turn.id)!.first,
+      },
+    ]);
   },
 );
 

@@ -15,6 +15,7 @@ import type {
   GraphStatus,
   EffortLevel,
   McpServerStatus,
+  LandingRecord,
   NeedsYouItem,
   PermissionMode,
   PlanItem,
@@ -1992,6 +1993,22 @@ export const querySchemas = {
   'project.changes': z.strictObject({ project_id: str }),
   /** ProjectPlanView; the stored plan, each item with where its sessions stand now. */
   'project.plan': z.strictObject({ project_id: str }),
+  'project.plan.history': z.strictObject({
+    project_id: str,
+    limit: z.coerce.number().int().positive().optional(),
+  }),
+  /** Inclusive end-time bounds in Unix milliseconds. */
+  'project.landings.read': z.strictObject({
+    project_id: str,
+    from: z.coerce.number().int().optional(),
+    to: z.coerce.number().int().optional(),
+    limit: z.coerce.number().int().positive().optional(),
+  }),
+  'project.landings.compare': z.strictObject({
+    project_id: str,
+    proposal_id: str,
+    count: z.coerce.number().int().positive(),
+  }),
   /** DecisionsForUser; what a stored rule decided without the user from since on, Unix milliseconds, newest first. */
   'project.decisions': z.strictObject({
     project_id: str,
@@ -2325,6 +2342,38 @@ export interface PlanItemView extends PlanItem {
   failure?: { reason: string; at: string; handled_by: 'main_agent' | 'you' };
   /** ISO time. */
   stuck_since?: string;
+}
+export type PlanItemStatus = 'open' | 'accepted' | 'dropped';
+export interface PlanRevision extends Pick<
+  ProjectPlan,
+  'revision' | 'milestones' | 'items' | 'updated_at'
+> {
+  /** The writing session id, or user for an acceptance. */
+  author: string;
+  changes: {
+    added: string[];
+    removed: string[];
+    status_changed: { id: string; from: PlanItemStatus; to: PlanItemStatus }[];
+    moved: { id: string; from: string | null; to: string | null }[];
+  };
+  replan: boolean;
+}
+export interface ProjectPlanHistory {
+  revisions: PlanRevision[];
+}
+export interface ProjectLandingsRead {
+  landings: LandingRecord[];
+}
+export interface LandingStatistics {
+  count: number;
+  first_gate_pass_rate: number | null;
+  mean_review_rounds: number | null;
+  median_wall_ms: number | null;
+  mean_tokens: number | null;
+}
+export interface ProjectLandingsCompare {
+  before: LandingStatistics;
+  after: LandingStatistics;
 }
 /** GET /v1/project.plan. */
 export interface ProjectPlanView {

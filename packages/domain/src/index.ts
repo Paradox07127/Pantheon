@@ -537,11 +537,32 @@ export interface Landing extends Entity {
   from_sha?: string;
   to_sha?: string;
   started_at?: number;
+  gate_runs?: number;
+  first_gate_passed?: boolean;
   /** When the gate's latest run started, after the landing's wait for the root. */
   gate_started_at?: number;
   /** When that gate reached its verdict; absent while it runs and when it was cut short. */
   gate_finished_at?: number;
   finished_at?: number;
+}
+/** The facts at the end of a single landing attempt. Times are Unix milliseconds. */
+export interface LandingRecord extends Entity {
+  project_id: string;
+  session_id?: string;
+  branch?: string;
+  state: LandingItem['state'];
+  reason: string | null;
+  ended_at: number;
+  landed_sha: string | null;
+  gate_runs: number;
+  first_gate_passed: boolean | null;
+  /** Null when Git could not list the commits for a branch landing. */
+  review_rounds: number | null;
+  turns: number;
+  input_tokens: number;
+  output_tokens: number;
+  /** Null when there is no session turn to measure from. */
+  wall_ms: number | null;
 }
 export interface Workspace extends Entity {
   provisioning?: {

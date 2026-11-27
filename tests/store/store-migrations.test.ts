@@ -555,6 +555,7 @@ it('creates the whole schema through known migrations in a memory and a file dat
     'outbox',
     'playbooks',
     'project_intros',
+    'project_plan_revisions',
     'range_stories',
     'schema_migrations',
     'setting_proposals',

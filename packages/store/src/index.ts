@@ -63,6 +63,7 @@ export const tables = [
   'landings',
   'setting_change_proposals',
   'project_plans',
+  'landing_records',
 ] as const;
 export type Table = (typeof tables)[number];
 export interface Outbox {
@@ -364,6 +365,19 @@ export const migrations: readonly Migration[] = [
           WHERE kind GLOB 'agent.*' AND payload->>'$.turn_id' IS NOT NULL;
         CREATE INDEX events_session_role ON events(aggregate_id, kind)
           WHERE kind='session.opened' OR kind='session.main_agent_decided' OR kind='session.spawner_notified';
+      `);
+    },
+  },
+  {
+    version: 21,
+    up(db) {
+      db.exec(`
+        CREATE TABLE project_plan_revisions (
+          project_id TEXT NOT NULL, revision INTEGER NOT NULL, data TEXT NOT NULL CHECK(json_valid(data)),
+          PRIMARY KEY(project_id, revision)
+        ) STRICT;
+        CREATE TABLE landing_records (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;
+        CREATE INDEX landing_records_project_end ON landing_records(data->>'$.project_id', data->>'$.ended_at');
       `);
     },
   },

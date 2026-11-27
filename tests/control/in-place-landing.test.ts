@@ -184,6 +184,23 @@ it('holds a folder session that changed a gate file for the user, and lands it o
     current(f, session.id).revision,
   );
   expect(current(f, session.id)).toMatchObject({ outcome: 'merged', state: 'closed' });
+  expect(f.control.projectLandingsRead(user, { project_id: f.project.id }).landings).toMatchObject([
+    {
+      session_id: session.id,
+      state: 'landed',
+      landed_sha: head(f),
+      gate_runs: 0,
+      first_gate_passed: null,
+    },
+    {
+      session_id: session.id,
+      state: 'blocked',
+      reason: 'gate_files_changed',
+      landed_sha: null,
+      gate_runs: 1,
+      first_gate_passed: true,
+    },
+  ]);
 });
 
 it.each([

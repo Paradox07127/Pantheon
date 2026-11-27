@@ -1,3 +1,4 @@
+import { recordSessionLanding } from './project-landings.js';
 import { latestEvent } from './needs-you.js';
 import { workflowPolicy } from './workflow-policy.js';
 import { onDevice } from './remote-workspace.js';
@@ -2916,6 +2917,7 @@ export function mergeSession(ctx: ControlContext, sessionId: string, jobId: stri
   if (!session || !workspace) {
     // A session or worktree retired or deleted with its merge still queued has nothing to merge.
     ctx.store.transaction(() => {
+      if (session) recordSessionLanding(ctx, session, 'blocked', 'workspace_missing');
       ctx.store.event(
         'session.merge_dropped',
         session ?? { id: sessionId, revision: 0 },
@@ -2977,6 +2979,7 @@ async function completeMerge(ctx: ControlContext, sessionId: string, jobId: stri
         { ...current, merge: { state: 'blocked' as const, reason: 'cancelled' } },
         current.revision,
       );
+      recordSessionLanding(ctx, next, 'blocked', 'cancelled');
       ctx.store.event('session.merge_cancelled', next, next.project_id, { reason: 'cancelled' });
       ctx.store.mark(jobId, 'done');
     });
@@ -3070,6 +3073,14 @@ async function completeMerge(ctx: ControlContext, sessionId: string, jobId: stri
           : { ...current, state: 'closed' as const, outcome: 'merged' as const, merge: undefined },
         current.revision,
       );
+      const changed = item.from_sha !== item.to_sha;
+      recordSessionLanding(
+        ctx,
+        next,
+        changed ? 'landed' : 'no_changes',
+        null,
+        changed ? item.to_sha! : null,
+      );
       ctx.store.event('session.merged', next, next.project_id, {
         branch: item.branch,
         source: item.source,
@@ -3139,6 +3150,7 @@ async function completeMerge(ctx: ControlContext, sessionId: string, jobId: stri
       },
       current.revision,
     );
+    recordSessionLanding(ctx, next, item.state, reason);
     ctx.store.event(
       item.reason === 'cancelled' ? 'session.merge_cancelled' : 'session.merge_blocked',
       next,
@@ -3915,6 +3927,7 @@ async function prepareLand(
               ? { state: 'blocked' as const, reason: 'gate_files_changed', conflicts: guarded }
               : { state: 'blocked' as const, reason: dropped! };
       const next = ctx.store.update('sessions', { ...session, merge }, session.revision);
+      recordSessionLanding(ctx, next, 'blocked', merge.reason);
       ctx.store.event('session.merge_blocked', next, next.project_id, next.merge, c.command_id);
       unsnooze(ctx, session.id, 'merge_blocked', c.command_id);
       notifyMergeWatcher(ctx, next, `did not land: ${merge.reason}`, c.command_id);
@@ -3933,6 +3946,7 @@ async function prepareLand(
         : { ...session, state: 'closed' as const, outcome: 'merged' as const, merge: undefined },
       session.revision,
     );
+    recordSessionLanding(ctx, next, 'landed', null, worktree.head);
     ctx.store.event(
       'session.merged',
       next,

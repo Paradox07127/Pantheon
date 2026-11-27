@@ -656,6 +656,10 @@ export async function startDaemon(options: DaemonOptions) {
         await prefetch(p, i.project_id);
         return timed('project.changes', () => control.projectChanges(p, i.project_id));
       },
+      'project.plan.history': (p, i) => control.projectPlanHistory(p, i.project_id, i.limit),
+      'project.landings.read': (p, i) => control.projectLandingsRead(p, i),
+      'project.landings.compare': (p, i) =>
+        control.projectLandingsCompare(p, i.project_id, i.proposal_id, i.count),
       'project.plan': async (p, i) => {
         await prefetch(p, i.project_id);
         return timed('project.plan', () => control.projectPlan(p, i.project_id));

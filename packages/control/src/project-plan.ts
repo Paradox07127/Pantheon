@@ -13,6 +13,9 @@ import {
   inputSchemas,
   type ChangeRow,
   type PlanItemView,
+  type PlanItemStatus,
+  type PlanRevision,
+  type ProjectPlanHistory,
   type ProjectPlanResult,
   type ProjectPlanView,
   type WorkbenchSession,
@@ -69,6 +72,67 @@ function nameable(ctx: ControlContext, callerId: string, projectId: string, sess
   const spawner =
     session.spawned_by && ctx.store.get<Session>('sessions', session.spawned_by.session_id);
   return Boolean(spawner?.conductor);
+}
+
+const writtenStatus = (item: PlanItem): PlanItemStatus =>
+  item.dropped ? 'dropped' : item.accepted ? 'accepted' : 'open';
+
+function recordPlan(
+  ctx: ControlContext,
+  before: ProjectPlan | undefined,
+  plan: ProjectPlan,
+  author: string,
+) {
+  const previous = new Map(before?.items.map((item) => [item.id, item]));
+  const changes: PlanRevision['changes'] = {
+    added: [],
+    removed: [],
+    status_changed: [],
+    moved: [],
+  };
+  for (const item of plan.items) {
+    const old = previous.get(item.id);
+    if (!old) {
+      changes.added.push(item.id);
+      continue;
+    }
+    previous.delete(item.id);
+    const from = writtenStatus(old),
+      to = writtenStatus(item);
+    if (from !== to) changes.status_changed.push({ id: item.id, from, to });
+    if (old.milestone !== item.milestone)
+      changes.moved.push({ id: item.id, from: old.milestone ?? null, to: item.milestone ?? null });
+  }
+  changes.removed = [...previous.keys()];
+  const { revision, updated_at, milestones, items } = plan;
+  const snapshot: PlanRevision = {
+    revision,
+    updated_at,
+    author,
+    milestones,
+    items,
+    changes,
+    replan: changes.removed.length > 0 || changes.moved.length > 0,
+  };
+  ctx.store
+    .statement('INSERT INTO project_plan_revisions(project_id, revision, data) VALUES(?,?,?)')
+    .run(plan.project_id, revision, JSON.stringify(snapshot));
+}
+
+export function projectPlanHistory(
+  ctx: ControlContext,
+  p: Principal,
+  projectId: string,
+  limit?: number,
+): ProjectPlanHistory {
+  projectAccess(ctx, p, projectId, 'project.read');
+  ctx.store.must('projects', projectId);
+  const rows = ctx.store
+    .statement(
+      'SELECT data FROM project_plan_revisions WHERE project_id=? ORDER BY revision DESC LIMIT ?',
+    )
+    .all(projectId, limit ?? -1);
+  return { revisions: rows.map((row) => JSON.parse(row.data as string) as PlanRevision) };
 }
 
 /** conductor.plan_set; the last write wins. */
@@ -144,6 +208,7 @@ const setPlan: Handler = (ctx, p, command): ProjectPlanResult => {
   const plan = before
     ? ctx.store.update(TABLE, value, before.revision)
     : ctx.store.insert(TABLE, value);
+  recordPlan(ctx, before, plan, plan.session_id);
   ctx.store.event(
     'project.plan_updated',
     plan,
@@ -166,14 +231,14 @@ const acceptItem: Handler = (ctx, p, command): ProjectPlanResult => {
     'not_found',
     `The plan has no item ${input.item_id}`,
   );
+  const updated_at = new Date(ctx.store.now()).toISOString();
   const items = before.items.map((item) => {
     if (item.id !== input.item_id) return item;
     const { accepted: _accepted, ...rest } = item;
-    return input.accepted
-      ? { ...rest, accepted: { at: new Date(ctx.store.now()).toISOString() } }
-      : rest;
+    return input.accepted ? { ...rest, accepted: { at: updated_at } } : rest;
   });
-  const plan = ctx.store.update(TABLE, { ...before, items }, before.revision);
+  const plan = ctx.store.update(TABLE, { ...before, items, updated_at }, before.revision);
+  recordPlan(ctx, before, plan, 'user');
   ctx.store.event(
     'project.plan_accepted',
     plan,

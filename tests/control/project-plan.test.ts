@@ -54,16 +54,18 @@ const exportPlan: PlanInput = {
   ],
 };
 
+const writePlan = (f: Fixture, sessionId: string, plan: PlanInput) =>
+  f.call<Promise<ProjectPlanResult>>(
+    'conductor.plan_set',
+    plan,
+    null,
+    principalOf(f, sessionId, 'conductor'),
+  );
+
 async function planFixture() {
   const f = await workbenchFixture();
   const conductor = await openConductor(f);
-  const write = (plan: PlanInput, session: Session = conductor) =>
-    f.call<Promise<ProjectPlanResult>>(
-      'conductor.plan_set',
-      plan,
-      null,
-      principalOf(f, session.id, 'conductor'),
-    );
+  const write = (plan: PlanInput, session: Session = conductor) => writePlan(f, session.id, plan);
   const readState = (session: Session = conductor) =>
     f.call<Promise<{ plan: ProjectPlan | null }>>(
       'conductor.state',
@@ -117,13 +119,115 @@ it('stores the plan a main agent writes and gives the same plan back through rea
 });
 
 it('takes two writes without a revision and the later one wins', async () => {
-  const { write, stored } = await planFixture();
+  const { f, write, stored } = await planFixture();
 
   await write(exportPlan);
   const second = await write({ ...exportPlan, items: [exportPlan.items[0]!] });
 
   expect(second.revision).toBe(2);
+  expect(f.control.projectPlanHistory(user, f.project.id, 1).revisions[0]).toMatchObject({
+    replan: true,
+    changes: { removed: ['writer'], moved: [] },
+  });
   expect(stored()).toMatchObject({ revision: 2, items: [exportPlan.items[0]] });
+});
+
+it('keeps each written plan and acceptance with its author, status changes and re-plans', async () => {
+  const f = await workbenchFixture();
+  const conductor = f.store.insert<Session>('sessions', {
+    id: id(),
+    revision: 1,
+    project_id: f.project.id,
+    runtime: f.adapter.name,
+    conductor: true,
+    state: 'open',
+    turn_count: 0,
+  });
+  const write = (plan: PlanInput) => writePlan(f, conductor.id, plan);
+  const first = await write(exportPlan);
+  const second = await write({
+    ...exportPlan,
+    items: [{ ...exportPlan.items[0], dropped: true }, exportPlan.items[1]!],
+  });
+  const third = await write({
+    milestones: [...exportPlan.milestones, { id: 'next', title: 'Next release' }],
+    items: [{ ...exportPlan.items[0], dropped: true, milestone: 'next' }, exportPlan.items[1]!],
+  });
+  const acceptedAt = f.store.now() + 1000;
+  vi.spyOn(f.store, 'now').mockReturnValue(acceptedAt);
+  const fourth = await f.call<Promise<ProjectPlanResult>>(
+    'project.plan.accept',
+    {
+      project_id: f.project.id,
+      item_id: 'writer',
+      accepted: true,
+    },
+    third.revision,
+  );
+  const read = (limit?: number) =>
+    f.control.projectPlanHistory(user, f.project.id, limit).revisions;
+  const revisions = read();
+  expect(
+    revisions.map(({ revision, author, milestones, items }) => ({
+      revision,
+      author,
+      milestones,
+      items,
+    })),
+  ).toEqual(
+    [fourth, third, second, first].map(({ plan }, i) => ({
+      revision: plan.revision,
+      author: i === 0 ? 'user' : conductor.id,
+      milestones: plan.milestones,
+      items: plan.items,
+    })),
+  );
+  expect(revisions.map((r) => r.replan)).toEqual([false, true, false, false]);
+  expect(revisions[1]!.changes).toEqual({
+    added: [],
+    removed: [],
+    status_changed: [],
+    moved: [{ id: 'parser', from: 'export', to: 'next' }],
+  });
+  expect(revisions[2]!.changes.status_changed).toEqual([
+    { id: 'parser', from: 'open', to: 'dropped' },
+  ]);
+  expect(revisions[0]!).toMatchObject({
+    updated_at: new Date(acceptedAt).toISOString(),
+    changes: { status_changed: [{ id: 'writer', from: 'open', to: 'accepted' }] },
+  });
+  expect(revisions[3]!.changes.added).toEqual(['parser', 'writer']);
+  expect(read(2)).toEqual(revisions.slice(0, 2));
+});
+
+it('starts history at the next write to a plan that predates revision storage', async () => {
+  const f = await workbenchFixture();
+  f.store.insert<ProjectPlan>('project_plans', {
+    id: f.project.id,
+    project_id: f.project.id,
+    revision: 7,
+    session_id: 'earlier-session',
+    updated_at: '2026-11-01T00:00:00.000Z',
+    milestones: [],
+    items: [{ id: 'one', title: 'First item' }],
+  });
+  const read = () => f.control.projectPlanHistory(user, f.project.id).revisions;
+  expect(read()).toEqual([]);
+  await f.call(
+    'project.plan.accept',
+    { project_id: f.project.id, item_id: 'one', accepted: true },
+    7,
+  );
+  expect(read()).toMatchObject([
+    {
+      revision: 8,
+      author: 'user',
+      changes: {
+        added: [],
+        status_changed: [{ id: 'one', from: 'open', to: 'accepted' }],
+      },
+    },
+  ]);
 });
 
 it.each(['user', 'writer session'] as const)(

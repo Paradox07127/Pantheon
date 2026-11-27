@@ -1,9 +1,11 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, it, vi } from 'vitest';
-import type { Landing, Principal, Project, Session, Workspace } from '@pantheon/domain';
+import type { Landing, Principal, Project, Review, Session, Workspace } from '@pantheon/domain';
 import { projectChanges } from '../../packages/control/dist/changes.js';
 import type { ControlContext } from '../../packages/control/dist/context.js';
+import * as landingRecords from '../../packages/control/dist/project-landings.js';
+import { startWorkspaceProvisioning } from '../../packages/control/dist/provisioning.js';
 import * as validation from '../../packages/control/dist/validation-executor.js';
 import { awaitWorkspaceReady, eventually, insideSandbox, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
@@ -76,6 +78,157 @@ const removalsQueued = (f: Fixture) =>
     }[]
   ).map((job) => (JSON.parse(job.payload) as { workspace_id: string }).workspace_id);
 
+function requestBranchReview(
+  f: Fixture,
+  id: string,
+  head: string,
+  from_sha: string,
+  to_sha: string,
+) {
+  const review = f.store.insert<Review>('reviews', {
+    id,
+    revision: 1,
+    project_id: f.project.id,
+    refs: { base: 'main', head },
+    range: { source: f.project.roots[0]!, from_sha, to_sha },
+    state: 'completed',
+    round: 1,
+    findings: [],
+    session_ids: [],
+    runtimes: ['reviewer'],
+  });
+  f.store.event('review.requested', review, f.project.id, review);
+}
+
+async function runQueuedLandings(f: Fixture, ...landings: Landing[]) {
+  const ctx = f.control['ctx'];
+  for (const landing of landings) startWorkspaceProvisioning(ctx, landing.workspace_id);
+  await Promise.all(ctx.completions);
+  await f.control.tick();
+  await Promise.all(ctx.completions);
+}
+
+async function landReviewedBranch(f: Fixture, branch: string) {
+  const started = await land(f, { branch });
+  await runQueuedLandings(f, started);
+  const record = f.control.projectLandingsRead(user, { project_id: f.project.id }).landings[0]!;
+  expect(record).toMatchObject({ id: started.id, state: 'landed' });
+  return record;
+}
+
+it('counts only new review requests when a branch name is reused', async () => {
+  const f = await landFixture();
+  vi.spyOn(validation, 'runValidationCommand').mockResolvedValue(passedGate());
+  const base = git(f.source, 'rev-parse', 'main');
+  const first = branch(f, 'feature', [['first.txt', 'first']]);
+  requestBranchReview(f, 'first-review', 'feature', base, first);
+  expect((await landReviewedBranch(f, 'refs/heads/feature')).review_rounds).toBe(1);
+
+  git(f.source, 'reset', '--quiet', '--hard', base);
+  git(f.source, 'checkout', '--quiet', 'feature');
+  const second = commit(f.source, 'second.txt', 'second');
+  git(f.source, 'checkout', '--quiet', 'main');
+  requestBranchReview(f, 'second-review', 'refs/heads/feature', first, second);
+  expect((await landReviewedBranch(f, 'feature')).review_rounds).toBe(1);
+});
+
+it('excludes a branch review of a newer tip requested during the gate', async () => {
+  const f = await landFixture();
+  const queuedTip = branch(f, 'feature', [['feature.txt', 'feature']]);
+  vi.spyOn(validation, 'runValidationCommand').mockImplementation(async () => {
+    git(f.source, 'checkout', '--quiet', 'feature');
+    const newer = commit(f.source, 'feature.txt', 'fixed');
+    git(f.source, 'checkout', '--quiet', 'main');
+    requestBranchReview(f, 'newer-review', 'feature', queuedTip, newer);
+    return passedGate();
+  });
+  expect(await landReviewedBranch(f, 'feature')).toMatchObject({
+    landed_sha: queuedTip,
+    review_rounds: 0,
+  });
+});
+
+it.each(['HEAD', 'full SHA'])(
+  'counts a %s review followed by a fix and excludes a review of the base',
+  async (head) => {
+    const f = await landFixture();
+    vi.spyOn(validation, 'runValidationCommand').mockResolvedValue(passedGate());
+    const parent = git(f.source, 'rev-parse', 'main');
+    const base = commit(f.source, 'base.txt', 'base');
+    requestBranchReview(f, 'base-review', head === 'HEAD' ? head : base, parent, base);
+    git(f.source, 'checkout', '--quiet', '-b', 'feature');
+    const reviewed = commit(f.source, 'feature.txt', 'feature');
+    requestBranchReview(f, 'feature-review', head === 'HEAD' ? head : reviewed, base, reviewed);
+    commit(f.source, 'feature.txt', 'fixed');
+    git(f.source, 'checkout', '--quiet', 'main');
+    expect((await landReviewedBranch(f, 'feature')).review_rounds).toBe(1);
+  },
+);
+
+it('counts a shared HEAD review only for the first queued landing of stacked branches', async () => {
+  const f = await landFixture();
+  vi.spyOn(validation, 'runValidationCommand').mockResolvedValue(passedGate());
+  const base = git(f.source, 'rev-parse', 'main');
+  const shared = branch(f, 'feature', [['feature.txt', 'feature']]);
+  branch(f, 'stacked', [['stacked.txt', 'stacked']], 'feature');
+  requestBranchReview(f, 'shared-review', 'HEAD', base, shared);
+  const first = await land(f);
+  const second = await land(f, { branch: 'stacked' });
+  await runQueuedLandings(f, first, second);
+  expect(f.control.projectLandingsRead(user, { project_id: f.project.id }).landings).toMatchObject([
+    { id: second.id, state: 'landed', review_rounds: 0 },
+    { id: first.id, state: 'landed', review_rounds: 1 },
+  ]);
+});
+
+it('records workspace_failed with no review rounds when the queued source is gone', async () => {
+  const f = await landFixture();
+  const base = git(f.source, 'rev-parse', 'main');
+  const tip = branch(f, 'feature', [['feature.txt', 'feature']]);
+  requestBranchReview(f, 'feature-review', 'feature', base, tip);
+  const started = await land(f);
+  renameSync(f.source, path.join(f.root, 'moved-source'));
+  await runQueuedLandings(f, started);
+  expect(f.control.projectLandingsRead(user, { project_id: f.project.id }).landings).toMatchObject([
+    { id: started.id, state: 'blocked', reason: 'workspace_failed', review_rounds: 0 },
+  ]);
+});
+
+it('records unknown review rounds when rev-list cannot resolve the target branch', async () => {
+  const f = await landFixture();
+  branch(f, 'feature', [['feature.txt', 'feature']]);
+  const started = await land(f);
+  git(f.source, 'branch', '-m', 'renamed');
+  await runQueuedLandings(f, started);
+  expect(f.control.projectLandingsRead(user, { project_id: f.project.id }).landings).toMatchObject([
+    { id: started.id, state: 'blocked', reason: 'target_branch_changed', review_rounds: null },
+  ]);
+});
+
+it('counts reviews after recovering a landing that already fast-forwarded the target', async () => {
+  const f = await landFixture();
+  vi.spyOn(validation, 'runValidationCommand').mockResolvedValue(passedGate());
+  const base = git(f.source, 'rev-parse', 'main');
+  const tip = branch(f, 'feature', [['feature.txt', 'feature']]);
+  requestBranchReview(f, 'feature-review', 'feature', base, tip);
+  const started = await land(f);
+  vi.spyOn(landingRecords, 'insertLandingRecord').mockImplementationOnce(() => {
+    f.control['ctx'].closing = true;
+    throw new Error('Interrupted before recording the landing');
+  });
+  await expect(runQueuedLandings(f, started)).rejects.toThrow(
+    'Interrupted before recording the landing',
+  );
+  expect(git(f.source, 'rev-parse', 'main')).toBe(tip);
+  expect(row(f, started.id)).toMatchObject({ state: 'running', landing: { from_sha: base } });
+
+  await f.restart();
+  await runQueuedLandings(f);
+  expect(f.control.projectLandingsRead(user, { project_id: f.project.id }).landings).toMatchObject([
+    { id: started.id, state: 'landed', landed_sha: tip, review_rounds: 1 },
+  ]);
+});
+
 it.skipIf(insideSandbox)(
   'lands a branch no session owns through the gate and fast-forwards the checked-out branch',
   async () => {
@@ -114,9 +267,41 @@ it.skipIf(insideSandbox)(
       },
     ]);
     const base = git(f.source, 'rev-parse', 'main');
-    branch(f, 'feature', [['feature.txt', 'feature\n']]);
+    const tip = branch(f, 'feature', [['feature.txt', 'feature\n']]);
+    for (const head of ['feature', 'refs/heads/feature', 'other'])
+      f.store.insert<Review>('reviews', {
+        id: head,
+        revision: 1,
+        project_id: f.project.id,
+        refs: { base: 'main', head },
+        range: {
+          source: f.project.roots[0]!,
+          from_sha: base,
+          to_sha: head === 'other' ? base : tip,
+        },
+        state: 'completed',
+        round: 1,
+        findings: [],
+        session_ids: [],
+        runtimes: ['one', 'two'],
+      });
     const done = await ended(f, (await land(f)).id);
     expect(done).toMatchObject({ state: 'blocked', reason: 'gate_failed' });
+    expect(
+      f.control.projectLandingsRead(user, { project_id: f.project.id }).landings,
+    ).toMatchObject([
+      {
+        id: done.id,
+        branch: 'feature',
+        state: 'blocked',
+        reason: 'gate_failed',
+        ended_at: done.finished_at,
+        landed_sha: null,
+        review_rounds: 2,
+        gate_runs: 1,
+        first_gate_passed: false,
+      },
+    ]);
     expect(done.gate_results).toEqual([
       expect.objectContaining({ name: 'Always fails', exit_code: 3 }),
     ]);
@@ -162,6 +347,16 @@ it('reports no changes for a branch the target already holds', async () => {
   git(f.source, 'merge', '--quiet', '--ff-only', 'feature');
   const done = await ended(f, (await land(f)).id);
   expect(done).toMatchObject({ state: 'no_changes' });
+  expect(f.control.projectLandingsRead(user, { project_id: f.project.id }).landings).toMatchObject([
+    {
+      id: done.id,
+      state: 'no_changes',
+      landed_sha: null,
+      gate_runs: 0,
+      first_gate_passed: null,
+      wall_ms: null,
+    },
+  ]);
   expect(git(f.source, 'rev-parse', 'main')).toBe(tip);
 });
 
@@ -298,23 +493,29 @@ it.skipIf(insideSandbox).each([
   ['its own commits', undefined, 'Update stacked.txt'],
   ['its own commits as one commit', 'Land the second branch', 'Land the second branch'],
 ])(
-  'lands %s onto the target, for a branch cut from a branch that landed as one commit',
+  'lands %s and counts only its own reviews, for a branch cut from a branch that landed as one commit',
   async (_name, message, subject) => {
     const f = await landFixture();
-    branch(f, 'feature', [
+    const base = git(f.source, 'rev-parse', 'main');
+    const parent = branch(f, 'feature', [
       ['stacked.txt', 'first\n'],
       ['stacked.txt', 'second\n'],
     ]);
     const tip = branch(f, 'second', [['stacked.txt', 'third\n']], 'feature');
-    expect(await ended(f, (await land(f, { message: 'Land the feature' })).id)).toMatchObject({
-      state: 'landed',
-    });
+    requestBranchReview(f, 'parent-review', 'feature', base, parent);
+    requestBranchReview(f, 'child-review', 'second', parent, tip);
+    const first = await land(f, { message: 'Land the feature' });
+    await runQueuedLandings(f, first);
     const squashed = git(f.source, 'rev-parse', 'main');
-    const done = await ended(
-      f,
-      (await land(f, { branch: 'second', ...(message === undefined ? {} : { message }) })).id,
-    );
-    expect(done).toMatchObject({ state: 'landed', from_sha: squashed });
+    const second = await land(f, { branch: 'second', message });
+    await runQueuedLandings(f, second);
+    expect(row(f, second.id)).toMatchObject({ state: 'landed', from_sha: squashed });
+    expect(
+      f.control.projectLandingsRead(user, { project_id: f.project.id }).landings,
+    ).toMatchObject([
+      { id: second.id, state: 'landed', review_rounds: 1 },
+      { id: first.id, state: 'landed', review_rounds: 1 },
+    ]);
     expect(git(f.source, 'rev-parse', 'main~1')).toBe(squashed);
     expect(git(f.source, 'log', '-1', '--format=%B', 'main')).toBe(subject);
     expect(git(f.source, 'show', 'main:stacked.txt')).toBe('third');
@@ -625,6 +826,11 @@ it.skipIf(insideSandbox)(
         { name: 'Check', state: 'passed' },
       ],
     });
+    expect(
+      f.control.projectLandingsRead(user, { project_id: f.project.id }).landings,
+    ).toMatchObject([
+      { id, state: 'landed', landed_sha: tip, gate_runs: 2, first_gate_passed: false },
+    ]);
     expect(readFileSync(runs, 'utf8')).toBe('prepare\ncheck\nprepare\ncheck\n');
     expect(git(f.source, 'rev-parse', 'main')).toBe(tip);
   },

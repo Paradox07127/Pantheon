@@ -798,4 +798,11 @@ it('refuses a principal of another project', async () => {
   expect(() =>
     h.f.control.projectPlan(principalOf(h.f, h.conductor.id, 'conductor'), other.id),
   ).toThrow(expect.objectContaining({ code: 'permission_denied' }));
+  const principal = principalOf(h.f, h.conductor.id, 'conductor');
+  for (const query of [
+    () => h.f.control.projectPlanHistory(principal, other.id),
+    () => h.f.control.projectLandingsRead(principal, { project_id: other.id }),
+    () => h.f.control.projectLandingsCompare(principal, other.id, 'proposal', 1),
+  ])
+    expect(query).toThrow(expect.objectContaining({ code: 'permission_denied' }));
 });
