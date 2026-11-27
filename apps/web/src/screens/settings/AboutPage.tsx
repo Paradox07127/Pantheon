@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Copy, Folder } from 'lucide-react';
+import { Copy, Folder, RefreshCw } from 'lucide-react';
 import { PROTOCOL_VERSION, type AppInfo, type DaemonInfo } from '@pantheon/protocol';
 import { useBoard } from '../../data/board';
+import { ageText, useNow } from '../../data/needs-you';
 import { readStatus } from '../../data/runtime-status';
+import { readAppSignals, useAppSignals } from '../../data/signals';
 import { t } from '../../i18n';
 import { revealText } from '../../lib/platform-text';
+import { orderSignals, signalCountText, signalStateText } from '../project/signals-model';
 import { diagnosticsText } from './diagnostics';
 import { ipcFailure } from './editors';
 import './about-page.css';
@@ -18,11 +21,12 @@ export async function gatherDiagnostics(): Promise<string> {
           .then(read)
           .catch(() => undefined)
       : undefined;
-  const [app, daemon, logs, runtimes] = await Promise.all([
+  const [app, daemon, logs, runtimes, errors] = await Promise.all([
     quiet(() => bridge!.appInfo()),
     quiet(() => bridge!.daemon()),
     quiet(() => bridge!.logsDir()),
     readStatus(false),
+    quiet(readAppSignals),
   ]);
   return diagnosticsText({
     app,
@@ -30,6 +34,7 @@ export async function gatherDiagnostics(): Promise<string> {
     protocol: PROTOCOL_VERSION,
     logs_dir: logs,
     runtimes: runtimes.state === 'ready' ? runtimes.statuses : undefined,
+    errors: errors?.ok ? errors.value.issues : undefined,
   });
 }
 
@@ -53,6 +58,10 @@ export function AboutPage() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<boolean | null>(null);
   const live = useBoard((s) => s.status.state === 'live');
+  const errors = useAppSignals();
+  const now = useNow(60_000);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const shownErrors = orderSignals(errors.read?.issues ?? [], Infinity);
 
   useEffect(() => {
     const bridge = window.pantheon;
@@ -196,6 +205,65 @@ export function AboutPage() {
           )}
         </div>
       </div>
+      {bridge && (
+        <div
+          className="ps-grp"
+          role="group"
+          aria-label={t({ id: 'settings.about.errors', defaultMessage: 'Pantheon errors' })}
+        >
+          <div className="ps-rows">
+            <div className="ps-row">
+              <span className="ps-row-nm">
+                {t({ id: 'settings.about.errors', defaultMessage: 'Pantheon errors' })}
+                {errors.read?.issues.length === 0 && (
+                  <span className="ps-row-hint">
+                    {t({ id: 'settings.about.noErrors', defaultMessage: 'No errors' })}
+                  </span>
+                )}
+              </span>
+              <div className="ps-row-ct">
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={errors.loading}
+                  onClick={errors.reload}
+                >
+                  <RefreshCw size={14} aria-hidden="true" />
+                  {t({ id: 'settings.about.refreshErrors', defaultMessage: 'Refresh' })}
+                </button>
+              </div>
+            </div>
+            {errors.error !== null && (
+              <div className="ps-err ab-err" role="alert">
+                {errors.error}
+              </div>
+            )}
+            {shownErrors.map((issue) => {
+              const open = expanded === issue.id;
+              return (
+                <div key={issue.id} className="ps-row ab-sg" role="group" aria-label={issue.title}>
+                  <button
+                    type="button"
+                    className="ab-sg-nm"
+                    aria-expanded={open}
+                    onClick={() => setExpanded(open ? null : issue.id)}
+                  >
+                    {issue.title}
+                  </button>
+                  <div className="ps-row-ct ab-sg-f">
+                    <span>{signalCountText(issue.count)}</span>
+                    <span>{ageText(issue.last_seen, now)}</span>
+                    <span>{signalStateText(issue.state)}</span>
+                  </div>
+                  {open && issue.samples[0] && (
+                    <pre className="ab-smp">{issue.samples[0].text}</pre>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </>
   );
 }

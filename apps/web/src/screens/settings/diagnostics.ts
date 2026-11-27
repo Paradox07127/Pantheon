@@ -1,4 +1,5 @@
 import type { AppInfo, DaemonInfo, RuntimeStatus } from '@pantheon/protocol';
+import type { SignalIssue } from '../../data/signals';
 
 /** What the diagnostics can name; a fact left out is not known. */
 export interface DiagnosticsFacts {
@@ -8,6 +9,8 @@ export interface DiagnosticsFacts {
   protocol: number;
   logs_dir?: string;
   runtimes?: readonly RuntimeStatus[];
+  /** The daemon's recorded errors; only the unresolved ones are named. */
+  errors?: readonly SignalIssue[];
 }
 
 const OS_NAME: Record<AppInfo['os'], string> = {
@@ -35,5 +38,8 @@ export function diagnosticsText(facts: DiagnosticsFacts): string {
     const version = s.installed ? (s.version ?? 'unknown version') : 'not installed';
     lines.push(`Runtime ${s.runtime}: ${version}, signed in: ${s.auth.state}`);
   }
+  for (const e of facts.errors ?? [])
+    if (e.state !== 'resolved')
+      lines.push(`Daemon error: ${e.title.replace(/\s*\n\s*/g, ' ')} (${e.count} times)`);
   return lines.join('\n');
 }

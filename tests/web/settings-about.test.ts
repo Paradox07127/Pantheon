@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactElement, ReactNode } from 'react';
-import type { RuntimeStatus } from '@pantheon/protocol';
+import type { RuntimeStatus, SignalIssues } from '@pantheon/protocol';
 import { find, mount as host, nodes, text, unmountAll } from './web-hook-host.js';
-import { zh } from './i18n-setup.js';
+import { zh, zhf } from './i18n-setup.js';
 const mock = vi.hoisted(() => ({ notices: [] as unknown[] }));
 vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMock(actual));
 vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
@@ -50,12 +50,35 @@ const codex: RuntimeStatus = {
   auth: { state: 'logged_out' },
 };
 
+type Issue = SignalIssues['issues'][number];
+const NOW = Date.parse('2026-11-20T12:00:00.000Z');
+const errorOf = (extra: Partial<Issue> = {}): Issue => ({
+  id: 'e1',
+  revision: 1,
+  project_id: '',
+  source: 'daemon_error',
+  fingerprint: 'Error: disk full',
+  title: 'Error: disk full',
+  state: 'open',
+  count: 3,
+  first_seen: NOW - 3_600_000,
+  last_seen: NOW - 5 * 60_000,
+  opened_at: NOW - 3_600_000,
+  samples: [{ at: NOW - 5 * 60_000, text: 'Error: disk full\n  at write' }],
+  ...extra,
+});
+let errors: Issue[] = [];
+
 const desktop = () => ({
   appInfo: vi.fn(async () => app),
   daemon: vi.fn(async () => ({ ok: true as const, value: daemon })),
   logsDir: vi.fn(async () => '/data/pantheon/logs'),
   revealPath: vi.fn(async () => ({ ok: true as const, value: null })),
-  query: vi.fn(async () => ({ ok: true as const, value: [claude, codex] })),
+  query: vi.fn(async (method: string) =>
+    method === 'app.signals'
+      ? { ok: true as const, value: { issues: errors } }
+      : { ok: true as const, value: [claude, codex] },
+  ),
 });
 let clipboard: { writeText: ReturnType<typeof vi.fn> };
 
@@ -71,6 +94,7 @@ const anchor = (tree: ReactNode, id: string) =>
 const buttons = (tree: ReactNode) => nodes(tree).filter((n) => n.type === 'button');
 
 beforeEach(() => {
+  errors = [];
   mock.notices = [];
   clipboard = { writeText: vi.fn(async () => {}) };
   vi.stubGlobal('navigator', { userAgent: 'Macintosh', clipboard });
@@ -177,6 +201,86 @@ describe('about page', () => {
   });
 });
 
+describe('Pantheon errors on the about page', () => {
+  const group = (tree: ReactNode) =>
+    nodes(tree).find((n) => n.props['aria-label'] === zh('settings.about.errors'));
+  const errorRows = (tree: ReactNode) =>
+    nodes(group(tree)).filter((n) => n.props['aria-expanded'] !== undefined);
+
+  beforeEach(() => vi.useFakeTimers({ toFake: ['Date'], now: NOW }));
+  afterEach(() => vi.useRealTimers());
+
+  it('lists each error with its count, last time seen and state, and opens its sample', async () => {
+    errors = [
+      errorOf({ id: 'old', title: 'Error: old', state: 'resolved', count: 1 }),
+      errorOf({ id: 'new', title: 'Error: disk full', state: 'escalated', count: 12 }),
+    ];
+    vi.stubGlobal('window', { pantheon: desktop() });
+    const h = await mount(() => AboutPage());
+    const rowOf = (title: string) =>
+      nodes(group(h.value)).find((n) => n.props['aria-label'] === title)!;
+    expect(errorRows(h.value).map((n) => text(n))).toEqual(['Error: disk full', 'Error: old']);
+    const age = zhf('data.age.minutes', { count: 5 });
+    expect(text(rowOf('Error: disk full'))).toBe(
+      `Error: disk full${zhf('project.signals.count', { count: 12 })}${age}${zh('project.signals.escalated')}`,
+    );
+    expect(text(rowOf('Error: old'))).toContain(zh('project.signals.resolved'));
+    expect(nodes(group(h.value)).find((n) => n.type === 'pre')).toBeUndefined();
+    errorRows(h.value)[0]!.props.onClick();
+    h.render();
+    expect(errorRows(h.value)[0]!.props['aria-expanded']).toBe(true);
+    expect(text(nodes(group(h.value)).find((n) => n.type === 'pre'))).toBe(
+      'Error: disk full\n  at write',
+    );
+  });
+
+  it('lists every resolved error, not only the newest five', async () => {
+    errors = Array.from({ length: 7 }, (_, i) =>
+      errorOf({ id: `e${i}`, title: `Error: ${i}`, state: 'resolved', last_seen: NOW - i }),
+    );
+    vi.stubGlobal('window', { pantheon: desktop() });
+    const h = await mount(() => AboutPage());
+    expect(errorRows(h.value)).toHaveLength(7);
+  });
+
+  it('says when there are no errors', async () => {
+    vi.stubGlobal('window', { pantheon: desktop() });
+    const h = await mount(() => AboutPage());
+    expect(text(group(h.value))).toContain(zh('settings.about.noErrors'));
+    expect(errorRows(h.value)).toEqual([]);
+    expect(zh('settings.about.noErrors')).toBe('没有报错');
+  });
+
+  it('reads the errors again on refresh', async () => {
+    const bridge = desktop();
+    vi.stubGlobal('window', { pantheon: bridge });
+    const h = await mount(() => AboutPage());
+    const reads = () => bridge.query.mock.calls.filter(([method]) => method === 'app.signals');
+    expect(reads()).toHaveLength(1);
+    errors = [errorOf()];
+    buttons(group(h.value))
+      .find((n) => text(n) === zh('settings.about.refreshErrors'))!
+      .props.onClick();
+    await h.flush();
+    expect(reads()).toHaveLength(2);
+    expect(errorRows(h.value).map((n) => text(n))).toEqual(['Error: disk full']);
+  });
+
+  it('copies the unresolved errors at the end of the diagnostics, not the resolved ones', async () => {
+    errors = [
+      errorOf({ id: 'a', title: 'Error: disk full', count: 3 }),
+      errorOf({ id: 'b', title: 'TypeError: gone', state: 'resolved', count: 9 }),
+    ];
+    vi.stubGlobal('window', { pantheon: desktop() });
+    const h = await mount(() => AboutPage());
+    buttons(anchor(h.value, 'about.diagnostics'))[0]!.props.onClick();
+    await vi.waitFor(() => expect(clipboard.writeText).toHaveBeenCalled());
+    const copied = String(clipboard.writeText.mock.calls[0]![0]);
+    expect(copied.split('\n').at(-1)).toBe('Daemon error: Error: disk full (3 times)');
+    expect(copied).not.toContain('TypeError: gone');
+  });
+});
+
 describe('diagnostics text', () => {
   it('names versions, folders and sign-in states, one per line, without account names', () => {
     const lines = diagnosticsText({
@@ -204,6 +308,33 @@ describe('diagnostics text', () => {
 
   it('leaves out what is not known', () => {
     expect(diagnosticsText({ protocol: 1 })).toBe('Protocol: 1');
+  });
+
+  it('ends with each unresolved error and its count, leaving out resolved ones', () => {
+    expect(
+      diagnosticsText({
+        protocol: 1,
+        errors: [
+          errorOf({ title: 'Error: disk full', state: 'open', count: 3 }),
+          errorOf({ title: 'Error: busy', state: 'escalated', count: 11 }),
+          errorOf({ title: 'Error: old', state: 'resolved', count: 2 }),
+        ],
+      }).split('\n'),
+    ).toEqual([
+      'Protocol: 1',
+      'Daemon error: Error: disk full (3 times)',
+      'Daemon error: Error: busy (11 times)',
+    ]);
+    expect(diagnosticsText({ protocol: 1, errors: [] })).toBe('Protocol: 1');
+  });
+
+  it('keeps a multiline error title on one line', () => {
+    expect(
+      diagnosticsText({
+        protocol: 1,
+        errors: [errorOf({ title: 'Error: command failed\n  permission denied', count: 2 })],
+      }).split('\n'),
+    ).toEqual(['Protocol: 1', 'Daemon error: Error: command failed permission denied (2 times)']);
   });
 });
 

@@ -23,6 +23,7 @@ import { PlanList } from './PlanList';
 import { mainAgent, type ShownPlanItem } from './project-model';
 import { ResidentCard } from './ResidentCard';
 import { RoutinesCard } from './RoutinesCard';
+import { SignalsCard } from './SignalsCard';
 import { StatusPanel } from './StatusPanel';
 import { UnplannedList } from './UnplannedList';
 import { UsagePanel } from './UsagePanel';
@@ -221,6 +222,7 @@ export function ProjectScreen({
                 {main && projectId && (
                   <RoutinesCard key={`routines-${projectId}`} projectId={projectId} />
                 )}
+                {projectId && <SignalsCard key={`signals-${projectId}`} projectId={projectId} />}
                 {projectId && <IntroCard projectId={projectId} />}
               </>
             )}

@@ -1,0 +1,11 @@
+{
+  "project.signals.title": "信号",
+  "project.signals.escalated": "升级",
+  "project.signals.open": "开启",
+  "project.signals.resolved": "已解决",
+  "project.signals.gateRepeat": "反复失败",
+  "project.signals.gateFlaky": "时过时挂",
+  "project.signals.daemonError": "Pantheon 报错",
+  "project.signals.count": "{count, plural, other {# 次}}",
+  "project.signals.resolve": "标为已解决"
+}

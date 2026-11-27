@@ -580,6 +580,53 @@
   gap: var(--sp-1);
   margin-left: calc(-1 * var(--sp-2));
 }
+/* The signal issues, under the routines; a row opens on its latest sample. */
+.pj-sg-h {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+  margin: 0 calc(-1 * var(--sp-2));
+  padding: var(--sp-1) var(--sp-2);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--tx);
+  font: inherit;
+  text-align: left;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.pj-sg-h:hover {
+  background: var(--sf2);
+}
+.pj-sg-h:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.pj-sg-st {
+  flex: none;
+  font-weight: 500;
+}
+.pj-sg-nm {
+  min-width: 0;
+  color: var(--tx2);
+  overflow-wrap: anywhere;
+}
+.pj-sg-smp {
+  max-height: calc(12 * var(--lh-xs) + 2 * var(--sp-2));
+  margin: 0;
+  padding: var(--sp-2);
+  overflow: auto;
+  border: var(--hair) solid var(--bd2);
+  border-radius: var(--r-sm);
+  background: var(--sf2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
 .pj-dlg.pj-rfd {
   width: min(480px, calc(100vw - 96px));
 }

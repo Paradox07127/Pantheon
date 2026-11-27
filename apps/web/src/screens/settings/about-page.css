@@ -33,6 +33,46 @@
   padding: 0 16px 8px;
 }
 
+/* A daemon error: its title opens the latest sample under the row. */
+.ps-rows > .ps-row.ab-sg {
+  row-gap: var(--sp-2);
+}
+.ab-sg-nm {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--tx);
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.ab-sg-nm:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.ab-sg-f {
+  color: var(--tx2);
+  font-variant-numeric: tabular-nums;
+}
+.ab-smp {
+  grid-column: 1 / -1;
+  max-height: calc(12 * var(--lh-xs) + 2 * var(--sp-2));
+  margin: 0;
+  padding: var(--sp-2);
+  overflow: auto;
+  border: var(--hair) solid var(--bd2);
+  border-radius: var(--r-sm);
+  background: var(--sf2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
 /* A connection row: service, account, action. */
 .ps-rows > .ps-row.cn-row {
   grid-template-columns: 160px minmax(0, 1fr) auto;
