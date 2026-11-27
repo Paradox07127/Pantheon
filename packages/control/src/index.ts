@@ -89,6 +89,7 @@ import { changesRead } from './changes.js';
 import { projectLandingsRead, projectLandingsCompare } from './project-landings.js';
 import { projectPlanHistory, projectPlanView } from './project-plan.js';
 import { projectResident } from './resident.js';
+import { listSignals, recordDaemonError } from './signals.js';
 import { projectRoutines } from './routines.js';
 import { projectSettingProposals } from './setting-proposal.js';
 import {
@@ -373,6 +374,7 @@ export class Control extends EventEmitter {
       },
       diagnostic: (error) => this.emit('diagnostic', error),
     };
+    this.on('diagnostic', (error) => recordDaemonError(this.ctx, error));
     this.search = new SessionSearch(store);
   }
   execute(principal: Principal, raw: unknown): unknown {
@@ -926,6 +928,14 @@ export class Control extends EventEmitter {
   projectResident(principal: Principal, projectId: string) {
     return projectResident(this.ctx, principal, projectId);
   }
+  projectSignals(principal: Principal, projectId: string) {
+    projectAccess(this.ctx, principal, projectId, 'project.read');
+    return listSignals(this.ctx, projectId);
+  }
+  appSignals(principal: Principal) {
+    userOnly(principal);
+    return listSignals(this.ctx);
+  }
   projectRoutines(principal: Principal, projectId: string) {
     return projectRoutines(this.ctx, principal, projectId);
   }
@@ -1152,9 +1162,7 @@ export class Control extends EventEmitter {
     recoverWorkspaceProvisioning(this.ctx);
     await recover(this.ctx);
     // The first list after a start then finds the worktrees read or being read.
-    this.prefetchWorktreeReads({ id: USER_PRINCIPAL_ID, role: 'user' }).catch((error) =>
-      this.emit('diagnostic', error),
-    );
+    this.prefetchWorktreeReads({ id: USER_PRINCIPAL_ID, role: 'user' }).catch(this.ctx.diagnostic);
   }
   reconcile(): Promise<void> {
     return reconcile(this.ctx);

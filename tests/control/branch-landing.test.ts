@@ -814,6 +814,55 @@ function passedGate(): validation.ValidationResult {
   };
 }
 
+it('counts a passing retry as a flip only when the first attempt failed on code', async () => {
+  const f = await landFixture([
+    { name: 'Setup', argv: ['setup'] },
+    { name: 'Build', argv: ['build'] },
+  ]);
+  vi.spyOn(f.store, 'now').mockReturnValue(Date.UTC(2026, 3, 1));
+  f.call('workflow.policy.set', { project_id: f.project.id, gate_on_fail: 'retry' });
+  const check = vi
+    .spyOn(validation, 'runValidationCommand')
+    .mockResolvedValueOnce({ ...passedGate(), exit_code: null, timedOut: true })
+    .mockResolvedValueOnce(passedGate())
+    .mockResolvedValueOnce({ ...passedGate(), exit_code: 1, tail: 'build failed' })
+    .mockResolvedValueOnce(passedGate());
+  branch(f, 'feature', [['feature.txt', 'feature']]);
+  const started = await land(f);
+  await runQueuedLandings(f, started);
+  expect(row(f, started.id).state).toBe('landed');
+  expect(check).toHaveBeenCalledTimes(4);
+  expect(f.control.projectSignals(user, f.project.id).issues).toMatchObject([
+    { source: 'gate_flaky', title: 'Build', count: 1 },
+  ]);
+});
+
+it('counts retries of one branch as one source and opens on a second branch', async () => {
+  const f = await landFixture();
+  vi.spyOn(f.store, 'now').mockReturnValue(Date.UTC(2026, 3, 1));
+  const check = vi.spyOn(validation, 'runValidationCommand').mockResolvedValue({
+    ...passedGate(),
+    exit_code: 1,
+    tail: 'build failed',
+  });
+  branch(f, 'feature', [['feature.txt', 'feature']]);
+  git(f.source, 'branch', 'review', 'feature');
+  for (const name of ['feature', 'refs/heads/feature', 'review']) {
+    const landing = await land(f, { branch: name });
+    await runQueuedLandings(f, landing);
+    expect(row(f, landing.id).reason).toBe('gate_failed');
+    expect(f.store.kindEvents(f.project.id, ['signal.opened'])).toHaveLength(
+      name === 'review' ? 1 : 0,
+    );
+  }
+  check.mockResolvedValue(passedGate());
+  await runQueuedLandings(f, await land(f));
+  expect(f.control.projectSignals(user, f.project.id).issues).toMatchObject([
+    { source: 'gate_flaky', count: 1, state: 'open' },
+    { source: 'gate_repeat', count: 3, state: 'resolved' },
+  ]);
+});
+
 it('starts the gate of a branch landing only after a session merge of the same root ends', async () => {
   const f = await landFixture();
   const session = await f.create();

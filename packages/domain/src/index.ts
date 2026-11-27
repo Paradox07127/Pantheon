@@ -510,6 +510,24 @@ export interface NeedsYouItem {
   /** Who acts next and how. */
   next_step?: string;
 }
+export interface SignalIssue extends Entity {
+  project_id: string;
+  source: 'gate_repeat' | 'gate_flaky' | 'daemon_error';
+  fingerprint: string;
+  title: string;
+  state: 'open' | 'escalated' | 'resolved';
+  count: number;
+  first_seen: number;
+  last_seen: number;
+  /** Null while a repeated gate failure is still below its opening threshold. */
+  opened_at: number | null;
+  resolved_at?: number;
+  samples: { at: number; text: string }[];
+  check_name?: string;
+  check_argv?: string[];
+  failing_sources?: { source: string; at: number }[];
+  recent_errors?: number[];
+}
 export interface TestCounts {
   passed: number;
   failed: number;
@@ -535,6 +553,7 @@ export interface LandingItem {
     output: string;
     tests?: TestCounts;
     carried?: boolean;
+    passed_after_code_failure?: true;
     /** Set on a failed result. */
     failure_class?: GateFailureClass;
   }[];

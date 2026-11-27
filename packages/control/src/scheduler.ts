@@ -18,6 +18,7 @@ import { tickProjectBaselines } from './baseline.js';
 import { tickSessions } from './session-tick.js';
 import { tickSessionStalls } from './session-stall.js';
 import { retrySpawnerNotices } from './conductor.js';
+import { tickSignals } from './signals.js';
 import { fireDueTimers } from './timers.js';
 
 export async function tick(ctx: ControlContext): Promise<void> {
@@ -61,6 +62,7 @@ export async function tick(ctx: ControlContext): Promise<void> {
       // A kind no handler takes any more would stay pending for good; the loop below sends permission.answer.
       else if (out.kind !== 'permission.answer') ctx.store.mark(out.id, 'done');
     }
+    ctx.store.transaction(() => tickSignals(ctx));
     tickMemory(ctx);
     retrySpawnerNotices(ctx);
     for (const out of ctx.store.pending().filter((out) => out.kind === 'permission.answer')) {

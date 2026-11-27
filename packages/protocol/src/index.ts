@@ -17,6 +17,7 @@ import type {
   McpServerStatus,
   Approval,
   LandingRecord,
+  SignalIssue,
   NeedsYouItem,
   PermissionMode,
   PlanItem,
@@ -1459,6 +1460,7 @@ export const inputSchemas = {
   'project.routine.save': z.strictObject({ project_id: str, routine: routineInput }),
   'project.routine.remove': routineRef,
   'project.routine.run': routineRef,
+  'project.signal.resolve': z.strictObject({ project_id: str, issue_id: str }),
   'project.worktree.set': z.strictObject({
     project_id: str,
     copy_paths: z.array(worktreePath),
@@ -2097,6 +2099,8 @@ export const querySchemas = {
   }),
   'project.resident': z.strictObject({ project_id: str }),
   'project.routines': z.strictObject({ project_id: str }),
+  'project.signals': z.strictObject({ project_id: str }),
+  'app.signals': z.strictObject({}),
   /** ProjectSettingProposals; the approved setting proposals, latest approval first. */
   'project.setting_proposals': z.strictObject({ project_id: str }),
   /** DecisionsForUser; what a stored rule decided without the user from since on, Unix milliseconds, newest first. */
@@ -2526,6 +2530,9 @@ export interface RoutineRun {
     | 'changed'
     | 'inactive_hours';
   exit_code?: number | null;
+}
+export interface SignalIssues {
+  issues: SignalIssue[];
 }
 export interface ProjectRoutines {
   routines: (z.infer<typeof routineInput> & {

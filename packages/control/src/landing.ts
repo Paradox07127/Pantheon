@@ -24,6 +24,7 @@ import {
 } from './validation-executor.js';
 import { retryingIndexLock, runGit } from './git.js';
 import { workflowPolicy } from './workflow-policy.js';
+import { recordGateSignals } from './signals.js';
 import { onDevice } from './remote-workspace.js';
 import { forgetWorktreeReads } from './workbench-session.js';
 
@@ -603,8 +604,11 @@ export async function checkGates(
       if (
         result?.failure_class === 'environment' ||
         (result?.state === 'failed' && policy.gate_on_fail === 'retry')
-      )
+      ) {
+        const codeFailure = result.failure_class !== 'environment';
         result = await run(command);
+        if (codeFailure && result?.state === 'passed') result.passed_after_code_failure = true;
+      }
       if (!result) return;
       results.push(result);
       owner.event('gate_step_checked', {
@@ -618,12 +622,18 @@ export async function checkGates(
     await rm(temporary, { recursive: true, force: true });
   }
   if (ctx.closing || owner.cancelled()) return;
-  owner.event('gate_checked', {
+  const checked = {
     workspace_id: workspace.id,
     commit,
     check_spec_hash: hash(commands),
     results,
-  });
+  };
+  if (session)
+    ctx.store.transaction(() => {
+      owner.event('gate_checked', checked);
+      recordGateSignals(ctx, owner.projectId, `session:${session.id}`, commit, results);
+    });
+  else owner.event('gate_checked', checked);
   // A status read from before the session's last commit would show this result as stale.
   forgetWorktreeReads(workspace.id);
   return results;

@@ -21,6 +21,7 @@ it('defines a strict input schema for each unimplemented command and the queries
   }
   expect(Object.keys(querySchemas).sort()).toEqual([
     'app.settings',
+    'app.signals',
     'backend.list',
     'change_story.diff',
     'change_story.list',
@@ -72,6 +73,7 @@ it('defines a strict input schema for each unimplemented command and the queries
     'project.review.metrics',
     'project.routines',
     'project.setting_proposals',
+    'project.signals',
     'project.status.read',
     'project.timeline',
     'project.trace',

@@ -662,6 +662,8 @@ export async function startDaemon(options: DaemonOptions) {
       'project.landings.compare': (p, i) =>
         control.projectLandingsCompare(p, i.project_id, i.proposal_id, i.count),
       'project.resident': (p, i) => control.projectResident(p, i.project_id),
+      'app.signals': (p) => control.appSignals(p),
+      'project.signals': (p, i) => control.projectSignals(p, i.project_id),
       'project.routines': (p, i) => control.projectRoutines(p, i.project_id),
       'project.setting_proposals': (p, i) => control.projectSettingProposals(p, i.project_id),
       'project.plan': async (p, i) => {

@@ -443,6 +443,12 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `project.sessionDefaults.clear` | `project_id`: string |  |
 | `project.sessionDefaults.set` | `project_id`: string<br>`runtime`: string<br>`permission_mode`: "ask" \| "auto_edit" \| "plan" \| "auto" \| "full_access"<br>`model?`: string<br>`effort?`: "none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max" \| "ultra"<br>`single_model?`: boolean<br>`writer?`: object<br>`reviewer?`: object<br>`fallbacks?`: object |  |
 
+### project.signal
+
+| type | input | MCP 工具 |
+|---|---|---|
+| `project.signal.resolve` | `project_id`: string<br>`issue_id`: string |  |
+
 ### project.worktree
 
 | type | input | MCP 工具 |
@@ -567,6 +573,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | method | 参数 |
 |---|---|
 | `app.settings` | — |
+| `app.signals` | — |
 | `backend.list` | — |
 | `change_story.diff` | `story_id`: string |
 | `change_story.list` | `project_id`: string |
@@ -618,6 +625,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `project.review.metrics` | `project_id`: string |
 | `project.routines` | `project_id`: string |
 | `project.setting_proposals` | `project_id`: string |
+| `project.signals` | `project_id`: string |
 | `project.status.read` | `project_id`: string<br>`from`: integer<br>`to`: integer |
 | `project.timeline` | `project_id`: string<br>`since?`: string |
 | `project.trace` | `project_id`: string<br>`from?`: string<br>`to?`: string<br>`bucket_ms?`: integer |

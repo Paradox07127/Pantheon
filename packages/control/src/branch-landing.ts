@@ -33,6 +33,7 @@ import {
   listLandedCommits,
   recordEndSequence,
 } from './project-landings.js';
+import { recordGateSignals } from './signals.js';
 import { mergeBase } from './merge-preview.js';
 import { commitOf, projectAtRoot } from './review.js';
 import { userGit } from './source-git.js';
@@ -409,6 +410,14 @@ async function landBranch(
             }
             const results = payload.results as NonNullable<LandingItem['gate_results']>;
             if (kind === 'gate_step_checked') return { gate_results: results };
+            const branch = row.branch.replace(/^refs\/heads\//, '');
+            recordGateSignals(
+              ctx,
+              row.project_id,
+              `branch:${JSON.stringify([row.root, branch])}`,
+              payload.commit as string,
+              results,
+            );
             return {
               gate_results: results,
               gate_finished_at: ctx.store.now(),

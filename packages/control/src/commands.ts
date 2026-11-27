@@ -8,6 +8,7 @@ import { conductorPreparers } from './conductor.js';
 import { changeStoryHandlers } from './change-story.js';
 import type { Handlers, Preparers } from './context.js';
 import { setProjectResident, setProjectResidentInstructions } from './resident.js';
+import { resolveSignal } from './signals.js';
 import { routineHandlers } from './routines.js';
 import { projectFactHandlers } from './project-facts.js';
 import { projectHandlers, projectPreparers } from './project.js';
@@ -32,6 +33,7 @@ export const handlers: Handlers = {
   'project.resident.set': setProjectResident,
   'project.resident.instructions.set': setProjectResidentInstructions,
   ...routineHandlers,
+  'project.signal.resolve': resolveSignal,
   ...projectFactHandlers,
   ...environmentCheckHandlers,
   ...branchLandingHandlers,
