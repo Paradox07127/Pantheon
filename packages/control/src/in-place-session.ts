@@ -29,7 +29,7 @@ import { inheritedEnvAllowlist, managedSessionSpec, sessionExtensions } from './
 import { inPlaceSandbox } from './protection.js';
 import { registerInPlaceWorkspace } from './workspace.js';
 import { residentInstructionBlock } from './resident.js';
-import { CONDUCTOR_INSTRUCTIONS } from './conductor.js';
+import { conductorInstructions } from './conductor.js';
 import { checkPermissionMode } from './workbench-session.js';
 import { writerTempDirectory } from './workspace-removal.js';
 
@@ -126,7 +126,7 @@ export async function inPlaceSessionSpec(
             `You are working in the project folder at ${workspace.path}, on its current branch. Commit your changes there; Pantheon runs the gates in this folder, and the session lands once they pass on the commit you leave. Do not write files outside the project folder.`,
           ]
         : []),
-      ...(pantheonMcp && session.conductor ? [CONDUCTOR_INSTRUCTIONS] : []),
+      ...(pantheonMcp && session.conductor ? [conductorInstructions(ctx, project.id)] : []),
       ...residentInstructionBlock(project, session),
       ...(questionTool && pantheonTools && !session.conductor
         ? [

@@ -1001,19 +1001,26 @@ it('refuses a spawn on several runtimes when one is out, though the project name
 });
 
 it.each([
+  ['kind with runtime', { kind: 'frontend', runtime: 'claude' }],
+  ['kind with runtimes', { kind: 'frontend', runtimes: ['claude', 'codex'] }],
+  ['kind with model', { kind: 'frontend', model: 'design-model' }],
+  ['kind with effort', { kind: 'frontend', effort: 'low' }],
   ['both runtime and runtimes', { runtime: 'fixture', runtimes: ['fixture', 'second-runtime'] }],
   ['neither runtime nor runtimes', {}],
   ['the same runtime twice', { runtimes: ['fixture', 'fixture'] }],
   ['a model with runtimes', { runtimes: ['fixture', 'second-runtime'], model: 'model' }],
+  [
+    'a first message over the limit after appending its contract',
+    { runtime: 'fixture', input: 'a'.repeat(65530), owns: ['src/**'], acceptance: ['Tests pass'] },
+  ],
 ])('refuses a spawn naming %s as invalid input', async (_, named) => {
   const f = await workbenchFixture();
   const conductor = await openConductor(f);
   const sessions = f.store.list<Session>('sessions').length;
 
-  const error = refusal(() =>
+  vi.spyOn(f.store, 'now').mockReturnValue(f.store.now());
+  await expect(async () =>
     asSession(f, conductor.id, 'conductor.spawn', { input: 'Port the parser', ...named }),
-  );
-
-  expect(error.code).toBe('invalid_input');
+  ).rejects.toMatchObject({ code: 'invalid_input' });
   expect(f.store.list<Session>('sessions')).toHaveLength(sessions);
 });

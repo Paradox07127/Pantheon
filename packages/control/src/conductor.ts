@@ -7,12 +7,20 @@ import {
   type Principal,
   type Project,
   type ProjectPlan,
+  type RuntimeChoice,
+  type WorkflowPolicy,
   type Session,
   type SessionTurn,
   type SettingProposal,
   type Workspace,
 } from '@pantheon/domain';
-import { inputSchemas, SPAWNED_SESSION_LIMIT, type Command } from '@pantheon/protocol';
+import {
+  inputSchemas,
+  prettifyError,
+  SPAWNED_SESSION_LIMIT,
+  type Command,
+  type RuntimeStatus,
+} from '@pantheon/protocol';
 import { projectChanges } from './changes.js';
 import { globalExcludes } from './checkpoint.js';
 import {
@@ -47,11 +55,30 @@ import {
   stopWorktreeSession,
   worktreeStatusArgs,
 } from './workbench-session.js';
-import { projectOverBudget } from './workflow-policy.js';
+import { runtimeStatus } from './runtime-status.js';
+import { sessionDefaults } from './user-config.js';
+import { projectOverBudget, workflowPolicy } from './workflow-policy.js';
 
 /** The instructions Pantheon adds to a conductor session after the line on where it works. */
 export const CONDUCTOR_INSTRUCTIONS =
   "Pantheon gives this session these tools. request_review: another vendor reviews your committed changes or those of a session you spawned; the result comes back to you as a message. report_ready: committed changes go through the project's gate and land. spawn_session: another vendor's session starts in a new worktree from your current commit, in permission mode ask or auto_edit; you hear when its turn ends. News of the sessions you spawned comes in batches while you are idle, at most 30 s after its first item; each item starts on a new line with its state in brackets: [completed], [failed], [input_required] when it waits for the user, [review], [landed] or [blocked]. News of sessions, reviews and landings reaches you only after your turn ends: once you have spawned sessions or requested reviews and have nothing else to do now, end your turn and wait; do not sleep or poll read_state to wait. Give it acceptance, what done means; its first message ends with the list, and request_review on it checks each item. Give it owns, the paths it may change; its first message names them, and read_state lists its changed files outside them. Give runtimes, two or three, to run the same task once on each. To keep the best result, review them, land one with report_ready and close the others with stop_session close. message_session: a message to a session you spawned, or a steer into its running turn; at most 2 a minute to one session. stop_session: interrupts the running turn of a session you spawned, or closes that session. read_state: this project's changes, checks, landing queue and items waiting for the user, and each session you spawned with its state and what it used. read_needs_you: the items waiting for the user, with the questions of the sessions you spawned. answer_request: answers or declines a question of a session you spawned, with your reason, which the user reads; the first answer, yours or the user's, counts; only the user answers a permission request. propose_setting: a change to the project's gate commands, protected paths, budget, session defaults or extension switches, which waits for the user and runs only once the user approves it; the outcome comes back at once on a line that starts with [setting]. write_plan: the project's plan, milestones and items with stable ids and the sessions working on each; each call replaces the whole plan, so read it back with read_state first; items the user accepted must stay, marked dropped if you give one up. project_read: the project's settings, budget, session defaults, brief and memory. memory_context, memory_search, memory_related and memory_get: project memory, which Pantheon does not add to your turns. memory_propose: a memory entry; a decision stays a draft until the user confirms it. draw: a chart or diagram the user sees in this session. Plan, split work and run subagents with your own tools.";
+
+export function conductorInstructions(ctx: ControlContext, projectId: string): string {
+  const { task_size, verify_timing, kind_routes } = workflowPolicy(ctx, projectId);
+  const instructions = [CONDUCTOR_INSTRUCTIONS];
+  if (task_size) instructions.push(`The user prefers ${task_size} tasks for spawned sessions.`);
+  if (verify_timing)
+    instructions.push(
+      verify_timing === 'each_session'
+        ? 'The user prefers verification after each spawned session.'
+        : 'The user prefers verification before landing.',
+    );
+  if (kind_routes?.length)
+    instructions.push(
+      `Give spawn_session a kind to use its configured runtime and model: ${kind_routes.map((route) => route.kind).join(', ')}.`,
+    );
+  return instructions.join(' ');
+}
 
 /** conductor.review; the session's committed range and its diff are read before the transaction. */
 function prepareConductorReview(
@@ -96,6 +123,8 @@ function prepareConductorReview(
   })();
 }
 
+type SpawnChoice = RuntimeChoice & { kind?: string; route_index?: number };
+
 /** Records on the session what its main agent did to it, for the decisions made for the user. */
 function mainAgentDecided(
   ctx: ControlContext,
@@ -104,13 +133,14 @@ function mainAgentDecided(
   action: 'spawn' | 'interrupt' | 'close' | 'ready',
   reason: string | undefined,
   cause: string,
+  choice?: SpawnChoice,
 ): void {
   const session = ctx.store.must<Session>('sessions', sessionId);
   ctx.store.event(
     'session.main_agent_decided',
     session,
     session.project_id,
-    { action, main_agent_session_id: p.session_id!, ...(reason ? { reason } : {}) },
+    { action, main_agent_session_id: p.session_id!, ...(reason ? { reason } : {}), ...choice },
     cause,
   );
 }
@@ -226,8 +256,15 @@ function requireBudgetLeft(ctx: ControlContext, projectId: string): void {
   );
 }
 
-/** Refuses count new turns unless they fit beside the caller's spawned sessions that have one to take. */
-function requireTurnSlot(ctx: ControlContext, caller: Session, count = 1): void {
+/** Queued turns reserve project slots too. Once the request fits, report which runtimes are full. */
+function requireTurnSlot(
+  ctx: ControlContext,
+  policy: WorkflowPolicy,
+  callerId: string,
+  count: number,
+  targetId?: string,
+): Map<string, number> {
+  const limit = policy.max_spawned ?? SPAWNED_SESSION_LIMIT;
   const busy = new Set(
     ctx.store
       .list<SessionTurn>('session_turns')
@@ -236,32 +273,146 @@ function requireTurnSlot(ctx: ControlContext, caller: Session, count = 1): void 
   );
   const taking = ctx.store
     .list<Session>('sessions')
-    .filter((session) => session.spawned_by?.session_id === caller.id && busy.has(session.id));
-  const more = count > 1 ? ` ${count} new sessions do not fit beside them.` : '';
+    .filter(
+      (session) =>
+        session.project_id === policy.project_id &&
+        session.spawned_by &&
+        session.id !== targetId &&
+        busy.has(session.id),
+    );
+  if (taking.length + count > limit) {
+    const own = taking.filter((session) => session.spawned_by!.session_id === callerId);
+    const others = taking.length - own.length;
+    const message = [
+      `At most ${limit} spawned ${limit === 1 ? 'session takes' : 'sessions take'} a turn at a time.`,
+    ];
+    if (count > 1) message.push(`The ${count} new sessions would exceed that limit.`);
+    if (own.length) {
+      const names = own.map((session) => `${session.id} (${session.title ?? ''})`).join(', ');
+      message.push(`You spawned ${names}. You get a message as each of their turns ends.`);
+    }
+    if (others)
+      message.push(
+        `${others} ${others === 1 ? 'slot belongs' : 'slots belong'} to other main agents. You get no message when their turns end. Try again later.`,
+      );
+    throw new DomainError('resource_busy', message.join(' '));
+  }
+  return new Map(
+    Object.entries(policy.runtime_parallel ?? {}).filter(
+      ([runtime, limit]) => taking.filter((session) => session.runtime === runtime).length >= limit,
+    ),
+  );
+}
+
+function requireRuntimeSlot(fullRuntimes: Map<string, number>, runtime: string): void {
+  const limit = fullRuntimes.get(runtime);
   requireThat(
-    taking.length + count <= SPAWNED_SESSION_LIMIT,
+    limit === undefined,
     'resource_busy',
-    `At most ${SPAWNED_SESSION_LIMIT} spawned sessions take a turn at a time; these are taking one: ${taking
-      .map((session) => `${session.id} (${session.title ?? ''})`)
-      .join(', ')}.${more} You get a message as each turn ends.`,
+    `At most ${limit} spawned ${runtime} sessions take a turn at a time.`,
   );
 }
 
 const itemLines = (items: string[]) => items.map((item) => `- ${item}`).join('\n');
 
-/**
- * The session.create inputs of the sessions a spawn starts, one per runtime in its order, each a
- * worktree cut from the caller's committed HEAD, and the contract each of them keeps.
- */
-function spawnInputs(ctx: ControlContext, p: Principal, command: Command) {
+function kindRoute(policy: WorkflowPolicy, kind: string) {
+  const routes = policy.kind_routes ?? [];
+  const route = routes.find((each) => each.kind === kind);
+  requireThat(
+    route,
+    'invalid_input',
+    `Unknown kind ${kind}. Known kinds: ${routes.map((each) => each.kind).join(', ') || '(none)'}.`,
+  );
+  return route;
+}
+
+function chooseKindRoute(
+  ctx: ControlContext,
+  project: Project,
+  kind: string,
+  route: ReturnType<typeof kindRoute>,
+  statuses: RuntimeStatus[],
+  fullRuntimes: Map<string, number>,
+) {
+  const defaults = sessionDefaults(ctx, project);
+  const reasons: string[] = [];
+  for (const [index, choice] of [route, ...(route.fallbacks ?? [])].entries()) {
+    const status = statuses.find((each) => each.runtime === choice.runtime);
+    // The model the session starts on, as worktreeSessionChoice picks it, resolved through the listed models.
+    const requested =
+      choice.model ?? (choice.runtime === defaults?.runtime ? defaults.model : undefined);
+    const models = ctx.runtimeModels.get(`${project.id}:${choice.runtime}`);
+    const listed = models?.find((each) =>
+      requested === undefined ? each.default : each.id === requested,
+    );
+    const model = listed ? (listed.resolved ?? listed.id) : requested;
+    const family = model?.toLowerCase().match(/\b(opus|sonnet)\b/)?.[1];
+    let reason: string;
+    if (status?.enabled === false) reason = 'disabled';
+    else if (!status?.installed) reason = 'not installed';
+    else if (status.version_ok === false) reason = 'unsupported version';
+    else if (status.auth.state === 'logged_out') reason = 'signed out';
+    else if (status.auth.state === 'unsupported_channel')
+      reason = status.auth.reason ?? 'unsupported account channel';
+    else if (status.connection?.connected === false || status.handshake === false)
+      reason = status.connection?.reason ?? 'disconnected';
+    else if (
+      status.quota?.windows.some(
+        (window) =>
+          window.used_percent >= 100 &&
+          (window.resets_at === undefined || window.resets_at > ctx.store.now()) &&
+          (window.window !== 'seven_day_opus' || family === 'opus') &&
+          (window.window !== 'seven_day_sonnet' || family === 'sonnet'),
+      )
+    )
+      reason = 'over quota';
+    else if (fullRuntimes.has(choice.runtime)) reason = 'at its parallel limit';
+    else {
+      try {
+        admittedRuntime(ctx, choice.runtime, 'writer');
+        return { choice, index };
+      } catch (error) {
+        if (!(error instanceof DomainError) || error.code !== 'unsupported_capability') throw error;
+        reason = error.message;
+      }
+    }
+    reasons.push(`${choice.runtime}: ${reason}`);
+  }
+  throw new DomainError(
+    'unsupported_capability',
+    `No available runtime for ${kind}. ${reasons.join('; ')}.`,
+  );
+}
+
+/** conductor.spawn */
+function prepareConductorSpawn(
+  ctx: ControlContext,
+  p: Principal,
+  command: Command,
+): Promise<Handler> {
   requireThat(p.role === 'conductor', 'permission_denied', 'A conductor session only');
   projectAccess(ctx, p, p.project_id!, command.type);
-  const { runtime, runtimes, input, acceptance, owns, model, effort, permission_mode, reason } =
-    inputSchemas['conductor.spawn'].parse(command.input);
+  const {
+    kind,
+    runtime,
+    runtimes,
+    input,
+    acceptance,
+    owns,
+    model,
+    effort,
+    permission_mode,
+    reason,
+  } = command.input as ReturnType<(typeof inputSchemas)['conductor.spawn']['parse']>;
   requireThat(
-    (runtime === undefined) !== (runtimes === undefined),
+    !kind || !(runtime || runtimes || model || effort),
     'invalid_input',
-    'Give either runtime or runtimes',
+    'Give kind without an explicit runtime, runtimes, model or effort',
+  );
+  requireThat(
+    kind || (runtime === undefined) !== (runtimes === undefined),
+    'invalid_input',
+    'Give one of kind, runtime or runtimes',
   );
   requireThat(
     !runtimes || new Set(runtimes).size === runtimes.length,
@@ -273,74 +424,86 @@ function spawnInputs(ctx: ControlContext, p: Principal, command: Command) {
     'invalid_input',
     "With runtimes each session starts on its runtime's default model; give model only with runtime",
   );
-  const names = runtimes ?? [runtime!];
-  // A runtime that is out stops the whole call; a fallback would run two of the tries on one runtime.
-  if (runtimes) for (const name of runtimes) admittedRuntime(ctx, name, 'writer');
-  const caller = ctx.store.must<Session>('sessions', p.session_id!);
-  requireBudgetLeft(ctx, caller.project_id);
-  requireTurnSlot(ctx, caller, names.length);
-  const inputs = names.map((name) =>
-    inputSchemas['session.create'].parse({
-      project_id: caller.project_id,
-      workspace: 'worktree',
-      runtime: name,
-      model,
-      effort,
-      ...(permission_mode ? { permission_mode } : {}),
-      input: [
-        input,
-        ...(owns ? [`Change only these paths:\n${itemLines(owns)}`] : []),
-        ...(acceptance ? [`Done when:\n${itemLines(acceptance)}`] : []),
-      ].join('\n\n'),
-      // An in-place caller's HEAD is the project folder's, which a start without `from` reads.
-      ...(sessionWorkspaceKind(ctx, caller) === 'linked_worktree'
-        ? { from: { session_id: caller.id } }
-        : {}),
-    }),
-  );
-  const contract: NonNullable<Session['contract']> = {
-    ...(acceptance ? { acceptance } : {}),
-    ...(owns ? { owns } : {}),
-  };
-  return { inputs, contract, reason };
-}
 
-/** conductor.spawn */
-function prepareConductorSpawn(
-  ctx: ControlContext,
-  p: Principal,
-  command: Command,
-): Promise<Handler> {
-  const { inputs } = spawnInputs(ctx, p, command);
-  for (const input of inputs) checkWorktreeSession(ctx, input, undefined, p);
-  return Promise.all(inputs.map((input) => readSessionOpening(ctx, input))).then(
-    (openings) => (ctx: ControlContext, p: Principal, command: Command) => {
-      const { inputs, contract, reason } = spawnInputs(ctx, p, command);
-      const terms = inputs.length > 1 ? { ...contract, group: id() } : contract;
-      const opened = inputs.map((input, index) => {
-        const session = openWorktreeSession(
-          ctx,
-          input,
-          command.command_id,
-          openings[index]!,
-          undefined,
-          p,
-        );
+  const caller = ctx.store.must<Session>('sessions', p.session_id!);
+  const base = {
+    project_id: caller.project_id,
+    workspace: 'worktree' as const,
+    permission_mode: permission_mode ?? 'ask',
+    input: [
+      input,
+      ...(owns ? [`Change only these paths:\n${itemLines(owns)}`] : []),
+      ...(acceptance ? [`Done when:\n${itemLines(acceptance)}`] : []),
+    ].join('\n\n'),
+    ...(sessionWorkspaceKind(ctx, caller) === 'linked_worktree'
+      ? { from: { session_id: caller.id } }
+      : {}),
+  };
+  const sessionInput = ({ runtime, model, effort }: RuntimeChoice) => {
+    const parsed = inputSchemas['session.create'].safeParse({ ...base, runtime, model, effort });
+    if (!parsed.success) throw new DomainError('invalid_input', prettifyError(parsed.error));
+    return parsed.data;
+  };
+  const explicit = (runtimes ?? (runtime ? [runtime] : [])).map((runtime) =>
+    sessionInput({ runtime, model, effort }),
+  );
+  const checkedInputs = (statuses: RuntimeStatus[]) => {
+    requireBudgetLeft(ctx, caller.project_id);
+    const policy = workflowPolicy(ctx, caller.project_id);
+    const known = kind ? kindRoute(policy, kind) : undefined;
+    const fullRuntimes = requireTurnSlot(ctx, policy, caller.id, runtimes?.length ?? 1);
+    const route =
+      kind && known
+        ? chooseKindRoute(
+            ctx,
+            ctx.store.must<Project>('projects', caller.project_id),
+            kind,
+            known,
+            statuses,
+            fullRuntimes,
+          )
+        : undefined;
+    const inputs = route ? [sessionInput(route.choice)] : explicit;
+    for (const input of inputs) {
+      // Explicit groups must start on distinct named runtimes even when the project has a lead fallback.
+      if (runtimes) admittedRuntime(ctx, input.runtime!, 'writer');
+      requireRuntimeSlot(fullRuntimes, checkWorktreeSession(ctx, input, undefined, p).runtimeName);
+    }
+    return { inputs, route };
+  };
+  if (!kind) checkedInputs([]);
+  return readSessionOpening(ctx, base).then(async (opening) => {
+    const statuses = kind ? await runtimeStatus(ctx, false) : [];
+    return () => {
+      projectAccess(ctx, p, caller.project_id, command.type);
+      const { inputs, route } = checkedInputs(statuses);
+      const contract = {
+        ...(acceptance && { acceptance }),
+        ...(owns && { owns }),
+        ...(runtimes && { group: id() }),
+      };
+      const opened = inputs.map((input) => {
+        const session = openWorktreeSession(ctx, input, command.command_id, opening, undefined, p);
         ctx.store.update<Session>(
           'sessions',
           {
             ...session,
-            spawned_by: { session_id: p.session_id! },
-            ...(Object.keys(terms).length ? { contract: terms } : {}),
+            spawned_by: { session_id: caller.id },
+            ...(Object.keys(contract).length ? { contract } : {}),
           },
           session.revision,
         );
-        mainAgentDecided(ctx, p, session.id, 'spawn', reason, command.command_id);
+        mainAgentDecided(ctx, p, session.id, 'spawn', reason, command.command_id, {
+          runtime: session.runtime,
+          model: session.requested_model,
+          effort: session.requested_effort,
+          ...(route && { kind, route_index: route.index }),
+        });
         return session.id;
       });
-      return inputs.length > 1 ? { session_ids: opened } : { session_id: opened[0]! };
-    },
-  );
+      return runtimes ? { session_ids: opened } : { session_id: opened[0]! };
+    };
+  });
 }
 
 /** The session the conductor spawned that the command names. */
@@ -389,7 +552,11 @@ const conductorMessage: Handler = (ctx, p, command) => {
       'invalid_state',
       'That session has no running turn to steer; message it with mode send',
     );
-  else requireTurnSlot(ctx, caller);
+  else {
+    const policy = workflowPolicy(ctx, caller.project_id);
+    const fullRuntimes = requireTurnSlot(ctx, policy, caller.id, 1, target.id);
+    requireRuntimeSlot(fullRuntimes, target.runtime);
+  }
   const type = input.mode === 'steer' ? 'session.steer' : 'session.send';
   // The conductor's access is checked above; the send then runs as the user's.
   const turn = queueInput(
@@ -568,6 +735,18 @@ function spawnedSessions(
       .kindEvents(projectId, ['session.discarded'])
       .map((event) => [event.aggregate_id, event.created_at]),
   );
+  const choices = new Map(
+    ctx.store.kindEvents(projectId, ['session.main_agent_decided']).flatMap((event) => {
+      const { action, main_agent_session_id, kind, runtime, model, effort, route_index } =
+        event.payload as Partial<SpawnChoice> & {
+          action: string;
+          main_agent_session_id: string;
+        };
+      return action === 'spawn' && main_agent_session_id === callerId && runtime
+        ? [[event.aggregate_id, { runtime, model, effort, kind, route_index }] as const]
+        : [];
+    }),
+  );
   const times = new Map(
     (
       ctx.store
@@ -592,6 +771,8 @@ function spawnedSessions(
         session_id: session.id,
         title: session.title ?? '',
         runtime: session.runtime,
+        model: session.requested_model,
+        ...choices.get(session.id),
         state: session.state,
         ...(session.outcome ? { outcome: session.outcome } : {}),
         ...(session.contract?.group ? { group: session.contract.group } : {}),

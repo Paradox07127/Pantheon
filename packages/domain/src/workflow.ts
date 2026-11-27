@@ -1,4 +1,4 @@
-import type { Entity } from './index.js';
+import type { Entity, RuntimeChoice } from './index.js';
 /** The adjustable parts of one project's workflow; the row id is the project id. */
 export interface WorkflowPolicy extends Entity {
   project_id: string;
@@ -6,6 +6,11 @@ export interface WorkflowPolicy extends Entity {
   policy_version: number;
   gate_on_fail?: 'retry' | 'stop';
   gate_runner?: 'daemon' | 'session';
+  max_spawned?: number;
+  runtime_parallel?: Record<string, number>;
+  task_size?: 'small' | 'medium' | 'large';
+  verify_timing?: 'each_session' | 'before_landing';
+  kind_routes?: (RuntimeChoice & { kind: string; fallbacks?: RuntimeChoice[] })[];
   /**
    * The input tokens, cached ones included, the project's turns that ended since `since` (Unix
    * milliseconds, when the budget was first set) may spend; once spent, no session is woken on its

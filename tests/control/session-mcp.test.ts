@@ -552,6 +552,18 @@ it.each(['worktree', 'in_place'] as const)(
       token_file: path.join(f.root, 'token'),
       daemon_url: 'http://localhost',
     });
+    f.store.insert('workflow_policies', {
+      id: project_id,
+      revision: 1,
+      project_id,
+      policy_version: 1,
+      task_size: 'small',
+      verify_timing: 'before_landing',
+      kind_routes: [
+        { kind: 'frontend', runtime: 'codex' },
+        { kind: 'docs', runtime: 'claude' },
+      ],
+    });
     const instructions = '  Review new issues.\n\nAsk before closing one.  ';
     const routines = [5, 15].map((every_minutes) => ({
       name: `Check every ${every_minutes} minutes`,
@@ -596,8 +608,13 @@ it.each(['worktree', 'in_place'] as const)(
     const header =
       "The user's standing instructions for you as this project's resident main agent, in their own words:";
     expect(f.resume.mock.calls[0]?.[0].control_instructions).toContain(
-      CONDUCTOR_TEXT + '\n\n' + header + '\n\n' + instructions,
+      header + '\n\n' + instructions,
     );
+    const prompt = f.resume.mock.calls[0]![0].control_instructions;
+    expect(prompt).toContain(CONDUCTOR_TEXT);
+    expect(prompt).toMatch(/user prefers small tasks/i);
+    expect(prompt).toMatch(/user prefers verification before landing/i);
+    expect(prompt).toContain('frontend, docs');
     const spec = () =>
       workspace === 'in_place'
         ? inPlaceSessionSpec(ctx, session)
@@ -705,6 +722,7 @@ it('mounts only the conductor tools and their instructions on a conductor worktr
       [
         'spawn_session',
         [
+          'kind',
           'runtime',
           'runtimes',
           'input',

@@ -150,7 +150,7 @@ import {
 import { writerTempDirectory } from './workspace-removal.js';
 import { assignResident, residentInstructionBlock, setResidentInstructions } from './resident.js';
 import { saveRoutine } from './routines.js';
-import { CONDUCTOR_INSTRUCTIONS } from './conductor.js';
+import { conductorInstructions } from './conductor.js';
 
 // One turn runs at most six hours; adapters time it with setTimeout, which fires at once above 2^31 - 1 ms.
 export const WORKBENCH_TURN_MS = 6 * 60 * 60 * 1000;
@@ -210,7 +210,7 @@ export function workbenchSessionSpec(ctx: ControlContext, session: Session): Ses
             `When the user must decide or answer something, ask with the ${questionTool} tool instead of asking in plain text. Give 2 to 4 short options with the one you recommend first; the user can also type an answer of their own.`,
           ]
         : []),
-      ...(pantheonMcp && session.conductor ? [CONDUCTOR_INSTRUCTIONS] : []),
+      ...(pantheonMcp && session.conductor ? [conductorInstructions(ctx, project.id)] : []),
       ...residentInstructionBlock(project, session),
     ].join('\n\n'),
     workspace: { id: workspace.id, path: workspace.path },

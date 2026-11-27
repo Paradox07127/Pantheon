@@ -5,7 +5,8 @@ import {
   type Project,
   type WorkflowPolicy,
 } from '@pantheon/domain';
-import { inputSchemas } from '@pantheon/protocol';
+import { nativeRuntimes, acpProfiles } from '@pantheon/adapters';
+import { inputSchemas, SPAWNED_SESSION_LIMIT, workflowPolicyParams } from '@pantheon/protocol';
 import {
   projectAccess,
   revision,
@@ -14,7 +15,7 @@ import {
   type Handlers,
 } from './context.js';
 import { turnInputTokens } from './turn-usage.js';
-import { projectDefaults, type ProjectDefaults } from './user-config.js';
+import { projectDefaults } from './user-config.js';
 
 type PolicySettings = Omit<
   WorkflowPolicy,
@@ -25,10 +26,11 @@ type InheritedParam = NonNullable<WorkflowPolicy['overridden']>[number];
 export const DEFAULT_WORKFLOW_POLICY: PolicySettings = {
   gate_on_fail: 'stop',
   gate_runner: 'daemon',
+  max_spawned: SPAWNED_SESSION_LIMIT,
 };
 
 /** The settings a project follows from the global values unless it sets them itself. */
-const INHERITED = Object.keys(DEFAULT_WORKFLOW_POLICY) as InheritedParam[];
+const INHERITED = workflowPolicyParams;
 const SETTINGS: (keyof PolicySettings)[] = [...INHERITED, 'project_budget'];
 
 /**
@@ -88,6 +90,18 @@ function changedParams(
       canonical(current[param]) !== canonical(next[param]) ||
       ownBefore.includes(param as InheritedParam) !== ownAfter.includes(param as InheritedParam),
   );
+}
+
+/** The runtime catalog includes supported runtimes that are currently uninstalled. */
+export function checkPolicyDefaults(settings: {
+  runtime_parallel?: Record<string, number> | null;
+}): void {
+  for (const name of Object.keys(settings.runtime_parallel ?? {}))
+    requireThat(
+      (nativeRuntimes as readonly string[]).includes(name) || Object.hasOwn(acpProfiles, name),
+      'invalid_input',
+      `Unknown runtime ${name}`,
+    );
 }
 
 function checkPolicy(policy: WorkflowPolicy): void {
@@ -205,11 +219,6 @@ export function writeGlobalPolicyChanges(
       );
 }
 
-/** Refuses global values that make no valid policy. */
-export function checkPolicyDefaults(value: NonNullable<ProjectDefaults['workflow_policy']>): void {
-  checkPolicy({ ...structuredClone(DEFAULT_WORKFLOW_POLICY), ...value } as WorkflowPolicy);
-}
-
 export const workflowPolicyHandlers: Handlers = {
   'workflow.policy.reset': (ctx, p, c) => {
     userOnly(p);
@@ -223,17 +232,26 @@ export const workflowPolicyHandlers: Handlers = {
   },
   'workflow.policy.set': (ctx, p, c) => {
     userOnly(p);
-    const { project_id, project_budget, ...input } = inputSchemas['workflow.policy.set'].parse(
-      c.input,
-    );
+    const { project_id, project_budget, ...input } = c.input as ReturnType<
+      (typeof inputSchemas)['workflow.policy.set']['parse']
+    >;
     projectAccess(ctx, p, project_id, c.type);
     ctx.store.must<Project>('projects', project_id);
     const old = ctx.store.get<WorkflowPolicy>('workflow_policies', project_id);
     revision(ctx, c, old);
     const current = workflowPolicy(ctx, project_id),
       own = ownParams(ctx, project_id);
-    const overridden = [...new Set([...own, ...(Object.keys(input) as InheritedParam[])])];
-    const next: WorkflowPolicy = { ...current, ...input };
+    checkPolicyDefaults(input);
+    const inherited = inheritedPolicy(ctx);
+    const overrides = new Set(own);
+    const next = { ...current };
+    for (const key of Object.keys(input) as InheritedParam[]) {
+      const value = input[key];
+      if (value === null) overrides.delete(key);
+      else overrides.add(key);
+      Object.assign(next, { [key]: value ?? inherited[key] });
+    }
+    const overridden = [...overrides];
     // A changed budget keeps counting from when the first one was set.
     if (project_budget === null) delete next.project_budget;
     else if (project_budget)

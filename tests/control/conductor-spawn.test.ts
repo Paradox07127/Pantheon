@@ -13,6 +13,7 @@ import {
   type WorkflowPolicy,
   type Workspace,
 } from '@pantheon/domain';
+import { FixtureAdapter } from '@pantheon/adapters';
 import { agentEvent } from '../../packages/control/dist/agent.js';
 import { NOTICE_HOLD_MS, afterSpawnedTurn } from '../../packages/control/dist/conductor.js';
 import { usesPantheonTools, type ControlContext } from '../../packages/control/dist/context.js';
@@ -584,23 +585,260 @@ it('does not tell the conductor about a turn the user interrupted', async () => 
   expect(trackerTurns(f, conductor.id)).toHaveLength(0);
 });
 
-it('refuses a fifth spawned session while four have a turn to take and takes one again once their turns end', async () => {
+function seedPolicy(f: Fixture, settings: Record<string, unknown>) {
+  f.store.insert('workflow_policies', {
+    id: f.project.id,
+    revision: 1,
+    project_id: f.project.id,
+    policy_version: 1,
+    overridden: Object.keys(settings),
+    ...settings,
+  });
+}
+
+it.each([
+  { limit: undefined, otherCount: 0 },
+  { limit: 2, otherCount: 0 },
+  { limit: 3, otherCount: 2 },
+  { limit: 1, otherCount: 1 },
+])(
+  'refuses a spawn with max_spawned $limit and $otherCount sessions from another main agent',
+  async ({ limit, otherCount }) => {
+    const f = await workbenchFixture();
+    const conductor = await openConductor(f);
+    const other = otherCount ? await openConductor(f) : conductor;
+    vi.spyOn(f.store, 'now').mockReturnValue(f.store.now());
+    if (limit) seedPolicy(f, { max_spawned: limit });
+    const spawned: string[] = [];
+    for (const input of ['Task one', 'Task two', 'Task three', 'Task four'].slice(0, limit ?? 4))
+      spawned.push(
+        (await spawn(f, spawned.length < otherCount ? other.id : conductor.id, input)).session_id,
+      );
+
+    const error = refusal(() => spawn(f, conductor.id, 'Task five'));
+    expect(error.code).toBe('resource_busy');
+    expect(error.message).toContain(`At most ${limit ?? 4} spawned session`);
+    const own = spawned.slice(otherCount);
+    for (const id of own) expect(error.message).toContain(id);
+    if (own.length) expect(error.message).toContain('You get a message as each');
+    if (otherCount) {
+      expect(error.message).toMatch(
+        new RegExp(`${otherCount} .*other main agents.*no message.*try again later`, 'i'),
+      );
+      for (const id of spawned.slice(0, otherCount)) expect(error.message).not.toContain(id);
+      if (!own.length) expect(error.message).not.toContain('You get a message');
+    }
+
+    // Idle spawned sessions with no commits and no outcome no longer hold a place.
+    for (const id of spawned) await settle(f, row(f, id));
+    const { session_id } = await spawn(f, conductor.id, 'Task five');
+    expect(row(f, session_id).spawned_by).toEqual({ session_id: conductor.id });
+  },
+);
+
+it('shares the codex turn limit across project conductors and leaves claude available', async () => {
   const f = await workbenchFixture();
-  const conductor = await openConductor(f);
-  const spawned: string[] = [];
-  for (const input of ['Task one', 'Task two', 'Task three', 'Task four'])
-    spawned.push((await spawn(f, conductor.id, input)).session_id);
-
-  const error = refusal(() => spawn(f, conductor.id, 'Task five'));
-  expect(error.code).toBe('resource_busy');
-  expect(error.message).toContain('4');
-  for (const id of spawned) expect(error.message).toContain(id);
-
-  // Idle spawned sessions with no commits and no outcome no longer hold a place.
-  for (const id of spawned) await settle(f, row(f, id));
-  const { session_id } = await spawn(f, conductor.id, 'Task five');
-  expect(row(f, session_id).spawned_by).toEqual({ session_id: conductor.id });
+  const first = await openConductor(f);
+  const other = await openConductor(f);
+  for (const name of ['claude', 'codex']) {
+    const adapter = new FixtureAdapter();
+    adapter.name = name;
+    f.control.adapters.set(name, adapter);
+  }
+  seedPolicy(f, { runtime_parallel: { codex: 1 } });
+  const start = (caller: Session, runtime: string) =>
+    f.call<Promise<{ session_id: string }>>(
+      'conductor.spawn',
+      { runtime, input: 'Review the form' },
+      null,
+      principalOf(f, caller.id, 'conductor'),
+    );
+  await start(first, 'codex');
+  await expect(async () => start(other, 'codex')).rejects.toThrow(/1.*codex/);
+  expect(row(f, (await start(other, 'claude')).session_id).runtime).toBe('claude');
 });
+
+const routeTime = Date.UTC(2026, 10, 27);
+const kindChoices = [
+  { runtime: 'codex', model: 'code-model', effort: 'high' },
+  { runtime: 'claude', model: 'design-model', effort: 'medium' },
+  { runtime: 'opencode', model: 'local-model', effort: 'low' },
+];
+const claudeChoices = [
+  { runtime: 'claude', model: 'claude-opus-4-6', effort: 'high' },
+  { runtime: 'claude', model: 'sonnet', effort: 'medium' },
+];
+const fullWindow = (window: string, resets_at?: number) => ({
+  quota: { seen_at: routeTime, windows: [{ window, used_percent: 100, resets_at }] },
+});
+
+it.each([
+  { scenario: 'primary', index: 0 },
+  { scenario: 'first fallback', codex: { installed: false }, index: 1 },
+  {
+    scenario: 'second fallback after quota reset',
+    codex: { installed: false },
+    claude: { auth: { state: 'logged_out' as const } },
+    opencode: fullWindow('day', routeTime - 1),
+    index: 2,
+  },
+  {
+    scenario: 'none available',
+    codex: { installed: false },
+    claude: { auth: { state: 'logged_out' as const } },
+    opencode: fullWindow('day', routeTime + 1),
+    error: /codex.*not installed.*claude.*signed out.*opencode.*quota/i,
+  },
+  { scenario: 'unknown kind', kind: 'unlisted', error: /unlisted.*frontend.*docs/ },
+  { scenario: 'unsupported primary version', codex: { version_ok: false }, index: 1 },
+  { scenario: 'full primary runtime', busy: true, index: 1 },
+  {
+    scenario: 'full runtime and unsupported fallback version',
+    busy: true,
+    claude: { version_ok: false },
+    opencode: { installed: false },
+    error: /codex: at its parallel limit.*claude: unsupported version.*opencode: not installed/,
+  },
+  {
+    scenario: 'full project and full primary runtime',
+    busy: true,
+    maxSpawned: 1,
+    error: /At most 1 spawned session/,
+  },
+  {
+    scenario: 'same-runtime fallback outside the Opus quota',
+    choices: claudeChoices,
+    claude: fullWindow('seven_day_opus'),
+    index: 1,
+  },
+  {
+    scenario: 'unknown default during an Opus quota limit',
+    choices: [{ runtime: 'claude', model: undefined, effort: 'high' }, ...claudeChoices],
+    claude: fullWindow('seven_day_opus'),
+    index: 0,
+  },
+  {
+    scenario: 'default Sonnet model during a Sonnet quota limit',
+    choices: [{ runtime: 'claude', model: undefined, effort: 'high' }, ...claudeChoices],
+    claude: fullWindow('seven_day_sonnet'),
+    defaultModel: 'claude-sonnet-4-6',
+    index: 1,
+  },
+  {
+    scenario: 'the default alias resolving to Sonnet during a Sonnet quota limit',
+    choices: [{ runtime: 'claude', model: 'default', effort: 'high' }, ...claudeChoices],
+    claude: fullWindow('seven_day_sonnet'),
+    defaultModel: 'claude-sonnet-4-6',
+    index: 1,
+  },
+  {
+    scenario: "the project's Opus model on its default runtime during an Opus quota limit",
+    choices: [{ runtime: 'claude', model: undefined, effort: 'high' }, ...claudeChoices],
+    claude: fullWindow('seven_day_opus'),
+    defaultModel: 'claude-sonnet-4-6',
+    projectModel: 'claude-opus-4-6',
+    index: 2,
+  },
+  {
+    scenario: 'unknown kind in a full project',
+    kind: 'unlisted',
+    busy: true,
+    maxSpawned: 1,
+    error: /unlisted.*frontend.*docs/,
+  },
+  {
+    scenario: 'account-wide overage including both Claude models',
+    choices: claudeChoices,
+    claude: fullWindow('seven_day_overage_included'),
+    error: /claude: over quota.*claude: over quota/,
+  },
+])(
+  'routes a task by kind with $scenario',
+  async ({
+    choices = kindChoices,
+    codex,
+    claude,
+    opencode,
+    kind = 'frontend',
+    index = 0,
+    error,
+    busy,
+    maxSpawned,
+    defaultModel,
+    projectModel,
+  }) => {
+    const f = await workbenchFixture();
+    const conductor = await openConductor(f);
+    const other = busy ? await openConductor(f) : undefined;
+    const [primary, ...fallbacks] = choices;
+    seedPolicy(f, {
+      kind_routes: [
+        { kind: 'frontend', ...primary, fallbacks },
+        { kind: 'docs', runtime: 'claude' },
+      ],
+      ...(busy && { runtime_parallel: { codex: 1 } }),
+      ...(maxSpawned && { max_spawned: maxSpawned }),
+    });
+    if (projectModel) {
+      const project = f.store.must<Project>('projects', f.project.id);
+      f.store.update(
+        'projects',
+        { ...project, session_defaults: { runtime: 'claude', model: projectModel } },
+        project.revision,
+      );
+    }
+    vi.spyOn(f.store, 'now').mockReturnValue(routeTime);
+    for (const [runtime, status] of Object.entries({ codex, claude, opencode })) {
+      const adapter = new FixtureAdapter();
+      adapter.name = runtime;
+      f.control.adapters.set(runtime, adapter);
+      if (status) ctxOf(f).runtimeStatus.set(runtime, status);
+      if (runtime === 'claude' && defaultModel) {
+        const [model] = await adapter.models();
+        vi.spyOn(adapter, 'models').mockResolvedValue([
+          { ...model!, id: 'default', resolved: defaultModel },
+        ]);
+        await f.control.runtimeModels(user, f.project.id, runtime);
+      }
+    }
+    if (other)
+      await f.call(
+        'conductor.spawn',
+        { runtime: 'codex', input: 'Review the parser' },
+        null,
+        principalOf(f, other.id, 'conductor'),
+      );
+    const sessions = f.store.list<Session>('sessions').length;
+    const principal = principalOf(f, conductor.id, 'conductor');
+    const run = async () =>
+      f.call<Promise<{ session_id: string }>>(
+        'conductor.spawn',
+        { kind, input: 'Review the form' },
+        null,
+        principal,
+      );
+    if (error) {
+      await expect(run()).rejects.toThrow(error);
+      expect(f.store.list<Session>('sessions')).toHaveLength(sessions);
+      return;
+    }
+    const { runtime, model, effort } = choices[index]!;
+    const { session_id } = await run();
+    expect(row(f, session_id)).toMatchObject({ runtime, requested_effort: effort });
+    expect(row(f, session_id).requested_model).toBe(model);
+    const route = { kind, runtime, ...(model && { model }), effort, route_index: index };
+    expect(
+      f.store.kindEvents(f.project.id, ['session.main_agent_decided']).at(-1)?.payload,
+    ).toMatchObject(route);
+    const state = await f.call<Promise<{ spawned: unknown[] }>>(
+      'conductor.state',
+      {},
+      null,
+      principal,
+    );
+    expect(state.spawned).toMatchObject([{ session_id, ...route }]);
+  },
+);
 
 it('refuses the user, a planner and a writer, and tells no one about a session the user opened', async () => {
   const f = await workbenchFixture();

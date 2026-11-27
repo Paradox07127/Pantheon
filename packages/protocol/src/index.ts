@@ -326,7 +326,7 @@ export const commandSchema = z.strictObject({
 export type Command = z.infer<typeof commandSchema>;
 /** The most characters of page text a browser read returns. */
 export const BROWSER_TEXT_LIMIT = 50_000;
-/** An upper bound on what one conductor can spend through the sessions it starts. */
+/** The default number of spawned sessions that can take a turn in a project. */
 export const SPAWNED_SESSION_LIMIT = 4;
 const browserPage = z.strictObject({
   url: z.string().max(65536),
@@ -514,11 +514,35 @@ const sessionDefaults = {
     })
     .optional(),
 };
+const spawnLimit = z.number().int().min(1).max(16);
+const taskKind = z
+  .string()
+  .min(1)
+  .max(32)
+  .regex(/^[a-z0-9-]+$/);
+const kindRoutes = z
+  .array(
+    runtimeChoice.extend({
+      kind: taskKind,
+      fallbacks: z.array(runtimeChoice).max(3).optional(),
+    }),
+  )
+  .max(12)
+  .refine(
+    (routes) => new Set(routes.map((route) => route.kind)).size === routes.length,
+    'Name each kind once',
+  );
 /** Workflow policy settings as a policy stores them; the project budget belongs to each project alone. */
 const workflowPolicySettings = z.strictObject({
   gate_on_fail: z.enum(['retry', 'stop']).optional(),
   gate_runner: z.enum(['daemon', 'session']).optional(),
+  max_spawned: spawnLimit.optional(),
+  runtime_parallel: z.record(str, spawnLimit).optional(),
+  task_size: z.enum(['small', 'medium', 'large']).optional(),
+  verify_timing: z.enum(['each_session', 'before_landing']).optional(),
+  kind_routes: kindRoutes.optional(),
 });
+export const workflowPolicyParams = workflowPolicySettings.keyof().options;
 /** Global workflow settings a configuration file may still hold; not read. */
 export const RETIRED_POLICY_SETTINGS = [
   'improvement_mode',
@@ -530,7 +554,6 @@ export const RETIRED_POLICY_SETTINGS = [
   'acceptance_wake',
   'max_parallel',
   'max_parallel_limit',
-  'runtime_parallel',
   'dispatch_paused',
   'handback_limit',
   'task_size_hint',
@@ -1348,8 +1371,13 @@ export const inputSchemas = {
   /** Changes the given workflow policy parameters of a project; the user only. */
   'workflow.policy.set': z.strictObject({
     project_id: str,
-    gate_on_fail: z.enum(['retry', 'stop']).optional(),
-    gate_runner: z.enum(['daemon', 'session']).optional(),
+    gate_on_fail: workflowPolicySettings.shape.gate_on_fail.nullable(),
+    gate_runner: workflowPolicySettings.shape.gate_runner.nullable(),
+    max_spawned: workflowPolicySettings.shape.max_spawned.nullable(),
+    runtime_parallel: workflowPolicySettings.shape.runtime_parallel.nullable(),
+    task_size: workflowPolicySettings.shape.task_size.nullable(),
+    verify_timing: workflowPolicySettings.shape.verify_timing.nullable(),
+    kind_routes: workflowPolicySettings.shape.kind_routes.nullable(),
     /** The project's input token budget; a first one counts from now, null clears it. */
     project_budget: z
       .strictObject({ input_tokens: z.number().int().positive() })
@@ -1789,9 +1817,12 @@ export const inputSchemas = {
     reason: actionReason,
   }),
   'conductor.spawn': z.strictObject({
+    kind: taskKind
+      .optional()
+      .describe('A configured task kind. Its route selects the runtime, model and effort.'),
     runtime: str
       .optional()
-      .describe('The runtime of the new session; give either runtime or runtimes.'),
+      .describe('The runtime of the new session; give one of kind, runtime or runtimes.'),
     runtimes: strings
       .min(2)
       .max(3)
@@ -3348,7 +3379,7 @@ export interface ProjectDefaultsRead {
 }
 /** GET /v1/workflow.policy includes the settings a new project starts with. */
 export interface WorkflowPolicyView extends WorkflowPolicy {
-  defaults: Omit<WorkflowPolicy, 'id' | 'revision' | 'project_id' | 'policy_version'>;
+  defaults: Pick<WorkflowPolicy, (typeof workflowPolicyParams)[number]>;
 }
 export const command = (
   actor: string,

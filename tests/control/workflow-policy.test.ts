@@ -216,3 +216,40 @@ it('resets a changed policy to the defaults exposed by the query at the current 
     policy_version: reset.policy_version,
   });
 });
+
+const frontend = { kind: 'frontend', runtime: 'codex' };
+it.each([
+  { field: 'max_spawned', value: 16, invalid: [0, 17, 1.5] },
+  {
+    field: 'runtime_parallel',
+    value: { codex: 1, claude: 16 },
+    invalid: [{ codex: 0 }, { claude: 17 }, { codex: 1.5 }, { unknown: 1 }],
+  },
+  { field: 'task_size', value: 'small', invalid: ['tiny'] },
+  { field: 'verify_timing', value: 'each_session', invalid: ['never'] },
+  {
+    field: 'kind_routes',
+    value: [frontend],
+    invalid: [
+      [frontend, frontend],
+      [{ ...frontend, kind: '' }],
+      [{ ...frontend, kind: 'Front end' }],
+      [{ ...frontend, kind: 'a'.repeat(33) }],
+      Array.from({ length: 13 }, (_, i) => ({ ...frontend, kind: `task-${i}` })),
+      [{ ...frontend, fallbacks: Array(4).fill({ runtime: 'claude' }) }],
+    ],
+  },
+])('sets, validates and clears $field', async ({ field, value, invalid }) => {
+  const f = await opened();
+  const initial = f.control.workflowPolicy(user, f.project.id);
+  set(f, { [field]: value });
+  expect(f.control.workflowPolicy(user, f.project.id)).toHaveProperty(field, value);
+  for (const bad of invalid) expect(() => set(f, { [field]: bad })).toThrow();
+  expect(f.store.must<WorkflowPolicy>('workflow_policies', f.project.id).overridden).toEqual([
+    field,
+  ]);
+  set(f, { [field]: null });
+  expect(f.store.must<WorkflowPolicy>('workflow_policies', f.project.id).overridden).toEqual([]);
+  const cleared = f.control.workflowPolicy(user, f.project.id);
+  expect(cleared).toEqual({ ...initial, policy_version: 2, revision: 2 });
+});

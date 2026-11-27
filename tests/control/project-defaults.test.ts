@@ -62,6 +62,26 @@ it('follows the global values where a project has none of its own', async () => 
   expect(sessionDefaults(f.ctx, f.current())?.permission_mode).toBe('plan');
 });
 
+it.each([
+  ['max_spawned', 6, 2],
+  ['runtime_parallel', { codex: 1 }, { claude: 2 }],
+  ['task_size', 'large', 'medium'],
+  ['verify_timing', 'before_landing', 'each_session'],
+  ['kind_routes', [{ kind: 'frontend', runtime: 'codex' }], []],
+] as const)('inherits %s again when the project clears its value', async (field, global, own) => {
+  const f = await defaultsFixture();
+  f.setGlobal('workflow_policy', { [field]: global });
+  expect(f.policy()).toHaveProperty(field, global);
+  f.call('workflow.policy.set', { project_id: f.project.id, [field]: own });
+  expect(f.policy()).toHaveProperty(field, own);
+  f.call(
+    'workflow.policy.set',
+    { project_id: f.project.id, [field]: null },
+    f.storedPolicy()!.revision,
+  );
+  expect(f.policy()).toHaveProperty(field, global);
+});
+
 it('reads the project value over the global one, also when it equals the built-in default', async () => {
   const f = await defaultsFixture();
   f.setGlobal('workflow_policy', { gate_on_fail: 'stop', gate_runner: 'session' });

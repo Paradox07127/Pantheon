@@ -263,7 +263,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `conductor.propose_setting` | `command`: "project.gate.set" \| "workflow.policy.set" \| "project.sessionDefaults.set" \| "project.extensions.set"<br>`input`: object<br>`reason`: string | propose_setting (conductor) |
 | `conductor.ready` | `session_id?`: string<br>`reason?`: string | report_ready (conductor) |
 | `conductor.review` | `runtimes`: string[]<br>`session_id?`: string | request_review (conductor) |
-| `conductor.spawn` | `runtime?`: string<br>`runtimes?`: string[]<br>`input`: string<br>`acceptance?`: string[]<br>`owns?`: string[]<br>`model?`: string<br>`effort?`: "none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max" \| "ultra"<br>`permission_mode?`: "ask" \| "auto_edit"<br>`reason?`: string | spawn_session (conductor) |
+| `conductor.spawn` | `kind?`: string<br>`runtime?`: string<br>`runtimes?`: string[]<br>`input`: string<br>`acceptance?`: string[]<br>`owns?`: string[]<br>`model?`: string<br>`effort?`: "none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max" \| "ultra"<br>`permission_mode?`: "ask" \| "auto_edit"<br>`reason?`: string | spawn_session (conductor) |
 | `conductor.state` | — | read_state (conductor) |
 | `conductor.stop` | `session_id`: string<br>`close?`: boolean<br>`reason?`: string | stop_session (conductor) |
 
@@ -395,7 +395,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
-| `project.override.clear` | `project_id`: string<br>`key`: "workflow_policy" \| "session_defaults"<br>`param?`: "gate_on_fail" \| "gate_runner" |  |
+| `project.override.clear` | `project_id`: string<br>`key`: "workflow_policy" \| "session_defaults"<br>`param?`: "gate_on_fail" \| "gate_runner" \| "max_spawned" \| "runtime_parallel" \| "task_size" \| "verify_timing" \| "kind_routes" |  |
 
 ### project.plan
 
@@ -560,7 +560,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | type | input | MCP 工具 |
 |---|---|---|
 | `workflow.policy.reset` | `project_id`: string |  |
-| `workflow.policy.set` | `project_id`: string<br>`gate_on_fail?`: "retry" \| "stop"<br>`gate_runner?`: "daemon" \| "session"<br>`project_budget?`: object \| null |  |
+| `workflow.policy.set` | `project_id`: string<br>`gate_on_fail?`: "retry" \| "stop" \| null<br>`gate_runner?`: "daemon" \| "session" \| null<br>`max_spawned?`: integer \| null<br>`runtime_parallel?`: object \| null<br>`task_size?`: "small" \| "medium" \| "large" \| null<br>`verify_timing?`: "each_session" \| "before_landing" \| null<br>`kind_routes?`: object[] \| null<br>`project_budget?`: object \| null |  |
 
 ### workspace
 
