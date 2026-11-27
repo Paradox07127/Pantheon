@@ -1,12 +1,21 @@
 import { execFile, execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import type { Review } from '@pantheon/domain';
 import { PANTHEON_VERSION } from '@pantheon/domain/version';
-import { review } from '../../apps/cli/src/review.js';
+import { review, watchRuntimes } from '../../apps/cli/src/review.js';
 
 const requests: { method: string; url: string; body: string }[] = [];
 let replies: { status: number; body: unknown }[] = [];
@@ -751,47 +760,84 @@ describe('pnpm cli review', () => {
   const pollsFor = (seconds: number) =>
     Array.from({ length: seconds }, () => runningWith({ codex: 'running' }));
 
+  /** Runs the watcher in this process once per review given, 15 s apart, and returns what it said. */
+  const watched = async (reads: unknown[], reviews: { body: unknown }[]) => {
+    statuses = [...reads];
+    statusReads = 0;
+    health = healthy;
+    healthLater = undefined;
+    const lines: string[] = [];
+    const said = vi
+      .spyOn(console, 'error')
+      .mockImplementation((line) => void lines.push(String(line)));
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const url = (
+        JSON.parse(readFileSync(path.join(dataDir, 'daemon.json'), 'utf8')) as { url: string }
+      ).url;
+      const watch = watchRuntimes({ url, token: 'user-token' });
+      for (const each of reviews) {
+        await watch(each.body as Review);
+        vi.setSystemTime(Date.now() + 15_000);
+      }
+    } finally {
+      vi.useRealTimers();
+      said.mockRestore();
+    }
+    return lines;
+  };
+
   it('says once that a runtime of the review is disconnected, and once that it reconnected', async () => {
     const down = [downOf('codex'), { runtime: 'claude', connection: connected }];
     const up = [{ runtime: 'codex', connection: connected }];
-    const result = await cli(
-      repo,
-      ['review', '--base', 'main'],
-      [started, ...pollsFor(33), { body: reviewOf({}) }],
-      { statuses: [down, down, up, up] },
-    );
-    expect(statusReads).toBeGreaterThanOrEqual(3);
-    const lines = result.stderr.split('\n');
-    const disconnected = lines.filter((line) => line.startsWith('codex is disconnected'));
-    expect(disconnected).toHaveLength(1);
-    expect(disconnected[0]).toBe(
+    const running = runningWith({ codex: 'running' });
+    const lines = await watched([down, down, up], [running, running, running]);
+    expect(lines).toEqual([
       'codex is disconnected since 2026-11-26T04:30:00.000Z (RPC timeout: account/read); the review waits while the daemon retries it.',
-    );
-    expect(lines.filter((each) => each === 'codex reconnected')).toHaveLength(1);
-    expect(lines.indexOf('codex reconnected')).toBeGreaterThan(lines.indexOf(disconnected[0]!));
-    expect(result.code).toBe(0);
-  }, 50_000);
+      'codex reconnected',
+    ]);
+  });
 
   it('does not say a disconnected runtime reconnected once it is uninstalled', async () => {
-    const uninstalled = [
-      {
-        runtime: 'codex',
-        installed: false,
-        connection: { connected: false, held_session_count: 0, held_session_ids: [] },
-      },
-    ];
-    const result = await cli(
-      repo,
-      ['review', '--base', 'main'],
-      [started, ...pollsFor(18), { body: reviewOf({}) }],
-      { statuses: [[downOf('codex')], uninstalled] },
-    );
+    const uninstalled = {
+      runtime: 'codex',
+      installed: false,
+      connection: { connected: false, held_session_count: 0, held_session_ids: [] },
+    };
+    const running = runningWith({ codex: 'running' });
+    const lines = await watched([[downOf('codex')], [uninstalled]], [running, running]);
     expect(statusReads).toBe(2);
-    const lines = result.stderr.split('\n');
     expect(lines.filter((line) => line.startsWith('codex is disconnected'))).toHaveLength(1);
     expect(lines).not.toContain('codex reconnected');
-    expect(result.code).toBe(0);
-  }, 30_000);
+  });
+
+  it.each([
+    ['fails', { status: 500, body: { error: 'runtime status failed' } }],
+    ['answers no list', { status: 200, body: { runtime: 'codex' } }],
+  ])(
+    'waits on through a runtime status read that %s and reads it again 15 s later',
+    async (_, first) => {
+      const running = runningWith({ codex: 'running' });
+      const lines = await watched([first, [downOf('codex')]], [running, running]);
+      expect(statusReads).toBe(2);
+      expect(lines.filter((line) => line.startsWith('codex is disconnected since'))).toHaveLength(
+        1,
+      );
+    },
+  );
+
+  it('says a disconnected runtime reconnected after the review stopped waiting for it', async () => {
+    const lines = await watched(
+      [[downOf('codex')], [{ runtime: 'codex', connection: connected }]],
+      [
+        runningWith({ codex: 'running', claude: 'running' }),
+        runningWith({ codex: 'completed', claude: 'running' }),
+      ],
+    );
+    expect(statusReads).toBe(2);
+    expect(lines.filter((line) => line.startsWith('codex is disconnected'))).toHaveLength(1);
+    expect(lines.filter((line) => line === 'codex reconnected')).toHaveLength(1);
+  });
 
   it('says a reviewer is disconnected when its first status read finds it uninstalled', async () => {
     const result = await cli(
@@ -813,26 +859,6 @@ describe('pnpm cli review', () => {
     expect(result.stderr.split('\n')).toContain('codex is disconnected; the review waits for it.');
   });
 
-  it.each([
-    ['fails', { status: 500, body: { error: 'runtime status failed' } }],
-    ['answers no list', { status: 200, body: { runtime: 'codex' } }],
-  ])(
-    'waits on through a runtime status read that %s and reads it again 15 s later',
-    async (_, first) => {
-      const result = await cli(
-        repo,
-        ['review', '--base', 'main'],
-        [started, ...pollsFor(18), { body: reviewOf({}) }],
-        { statuses: [first, [downOf('codex')]] },
-      );
-      expect(statusReads).toBe(2);
-      expect(result.stderr).toContain('codex is disconnected since');
-      expect(result.stdout).toBe('codex: pass — looks fine\n');
-      expect(result.code).toBe(0);
-    },
-    30_000,
-  );
-
   it('watches the reviewers the review still waits for, also a fallback that took over', async () => {
     const result = await cli(
       repo,
@@ -844,24 +870,6 @@ describe('pnpm cli review', () => {
     expect(lines.filter((line) => line.startsWith('claude is disconnected'))).toHaveLength(1);
     expect(lines.filter((line) => line.startsWith('codex is disconnected'))).toEqual([]);
   });
-
-  it('says a disconnected runtime reconnected after the review stopped waiting for it', async () => {
-    const result = await cli(
-      repo,
-      ['review', '--base', 'main'],
-      [
-        started,
-        runningWith({ codex: 'running', claude: 'running' }),
-        ...Array.from({ length: 17 }, () => runningWith({ codex: 'completed', claude: 'running' })),
-        { body: reviewOf({}) },
-      ],
-      { statuses: [[downOf('codex')], [{ runtime: 'codex', connection: connected }]] },
-    );
-    expect(statusReads).toBe(2);
-    const lines = result.stderr.split('\n');
-    expect(lines.filter((line) => line.startsWith('codex is disconnected'))).toHaveLength(1);
-    expect(lines.filter((line) => line === 'codex reconnected')).toHaveLength(1);
-  }, 30_000);
 
   it('says nothing of a reviewer whose runtime was disabled while its turn runs', async () => {
     const result = await cli(

@@ -285,7 +285,7 @@ export const STATUS_MS = 15_000;
  * Says once when a runtime the review waits for disconnects, and once when it connects again, also
  * after the review stopped waiting for it; a status read that fails is tried again at the next read.
  */
-const watchRuntimes = (daemon: Daemon) => {
+export const watchRuntimes = (daemon: Daemon) => {
   const down = new Set<string>();
   let readAt = -Infinity;
   return async (review: Review) => {
