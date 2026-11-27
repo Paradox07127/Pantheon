@@ -4,7 +4,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { afterEach, expect, it } from 'vitest';
-import { JsonRpcProcess, sandboxFactsOnDevice } from '../../packages/adapters/src/process.js';
+import { PassThrough } from 'node:stream';
+import {
+  JsonRpcProcess,
+  sandboxFactsOnDevice,
+  splitLines,
+} from '../../packages/adapters/src/process.js';
 
 const roots: string[] = [];
 afterEach(() => {
@@ -45,6 +50,32 @@ it.each([
     rejected: 'Protocol transport closed',
   });
   await rpc.exited;
+});
+
+it('reads a frame whose strings hold line and paragraph separators', async () => {
+  // JSON leaves U+2028 and U+2029 unescaped.
+  const script = `process.stdout.write(JSON.stringify({ method: 'output', params: { text: 'a\\u2028b\\u2029c' } }) + '\\n');`;
+  const rpc = new JsonRpcProcess(process.execPath, ['-e', script]);
+  const texts: string[] = [];
+  const errors: string[] = [];
+  rpc.on('notification', (frame: { params: { text: string } }) => texts.push(frame.params.text));
+  rpc.on('protocolError', (error: Error) => errors.push(error.message));
+  await rpc.exited;
+  expect(texts).toEqual(['a\u2028b\u2029c']);
+  expect(errors.filter((message) => message !== 'Protocol transport closed')).toEqual([]);
+});
+
+it('joins a line whose character is cut between two reads, and ends a CRLF line before the CR', async () => {
+  const stream = new PassThrough();
+  const lines: string[] = [];
+  splitLines(stream, (line) => lines.push(line));
+  const bytes = Buffer.from('café\r\nlast');
+  const cut = bytes.indexOf(0xa9);
+  stream.write(bytes.subarray(0, cut));
+  stream.write(bytes.subarray(cut));
+  stream.end();
+  await once(stream, 'end');
+  expect(lines).toEqual(['café', 'last']);
 });
 
 it('drops and closes a protocol frame whose unterminated part passes the line cap', async () => {

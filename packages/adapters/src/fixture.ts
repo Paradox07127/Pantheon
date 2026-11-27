@@ -2,7 +2,6 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { constants, lstatSync, readlinkSync, realpathSync } from 'node:fs';
 import { lstat, mkdir, open, realpath } from 'node:fs/promises';
 import path from 'node:path';
-import { createInterface } from 'node:readline';
 import {
   id,
   type HarnessAdapter,
@@ -18,7 +17,13 @@ import {
   type RuntimeModel,
   permissionRule,
 } from '@pantheon/domain';
-import { nativeEnvironment, report, terminate, validateSessionSpec } from './process.js';
+import {
+  nativeEnvironment,
+  report,
+  splitLines,
+  terminate,
+  validateSessionSpec,
+} from './process.js';
 
 interface FixtureSession {
   spec: SessionSpec;
@@ -685,7 +690,7 @@ export class FixtureAdapter implements HarnessAdapter {
       >();
       let closed: Error | undefined;
       let sequence = 0;
-      createInterface({ input: child.stdout }).on('line', (line) => {
+      splitLines(child.stdout, (line) => {
         let frame: { id?: unknown; result?: unknown; error?: { message?: unknown } } | null;
         try {
           frame = JSON.parse(line);

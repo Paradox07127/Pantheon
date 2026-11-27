@@ -1,8 +1,8 @@
 import { spawn, execFileSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { createInterface } from 'node:readline';
 import { EventEmitter } from 'node:events';
+import type { Readable } from 'node:stream';
 import { PANTHEON_VERSION } from '@pantheon/domain/version';
 import { verifiedCapabilities } from './capabilities.js';
 import {
@@ -579,6 +579,32 @@ export async function terminate(
 
 export const CLIENT_INFO = { name: 'pantheon', title: 'Pantheon', version: PANTHEON_VERSION };
 
+/**
+ * Calls onLine with each line of stream, split only at "\n". readline also ends a line at U+2028
+ * and U+2029, which JSON leaves unescaped inside strings, and so cuts a frame in two.
+ */
+export function splitLines(stream: Readable, onLine: (line: string) => void): void {
+  let rest: Buffer[] = [];
+  stream.on('data', (chunk: Buffer) => {
+    let start = 0;
+    for (let end = chunk.indexOf(10); end >= 0; end = chunk.indexOf(10, start)) {
+      rest.push(chunk.subarray(start, end));
+      const line = Buffer.concat(rest).toString('utf8');
+      rest = [];
+      start = end + 1;
+      onLine(line.endsWith('\r') ? line.slice(0, -1) : line);
+    }
+    if (start < chunk.length) rest.push(chunk.subarray(start));
+  });
+  stream.on('end', () => {
+    if (rest.length) onLine(Buffer.concat(rest).toString('utf8'));
+    rest = [];
+  });
+  stream.on('close', () => {
+    rest = [];
+  });
+}
+
 export class JsonRpcProcess extends EventEmitter {
   readonly child: ChildProcessWithoutNullStreams;
   readonly exited: Promise<void>;
@@ -641,19 +667,17 @@ export class JsonRpcProcess extends EventEmitter {
     };
     this.child.stdin.on('error', fail);
     this.child.stderr.resume();
-    const lines = createInterface({ input: this.child.stdout });
     let partial = 0;
-    // readline buffers an unterminated line without limit.
+    // splitLines buffers an unterminated line without limit.
     this.child.stdout.on('data', (chunk: Buffer) => {
       const end = chunk.lastIndexOf(10);
       partial = end < 0 ? partial + chunk.length : chunk.length - end - 1;
       if (partial <= maxLine) return;
       this.emit('protocolError', new Error('Oversized protocol frame'));
-      lines.close();
       this.child.stdout.destroy();
     });
-    lines.once('close', () => fail(new Error('Protocol transport closed')));
-    lines.on('line', (line) => {
+    this.child.stdout.once('close', () => fail(new Error('Protocol transport closed')));
+    splitLines(this.child.stdout, (line) => {
       if (line.length > maxLine) {
         this.emit('protocolError', new Error('Oversized protocol frame'));
         return;
@@ -711,7 +735,6 @@ export class JsonRpcProcess extends EventEmitter {
       .catch(() => {})
       .finally(() => {
         this.closed = true;
-        lines.close();
         for (const p of this.pending.values()) {
           clearTimeout(p.timer);
           p.reject(new Error('Protocol transport closed'));
