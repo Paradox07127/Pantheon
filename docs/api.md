@@ -421,6 +421,14 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 |---|---|---|
 | `project.resident.set` | `project_id`: string<br>`session_id`: string \| null |  |
 
+### project.routine
+
+| type | input | MCP 工具 |
+|---|---|---|
+| `project.routine.remove` | `project_id`: string<br>`routine_id`: string |  |
+| `project.routine.run` | `project_id`: string<br>`routine_id`: string |  |
+| `project.routine.save` | `project_id`: string<br>`routine`: object \| object |  |
+
 ### project.seen
 
 | type | input | MCP 工具 |
@@ -607,6 +615,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `project.read` | `project_id`: string |
 | `project.resident` | `project_id`: string |
 | `project.review.metrics` | `project_id`: string |
+| `project.routines` | `project_id`: string |
 | `project.setting_proposals` | `project_id`: string |
 | `project.status.read` | `project_id`: string<br>`from`: integer<br>`to`: integer |
 | `project.timeline` | `project_id`: string<br>`since?`: string |

@@ -89,6 +89,7 @@ import { changesRead } from './changes.js';
 import { projectLandingsRead, projectLandingsCompare } from './project-landings.js';
 import { projectPlanHistory, projectPlanView } from './project-plan.js';
 import { projectResident } from './resident.js';
+import { projectRoutines } from './routines.js';
 import { projectSettingProposals } from './setting-proposal.js';
 import {
   changeStoryDiff,
@@ -924,6 +925,9 @@ export class Control extends EventEmitter {
   }
   projectResident(principal: Principal, projectId: string) {
     return projectResident(this.ctx, principal, projectId);
+  }
+  projectRoutines(principal: Principal, projectId: string) {
+    return projectRoutines(this.ctx, principal, projectId);
   }
   projectSettingProposals(principal: Principal, projectId: string) {
     return projectSettingProposals(this.ctx, principal, projectId);

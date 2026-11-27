@@ -287,10 +287,34 @@ export interface SessionDefaults extends RuntimeChoice {
   reviewer?: RuntimeChoice;
   fallbacks?: Partial<Record<'lead' | 'writer' | 'reviewer', RuntimeChoice>>;
 }
+export interface Timer extends Entity {
+  project_id: string;
+  kind: string;
+  subject_id: string;
+  due_at: number;
+  state: 'pending' | 'fired' | 'cancelled';
+  fired_at?: number;
+}
+
+export type RoutineSchedule = (
+  { every_ms: number; at?: never } | { at: string; every_ms?: never }
+) & {
+  active_hours?: { from: string; to: string };
+};
+
+export type Routine = RoutineSchedule & {
+  id: string;
+  name: string;
+  prompt: string;
+  enabled: boolean;
+  precheck?: { argv: string[]; timeout_ms?: number };
+};
+
 export interface Project extends Entity {
   name: string;
   /** The main agent session the user marked resident; since is Unix milliseconds of marking it. */
   resident?: { session_id: string; since: number };
+  routines?: Routine[];
   /** Real, pairwise non-nested folders of equal standing; the order is the user's and carries no priority. */
   roots: string[];
   permission_rules?: { rule: string; session_id: string; added_at: number }[];

@@ -18,6 +18,7 @@ import { tickProjectBaselines } from './baseline.js';
 import { tickSessions } from './session-tick.js';
 import { tickSessionStalls } from './session-stall.js';
 import { retrySpawnerNotices } from './conductor.js';
+import { fireDueTimers } from './timers.js';
 
 export async function tick(ctx: ControlContext): Promise<void> {
   if (ctx.busy || ctx.closing) return;
@@ -85,6 +86,7 @@ export async function tick(ctx: ControlContext): Promise<void> {
         recordAnswerDelivery(ctx, payload, error instanceof Error ? error.message : String(error));
       }
     }
+    if (!ctx.closing) fireDueTimers(ctx);
   } finally {
     ctx.busy = false;
     ctx.changed();

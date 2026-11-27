@@ -613,10 +613,29 @@ const storedAttentionDelivery = z.partialRecord(
   ]),
   z.enum(['now', 'brief', 'never']),
 );
-const quietHours = z.strictObject({
-  from: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
-  to: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
-});
+const clockTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+const quietHours = z.strictObject({ from: clockTime, to: clockTime });
+const routineFields = {
+  id: str.optional(),
+  name: z.string().regex(/\S/),
+  prompt: z.string().regex(/\S/),
+  // Equal ends would be a window no time falls in.
+  active_hours: quietHours
+    .refine((h) => h.from !== h.to, 'Active hours must not start where they end')
+    .optional(),
+  enabled: z.boolean(),
+  precheck: z
+    .strictObject({
+      argv: z.array(z.string()).min(1),
+      timeout_seconds: z.number().int().min(1).max(3600).optional(),
+    })
+    .optional(),
+};
+const routineInput = z.union([
+  z.strictObject({ ...routineFields, every_minutes: z.number().int().min(5) }),
+  z.strictObject({ ...routineFields, at: clockTime }),
+]);
+const routineRef = z.strictObject({ project_id: str, routine_id: str });
 /** `~/.pantheon/config.json`, the user's own backends and model families. */
 export const userConfigSchema = z
   .strictObject({
@@ -1432,6 +1451,9 @@ export const inputSchemas = {
   /** The user only; stops a queued or running landing, which ends blocked with the reason `cancelled`, and returns the Landing. */
   'project.landing.cancel': z.strictObject({ landing_id: str }),
   'project.resident.set': z.strictObject({ project_id: str, session_id: str.nullable() }),
+  'project.routine.save': z.strictObject({ project_id: str, routine: routineInput }),
+  'project.routine.remove': routineRef,
+  'project.routine.run': routineRef,
   'project.worktree.set': z.strictObject({
     project_id: str,
     copy_paths: z.array(worktreePath),
@@ -2059,6 +2081,7 @@ export const querySchemas = {
     count: z.coerce.number().int().positive(),
   }),
   'project.resident': z.strictObject({ project_id: str }),
+  'project.routines': z.strictObject({ project_id: str }),
   /** ProjectSettingProposals; the approved setting proposals, latest approval first. */
   'project.setting_proposals': z.strictObject({ project_id: str }),
   /** DecisionsForUser; what a stored rule decided without the user from since on, Unix milliseconds, newest first. */
@@ -2474,6 +2497,27 @@ export interface ProjectResident {
     | { at: number; kind: 'woken'; cause: string; turn_id: string; preview?: string }
     | { at: number; kind: 'skipped'; cause: string; reason: 'budget' | 'not_accepting' }
   )[];
+}
+export interface RoutineRun {
+  at: number;
+  outcome: 'woken' | 'skipped';
+  reason?:
+    | 'no_resident'
+    | 'budget'
+    | 'precheck'
+    | 'not_accepting'
+    | 'prechecking'
+    | 'changed'
+    | 'inactive_hours';
+  exit_code?: number | null;
+}
+export interface ProjectRoutines {
+  routines: (z.infer<typeof routineInput> & {
+    id: string;
+    next_at: number | null;
+    state: 'active' | 'paused' | 'paused_budget' | 'no_resident';
+    last_run: RoutineRun | null;
+  })[];
 }
 export interface ProjectSettingProposals {
   proposals: SettingProposal[];
