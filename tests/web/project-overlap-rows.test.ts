@@ -20,6 +20,9 @@ vi.mock('@/data/board', async (actual) => ({
     getState: () => mock.board,
   }),
 }));
+vi.mock('@/data/session-thread', () => ({
+  useSessionThread: () => ({ data: null, loading: false, error: null, reload() {} }),
+}));
 import { AgentList } from '@/screens/project/AgentList';
 import { ItemInspector } from '@/screens/project/ItemInspector';
 import { PlanList, PlanRow } from '@/screens/project/PlanList';

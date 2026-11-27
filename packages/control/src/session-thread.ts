@@ -85,7 +85,12 @@ export function sessionThread(
             turn_id,
             ...(personal
               ? {}
-              : { text: ctx.store.get<SessionTurn>('session_turns', turn_id)?.input }),
+              : {
+                  // conductor.message prefixes the text with a header line naming the main agent.
+                  text: ctx.store
+                    .get<SessionTurn>('session_turns', turn_id)
+                    ?.input.replace(/^\[Pantheon\] From the main agent "[^\n]*":\n/, ''),
+                }),
           });
           break;
         }

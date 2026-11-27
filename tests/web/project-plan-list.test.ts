@@ -12,6 +12,9 @@ vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMoc
 vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
   (await import('./web-live-stores.js')).liveStores(actual as never),
 );
+vi.mock('@/data/session-thread', () => ({
+  useSessionThread: () => ({ data: null, loading: false, error: null, reload() {} }),
+}));
 import { EvidenceMark } from '@/screens/project/EvidenceMark';
 import { ItemInspector } from '@/screens/project/ItemInspector';
 import { MilestoneHead, PlanList, PlanRow, ReasonLine } from '@/screens/project/PlanList';

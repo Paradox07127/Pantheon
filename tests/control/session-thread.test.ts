@@ -24,7 +24,7 @@ it('folds a spawned session’s records in time order and withholds private text
       kind: 'send',
       delivery: 'delivered',
       state: 'failed',
-      input: 'private message',
+      input: '[Pantheon] From the main agent "Lead":\nprivate message\nsecond line',
     });
     const review = f.store.insert<Review>('reviews', {
       id: 'changes-review',
@@ -100,7 +100,7 @@ it('folds a spawned session’s records in time order and withholds private text
     const { entries } = f.control.sessionThread(user, session.id);
     expect(entries).toMatchObject([
       { kind: 'started', by: 'main_agent', reason: 'private goal' },
-      { kind: 'message', text: turn.input },
+      { kind: 'message', text: 'private message\nsecond line' },
       { kind: 'turn_ended', state: 'failed', error: 'private error' },
       { kind: 'turn_ended', state: 'completed', turn_id: steer.id },
       { kind: 'spawner_notified', turn_id: turn.id },

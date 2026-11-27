@@ -1,16 +1,23 @@
-import { useState } from 'react';
-import { X } from 'lucide-react';
-import type { ProjectOverlap, ProjectPlanView, WorkbenchSession } from '@pantheon/protocol';
+import { useState, type ReactNode } from 'react';
+import { MessageCircleQuestionMark, X } from 'lucide-react';
+import type {
+  ProjectOverlap,
+  ProjectPlanView,
+  SessionThreadEntry,
+  WorkbenchSession,
+} from '@pantheon/protocol';
 import { Clip } from '../../components/Clip';
 import { RuntimeGlyph, runtimeName } from '../../components/RuntimeGlyph';
 import { ContextRing } from '../../components/ContextRing';
 import { DiffCounts } from '../../components/DiffCounts';
 import { LoadError } from '../../components/LoadError';
+import { Skeleton } from '../../components/Skeleton';
 import { StateGlyph } from '../../components/SessionStateIcon';
 import { Tip } from '../../components/Tip';
 import { useBoard } from '../../data/board';
 import { runCommand } from '../../data/commands';
-import { ageText, failureText, useNow } from '../../data/needs-you';
+import { ageText, failureText, reasonText, useNow } from '../../data/needs-you';
+import { useSessionThread } from '../../data/session-thread';
 import { t } from '../../i18n';
 import { tokenText } from '../../lib/number-text';
 import { durationText } from '../../lib/time-text';
@@ -73,6 +80,285 @@ function dependencyGraph(item: ShownPlanItem, ups: readonly Upstream[]) {
       </span>
     </div>
   );
+}
+
+const SHOWN_ENTRIES = 8;
+
+const stroke = (draw: ReactNode) => (
+  <svg viewBox="0 0 14 14" aria-hidden="true">
+    {draw}
+  </svg>
+);
+const MERGE = (
+  <>
+    <circle cx="4" cy="3" r="1.5" />
+    <path d="M4 4.5V12M4 4.8c0 1.8 1.6 2.2 3.2 2.2h3.3M8.8 5.2 10.6 7 8.8 8.8" />
+  </>
+);
+const SHIELD = 'M7 1.8 11.5 3.5v3.3c0 2.7-1.9 4.6-4.5 5.4-2.6-.8-4.5-2.7-4.5-5.4V3.5z';
+const CROSS = 'M4.5 4.5l5 5M9.5 4.5l-5 5';
+
+/** One entry of the session's thread: its glyph and tone, its line, and what opens under it. */
+function threadRow(
+  entry: SessionThreadEntry,
+  open: boolean,
+  toggle: () => void,
+): { glyph: ReactNode; tone?: 'ok' | 'bad'; line: ReactNode; body?: ReactNode } {
+  const name = (label: string) => <span className="pj-th-n">{label}</span>;
+  const opener = (label: string) => (
+    <button type="button" className="pj-th-n" aria-expanded={open} onClick={toggle}>
+      {label}
+    </button>
+  );
+  const said = (value: string | undefined) => value && <p className="pj-th-p">{value}</p>;
+  switch (entry.kind) {
+    case 'started':
+      return entry.by === 'user'
+        ? {
+            glyph: stroke(<path d="M4.5 2.8v8.4L11 7z" />),
+            line: name(
+              t({ id: 'project.inspector.thread.startedByUser', defaultMessage: 'You started it' }),
+            ),
+          }
+        : {
+            glyph: stroke(<path d="M2 7h7M6.5 4 9.5 7l-3 3M11.8 3v8" />),
+            line: name(
+              t({
+                id: 'project.inspector.thread.startedByMainAgent',
+                defaultMessage: 'The main agent started it',
+              }),
+            ),
+            body: said(entry.reason),
+          };
+    case 'message': {
+      const first = entry.text?.split(/\r?\n/, 1)[0];
+      const label = t({ id: 'project.inspector.thread.mainAgent', defaultMessage: 'Main agent' });
+      return {
+        glyph: stroke(<path d="M2.5 3h9v6h-5L4 11.2V9H2.5z" />),
+        line: (
+          <>
+            {entry.text !== undefined && entry.text !== first ? opener(label) : name(label)}
+            {!open && first && <span className="pj-th-s">{first}</span>}
+          </>
+        ),
+        body: open && <p className="pj-th-q">{entry.text}</p>,
+      };
+    }
+    case 'turn_ended':
+      if (entry.state === 'completed')
+        return {
+          glyph: stroke(<path d="M3 7.3 5.7 10 11 4.2" />),
+          tone: 'ok',
+          line: name(
+            t({ id: 'project.inspector.thread.turnCompleted', defaultMessage: 'Turn completed' }),
+          ),
+        };
+      if (entry.state === 'failed')
+        return {
+          glyph: stroke(<path d={CROSS} />),
+          tone: 'bad',
+          line: name(
+            t({ id: 'project.inspector.thread.turnFailed', defaultMessage: 'Turn failed' }),
+          ),
+          body: said(entry.error && reasonText(entry.error)),
+        };
+      return {
+        glyph: stroke(<path d="M3.5 7h7" />),
+        line: name(
+          t({ id: 'project.inspector.thread.turnCancelled', defaultMessage: 'Turn cancelled' }),
+        ),
+      };
+    case 'spawner_notified':
+      return {
+        glyph: stroke(<path d="M11.5 3.5v3a2 2 0 0 1-2 2H3M5.5 6 3 8.5 5.5 11" />),
+        line: name(
+          t({ id: 'project.inspector.thread.notified', defaultMessage: 'The main agent got it' }),
+        ),
+      };
+    case 'question':
+      return {
+        glyph: <MessageCircleQuestionMark aria-hidden="true" />,
+        line: name(
+          entry.state === 'pending'
+            ? t({
+                id: 'project.inspector.thread.questionWaiting',
+                defaultMessage: 'Asked, waiting for an answer',
+              })
+            : entry.answered_by === 'user'
+              ? t({
+                  id: 'project.inspector.thread.questionByUser',
+                  defaultMessage: 'Asked, you answered',
+                })
+              : entry.answered_by === 'main_agent'
+                ? t({
+                    id: 'project.inspector.thread.questionByMainAgent',
+                    defaultMessage: 'Asked, the main agent answered',
+                  })
+                : t({
+                    id: 'project.inspector.thread.questionUnanswered',
+                    defaultMessage: 'Asked, not answered',
+                  }),
+        ),
+        body: entry.questions?.map((question, k) => (
+          <p key={k} className="pj-th-p">
+            {question}
+          </p>
+        )),
+      };
+    case 'review': {
+      const label = t(
+        { id: 'project.inspector.thread.review', defaultMessage: 'Review round {round}' },
+        { round: entry.round },
+      );
+      const passed =
+        entry.state === 'completed' &&
+        entry.verdicts.length > 0 &&
+        entry.verdicts.every((v) => v.verdict === 'pass');
+      return {
+        glyph: stroke(<path d="M4 2h4.5L11 4.5V12H4zM8.5 2v2.5H11M6 7.5h3M6 9.5h3" />),
+        tone: entry.blocking.length || entry.state === 'failed' ? 'bad' : passed ? 'ok' : undefined,
+        line: (
+          <>
+            {entry.blocking.length ? opener(label) : name(label)}
+            {entry.state === 'running' && (
+              <span className="pj-th-s">
+                {t({ id: 'project.inspector.thread.reviewRunning', defaultMessage: 'Reviewing' })}
+              </span>
+            )}
+            {entry.state === 'failed' && (
+              <span className="pj-th-s">
+                {t({
+                  id: 'project.inspector.thread.reviewFailed',
+                  defaultMessage: 'The review did not finish',
+                })}
+              </span>
+            )}
+            {entry.verdicts.map((v) => (
+              <span key={v.runtime} className="pj-th-s">
+                {v.verdict === 'pass'
+                  ? t(
+                      {
+                        id: 'project.inspector.thread.verdictPass',
+                        defaultMessage: '{runtime} passed',
+                      },
+                      { runtime: runtimeName(v.runtime) },
+                    )
+                  : t(
+                      {
+                        id: 'project.inspector.thread.verdictFail',
+                        defaultMessage: '{runtime} failed',
+                      },
+                      { runtime: runtimeName(v.runtime) },
+                    )}
+              </span>
+            ))}
+            {entry.blocking.length > 0 && (
+              <span className="pj-th-s">
+                {t(
+                  {
+                    id: 'project.inspector.thread.blocking',
+                    defaultMessage: '{count, plural, one {# blocking} other {# blocking}}',
+                  },
+                  { count: entry.blocking.length },
+                )}
+              </span>
+            )}
+          </>
+        ),
+        body: open && (
+          <ul className="pj-th-f">
+            {entry.blocking.map((finding) => (
+              <li key={finding.id}>
+                <span className="mono">{finding.location ?? finding.id}</span>
+                {finding.impact && <span>{finding.impact}</span>}
+              </li>
+            ))}
+          </ul>
+        ),
+      };
+    }
+    case 'gate':
+      if (entry.state === 'passed')
+        return {
+          glyph: stroke(<path d={`${SHIELD}M5.2 7l1.3 1.3 2.4-2.6`} />),
+          tone: 'ok',
+          line: name(
+            t({ id: 'project.inspector.thread.gatePassed', defaultMessage: 'Gate passed' }),
+          ),
+        };
+      if (entry.state === 'failed')
+        return {
+          glyph: stroke(<path d={`${SHIELD}M5.5 5.5l3 3M8.5 5.5l-3 3`} />),
+          tone: 'bad',
+          line: name(
+            t({ id: 'project.inspector.thread.gateFailed', defaultMessage: 'Gate failed' }),
+          ),
+          body: entry.failed_steps.length > 0 && (
+            <ul className="pj-th-c">
+              {entry.failed_steps.map((step) => (
+                <li key={step} className="chip mono">
+                  {step}
+                </li>
+              ))}
+            </ul>
+          ),
+        };
+      return {
+        glyph: stroke(<path d={SHIELD} />),
+        line: name(
+          t({ id: 'project.inspector.thread.gateCancelled', defaultMessage: 'Gate cancelled' }),
+        ),
+      };
+    case 'landing':
+      return entry.state === 'landed'
+        ? {
+            glyph: stroke(MERGE),
+            tone: 'ok',
+            line: (
+              <>
+                {name(t({ id: 'project.inspector.thread.landed', defaultMessage: 'Landed' }))}
+                <span className="mono pj-th-s">{entry.commit.slice(0, 7)}</span>
+              </>
+            ),
+          }
+        : {
+            glyph: stroke(MERGE),
+            tone: 'bad',
+            line: name(
+              t({
+                id: 'project.inspector.thread.landingBlocked',
+                defaultMessage: 'Landing blocked',
+              }),
+            ),
+            body: said(entry.reason && reasonText(entry.reason)),
+          };
+    case 'main_agent_action':
+      return {
+        glyph:
+          entry.action === 'interrupt'
+            ? stroke(<path d="M5 3.5v7M9 3.5v7" />)
+            : entry.action === 'close'
+              ? stroke(<path d={CROSS} />)
+              : stroke(MERGE),
+        line: name(
+          entry.action === 'interrupt'
+            ? t({
+                id: 'project.inspector.thread.interrupted',
+                defaultMessage: 'The main agent interrupted it',
+              })
+            : entry.action === 'close'
+              ? t({
+                  id: 'project.inspector.thread.closed',
+                  defaultMessage: 'The main agent closed it',
+                })
+              : t({
+                  id: 'project.inspector.thread.handedToLand',
+                  defaultMessage: 'The main agent sent it to land',
+                }),
+        ),
+        body: said(entry.reason),
+      };
+  }
 }
 
 /**
@@ -141,6 +427,13 @@ export function ItemInspector({
     defaultMessage: 'Same files changed elsewhere',
   });
   const others = overlap?.error ? [] : overlapsOf(overlap?.read, sessionId);
+  const thread = useSessionThread(sessionId);
+  const [opened, setOpened] = useState<ReadonlySet<string>>(() => new Set());
+  // The session whose earlier entries are open; the item can turn to another session.
+  const [earlierOf, setEarlierOf] = useState<string | null>(null);
+  const earlier = earlierOf !== null && earlierOf === sessionId;
+  const entries = thread.data?.entries ?? [];
+  const threadName = t({ id: 'project.inspector.thread', defaultMessage: 'What happened' });
   return (
     <aside
       className="pj-ins"
@@ -278,6 +571,72 @@ export function ItemInspector({
               </>
             )}
           </div>
+        </section>
+      )}
+      {sessionId && (thread.error || thread.loading || entries.length > 0) && (
+        <section className="pj-sec" aria-label={threadName}>
+          <h3 className="pj-h2">{threadName}</h3>
+          {thread.error ? (
+            <LoadError
+              message={t(
+                {
+                  id: 'project.inspector.thread.failed',
+                  defaultMessage: "Couldn't read what happened to the session: {error}",
+                },
+                { error: thread.error },
+              )}
+              onRetry={thread.reload}
+            />
+          ) : thread.data ? (
+            <ol className="pj-th">
+              {entries.length > SHOWN_ENTRIES && (
+                <li className="pj-th-e">
+                  <button
+                    type="button"
+                    className="pj-th-n"
+                    aria-expanded={earlier}
+                    onClick={() => setEarlierOf(earlier ? null : sessionId)}
+                  >
+                    {t(
+                      {
+                        id: 'project.inspector.thread.earlier',
+                        defaultMessage: '{count, plural, one {# earlier} other {# earlier}}',
+                      },
+                      { count: entries.length - SHOWN_ENTRIES },
+                    )}
+                  </button>
+                </li>
+              )}
+              {(earlier ? entries : entries.slice(-SHOWN_ENTRIES)).map((entry) => {
+                const row = threadRow(entry, opened.has(entry.id), () =>
+                  setOpened((was) => {
+                    const next = new Set(was);
+                    if (!next.delete(entry.id)) next.add(entry.id);
+                    return next;
+                  }),
+                );
+                return (
+                  <li key={entry.id} className="pj-th-i">
+                    <span className="pj-th-g" data-tone={row.tone} aria-hidden="true">
+                      {row.glyph}
+                    </span>
+                    <time className="pj-th-t" dateTime={new Date(entry.at).toISOString()}>
+                      {ageText(entry.at, now)}
+                    </time>
+                    <div className="pj-th-b">
+                      <div className="pj-th-l">{row.line}</div>
+                      {row.body}
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          ) : (
+            <div className="pj-th-sk" aria-busy="true">
+              <Skeleton style={{ height: 10, width: '60%' }} />
+              <Skeleton style={{ height: 10, width: '40%' }} />
+            </div>
+          )}
         </section>
       )}
       {sessionId && (overlap?.error || others.length > 0) && (

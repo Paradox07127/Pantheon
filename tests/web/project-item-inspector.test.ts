@@ -36,6 +36,9 @@ vi.mock('@/data/projects-summary', () => ({
 vi.mock('@/data/project-overlap', () => ({
   useProjectOverlap: () => ({ read: null, error: null, reload() {} }),
 }));
+vi.mock('@/data/session-thread', () => ({
+  useSessionThread: () => ({ data: null, loading: false, error: null, reload() {} }),
+}));
 import { runCommand } from '@/data/commands';
 import { ChangeDetails } from '@/screens/changes/ChangesScreen';
 import { AgentList } from '@/screens/project/AgentList';

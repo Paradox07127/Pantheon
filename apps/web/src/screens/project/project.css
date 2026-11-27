@@ -620,6 +620,164 @@
   overflow-wrap: anywhere;
   user-select: text;
 }
+/* What happened to the item's session, oldest first: glyph on a rail, time, then the entry. */
+.pj-th {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pj-th-e {
+  padding-bottom: var(--sp-2);
+  font-size: var(--fs-xs);
+}
+.pj-th-i {
+  position: relative;
+  display: grid;
+  grid-template-columns: 16px 56px minmax(0, 1fr);
+  gap: var(--sp-2);
+  padding-bottom: var(--sp-3);
+}
+.pj-th-i::before {
+  content: '';
+  position: absolute;
+  left: 7.5px;
+  top: 20px;
+  bottom: 0;
+  width: 1px;
+  background: var(--bd);
+}
+.pj-th-i:last-child {
+  padding-bottom: 0;
+}
+.pj-th-i:last-child::before {
+  display: none;
+}
+.pj-th-g {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 20px;
+}
+.pj-th-g svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: var(--mu);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* lucide draws on a 24 grid: 2.5 there is the 1.5px of the 14-grid glyphs at 14px. */
+.pj-th-g svg.lucide {
+  stroke-width: 2.5;
+}
+.pj-th-g[data-tone='ok'] svg {
+  stroke: var(--ok);
+}
+.pj-th-g[data-tone='bad'] svg {
+  stroke: var(--bad);
+}
+.pj-th-t {
+  padding-top: 2px;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.pj-th-b {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+  font-size: var(--fs-xs);
+}
+.pj-th-l {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-2);
+  min-width: 0;
+  min-height: 20px;
+}
+.pj-th-n {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--tx);
+  font: inherit;
+  font-weight: 600;
+}
+button.pj-th-n {
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 3px;
+}
+button.pj-th-n:hover {
+  text-decoration-color: currentColor;
+}
+button.pj-th-n:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.pj-th-s {
+  min-width: 0;
+  color: var(--tx2);
+  overflow-wrap: anywhere;
+}
+.pj-th-p {
+  margin: 0;
+  color: var(--tx2);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  user-select: text;
+}
+.pj-th-q {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border: var(--hair) solid var(--bd2);
+  border-radius: var(--r-md);
+  background: var(--sf2);
+  color: var(--tx);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  user-select: text;
+}
+.pj-th-c {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pj-th-f {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--tx2);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.pj-th-f > li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.pj-th-sk {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
 /* Usage: the fold, bars by role and the daily stack */
 .pj-utg {
   display: inline-flex;
