@@ -86,6 +86,7 @@ const NOW = Date.parse('2026-11-20T12:00:00.000Z');
 
 const residentOf = (extra: Partial<ProjectResident> = {}): ProjectResident => ({
   session_id: 'lead',
+  instructions: null,
   since: NOW - 3 * 3_600_000,
   turns: { pantheon: 4, user: 9 },
   budget: { used_input_tokens: 12_000, input_tokens: 200_000 },
@@ -95,6 +96,7 @@ const residentOf = (extra: Partial<ProjectResident> = {}): ProjectResident => ({
 
 const NONE: ProjectResident = {
   session_id: null,
+  instructions: null,
   since: null,
   turns: { pantheon: 0, user: 0 },
   budget: null,
@@ -164,6 +166,7 @@ describe('the resident read', () => {
         'workflow.policy_changed',
         'session.discarded',
         'session.deleted',
+        'project.resident_instructions_set',
       ]),
     );
   });

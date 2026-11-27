@@ -13,6 +13,7 @@ import type {
   Session,
   SessionSpec,
   SessionTurn,
+  Timer,
   Visual,
   Workspace,
 } from '@pantheon/domain';
@@ -538,6 +539,116 @@ it('refuses a credential role that does not match the session', async () => {
   expect(() => f.auth.issueSession(workbench, 'planner')).toThrow('Active session required');
   expect(() => f.auth.issueSession(planner, 'writer')).toThrow('Active session required');
 });
+
+it.each(['worktree', 'in_place'] as const)(
+  'starts a resident conductor with its standing instructions and routines in %s',
+  async (workspace) => {
+    const f = await workbenchFixture();
+    const project_id = f.project.id;
+    const now = Date.UTC(2026, 10, 27, 4);
+    vi.spyOn(f.store, 'now').mockReturnValue(now);
+    const ctx = f.control['ctx'];
+    ctx.issueSessionCredential = () => ({
+      token_file: path.join(f.root, 'token'),
+      daemon_url: 'http://localhost',
+    });
+    const instructions = '  Review new issues.\n\nAsk before closing one.  ';
+    const routines = [5, 15].map((every_minutes) => ({
+      name: `Check every ${every_minutes} minutes`,
+      prompt: 'Review issues',
+      enabled: true,
+      every_minutes,
+    }));
+    const session = await f.call<Promise<Session>>('session.create', {
+      project_id,
+      workspace,
+      runtime: f.adapter.name,
+      input: 'Review the project',
+      purpose: 'conductor',
+      resident: { instructions, routines },
+    });
+    expect(f.control.projectResident(user, project_id)).toMatchObject({
+      session_id: session.id,
+      instructions,
+    });
+    const saved = f.control.projectRoutines(user, project_id).routines;
+    expect(saved).toMatchObject(routines);
+    expect(f.store.list<Timer>('timers')).toEqual(
+      saved.map((r, i) =>
+        expect.objectContaining({
+          subject_id: r.id,
+          state: 'pending',
+          due_at: now + routines[i]!.every_minutes * 60_000,
+        }),
+      ),
+    );
+    expect(
+      f.store
+        .kindEvents(project_id, ['project.resident_set', 'routine.saved'])
+        .map((e) => e.payload),
+    ).toEqual([{ session_id: session.id }, ...saved.map((r) => ({ routine_id: r.id }))]);
+
+    if (workspace === 'worktree') {
+      await f.control.tick();
+      await Promise.all(ctx.completions);
+    }
+    await f.control.tick();
+    const header =
+      "The user's standing instructions for you as this project's resident main agent, in their own words:";
+    expect(f.resume.mock.calls[0]?.[0].control_instructions).toContain(
+      CONDUCTOR_TEXT + '\n\n' + header + '\n\n' + instructions,
+    );
+    const spec = () =>
+      workspace === 'in_place'
+        ? inPlaceSessionSpec(ctx, session)
+        : workbenchSessionSpec(ctx, session);
+    f.call('project.resident.instructions.set', { project_id, instructions: '' });
+    expect((await spec()).control_instructions).not.toContain(header);
+    await f.call('session.create', {
+      project_id,
+      workspace: 'worktree',
+      runtime: f.adapter.name,
+      input: 'Take over',
+      purpose: 'conductor',
+      resident: { instructions: 'Watch assigned issues.' },
+    });
+    expect((await spec()).control_instructions).not.toContain(header);
+  },
+);
+
+it.each([
+  ['without conductor purpose', undefined, {}, ['resident']],
+  [
+    'with an invalid routine',
+    'conductor',
+    {
+      routines: [{ name: 'Review', prompt: 'Check issues', enabled: true, every_minutes: 1 }],
+    },
+    ['resident', 'routines', 0],
+  ],
+] as const)(
+  'refuses resident creation %s before opening a session',
+  async (_label, purpose, resident, issuePath) => {
+    const f = await workbenchFixture();
+    expect(() =>
+      f.call('session.create', {
+        project_id: f.project.id,
+        runtime: f.adapter.name,
+        input: 'Review issues',
+        purpose,
+        resident,
+      }),
+    ).toThrow(
+      expect.objectContaining({
+        issues: expect.arrayContaining([
+          expect.objectContaining({ path: expect.arrayContaining([...issuePath]) }),
+        ]),
+      }),
+    );
+    expect(f.store.list('sessions')).toEqual([]);
+    expect(f.store.list('timers')).toEqual([]);
+  },
+);
 
 it('mounts only the conductor tools and their instructions on a conductor worktree session', async () => {
   const f = await sessionFixture('planner');

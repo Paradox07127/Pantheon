@@ -308,12 +308,15 @@ export type Routine = RoutineSchedule & {
   prompt: string;
   enabled: boolean;
   precheck?: { argv: string[]; timeout_ms?: number };
+  /** Unix milliseconds of the latest save, and of the latest run that woke the resident; a precheck's {since} is the second, else the first. */
+  saved_at: number;
+  woken_at?: number;
 };
 
 export interface Project extends Entity {
   name: string;
   /** The main agent session the user marked resident; since is Unix milliseconds of marking it. */
-  resident?: { session_id: string; since: number };
+  resident?: { session_id: string; since: number; instructions?: string };
   routines?: Routine[];
   /** Real, pairwise non-nested folders of equal standing; the order is the user's and carries no priority. */
   roots: string[];

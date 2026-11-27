@@ -21,6 +21,7 @@ const stored: Routine = {
   prompt: 'Review my assigned issues',
   enabled: true,
   every_ms: 30 * minute,
+  saved_at: start,
 };
 const input = { name: stored.name, prompt: stored.prompt, enabled: true, every_minutes: 30 };
 
@@ -298,6 +299,97 @@ it.each(['success', 'failure', 'timeout'] as const)(
     }
   },
 );
+
+it.each(['latest save', 'latest wake'] as const)(
+  'expands every {since} in precheck arguments using the %s',
+  async (source) => {
+    const f = await routinesFixture();
+    const session = f.resident();
+    const save = () =>
+      f.call('project.routine.save', {
+        project_id: f.project_id,
+        routine: {
+          ...input,
+          id: stored.id,
+          precheck: {
+            argv: [
+              process.execPath,
+              '-e',
+              'process.stdout.write(JSON.stringify(process.argv.slice(1)))',
+              '>={since}',
+              '{since}/{since}',
+              '$(echo {other})',
+            ],
+          },
+        },
+      });
+    save();
+    const run = () =>
+      f.call('project.routine.run', { project_id: f.project_id, routine_id: stored.id });
+    if (source === 'latest wake') {
+      for (const offset of [2, 4]) {
+        f.clock.mockReturnValue(start + offset * minute + 789);
+        run();
+        await Promise.all(f.control['ctx'].completions);
+      }
+    }
+    f.clock.mockReturnValue(start + 6 * minute + 345);
+    save();
+    f.clock.mockReturnValue(start + 8 * minute);
+    for (const [routine_id, outcome] of [
+      [stored.id, 'skipped'],
+      ['other', 'woken'],
+    ])
+      f.store.event('routine.ran', f.project, f.project_id, { routine_id, outcome });
+    run();
+    await Promise.all(f.control['ctx'].completions);
+    const since = new Date(start + (source === 'latest wake' ? 4 : 6) * minute)
+      .toISOString()
+      .replace('.000Z', 'Z');
+    expect(f.turns(session.id).at(-1)?.input).toContain(
+      stored.prompt +
+        '\n\n' +
+        JSON.stringify([`>=${since}`, `${since}/${since}`, '$(echo {other})']),
+    );
+  },
+);
+
+it('expands {since} from the routine itself once the event history is pruned', async () => {
+  const f = await routinesFixture();
+  const session = f.resident();
+  const argv = [process.execPath, '-e', 'process.stdout.write(process.argv[1])', '{since}'];
+  f.clock.mockReturnValue(start + 2 * minute);
+  f.call('project.routine.save', {
+    project_id: f.project_id,
+    routine: { ...input, id: stored.id, precheck: { argv } },
+  });
+  f.clock.mockReturnValue(start + 4 * minute);
+  f.call('project.routine.run', { project_id: f.project_id, routine_id: stored.id });
+  await Promise.all(f.control['ctx'].completions);
+  f.store.db.prepare("DELETE FROM events WHERE kind IN ('routine.saved', 'routine.ran')").run();
+  f.clock.mockReturnValue(start + 6 * minute);
+  f.call('project.routine.run', { project_id: f.project_id, routine_id: stored.id });
+  await Promise.all(f.control['ctx'].completions);
+  const at = (m: number) => new Date(start + m * minute).toISOString().replace('.000Z', 'Z');
+  // The second notice joins the first while that turn still waits.
+  expect(f.turns(session.id).map((t) => t.input)).toEqual([
+    `${stored.prompt}\n\n${at(2)}\n\n${stored.prompt}\n\n${at(4)}`,
+  ]);
+});
+
+it('records a woken run against the project revision that holds its wake time', async () => {
+  const f = await routinesFixture();
+  f.resident();
+  f.call('project.routine.save', {
+    project_id: f.project_id,
+    routine: { ...input, id: stored.id },
+  });
+  f.call('project.routine.run', { project_id: f.project_id, routine_id: stored.id });
+  await Promise.all(f.control['ctx'].completions);
+  const [ran] = f.store.kindEvents(f.project_id, ['routine.ran']);
+  expect(ran).toMatchObject({ payload: { outcome: 'woken' } });
+  expect(ran!.aggregate_revision).toBe(f.store.must<Project>('projects', f.project_id).revision);
+});
 
 it('advances the timer without launching a second in-flight precheck', async () => {
   const f = await routinesFixture();

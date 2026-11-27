@@ -23,6 +23,7 @@ export const RESIDENT_KINDS: ReadonlySet<string> = new Set([
   'session.discarded',
   'session.deleted',
   'workflow.policy_changed',
+  'project.resident_instructions_set',
   'turn.running',
   'turn.completed',
   'turn.failed',

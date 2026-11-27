@@ -419,6 +419,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
+| `project.resident.instructions.set` | `project_id`: string<br>`instructions`: string |  |
 | `project.resident.set` | `project_id`: string<br>`session_id`: string \| null |  |
 
 ### project.routine
@@ -487,7 +488,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `session.comment.delete` | `comment_id`: string |  |
 | `session.comment.resolve` | `comment_id`: string<br>`state`: "sent" \| "kept" |  |
 | `session.compact` | `session_id`: string<br>`instructions?`: string |  |
-| `session.create` | `project_id`: string<br>`workspace?`: "worktree" \| "in_place" \| "auto"<br>`from?`: object \| object<br>`runtime?`: string<br>`backend?`: string<br>`model?`: string<br>`effort?`: "none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max" \| "ultra"<br>`permission_mode?`: "ask" \| "auto_edit" \| "plan" \| "auto" \| "full_access"<br>`fast?`: boolean<br>`ultracode?`: boolean<br>`input`: string<br>`refs?`: (object \| object)[]<br>`attachments?`: string[]<br>`skills?`: object[]<br>`device_id?`: string<br>`purpose?`: "project_setup" \| "conductor" |  |
+| `session.create` | `project_id`: string<br>`workspace?`: "worktree" \| "in_place" \| "auto"<br>`from?`: object \| object<br>`runtime?`: string<br>`backend?`: string<br>`model?`: string<br>`effort?`: "none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max" \| "ultra"<br>`permission_mode?`: "ask" \| "auto_edit" \| "plan" \| "auto" \| "full_access"<br>`fast?`: boolean<br>`ultracode?`: boolean<br>`input`: string<br>`refs?`: (object \| object)[]<br>`attachments?`: string[]<br>`skills?`: object[]<br>`device_id?`: string<br>`purpose?`: "project_setup" \| "conductor"<br>`resident?`: object |  |
 | `session.delete` | `session_id`: string |  |
 | `session.discard` | `session_id`: string |  |
 | `session.fork` | `session_id`: string<br>`runtime?`: string<br>`model?`: string<br>`effort?`: "none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max" \| "ultra"<br>`before_turn_id?`: string<br>`before_span_id?`: string<br>`input`: string<br>`refs?`: (object \| object)[]<br>`attachments?`: string[]<br>`skills?`: object[] |  |

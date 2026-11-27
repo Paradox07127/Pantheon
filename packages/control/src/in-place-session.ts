@@ -28,6 +28,7 @@ import { assertNativeSessionFree } from './native-liveness.js';
 import { inheritedEnvAllowlist, managedSessionSpec, sessionExtensions } from './native-session.js';
 import { inPlaceSandbox } from './protection.js';
 import { registerInPlaceWorkspace } from './workspace.js';
+import { residentInstructionBlock } from './resident.js';
 import { CONDUCTOR_INSTRUCTIONS } from './conductor.js';
 import { checkPermissionMode } from './workbench-session.js';
 import { writerTempDirectory } from './workspace-removal.js';
@@ -126,6 +127,7 @@ export async function inPlaceSessionSpec(
           ]
         : []),
       ...(pantheonMcp && session.conductor ? [CONDUCTOR_INSTRUCTIONS] : []),
+      ...residentInstructionBlock(project, session),
       ...(questionTool && pantheonTools && !session.conductor
         ? [
             `When the user must decide or answer something, ask with the ${questionTool} tool instead of asking in plain text. Give 2 to 4 short options with the one you recommend first; the user can also type an answer of their own.`,

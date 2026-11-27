@@ -90,6 +90,19 @@ function runRoutine(ctx: ControlContext, project: Project, routine: Routine, sch
     }
     const text = stdout ? `${routine.prompt}\n\n${stdout}` : routine.prompt;
     const turn = notifySession(ctx, resident.id, text, cause);
+    if (turn) {
+      const now = ctx.store.must<Project>('projects', current.id);
+      current = ctx.store.update(
+        'projects',
+        {
+          ...now,
+          routines: now.routines?.map((r) =>
+            r.id === routine.id ? { ...r, woken_at: ctx.store.now() } : r,
+          ),
+        },
+        now.revision,
+      );
+    }
     record(
       current,
       turn
@@ -119,10 +132,15 @@ function runRoutine(ctx: ControlContext, project: Project, routine: Routine, sch
   const work = Promise.resolve()
     .then(async () => {
       if (!committed()) return;
+      // The event history may be pruned; the routine keeps its own times.
+      const since = new Date(routine.woken_at ?? routine.saved_at)
+        .toISOString()
+        .replace(/\.\d{3}Z$/, 'Z');
+      const argv = precheck.argv.map((arg) => arg.replaceAll('{since}', since));
       const result = await runValidationCommand({
         ctx,
         key: `check-process:routine:${key}`,
-        argv: precheck.argv,
+        argv,
         cwd: project.roots[0]!,
         // The environment a session the user opened gets, as gate commands have it.
         env: { ...project.env, ...nativeEnvironment(inheritedEnvAllowlist(project)) },
@@ -138,7 +156,9 @@ function runRoutine(ctx: ControlContext, project: Project, routine: Routine, sch
         if (current.removed_at !== undefined) return;
         const saved = current.routines?.find((r) => r.id === routine.id);
         const exit_code = result.exit_code;
-        if (!isDeepStrictEqual(saved, routine))
+        // A wake by another run moves woken_at only; that is no change of the routine.
+        const plain = (r: Routine | undefined) => r && { ...r, woken_at: undefined };
+        if (!isDeepStrictEqual(plain(saved), plain(routine)))
           record(current, { outcome: 'skipped', reason: 'changed', exit_code });
         else if (ctx.closing || exit_code !== 0 || result.timedOut)
           record(current, { outcome: 'skipped', reason: 'precheck', exit_code });
@@ -180,6 +200,50 @@ function editableProject(ctx: ControlContext, p: Principal, projectId: string, a
   return ctx.store.must<Project>('projects', projectId);
 }
 
+export function saveRoutine(
+  ctx: ControlContext,
+  project: Project,
+  input: ReturnType<(typeof inputSchemas)['project.routine.save']['parse']>['routine'],
+  cause: string,
+) {
+  const { precheck } = input;
+  const routine: Routine = {
+    id: input.id ?? id(),
+    name: input.name,
+    prompt: input.prompt,
+    enabled: input.enabled,
+    saved_at: ctx.store.now(),
+    ...(input.active_hours && { active_hours: input.active_hours }),
+    ...('every_minutes' in input ? { every_ms: input.every_minutes * MINUTE } : { at: input.at }),
+    ...(precheck && {
+      precheck: {
+        argv: precheck.argv,
+        ...(precheck.timeout_seconds !== undefined && {
+          timeout_ms: precheck.timeout_seconds * 1000,
+        }),
+      },
+    }),
+  };
+  const routines = [...(project.routines ?? [])];
+  const index = routines.findIndex((r) => r.id === routine.id);
+  const woken_at = routines[index]?.woken_at;
+  if (woken_at !== undefined) routine.woken_at = woken_at;
+  if (index === -1) routines.push(routine);
+  else routines[index] = routine;
+  const next = ctx.store.update('projects', { ...project, routines }, project.revision);
+  ctx.store.event('routine.saved', next, project.id, { routine_id: routine.id }, cause);
+  cancelPending(ctx, project.id, routine.id);
+  if (routine.enabled)
+    scheduleTimer(ctx, {
+      id: id(),
+      kind: ROUTINE,
+      project_id: project.id,
+      subject_id: routine.id,
+      due_at: nextRun(routine, ctx.store.now()),
+    });
+  return { routine_id: routine.id };
+}
+
 type RoutineRef = ReturnType<(typeof inputSchemas)['project.routine.run']['parse']>;
 export const routineHandlers: Handlers = {
   'project.routine.save': (ctx, p, c) => {
@@ -187,39 +251,7 @@ export const routineHandlers: Handlers = {
       (typeof inputSchemas)['project.routine.save']['parse']
     >;
     const project = editableProject(ctx, p, project_id, c.type);
-    const { precheck } = input;
-    const routine: Routine = {
-      id: input.id ?? id(),
-      name: input.name,
-      prompt: input.prompt,
-      enabled: input.enabled,
-      ...(input.active_hours && { active_hours: input.active_hours }),
-      ...('every_minutes' in input ? { every_ms: input.every_minutes * MINUTE } : { at: input.at }),
-      ...(precheck && {
-        precheck: {
-          argv: precheck.argv,
-          ...(precheck.timeout_seconds !== undefined && {
-            timeout_ms: precheck.timeout_seconds * 1000,
-          }),
-        },
-      }),
-    };
-    const routines = [...(project.routines ?? [])];
-    const index = routines.findIndex((r) => r.id === routine.id);
-    if (index === -1) routines.push(routine);
-    else routines[index] = routine;
-    const next = ctx.store.update('projects', { ...project, routines }, project.revision);
-    ctx.store.event('routine.saved', next, project_id, { routine_id: routine.id }, c.command_id);
-    cancelPending(ctx, project_id, routine.id);
-    if (routine.enabled)
-      scheduleTimer(ctx, {
-        id: id(),
-        kind: ROUTINE,
-        project_id,
-        subject_id: routine.id,
-        due_at: nextRun(routine, ctx.store.now()),
-      });
-    return { routine_id: routine.id };
+    return saveRoutine(ctx, project, input, c.command_id);
   },
   'project.routine.remove': (ctx, p, c) => {
     const { project_id, routine_id } = c.input as RoutineRef;
@@ -270,18 +302,22 @@ export function projectRoutines(
     }),
   );
   return {
-    routines: (project.routines ?? []).map(({ every_ms, at, precheck, ...fields }) => ({
-      ...fields,
-      ...(every_ms === undefined ? { at } : { every_minutes: every_ms / MINUTE }),
-      ...(precheck && {
-        precheck: {
-          argv: precheck.argv,
-          ...(precheck.timeout_ms !== undefined && { timeout_seconds: precheck.timeout_ms / 1000 }),
-        },
+    routines: (project.routines ?? []).map(
+      ({ every_ms, at, precheck, saved_at, woken_at, ...fields }) => ({
+        ...fields,
+        ...(every_ms === undefined ? { at } : { every_minutes: every_ms / MINUTE }),
+        ...(precheck && {
+          precheck: {
+            argv: precheck.argv,
+            ...(precheck.timeout_ms !== undefined && {
+              timeout_seconds: precheck.timeout_ms / 1000,
+            }),
+          },
+        }),
+        next_at: pending.get(fields.id) ?? null,
+        state: fields.enabled ? state : 'paused',
+        last_run: latest.get(fields.id) ?? null,
       }),
-      next_at: pending.get(fields.id) ?? null,
-      state: fields.enabled ? state : 'paused',
-      last_run: latest.get(fields.id) ?? null,
-    })),
+    ),
   };
 }

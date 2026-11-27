@@ -54,6 +54,29 @@ it('requires a user to register a resident', async () => {
   ).toThrow(expect.objectContaining({ code: 'permission_denied' }));
 });
 
+it.each([
+  ['an agent', 'Review the issues', 'permission_denied'],
+  ['no resident', 'Review the issues', 'invalid_state'],
+  ['over 4,000 characters', 'x'.repeat(4001), 'too_big'],
+] as const)('refuses standing instructions for %s', async (state, instructions, code) => {
+  const f = await workbenchFixture();
+  if (state !== 'no resident') mark(f, session(f));
+  expect(() =>
+    f.call(
+      'project.resident.instructions.set',
+      { project_id: f.project.id, instructions },
+      null,
+      state === 'an agent' ? { id: 'agent', role: 'conductor' } : user,
+    ),
+  ).toThrow(
+    expect.objectContaining(
+      code === 'too_big'
+        ? { issues: [expect.objectContaining({ code, path: ['instructions'] })] }
+        : { code },
+    ),
+  );
+});
+
 it('registers an existing conductor, preserves its start on reselection, and clears it', async () => {
   const f = await workbenchFixture();
   const main = session(f);
@@ -67,11 +90,21 @@ it('registers an existing conductor, preserves its start on reselection, and cle
   const events = () => f.store.kindEvents(f.project.id, ['project.resident_set']);
   expect(set(main.id)).toEqual({});
   expect(stored()).toEqual({ session_id: main.id, since });
-  clock.mockReturnValue(since + 1);
   const marked = revision();
+  const setInstructions = (instructions: string) =>
+    f.call('project.resident.instructions.set', { project_id: f.project.id, instructions });
+  setInstructions('Keep track of assigned issues.');
+  clock.mockReturnValue(since + 1);
+  const edited = revision();
   expect(set(main.id)).toEqual({});
   expect(stored()?.since).toBe(since);
-  expect(revision()).toBe(marked);
+  expect(revision()).toBe(edited);
+  expect(stored()?.instructions).toBe('Keep track of assigned issues.');
+  const other = session(f);
+  set(other.id);
+  expect(f.control.projectResident(user, f.project.id).instructions).toBeNull();
+  const switched = revision();
+  setInstructions('Watch incoming reviews.');
   expect(set(null)).toEqual({});
   expect(stored()).toBeUndefined();
   const cleared = revision();
@@ -79,6 +112,7 @@ it('registers an existing conductor, preserves its start on reselection, and cle
   expect(revision()).toBe(cleared);
   expect(events().map((e) => [e.payload, e.aggregate_revision])).toEqual([
     [{ session_id: main.id }, marked],
+    [{ session_id: other.id }, switched],
     [{ session_id: null }, cleared],
   ]);
 });
@@ -166,12 +200,25 @@ it('counts turns by origin from the moment the resident was set, within one mill
   start(session(f));
   notifySession(f.control['ctx'], main.id, 'Still queued', 'review');
 
+  const instructions = '  Review assigned issues.\n\nPreserve this spacing.  '.padEnd(4000);
+  const set = (text: string) =>
+    f.call('project.resident.instructions.set', { project_id: f.project.id, instructions: text });
+  set(instructions);
   expect(f.control.projectResident(user, f.project.id)).toMatchObject({
+    instructions,
     session_id: main.id,
     since,
     turns: { pantheon: 2, user: 1 },
     budget: null,
   });
+  set('  \n\t');
+  expect(f.control.projectResident(user, f.project.id).instructions).toBeNull();
+  expect(f.store.must<Project>('projects', f.project.id).resident).not.toHaveProperty(
+    'instructions',
+  );
+  expect(
+    f.store.kindEvents(f.project.id, ['project.resident_instructions_set']).map((e) => e.payload),
+  ).toEqual([{ session_id: main.id }, { session_id: main.id }]);
 });
 
 it.each(['unset', 'closed', 'missing'] as const)(
@@ -191,6 +238,7 @@ it.each(['unset', 'closed', 'missing'] as const)(
     expect(f.control.projectResident(user, f.project.id)).toEqual({
       session_id: null,
       since: null,
+      instructions: null,
       turns: { pantheon: 0, user: 0 },
       budget: { input_tokens: 20, used_input_tokens: 0 },
       wakes: [],

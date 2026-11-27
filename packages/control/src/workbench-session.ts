@@ -148,6 +148,8 @@ import {
   workspaceReadAccess,
 } from './workspace.js';
 import { writerTempDirectory } from './workspace-removal.js';
+import { assignResident, residentInstructionBlock, setResidentInstructions } from './resident.js';
+import { saveRoutine } from './routines.js';
 import { CONDUCTOR_INSTRUCTIONS } from './conductor.js';
 
 // One turn runs at most six hours; adapters time it with setTimeout, which fires at once above 2^31 - 1 ms.
@@ -209,6 +211,7 @@ export function workbenchSessionSpec(ctx: ControlContext, session: Session): Ses
           ]
         : []),
       ...(pantheonMcp && session.conductor ? [CONDUCTOR_INSTRUCTIONS] : []),
+      ...residentInstructionBlock(project, session),
     ].join('\n\n'),
     workspace: { id: workspace.id, path: workspace.path },
     ...(sandbox
@@ -4772,7 +4775,7 @@ export function prepareSessionCommand(
 
 function createInput(ctx: ControlContext, p: Principal, c: Command) {
   requireThat(p.role === 'user', 'permission_denied', 'Only user can create a session');
-  const input = inputSchemas['session.create'].parse(c.input);
+  const input = c.input as ReturnType<(typeof inputSchemas)['session.create']['parse']>;
   projectAccess(ctx, p, input.project_id, c.type);
   revision(ctx, c);
   return folderChoice(ctx, input);
@@ -4809,7 +4812,7 @@ function prepareCreate(ctx: ControlContext, p: Principal, c: Command): Promise<H
   return readSessionOpening(ctx, input).then(
     (opening) => (ctx: ControlContext, p: Principal, c: Command) => {
       const { input, reason } = createInput(ctx, p, c);
-      return openWorktreeSession(
+      const session = openWorktreeSession(
         ctx,
         input,
         c.command_id,
@@ -4819,6 +4822,24 @@ function prepareCreate(ctx: ControlContext, p: Principal, c: Command): Promise<H
         undefined,
         reason,
       );
+      if (input.resident) {
+        const project = assignResident(
+          ctx,
+          ctx.store.must<Project>('projects', session.project_id),
+          session.id,
+          c.command_id,
+        );
+        if (input.resident.instructions !== undefined)
+          setResidentInstructions(ctx, project, input.resident.instructions, c.command_id);
+        for (const routine of input.resident.routines ?? [])
+          saveRoutine(
+            ctx,
+            ctx.store.must<Project>('projects', session.project_id),
+            routine,
+            c.command_id,
+          );
+      }
+      return session;
     },
   );
 }

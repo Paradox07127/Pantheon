@@ -615,6 +615,7 @@ const storedAttentionDelivery = z.partialRecord(
 );
 const clockTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const quietHours = z.strictObject({ from: clockTime, to: clockTime });
+const residentInstructions = z.string().max(4000);
 const routineFields = {
   id: str.optional(),
   name: z.string().regex(/\S/),
@@ -1451,6 +1452,10 @@ export const inputSchemas = {
   /** The user only; stops a queued or running landing, which ends blocked with the reason `cancelled`, and returns the Landing. */
   'project.landing.cancel': z.strictObject({ landing_id: str }),
   'project.resident.set': z.strictObject({ project_id: str, session_id: str.nullable() }),
+  'project.resident.instructions.set': z.strictObject({
+    project_id: str,
+    instructions: residentInstructions,
+  }),
   'project.routine.save': z.strictObject({ project_id: str, routine: routineInput }),
   'project.routine.remove': routineRef,
   'project.routine.run': routineRef,
@@ -1526,8 +1531,18 @@ export const inputSchemas = {
        * Without a purpose the session runs as the bare runtime.
        */
       purpose: z.enum(['project_setup', 'conductor']).optional(),
+      resident: z
+        .strictObject({
+          instructions: residentInstructions.optional(),
+          routines: z.array(routineInput).optional(),
+        })
+        .optional(),
     })
-    .refine(validSessionWorkspace, { message: 'An in-place session cannot have a start point' }),
+    .refine(validSessionWorkspace, { message: 'An in-place session cannot have a start point' })
+    .refine((input) => !input.resident || input.purpose === 'conductor', {
+      path: ['resident'],
+      message: 'Only a conductor can be the resident main agent',
+    }),
   /** Opens a new worktree session with the source's files and a text handoff. */
   'session.fork': z
     .strictObject({
@@ -2489,6 +2504,7 @@ export interface ProjectLandingsCompare {
   after: LandingStatistics;
 }
 export interface ProjectResident {
+  instructions: string | null;
   session_id: string | null;
   since: number | null;
   turns: { pantheon: number; user: number };
