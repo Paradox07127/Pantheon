@@ -42,5 +42,7 @@
   "project.routines.resume": "恢复",
   "project.routines.edit": "编辑",
   "project.routines.remove": "删除",
-  "project.routines.confirmRemove": "删除 {name}？"
+  "project.routines.confirmRemove": "删除 {name}？",
+  "project.routines.useTemplate": "用模板：{name}",
+  "project.routines.githubName": "我的 GitHub issue"
 }

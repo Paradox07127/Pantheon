@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent as KeyPress, type ReactNode } from 'react';
+import { Dialog } from '@base-ui/react/dialog';
 import { Menu } from '@base-ui/react/menu';
 import { Popover } from '@base-ui/react/popover';
 import { Radio } from '@base-ui/react/radio';
@@ -20,6 +21,7 @@ import {
   Zap,
 } from 'lucide-react';
 import type { BoardSnapshot, WorkbenchSession } from '@pantheon/protocol';
+import { Clip } from '../../components/Clip';
 import { ProjectMonogram } from '../../components/ProjectMonogram';
 import { runtimeTraits } from '../../components/RuntimeGlyph';
 import { KeyHint } from '../../components/Shortcuts';
@@ -36,11 +38,15 @@ import {
   useDrafts,
   whenUploaded,
   type Draft,
+  type DraftResident,
   type DraftStart,
   type DraftWorkspace,
   type GithubRef,
 } from '../../data/drafts';
+import { shortId } from '../../data/format';
 import { readBranches, type ProjectBranch } from '../../data/project-branches';
+import { useProjectResident } from '../../data/project-resident';
+import type { RoutineInput } from '../../data/project-routines';
 import { getLook } from '../../data/layout';
 import { ageText, failureText, reasonText, useNow, type NeedsYouItem } from '../../data/needs-you';
 import { visibleProjects } from '../../data/projects';
@@ -58,7 +64,10 @@ import {
   shortcutMatches,
   useShortcut,
 } from '../../lib/shortcuts';
+import { scrimFlag } from '../../lib/root-flag';
 import { useShell } from '../../store';
+import { RoutineEditor } from '../project/RoutinesCard';
+import { scheduleText } from '../project/routines-model';
 import { useSettingsView } from '../settings/view';
 import { refsInput } from './compose';
 import {
@@ -102,6 +111,9 @@ export const NEW = '';
 const NO_PROJECTS: BoardSnapshot['projects'] = [];
 const NO_SESSIONS: readonly WorkbenchSession[] = [];
 const NO_GITHUB: readonly GithubRef[] = [];
+const NO_RESIDENT: DraftResident = { instructions: '', routines: [] };
+// The most the daemon takes as resident instructions.
+const MAX_INSTRUCTIONS = 4000;
 
 type Workspace = DraftWorkspace;
 type From = DraftStart;
@@ -181,6 +193,25 @@ export function NewSession(props: {
   const ultracode = useDrafts((s) => s.drafts[key]?.ultracode) ?? false;
   const setUltracode = (on: boolean) => pick({ ultracode: on });
   const conductor = useDrafts((s) => s.drafts[key]?.conductor) ?? false;
+  const residentDraft = useDrafts((s) => s.drafts[key]?.resident) ?? NO_RESIDENT;
+  const setResident = (change: Partial<DraftResident>) =>
+    pick({
+      resident: { ...(useDrafts.getState().drafts[key]?.resident ?? NO_RESIDENT), ...change },
+    });
+  const residentRead = useProjectResident(conductor ? props.projectId : null);
+  // A cached read may predate a resident set since; the switch waits for the fresh one.
+  const residentFresh = residentRead.read !== null && !residentRead.stale && !residentRead.error;
+  const residentKnown = residentFresh || !!residentRead.error;
+  // The resident a new one would replace; while unread the switch waits, and a failed read starts it off.
+  const currentResident = residentRead.read?.session_id ?? null;
+  const residentOn = residentDraft.on ?? (residentFresh && residentRead.read?.session_id === null);
+  const asResident = conductor && residentOn;
+  const tooLong = asResident && residentDraft.instructions.length > MAX_INSTRUCTIONS;
+  // The draft routine the form is open on, as it was opened; a null index adds one.
+  const [routineEdit, setRoutineEdit] = useState<{
+    index: number | null;
+    opened: RoutineInput | null;
+  } | null>(null);
   const input = useDrafts((s) => s.drafts[key]?.text) ?? '';
   const setInput = (text: string) => useDrafts.getState().update(key, () => ({ text }));
   const [busy, setBusy] = useState(false);
@@ -372,7 +403,7 @@ export function NewSession(props: {
   });
 
   async function create(purpose?: 'project_setup') {
-    if (busy || (empty && !purpose)) return;
+    if (busy || tooLong || (empty && !purpose) || (conductor && !purpose && !residentKnown)) return;
     setBusy(true);
     setError(null);
     const text = empty ? scratchLabel() : input;
@@ -386,6 +417,15 @@ export function NewSession(props: {
     }
     const ids = files.ids();
     const sent = skills.inText(text);
+    const resident =
+      !purpose && asResident
+        ? {
+            ...(residentDraft.instructions.trim() !== ''
+              ? { instructions: residentDraft.instructions }
+              : {}),
+            ...(residentDraft.routines.length > 0 ? { routines: residentDraft.routines } : {}),
+          }
+        : null;
     const result = await runCommand(
       'session.create',
       {
@@ -406,6 +446,7 @@ export function NewSession(props: {
         ...(from ? { from } : {}),
         ...refsInput(refs, githubRefs),
         ...(purpose ? { purpose } : conductor ? { purpose: 'conductor' } : {}),
+        ...(resident ? { resident } : {}),
       },
       null,
     ).catch(fail);
@@ -430,6 +471,7 @@ export function NewSession(props: {
       fast,
       ultracode,
       conductor,
+      ...(resident ? { resident: residentDraft } : {}),
     });
     const id = (result.value as { id?: unknown } | null)?.id;
     if (typeof id !== 'string' || shown.current !== props.projectId) return;
@@ -952,7 +994,19 @@ export function NewSession(props: {
             pri
             shortcut="dialog-next"
             busy={busy}
-            state={ON}
+            state={
+              conductor && !residentKnown
+                ? { enabled: false, reason: '' }
+                : tooLong
+                  ? {
+                      enabled: false,
+                      reason: t({
+                        id: 'sessions.composer.residentTooLong',
+                        defaultMessage: 'Resident instructions are longer than 4000 characters',
+                      }),
+                    }
+                  : ON
+            }
             empty={empty}
             onPress={() => void create()}
           />
@@ -1058,6 +1112,155 @@ export function NewSession(props: {
       {scratchLabel()}
     </button>
   );
+  const residentLabel = t({ id: 'sessions.composer.resident', defaultMessage: 'Resident' });
+  const instructionsLabel = t({
+    id: 'sessions.composer.residentInstructions',
+    defaultMessage: 'Resident instructions',
+  });
+  const holderTitle = (id: string) => {
+    const s = props.recent.find((each) => each.id === id);
+    return s ? sessionRow(s).title : shortId(id);
+  };
+  const keepRoutine = async (routine: RoutineInput) => {
+    const at = routineEdit?.index ?? null;
+    const routines = (useDrafts.getState().drafts[key]?.resident ?? NO_RESIDENT).routines;
+    // Another window may have moved or removed it since the form opened.
+    if (at !== null && JSON.stringify(routines[at]) !== JSON.stringify(routineEdit?.opened))
+      return {
+        ok: false as const,
+        error: t({
+          id: 'sessions.composer.residentRoutineMoved',
+          defaultMessage: 'This routine changed in another window',
+        }),
+      };
+    setResident({
+      routines:
+        at === null ? [...routines, routine] : routines.map((r, i) => (i === at ? routine : r)),
+    });
+    return { ok: true as const };
+  };
+  const residentPart = conductor && (
+    <div
+      className="cr-res"
+      role="group"
+      aria-label={residentLabel}
+      aria-busy={!residentKnown || undefined}
+    >
+      <div className="cr-res-row">
+        <label className="pj-rf-sw">
+          <input
+            type="checkbox"
+            className="ps-sw"
+            checked={residentOn}
+            disabled={!residentKnown}
+            onChange={(e) => setResident({ on: e.target.checked })}
+          />
+          {t({ id: 'sessions.composer.residentOn', defaultMessage: 'Make resident' })}
+        </label>
+        {residentOn && currentResident && (
+          <span className="cr-res-swap">
+            {t(
+              {
+                id: 'sessions.composer.residentReplaces',
+                defaultMessage: 'Replaces the current resident {title}',
+              },
+              { title: holderTitle(currentResident) },
+            )}
+          </span>
+        )}
+      </div>
+      {residentOn && (
+        <>
+          <label className="pj-rf-fld cr-res-ins">
+            <span className="pj-lb">{instructionsLabel}</span>
+            <textarea
+              className="inp pj-rf-txt"
+              rows={3}
+              aria-label={instructionsLabel}
+              aria-invalid={tooLong || undefined}
+              value={residentDraft.instructions}
+              onChange={(e) => setResident({ instructions: e.target.value })}
+            />
+          </label>
+          {residentDraft.routines.length > 0 && (
+            <ul
+              className="cr-ros"
+              aria-label={t({ id: 'project.routines.title', defaultMessage: 'Routines' })}
+            >
+              {residentDraft.routines.map((routine, i) => (
+                <li key={i} className="cr-ro" aria-label={routine.name}>
+                  <Clip text={routine.name} className="cr-ro-nm" />
+                  <span className="cr-ro-when">{scheduleText(routine)}</span>
+                  <button
+                    type="button"
+                    className="btn ghost sm"
+                    onClick={() => setRoutineEdit({ index: i, opened: routine })}
+                  >
+                    {t({ id: 'project.routines.edit', defaultMessage: 'Edit' })}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn ghost sm dng"
+                    onClick={() =>
+                      setResident({ routines: residentDraft.routines.filter((_, at) => at !== i) })
+                    }
+                  >
+                    {t({ id: 'project.routines.remove', defaultMessage: 'Delete' })}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="cr-res-row">
+            <button
+              type="button"
+              className="btn ghost sm"
+              onClick={() => setRoutineEdit({ index: null, opened: null })}
+            >
+              {t({ id: 'sessions.composer.residentAddRoutine', defaultMessage: 'Add routine' })}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+  // Outside the composer's section, so the form's keys do not start the session or close it.
+  const routineDialog = (
+    <Dialog.Root
+      open={routineEdit !== null}
+      onOpenChange={(next) => {
+        if (!next) setRoutineEdit(null);
+      }}
+    >
+      <Dialog.Portal>
+        <Dialog.Backdrop className="pj-scrim" ref={scrimFlag} />
+        <Dialog.Popup className="pj-dlg pj-rfd pop">
+          <div className="pj-dh">
+            <Dialog.Title className="pj-dt">
+              {routineEdit?.index != null
+                ? t({ id: 'project.routines.editTitle', defaultMessage: 'Edit routine' })
+                : t({ id: 'project.routines.new', defaultMessage: 'New routine' })}
+            </Dialog.Title>
+          </div>
+          {routineEdit && (
+            <RoutineEditor
+              key={routineEdit.index ?? 'new'}
+              routine={
+                routineEdit.index === null
+                  ? null
+                  : (residentDraft.routines[routineEdit.index] ?? null)
+              }
+              removed={false}
+              save={keepRoutine}
+              onBusy={() => {}}
+              onSaved={() => setRoutineEdit(null)}
+              onCancel={() => setRoutineEdit(null)}
+            />
+          )}
+        </Dialog.Popup>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
   return (
     <>
       <header className="cr-hero">
@@ -1081,9 +1284,11 @@ export function NewSession(props: {
       <div className="cr-box">
         <section className="cr-dlg" aria-label={label} onKeyDown={onComposerKey}>
           {body}
+          {residentPart}
         </section>
         {sug}
       </div>
+      {routineDialog}
     </>
   );
 }

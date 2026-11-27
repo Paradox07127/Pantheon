@@ -519,3 +519,58 @@
   white-space: nowrap;
   color: var(--mu);
 }
+
+/* A main agent's resident part under the message: the switch, the instructions and the routines */
+
+.cr-res {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: var(--sp-3) var(--sp-4);
+  border-top: var(--hair) solid var(--bd2);
+}
+.cr-res [aria-invalid='true'] {
+  border-color: var(--bad);
+}
+.cr-res-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+/* The instructions grow with their text instead of keeping the one-line control height. */
+.cr-res-ins > textarea {
+  height: auto;
+}
+.cr-res-swap {
+  min-width: 0;
+  color: var(--tx2);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+.cr-ros {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cr-ro {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  min-height: var(--row);
+}
+.cr-ro-nm {
+  min-width: 0;
+  font-weight: 500;
+}
+.cr-ro-when {
+  flex: 1;
+  min-width: 0;
+  color: var(--tx2);
+  font-size: var(--fs-sm);
+}

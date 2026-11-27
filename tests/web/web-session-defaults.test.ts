@@ -7,7 +7,14 @@ vi.mock('../../apps/web/node_modules/@base-ui/react/dialog/index.mjs', async () 
   const inline = ({ children }: { children?: unknown }) =>
     element(Fragment, null, children as never);
   return {
-    Dialog: { Root: inline, Portal: inline, Backdrop: () => null, Popup: inline, Close: inline },
+    Dialog: {
+      Root: inline,
+      Portal: inline,
+      Backdrop: () => null,
+      Popup: inline,
+      Close: inline,
+      Title: inline,
+    },
   };
 });
 import {

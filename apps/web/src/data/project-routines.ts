@@ -4,6 +4,14 @@ import { useProjectQuery } from './project-read';
 export type { ProjectRoutines };
 export type Routine = ProjectRoutines['routines'][number];
 
+/** What `project.routine.save` takes as its routine. */
+export type RoutineInput = Pick<
+  Routine,
+  'name' | 'prompt' | 'active_hours' | 'enabled' | 'precheck'
+> & {
+  id?: string;
+} & ({ every_minutes: number } | { at: string });
+
 const isRoutines = (value: unknown): boolean =>
   Array.isArray((value as Partial<ProjectRoutines> | null)?.routines);
 

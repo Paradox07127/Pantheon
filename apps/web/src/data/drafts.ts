@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { AttachmentMeta, EffortLevel, WorkbenchSession } from '@pantheon/protocol';
 import type { FeedbackItem } from './feedback';
+import type { RoutineInput } from './project-routines';
 
 /** A file a message carries; a rewritten turn's files come without their size. */
 export type DraftAttachment = Pick<AttachmentMeta, 'id' | 'name' | 'mime'> & {
@@ -52,6 +53,14 @@ export interface DraftModel {
   effort: EffortLevel | null;
 }
 
+/** What a new main agent takes on as the project's resident. */
+export interface DraftResident {
+  /** Whether it becomes the resident; absent is so only while the project has none. */
+  on?: boolean;
+  instructions: string;
+  routines: readonly RoutineInput[];
+}
+
 /** A composer's unsent message and the number of files still uploading into it. */
 export interface Draft extends DraftMessage {
   refs: readonly WorkbenchSession[];
@@ -73,6 +82,8 @@ export interface Draft extends DraftMessage {
   ultracode?: boolean;
   /** Whether the new-session composer starts a main agent. */
   conductor?: boolean;
+  /** The new-session composer's resident part of a main agent. */
+  resident?: DraftResident;
 }
 
 /** A question card's picked options and typed answer, one entry per question. */
@@ -108,6 +119,21 @@ const isStart = (from: unknown): from is DraftStart =>
 const isModel = (model: unknown): model is DraftModel =>
   typeof (model as { runtime?: unknown } | null)?.runtime === 'string';
 
+const isResident = (resident: unknown): resident is DraftResident => {
+  const routines = (resident as { routines?: unknown } | null)?.routines;
+  return (
+    typeof (resident as { instructions?: unknown } | null)?.instructions === 'string' &&
+    Array.isArray(routines) &&
+    routines.every((r) => {
+      const routine = r as { name?: unknown; precheck?: { argv?: unknown } } | null;
+      return (
+        typeof routine?.name === 'string' &&
+        (routine.precheck === undefined || Array.isArray(routine.precheck?.argv))
+      );
+    })
+  );
+};
+
 function readDraft(raw: string | null): Draft | null {
   try {
     const value = JSON.parse(raw ?? 'null') as Partial<Draft> | null;
@@ -135,6 +161,7 @@ function readDraft(raw: string | null): Draft | null {
       ...(value.fast === true ? { fast: true } : {}),
       ...(value.ultracode === true ? { ultracode: true } : {}),
       ...(value.conductor === true ? { conductor: true } : {}),
+      ...(isResident(value.resident) ? { resident: value.resident } : {}),
     };
   } catch {
     return null;
@@ -171,7 +198,8 @@ function storeDraft(key: string, draft: Draft | undefined) {
         draft.mode ||
         draft.fast ||
         draft.ultracode ||
-        draft.conductor)
+        draft.conductor ||
+        draft.resident)
     )
       localStorage.setItem(
         STORED + key,
@@ -190,6 +218,7 @@ function storeDraft(key: string, draft: Draft | undefined) {
           fast: draft.fast,
           ultracode: draft.ultracode,
           conductor: draft.conductor,
+          resident: draft.resident,
         }),
       );
     else localStorage.removeItem(STORED + key);
@@ -230,6 +259,7 @@ interface Drafts {
       fast?: boolean;
       ultracode?: boolean;
       conductor?: boolean;
+      resident?: DraftResident;
     },
   ) => void;
   answer: (approvalId: string, answers: Answers) => void;
@@ -312,6 +342,9 @@ export const useDrafts = create<Drafts>()((set, get) => {
           ...(draft.fast && !message.fast ? { fast: true } : {}),
           ...(draft.ultracode && !message.ultracode ? { ultracode: true } : {}),
           ...(draft.conductor && !message.conductor ? { conductor: true } : {}),
+          ...(draft.resident && JSON.stringify(draft.resident) !== JSON.stringify(message.resident)
+            ? { resident: draft.resident }
+            : {}),
         };
         // Comments alone keep no draft: they belong to the text they came with.
         const kept =
@@ -328,7 +361,8 @@ export const useDrafts = create<Drafts>()((set, get) => {
           left.mode ||
           left.fast ||
           left.ultracode ||
-          left.conductor;
+          left.conductor ||
+          left.resident;
         return { drafts: kept ? { ...rest, [key]: left } : rest };
       });
       storeDraft(key, get().drafts[key]);

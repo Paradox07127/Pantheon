@@ -1,14 +1,8 @@
-import type { Routine } from '../../data/project-routines';
+import type { Routine, RoutineInput } from '../../data/project-routines';
 import { t } from '../../i18n';
 import { durationText } from '../../lib/time-text';
 
-/** What `project.routine.save` takes as its routine. */
-export type RoutineInput = Pick<
-  Routine,
-  'name' | 'prompt' | 'active_hours' | 'enabled' | 'precheck'
-> & {
-  id?: string;
-} & ({ every_minutes: number } | { at: string });
+export type { RoutineInput };
 
 const MINUTE = 60_000;
 const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -31,7 +25,7 @@ export interface RoutineDraft {
 export type DraftField = 'name' | 'prompt' | 'every' | 'at' | 'from' | 'to' | 'argv' | 'timeout';
 
 /** The draft of a new routine, or of the saved one being edited. */
-export function draftOf(routine: Routine | null): RoutineDraft {
+export function draftOf(routine: RoutineInput | null): RoutineDraft {
   return {
     name: routine?.name ?? '',
     prompt: routine?.prompt ?? '',
@@ -47,6 +41,40 @@ export function draftOf(routine: Routine | null): RoutineDraft {
       routine?.precheck?.timeout_seconds === undefined
         ? ''
         : String(routine.precheck.timeout_seconds),
+  };
+}
+
+// The daemon puts the routine's last wake, or its save time, in place of {since}; jq fails on an empty list, so no new issue wakes no one.
+export const GITHUB_ISSUES_ARGV = [
+  'gh',
+  'issue',
+  'list',
+  '--state',
+  'open',
+  '--search',
+  'involves:@me updated:>={since}',
+  '--limit',
+  '100',
+  '--json',
+  'number,title,url',
+  '--jq',
+  'if length == 0 then halt_error else .[] | "#\\(.number) \\(.title) \\(.url)" end',
+];
+
+export const githubIssuesName = () =>
+  t({ id: 'project.routines.githubName', defaultMessage: 'My GitHub issues' });
+
+/** The draft of a routine that looks at the open issues involving the user every 30 minutes. */
+export function githubIssuesDraft(): RoutineDraft {
+  return {
+    ...draftOf(null),
+    name: githubIssuesName(),
+    prompt:
+      'These GitHub issues in this repository involve me and changed since the last check. For each one, decide whether it needs work: start a session for a clear fix, and ask me about anything unclear or risky. The list stops at 100: when it has 100, run the same gh issue list with a higher --limit for the rest. Issues:',
+    schedule: 'every',
+    every: '30',
+    precheck: true,
+    argv: GITHUB_ISSUES_ARGV.join('\n'),
   };
 }
 
@@ -85,7 +113,7 @@ export function inputOf(
   draft: RoutineDraft,
   id: string | undefined,
   enabled: boolean,
-  opened: Routine | null,
+  opened: RoutineInput | null,
 ) {
   const kept = opened?.precheck?.argv;
   const input: RoutineInput = {
@@ -111,7 +139,7 @@ export function savedInput(routine: Routine): RoutineInput {
   return input;
 }
 
-export function scheduleText(routine: Routine): string {
+export function scheduleText(routine: RoutineInput): string {
   const when =
     'every_minutes' in routine
       ? t(

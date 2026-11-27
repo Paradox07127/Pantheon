@@ -13,7 +13,9 @@ const mock = vi.hoisted(() => ({
   answers: {} as Record<string, { read: unknown; error: string | null }>,
   reload: () => {},
 }));
-vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMock(actual));
+vi.mock('react', async (actual) =>
+  (await import('./web-hook-host.js')).reactMock(actual, { useId: 'routine-form' }),
+);
 vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
   (await import('./web-live-stores.js')).liveStores(actual as never),
 );
@@ -53,6 +55,7 @@ vi.mock('@/data/project-overlap', () => ({
 import type { WorkbenchSession } from '@pantheon/protocol';
 import { Failure } from '@/components/PanelBoundary';
 import { runCommand } from '@/data/commands';
+import { sendProjectCommand } from '@/data/project-read';
 import { useProjectRoutines } from '@/data/project-routines';
 import { ProjectScreen } from '@/screens/project/ProjectScreen';
 import { ResidentCard } from '@/screens/project/ResidentCard';
@@ -96,8 +99,9 @@ const editor = (
   mount(
     () =>
       RoutineEditor({
-        projectId: 'alpha',
         routine,
+        save: (input) =>
+          sendProjectCommand('project.routine.save', { project_id: 'alpha', routine: input }, null),
         removed: false,
         onBusy: () => {},
         onSaved,
@@ -659,6 +663,75 @@ describe('the routine form', () => {
       precheck: { argv: ['gh', 'issue', 'list'], timeout_seconds: 30 },
     });
     expect(onSaved).toHaveBeenCalled();
+  });
+
+  const template = (tree: unknown) =>
+    button(tree, zhf('project.routines.useTemplate', { name: zh('project.routines.githubName') }));
+  const issueArgv = [
+    'gh',
+    'issue',
+    'list',
+    '--state',
+    'open',
+    '--search',
+    'involves:@me updated:>={since}',
+    '--limit',
+    '100',
+    '--json',
+    'number,title,url',
+    '--jq',
+    'if length == 0 then halt_error else .[] | "#\\(.number) \\(.title) \\(.url)" end',
+  ];
+  const issuePrompt =
+    'These GitHub issues in this repository involve me and changed since the last check. For each one, decide whether it needs work: start a session for a clear fix, and ask me about anything unclear or risky. The list stops at 100: when it has 100, run the same gh issue list with a higher --limit for the rest. Issues:';
+
+  it('fills a new routine from the GitHub issues template and saves its precheck as written', async () => {
+    const h = editor(null);
+    template(h.value)!.props.onClick();
+    h.render();
+    expect(field(h.value, zh('project.routines.name'))!.props.value).toBe(
+      zh('project.routines.githubName'),
+    );
+    expect(zh('project.routines.githubName')).toBe('我的 GitHub issue');
+    // A prompt sent to a model stays in English whatever the interface language is.
+    expect(field(h.value, zh('project.routines.prompt'))!.props.value).toBe(issuePrompt);
+    expect(field(h.value, zh('project.routines.schedule'))!.props.value).toBe('every');
+    expect(field(h.value, zh('project.routines.minutes'))!.props.value).toBe('30');
+    expect(switchOf(h.value, zh('project.routines.precheck')).props.checked).toBe(true);
+    expect(switchOf(h.value, zh('project.routines.hours')).props.checked).toBe(false);
+    expect(field(h.value, zh('project.routines.argv'))!.props.value).toBe(issueArgv.join('\n'));
+    expect(field(h.value, zh('project.routines.timeout'))!.props.value).toBe('');
+    save(h.value).props.onClick();
+    await h.flush();
+    expect(saved()).toEqual({
+      name: zh('project.routines.githubName'),
+      prompt: issuePrompt,
+      every_minutes: 30,
+      enabled: true,
+      precheck: { argv: issueArgv },
+    });
+  });
+
+  it('offers no template while it edits a routine', () => {
+    expect(template(editor(null).value)).toBeDefined();
+    expect(template(editor(routineOf()).value)).toBeUndefined();
+  });
+
+  it('saves the card’s new routine through project.routine.save', async () => {
+    answer([]);
+    const h = card();
+    button(h.value, zh('project.routines.new'))!.props.onClick();
+    h.render();
+    const form = all(h.value).find((n) => n.type === RoutineEditor)!;
+    await form.props.save({ name: 'n', prompt: 'p', every_minutes: 30, enabled: true });
+    expect(runCommand).toHaveBeenCalledWith(
+      'project.routine.save',
+      {
+        project_id: 'alpha',
+        routine: { name: 'n', prompt: 'p', every_minutes: 30, enabled: true },
+      },
+      null,
+    );
   });
 
   it('shows a failed save in the form and keeps it open', async () => {

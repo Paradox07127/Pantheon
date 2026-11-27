@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { AlertDialog } from '@base-ui/react/alert-dialog';
 import { Dialog } from '@base-ui/react/dialog';
 import { Radio } from '@base-ui/react/radio';
@@ -13,6 +13,8 @@ import { t } from '../../i18n';
 import { scrimFlag } from '../../lib/root-flag';
 import {
   draftOf,
+  githubIssuesDraft,
+  githubIssuesName,
   inputOf,
   problemsOf,
   runText,
@@ -27,24 +29,26 @@ import {
 const saveRoutine = (projectId: string, routine: RoutineInput) =>
   sendProjectCommand('project.routine.save', { project_id: projectId, routine }, null);
 
-/** The form that writes a new routine or changes a saved one. */
+/** The form that writes a new routine or changes one. */
 export function RoutineEditor({
-  projectId,
   routine,
   removed,
+  save: keep,
   onBusy,
   onSaved,
   onCancel,
 }: {
-  projectId: string;
   /** The routine as listed now; the draft starts from the one the form opened on. */
-  routine: Routine | null;
+  routine: RoutineInput | null;
   /** The routine being edited is no longer listed. */
   removed: boolean;
+  /** Keeps the valid routine; a failure stays in the form. */
+  save: (routine: RoutineInput) => Promise<{ ok: true } | { ok: false; error: string }>;
   onBusy: (busy: boolean) => void;
   onSaved: () => void;
   onCancel: () => void;
 }) {
+  const id = useId();
   const [opened] = useState(routine);
   const [draft, setDraft] = useState<RoutineDraft>(() => draftOf(routine));
   const [busy, setBusy] = useState(false);
@@ -57,10 +61,7 @@ export function RoutineEditor({
     setBusy(true);
     onBusy(true);
     setFailed(null);
-    const result = await saveRoutine(
-      projectId,
-      inputOf(draft, routine?.id, routine?.enabled ?? true, opened),
-    );
+    const result = await keep(inputOf(draft, routine?.id, routine?.enabled ?? true, opened));
     setBusy(false);
     onBusy(false);
     if (!result.ok) setFailed(result.error);
@@ -76,6 +77,21 @@ export function RoutineEditor({
   return (
     <>
       <div className="pj-rf">
+        {opened === null && (
+          <div className="pj-rf-row">
+            <button
+              type="button"
+              className="btn ghost sm"
+              disabled={busy}
+              onClick={() => setDraft(githubIssuesDraft())}
+            >
+              {t(
+                { id: 'project.routines.useTemplate', defaultMessage: 'Use template: {name}' },
+                { name: githubIssuesName() },
+              )}
+            </button>
+          </div>
+        )}
         {removed && (
           <div className="pj-cerr" role="alert">
             {t({
@@ -85,11 +101,11 @@ export function RoutineEditor({
           </div>
         )}
         <div className="pj-rf-fld">
-          <label className="pj-lb" htmlFor="pj-rf-name">
+          <label className="pj-lb" htmlFor={`${id}-name`}>
             {name}
           </label>
           <input
-            id="pj-rf-name"
+            id={`${id}-name`}
             className="inp"
             aria-label={name}
             aria-invalid={invalid('name')}
@@ -99,11 +115,11 @@ export function RoutineEditor({
           />
         </div>
         <div className="pj-rf-fld">
-          <label className="pj-lb" htmlFor="pj-rf-prompt">
+          <label className="pj-lb" htmlFor={`${id}-prompt`}>
             {prompt}
           </label>
           <textarea
-            id="pj-rf-prompt"
+            id={`${id}-prompt`}
             className="inp pj-rf-txt"
             rows={4}
             aria-label={prompt}
@@ -114,7 +130,7 @@ export function RoutineEditor({
           />
         </div>
         <div className="pj-rf-fld">
-          <label className="pj-lb" htmlFor="pj-rf-when">
+          <label className="pj-lb" htmlFor={`${id}-when`}>
             {t({ id: 'project.routines.schedule', defaultMessage: 'Schedule' })}
           </label>
           <div className="pj-rf-row">
@@ -134,7 +150,7 @@ export function RoutineEditor({
             </RadioGroup>
             {draft.schedule === 'every' ? (
               <input
-                id="pj-rf-when"
+                id={`${id}-when`}
                 className="inp pj-rf-num"
                 inputMode="numeric"
                 aria-label={t({ id: 'project.routines.minutes', defaultMessage: 'Minutes' })}
@@ -145,7 +161,7 @@ export function RoutineEditor({
               />
             ) : (
               <input
-                id="pj-rf-when"
+                id={`${id}-when`}
                 className="inp pj-rf-num"
                 aria-label={t({ id: 'project.routines.time', defaultMessage: 'Time' })}
                 aria-invalid={invalid('at')}
@@ -222,11 +238,11 @@ export function RoutineEditor({
         </div>
         {draft.precheck && (
           <div className="pj-rf-fld">
-            <label className="pj-lb" htmlFor="pj-rf-argv">
+            <label className="pj-lb" htmlFor={`${id}-argv`}>
               {t({ id: 'project.routines.command', defaultMessage: 'Command' })}
             </label>
             <textarea
-              id="pj-rf-argv"
+              id={`${id}-argv`}
               className="inp pj-rf-txt mono"
               rows={3}
               spellCheck={false}
@@ -406,9 +422,9 @@ export function RoutinesCard({ projectId }: { projectId: string }) {
             {editing && (
               <RoutineEditor
                 key={editing.routine?.id ?? ''}
-                projectId={projectId}
                 routine={listed ?? editing.routine}
                 removed={editing.routine !== null && read !== null && listed === undefined}
+                save={(routine) => saveRoutine(projectId, routine)}
                 onBusy={(on) => setSaving((now) => (on ? editing : now === editing ? null : now))}
                 onSaved={() => {
                   setEditing((now) => (now === editing ? null : now));

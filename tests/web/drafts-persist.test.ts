@@ -149,6 +149,19 @@ it('reads a draft stored without referred sessions as referring to none', async 
   });
 });
 
+it.each([
+  ['an empty routine', [null]],
+  ['a precheck without arguments', [{ name: 'Triage', precheck: {} }]],
+])('reads a stored draft without a resident part holding %s', async (_, routines) => {
+  mock.items.set(
+    `pantheon.draft.${KEY}`,
+    JSON.stringify({ ...message('kept'), resident: { instructions: 'x', routines } }),
+  );
+  const { drafts } = await openWindow();
+  expect(drafts.useDrafts.getState().drafts[KEY]).toMatchObject({ text: 'kept' });
+  expect(drafts.useDrafts.getState().drafts[KEY]).not.toHaveProperty('resident');
+});
+
 it('keeps the referred sessions of a queued message in storage and sends them', async () => {
   useQueued.getState().add('session-a', { ...message('one'), refs: [referred] });
   const { compose } = await openWindow();
