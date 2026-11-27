@@ -548,6 +548,83 @@
 .pj-rmore {
   align-self: flex-start;
 }
+/* The timed routines, under the resident. */
+.pj-ros {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pj-ro {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.pj-ro-h {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.pj-ro-nm {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-weight: 500;
+}
+.pj-ro-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  margin-left: calc(-1 * var(--sp-2));
+}
+.pj-dlg.pj-rfd {
+  width: min(480px, calc(100vw - 96px));
+}
+.pj-rf {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-height: 0;
+  padding: 0 var(--sp-4) var(--sp-3);
+  overflow-y: auto;
+}
+.pj-rf-txt {
+  height: auto;
+  max-height: calc(8 * var(--lh-sm) + 2 * var(--sp-1));
+  padding: var(--sp-1) var(--sp-2);
+  resize: none;
+  field-sizing: content;
+  user-select: text;
+}
+.pj-rf-fld {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.pj-rf-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.pj-rf-num {
+  width: 88px;
+  font-variant-numeric: tabular-nums;
+}
+.pj-rf-sw {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--h-ctl);
+}
+.pj-rf [aria-invalid='true'] {
+  border-color: var(--bad);
+}
 /* One plan item's details, in place of the agents and the introduction. */
 .pj-ins {
   /* Stays in view while a long plan scrolls beside it. */

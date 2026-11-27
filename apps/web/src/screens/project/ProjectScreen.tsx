@@ -22,6 +22,7 @@ import { PlanHistory } from './PlanHistory';
 import { PlanList } from './PlanList';
 import { mainAgent, type ShownPlanItem } from './project-model';
 import { ResidentCard } from './ResidentCard';
+import { RoutinesCard } from './RoutinesCard';
 import { StatusPanel } from './StatusPanel';
 import { UnplannedList } from './UnplannedList';
 import { UsagePanel } from './UsagePanel';
@@ -210,12 +211,15 @@ export function ProjectScreen({
                 {main && <AgentList main={main} sessions={sessions} overlap={shared} />}
                 {main && projectId && (
                   <ResidentCard
-                    key={projectId}
+                    key={`resident-${projectId}`}
                     projectId={projectId}
                     main={main}
                     sessions={sessions}
                     resident={resident}
                   />
+                )}
+                {main && projectId && (
+                  <RoutinesCard key={`routines-${projectId}`} projectId={projectId} />
                 )}
                 {projectId && <IntroCard projectId={projectId} />}
               </>
