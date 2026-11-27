@@ -1,16 +1,19 @@
-import { useMemo, type CSSProperties } from 'react';
+import { useEffect, useMemo, type CSSProperties } from 'react';
 import type { ProjectOverlap, ProjectPlanView, WorkbenchSession } from '@pantheon/protocol';
 import { Clip } from '../../components/Clip';
 import { DiffCounts } from '../../components/DiffCounts';
 import { StateGlyph } from '../../components/SessionStateIcon';
 import { GraphDiagram } from '../../components/visual/GraphDiagram';
+import { useBoard } from '../../data/board';
 import { useNow } from '../../data/needs-you';
 import { t } from '../../i18n';
 import { durationText } from '../../lib/time-text';
 import { useShell } from '../../store';
 import { RowMark } from '../changes/ChangesScreen';
 import { EvidenceMark } from './EvidenceMark';
+import { livePending, planContent } from './plan-edit';
 import { flowEdgeNames, itemNode, nodeItem, planFlow } from './plan-flow';
+import { PlanEditor, startPlanEdit } from './PlanEditor';
 import {
   forYouText,
   gateRunsLabel,
@@ -98,6 +101,7 @@ export function PlanRow({
   item,
   reason,
   shared = null,
+  pending = false,
   now,
   selected,
   onSelect,
@@ -106,9 +110,12 @@ export function PlanRow({
   reason: PlanReason | null;
   /** Which other open session changed a file of this item's session; left out under a failure. */
   shared?: string | null;
+  /** Edits sent to the main agent name the item and it has not written them yet. */
+  pending?: boolean;
   now: number;
   selected: boolean;
-  onSelect: () => void;
+  /** Absent for a row that does not open. */
+  onSelect?: () => void;
 }) {
   const stage = planStage(item);
   return (
@@ -116,9 +123,13 @@ export function PlanRow({
     <li className="pj-it" aria-current={selected ? 'true' : undefined} onClick={onSelect}>
       <StateGlyph name={planGlyph(item)} />
       <span className="pj-t">
-        <button type="button" className="pj-open" onClick={onSelect}>
+        {onSelect ? (
+          <button type="button" className="pj-open" onClick={onSelect}>
+            <Clip text={item.title} />
+          </button>
+        ) : (
           <Clip text={item.title} />
-        </button>
+        )}
         {reason && <ReasonLine reason={reason} now={now} />}
         {shared && reason?.kind !== 'failure' && (
           <span className="pj-why">
@@ -152,9 +163,18 @@ export function PlanRow({
         <span className="pj-dash">—</span>
       )}
       <EvidenceMark evidence={item.evidence} />
+      {pending && pendingMark()}
     </li>
   );
 }
+
+const pendingMark = () => (
+  <i
+    className="pj-mk"
+    role="img"
+    aria-label={t({ id: 'project.plan.pending', defaultMessage: 'Pending' })}
+  />
+);
 
 const FLOW_HEIGHT = 440;
 
@@ -166,6 +186,8 @@ export function PlanList({
   onSelect,
   view = 'list',
   overlap = null,
+  projectId = null,
+  main = null,
 }: {
   plan: ProjectPlanView['plan'] | undefined;
   sessions: readonly WorkbenchSession[] | null;
@@ -176,11 +198,44 @@ export function PlanList({
   view?: 'list' | 'flow';
   /** null while the overlap is unread or its read failed. */
   overlap?: ProjectOverlap | null;
+  projectId?: string | null;
+  /** The main agent the list's edits go to; none offers no edit. */
+  main?: WorkbenchSession | null;
 }) {
   const now = useNow(60_000);
+  const draft = useShell((s) => (projectId ? s.planDrafts[projectId] : undefined));
+  const sent = useShell((s) => (projectId ? s.planPending[projectId] : undefined));
+  const target = useBoard((s) => s.board?.sessions.find((x) => x.id === sent?.sessionId));
   // The graph lays out again for a new spec, so it changes only with the plan.
   const flow = useMemo(() => (plan && view === 'flow' ? planFlow(plan) : null), [plan, view]);
+  // Once written, the sent edits are forgotten, so a later turn neither shows nor adds to them;
+  // watchPlanTurns forgets them once their turn ended.
+  useEffect(() => {
+    if (!projectId || !sent || !plan || planContent(plan) === sent.content) return;
+    useShell.setState((s) => {
+      if (s.planPending[projectId] !== sent) return {};
+      const { [projectId]: _over, ...rest } = s.planPending;
+      return { planPending: rest };
+    });
+  }, [projectId, sent, plan]);
   if (!plan) return null;
+  const editable = !!projectId && !!main && plan.conductor_open && view === 'list';
+  if (editable && draft)
+    return <PlanEditor plan={plan} projectId={projectId} main={main} draft={draft} />;
+  const live = livePending(sent, plan, target);
+  const pending = new Set(live?.items);
+  const addedTo = (group: string | null) =>
+    (live?.added ?? []).filter((add) => add.group === (group ?? ''));
+  const groups = planGroups(plan, pending);
+  // A milestone with nothing shown but a new item sent to it.
+  const shownGroups = [...plan.milestones, null].flatMap((m): PlanGroup[] => {
+    const id = m?.id ?? null;
+    const group = groups.find((g) => g.id === id);
+    if (group) return [group];
+    if (addedTo(id).length === 0) return [];
+    const other = t({ id: 'project.plan.other', defaultMessage: 'Other' });
+    return [{ id, title: m?.title ?? other, items: [] }];
+  });
   const title = t({ id: 'project.plan.title', defaultMessage: 'Plan' });
   return (
     <section className="pj-list" aria-label={title}>
@@ -190,6 +245,15 @@ export function PlanList({
           <span className="pj-n">
             {t({ id: 'project.plan.closed', defaultMessage: 'Main agent closed' })}
           </span>
+        )}
+        {editable && (
+          <button
+            type="button"
+            className="btn ghost sm pj-end"
+            onClick={() => startPlanEdit(projectId)}
+          >
+            {t({ id: 'project.plan.edit', defaultMessage: 'Edit' })}
+          </button>
         )}
       </div>
       {flow ? (
@@ -202,7 +266,7 @@ export function PlanList({
           styleNames={flowEdgeNames()}
         />
       ) : (
-        planGroups(plan).map((group) => (
+        shownGroups.map((group) => (
           <div key={group.id ?? ''} role="group" aria-label={group.title}>
             <MilestoneHead group={group} />
             <ul className="pj-rows">
@@ -210,12 +274,22 @@ export function PlanList({
                 <PlanRow
                   key={item.id}
                   item={item}
-                  reason={planReason(item, plan.items, sessions)}
+                  // A dropped item shown only while its restore is pending has nothing to handle or open.
+                  reason={item.dropped ? null : planReason(item, plan.items, sessions)}
                   shared={overlapText(overlapsOf(overlap, item.session_id), sessions)}
+                  pending={pending.has(item.id)}
                   now={now}
                   selected={item.id === selected}
-                  onSelect={() => onSelect(item.id)}
+                  onSelect={item.dropped ? undefined : () => onSelect(item.id)}
                 />
+              ))}
+              {addedTo(group.id).map((add, k) => (
+                <li key={`added-${k}`} className="pj-it">
+                  <span>{pendingMark()}</span>
+                  <span className="pj-t">
+                    <Clip text={add.title} />
+                  </span>
+                </li>
               ))}
             </ul>
           </div>

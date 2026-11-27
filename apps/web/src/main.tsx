@@ -6,6 +6,7 @@ import { App } from './App';
 import { watchSystemAccent } from './data/layout';
 import { startLocale } from './i18n';
 import { MenuActions } from './lib/menu-actions';
+import { watchPlanTurns } from './screens/project/plan-edit';
 import { CrashNotice } from './shell/CrashNotice';
 import { MiniWindow } from './shell/MiniWindow';
 import { QuitDialog } from './shell/QuitDialog';
@@ -22,6 +23,7 @@ useShell.subscribe((state, before) => {
 window.addEventListener('dragover', refuseStrayFiles);
 window.addEventListener('drop', refuseStrayFiles);
 watchSystemAccent();
+watchPlanTurns();
 
 // Text drawn before its font has loaded moves when the font swaps in.
 await Promise.all([

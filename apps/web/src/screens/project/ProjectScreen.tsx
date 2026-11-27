@@ -186,6 +186,8 @@ export function ProjectScreen({
                 onSelect={setSelected}
                 view={view === 'flow' ? 'flow' : 'list'}
                 overlap={shared}
+                projectId={projectId}
+                main={main}
               />
             )}
             {projectId && <UsagePanel projectId={projectId} />}

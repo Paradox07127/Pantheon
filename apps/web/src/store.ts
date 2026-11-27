@@ -9,6 +9,7 @@ import {
 } from './data/current-project';
 import { storeQuery } from './data/query-cache';
 import { readQuery } from './data/workbench-sessions';
+import type { PlanDraft, PlanPending } from './screens/project/plan-edit';
 import type { PanelTab, SessionGroupKey } from './screens/sessions/model';
 import { navPage, useSettingsView } from './screens/settings/view';
 import { shownWindow } from './shell/window-kind';
@@ -128,6 +129,14 @@ export interface ShellState {
   memoryTab: MemoryTab;
   // Per project, the last discard the changes screen's local tab offers to undo; at is Unix milliseconds.
   lastDiscard: Record<string, { undoId: string; title: string; toast: string; at: number }>;
+  // Per project, the plan list's edits not yet sent to the main agent; present while the list is in edit.
+  planDrafts: Record<string, PlanDraft>;
+  // Per project, the items the last edits sent to the main agent named.
+  planPending: Record<string, PlanPending>;
+  // Per project, whether the plan list's edits are on their way to the main agent.
+  planSending: Record<string, true>;
+  // Per project, why the last send of the plan list's edits failed; cleared by another send or a discard.
+  planErrors: Record<string, string>;
   // The one session the trace's runs tab shows; null shows them all.
   runsSession: string | null;
   runsView: 'now' | 'history';
@@ -280,6 +289,10 @@ export const useShell = create<ShellState>((set) => ({
   history: [start],
   historyIndex: 0,
   lastDiscard: {},
+  planDrafts: {},
+  planPending: {},
+  planSending: {},
+  planErrors: {},
   traceTab: 'timeline',
   memoryTab: 'overview',
   runsSession: null,

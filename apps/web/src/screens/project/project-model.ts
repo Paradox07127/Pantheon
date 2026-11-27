@@ -110,9 +110,18 @@ export interface PlanGroup {
   items: ShownPlanItem[];
 }
 
-/** The items by milestone in the plan's order, the items outside every milestone last; dropped items and empty groups are left out. */
-export function planGroups(plan: Plan): PlanGroup[] {
-  const shown = plan.items.filter((item): item is ShownPlanItem => !item.dropped);
+/**
+ * The items by milestone in the plan's order, the items outside every milestone last; dropped items
+ * and empty groups are left out, except a dropped item in `keep`, shown as not started.
+ */
+export function planGroups(plan: Plan, keep?: ReadonlySet<string>): PlanGroup[] {
+  const shown = plan.items.flatMap((item): ShownPlanItem[] =>
+    !item.dropped
+      ? [item as ShownPlanItem]
+      : keep?.has(item.id)
+        ? [{ ...item, stage: 'plan' }]
+        : [],
+  );
   const known = new Set(plan.milestones.map((m) => m.id));
   return [
     ...plan.milestones.map((m) => ({

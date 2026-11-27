@@ -239,6 +239,45 @@
 .pj-it[aria-current='true'] {
   background: var(--sel);
 }
+/* A row that edits or edits sent name: a dot in the row's left padding. */
+.pj-mk {
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: 50%;
+  background: var(--wait);
+}
+.pj-pe {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--ctl) var(--ctl) 64px;
+  align-items: center;
+  gap: var(--sp-1);
+  min-height: 40px;
+  padding: var(--sp-1) var(--sp-3);
+  border-top: var(--hair) solid var(--bd2);
+}
+.pj-pe > .btn {
+  justify-self: end;
+}
+.pj-pe-t {
+  user-select: text;
+}
+.pj-pe[data-dropped] > .pj-pe-t {
+  color: var(--mu);
+  text-decoration: line-through;
+}
+.pj-pe-add {
+  display: flex;
+  padding: var(--sp-1) var(--sp-3);
+  border-top: var(--hair) solid var(--bd2);
+}
+.pj-pe-err {
+  padding: var(--sp-2) var(--sp-3);
+}
 .pj-t {
   display: flex;
   flex-direction: column;
