@@ -1,4 +1,5 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
+import { StatementSync } from 'node:sqlite';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -34,9 +35,14 @@ async function usageFixture() {
       state: 'completed',
       ...(usage ? { usage } : {}),
     });
-  const event = (offset: number, kind: string, aggregate: Session | SessionTurn) => {
+  const event = (
+    offset: number,
+    kind: string,
+    aggregate: Session | SessionTurn,
+    payload: object = {},
+  ) => {
     clock = base + offset;
-    f.store.event(kind, aggregate, aggregate.project_id, {});
+    f.store.event(kind, aggregate, aggregate.project_id, payload);
   };
   return { ...f, session, turn, event };
 }
@@ -111,17 +117,6 @@ it('groups project sessions by role and sums their tokens, tool calls and turn t
         turn_ms: 30,
       },
       {
-        role: 'main',
-        sessions: 3,
-        turns: 3,
-        tool_calls: 2,
-        input_tokens: 1700,
-        cached_input_tokens: 800,
-        output_tokens: 420,
-        turn_ms: 750,
-        turns_without_usage: 1,
-      },
-      {
         ...empty,
         role: 'reviewer',
         sessions: 1,
@@ -139,6 +134,17 @@ it('groups project sessions by role and sums their tokens, tool calls and turn t
         input_tokens: 10,
         cached_input_tokens: 10,
         output_tokens: 2,
+      },
+      {
+        role: 'user',
+        sessions: 3,
+        turns: 3,
+        tool_calls: 2,
+        input_tokens: 1700,
+        cached_input_tokens: 800,
+        output_tokens: 420,
+        turn_ms: 750,
+        turns_without_usage: 1,
       },
     ]);
   } finally {
@@ -178,12 +184,12 @@ it.each([
   {
     name: 'keeps the usage of a deleted session in the report',
     traceEvents: true,
-    usage: { role: 'main', sessions: 1, turns: 1, input_tokens: 10, output_tokens: 5 },
+    usage: { role: 'user', sessions: 1, turns: 1, input_tokens: 10, output_tokens: 5 },
   },
   {
     name: 'counts a turn whose runtime reported no token counts as without usage, also once deleted',
     traceEvents: false,
-    usage: { role: 'main', turns: 1, input_tokens: 0, output_tokens: 0, turns_without_usage: 1 },
+    usage: { role: 'user', turns: 1, input_tokens: 0, output_tokens: 0, turns_without_usage: 1 },
   },
 ])('$name', async ({ traceEvents, usage }) => {
   const f = await workbenchFixture();
@@ -232,7 +238,7 @@ it('refuses a usage read from a principal of another project', async () => {
     };
     f.session('writer', f.project.id);
     expect(f.control.projectUsageRead(user, f.project.id)).toMatchObject([
-      { role: 'main', sessions: 1 },
+      { role: 'user', sessions: 1 },
     ]);
     expect(() => f.control.projectUsageRead(foreign, f.project.id)).toThrow(
       expect.objectContaining({ code: 'permission_denied' }),
@@ -281,7 +287,7 @@ it('serves role usage at the project.usage.read query', async () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual([
       {
-        role: 'main',
+        role: 'user',
         sessions: 1,
         turns: 1,
         tool_calls: 0,
@@ -296,4 +302,205 @@ it('serves role usage at the project.usage.read query', async () => {
     await daemon.close();
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+it('attributes kept and deleted turns to local calendar days and their session roles', async () => {
+  const f = await usageFixture();
+  try {
+    const main = f.session('coordinator', f.project.id, { conductor: true });
+    const child = f.session('child', f.project.id, { spawned_by: { session_id: main.id } });
+    const report = { input_tokens: 12, cached_input_tokens: 3, output_tokens: 2 };
+    const turn = f.turn('child-turn', child, report);
+    const userSession = f.session('own', f.project.id);
+    const ownTurn = f.turn('own-turn', userSession);
+    // New York springs forward on March 8. Midnight on March 9 is 04:00 UTC.
+    const now = f.store.now();
+    f.event(Date.parse('2026-03-08T04:59:59Z') - now, 'session.opened', main);
+    f.store.event('session.opened', child, f.project.id, {});
+    f.store.event('session.main_agent_decided', child, f.project.id, {
+      action: 'spawn',
+      main_agent_session_id: main.id,
+    });
+    f.store.event('turn.queued', turn, f.project.id, { session_id: child.id });
+    f.store.event('agent.usage.updated', child, f.project.id, { turn_id: turn.id, ...report });
+    f.event(Date.parse('2026-03-08T04:59:59Z') - now, 'turn.completed', turn);
+    f.event(Date.parse('2026-03-09T04:00:00Z') - now, 'turn.completed', ownTurn);
+    const read = () => f.control.projectUsageDaily(user, f.project.id, 3, 'America/New_York').days;
+    const kept = read();
+    expect(kept.map((day) => day.date)).toEqual(['2026-03-07', '2026-03-08', '2026-03-09']);
+    expect(kept[0]!.roles.find((row) => row.role === 'spawned')).toMatchObject({
+      turns: 1,
+      ...report,
+    });
+    expect(kept[1]!.roles).toHaveLength(6);
+    expect(kept[1]!.roles.every((row) => row.turns === 0 && row.input_tokens === 0)).toBe(true);
+    expect(kept[2]!.roles.find((row) => row.role === 'user')).toMatchObject({
+      turns_without_usage: 1,
+    });
+    f.store.remove('session_turns', turn.id, turn.revision);
+    f.store.remove('sessions', child.id, child.revision);
+    expect(read()).toEqual(kept);
+    expect(f.control.projectUsageRead(user, f.project.id).map((row) => row.role)).toEqual([
+      'conductor',
+      'spawned',
+      'user',
+    ]);
+  } finally {
+    await f.close();
+  }
+});
+
+it('attributes a deleted child to its spawner when only the notification identifies the spawn', async () => {
+  const f = await usageFixture();
+  try {
+    const child = f.session('child', f.project.id, { spawned_by: { session_id: 'main' } });
+    const turn = f.turn('child-turn', child);
+    const today = Date.parse('2026-03-09T12:00:00Z') - f.store.now();
+    f.event(today - 86400000, 'session.opened', child);
+    f.event(today - 86400000, 'session.spawner_notified', child, {
+      session_id: 'main',
+      approval_id: 'question',
+    });
+    f.event(today, 'turn.queued', turn, { session_id: child.id });
+    f.event(today, 'turn.completed', turn);
+    f.store.remove('session_turns', turn.id, turn.revision);
+    f.store.remove('sessions', child.id, child.revision);
+    expect(f.control.projectUsageRead(user, f.project.id)).toMatchObject([
+      { role: 'spawned', sessions: 1, turns: 1 },
+    ]);
+    const [day] = f.control.projectUsageDaily(user, f.project.id, 1, 'UTC').days;
+    expect(day!.roles.find((r) => r.role === 'spawned')).toMatchObject({ sessions: 0, turns: 1 });
+  } finally {
+    await f.close();
+  }
+});
+
+it('counts an injected steer on the day delivery completes it', async () => {
+  const f = await usageFixture();
+  try {
+    const session = f.session('writer', f.project.id);
+    const queued = f.turn('steer', session);
+    const steer = f.store.update<SessionTurn>(
+      'session_turns',
+      { ...queued, kind: 'steer' },
+      queued.revision,
+    );
+    const midnight = Date.parse('2026-03-09T00:00:00Z') - f.store.now();
+    f.event(midnight - 2, 'session.opened', session);
+    f.event(midnight - 1, 'turn.queued', steer, { ...steer, state: 'queued', delivery: 'pending' });
+    f.event(midnight, 'session.turn.delivery', steer, { delivery: 'delivered' });
+    const read = () =>
+      f.control
+        .projectUsageDaily(user, f.project.id, 2, 'UTC')
+        .days.map((day) => day.roles.find((row) => row.role === 'user')!.turns);
+    expect(read()).toEqual([0, 1]);
+    f.store.remove('session_turns', steer.id, steer.revision);
+    f.store.remove('sessions', session.id, session.revision);
+    expect(read()).toEqual([0, 1]);
+  } finally {
+    await f.close();
+  }
+});
+
+it.each([
+  {
+    purpose: 'baseline',
+    tags: { baseline: { baseline_id: 'baseline' } },
+    role: 'baseline',
+    failsBeforeRuntime: false,
+  },
+  {
+    purpose: 'change_story',
+    tags: { change_story: { story_id: 'story' } },
+    role: 'story',
+    failsBeforeRuntime: false,
+  },
+  { purpose: 'intro', tags: { intro: true as const }, role: 'user', failsBeforeRuntime: false },
+  {
+    purpose: 'baseline',
+    tags: { baseline: { baseline_id: 'baseline' } },
+    role: 'baseline',
+    failsBeforeRuntime: true,
+  },
+])(
+  'preserves running time after deleting a $purpose session (fails before runtime: $failsBeforeRuntime)',
+  async ({ purpose, tags, role, failsBeforeRuntime }) => {
+    const f = await usageFixture();
+    try {
+      const helper = f.session('helper', f.project.id, tags);
+      const usage = failsBeforeRuntime ? undefined : { input_tokens: 4, output_tokens: 1 };
+      const turn = f.turn('helper-turn', helper, usage);
+      const midnight = Date.parse('2026-03-09T00:00:00Z') - f.store.now();
+      f.event(midnight - 20, 'session.opened', helper, { purpose });
+      f.event(midnight - 15, 'turn.queued', turn, { purpose });
+      f.event(midnight - 12, 'turn.prepare_started', turn, { session_id: helper.id });
+      f.event(midnight - 10, 'turn.running', turn);
+      if (usage)
+        f.event(midnight - 5, 'agent.usage.updated', helper, { turn_id: turn.id, ...usage });
+      f.event(midnight + 10, failsBeforeRuntime ? 'turn.failed' : 'turn.completed', turn);
+      const read = () => [
+        ...f.control.projectUsageRead(user, f.project.id),
+        f.control
+          .projectUsageDaily(user, f.project.id, 1, 'UTC')
+          .days[0]!.roles.find((r) => r.role === role),
+      ];
+      const before = read();
+      const tokens = usage ? { input_tokens: 4 } : { turns_without_usage: 1 };
+      expect(before).toMatchObject([
+        { role, sessions: 1, turns: 1, turn_ms: 20, ...tokens },
+        { role, sessions: 0, turns: 1, turn_ms: 20, ...tokens },
+      ]);
+      f.store.remove('session_turns', turn.id, turn.revision);
+      f.store.remove('sessions', helper.id, helper.revision);
+      expect(read()).toEqual(before);
+    } finally {
+      await f.close();
+    }
+  },
+);
+
+it('bounds one day of usage reads independently of historical events and foreign turns', async () => {
+  const rowsRead = async (historicalTurns: number) => {
+    const f = await usageFixture();
+    try {
+      const session = f.session('writer', f.project.id);
+      const foreign = f.session('foreign-writer', 'other-project');
+      const today = Date.parse('2026-03-09T12:00:00Z') - f.store.now();
+      const yesterday = today - 86400000;
+      f.event(yesterday, 'session.opened', session);
+      for (let i = 0; i < historicalTurns; i++) {
+        const turn = f.turn('old-' + i, session);
+        f.turn('foreign-' + i, foreign);
+        f.event(yesterday, 'turn.completed', turn);
+        f.event(yesterday, 'agent.message.delta', session, { turn_id: turn.id, text: 'old' });
+        f.event(today, 'agent.message.delta', session, { turn_id: turn.id, text: 'late' });
+      }
+      const turn = f.turn('current', session);
+      f.event(today, 'turn.completed', turn);
+      f.event(today, 'agent.tool.started', session, { turn_id: turn.id });
+      const reads = vi.spyOn(StatementSync.prototype, 'all');
+      const iterators = vi.spyOn(StatementSync.prototype, 'iterate').mockImplementation(function (
+        this: StatementSync,
+        ...args
+      ) {
+        return this.all(...args).values();
+      });
+      try {
+        const [day] = f.control.projectUsageDaily(user, f.project.id, 1, 'UTC').days;
+        expect(day!.roles.find((r) => r.role === 'user')).toMatchObject({
+          sessions: 0,
+          turns: 1,
+          tool_calls: 1,
+        });
+        return reads.mock.results.reduce((sum, result) => sum + result.value.length, 0);
+      } finally {
+        iterators.mockRestore();
+        reads.mockRestore();
+      }
+    } finally {
+      await f.close();
+    }
+  };
+  const withoutHistory = await rowsRead(0);
+  expect(await rowsRead(100)).toBe(withoutHistory);
 });

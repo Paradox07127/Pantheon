@@ -907,7 +907,7 @@ export interface SessionTurn extends Entity {
   /** The turn started read-only, as its UserTurn told the runtime; absent when it could write. */
   read_only?: boolean;
 }
-export type SessionRole = 'reviewer' | 'baseline' | 'story' | 'main';
+export type SessionRole = 'reviewer' | 'baseline' | 'story' | 'user' | 'conductor' | 'spawned';
 export interface RoleUsage {
   role: SessionRole;
   sessions: number;

@@ -30,6 +30,9 @@ vi.mock('@/data/project-plan', () => ({
 vi.mock('@/data/projects-summary', () => ({
   useProjectsSummary: () => ({ data: mock.summaries, loading: false, error: null }),
 }));
+vi.mock('@/data/project-overlap', () => ({
+  useProjectOverlap: () => ({ read: null, error: null, reload() {} }),
+}));
 import { runCommand } from '@/data/commands';
 import { draftKey, useDrafts } from '@/data/drafts';
 import { AgentList } from '@/screens/project/AgentList';

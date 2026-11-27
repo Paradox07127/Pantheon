@@ -601,6 +601,210 @@
 .pj-dg-n[data-landed] {
   border-color: var(--ok);
 }
+/* Sessions that changed the same files, in the inspector */
+.pj-ov {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.pj-ovf {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+/* Usage: the fold, bars by role and the daily stack */
+.pj-utg {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--h-ctl);
+  margin-left: calc(-1 * var(--sp-2));
+  padding: 0 var(--sp-2);
+  border: 0;
+  border-radius: var(--r-sm);
+  outline: none;
+  background: transparent;
+  color: var(--tx);
+  font: inherit;
+}
+.pj-utg:hover {
+  background: var(--st-hov);
+}
+.pj-utg:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.pj-uchev {
+  width: 12px;
+  height: 12px;
+  color: var(--mu);
+  transition: transform var(--dur-1) var(--ease-std);
+}
+.pj-utg[data-panel-open] .pj-uchev {
+  transform: rotate(90deg);
+}
+.pj-ufold {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  height: var(--collapsible-panel-height);
+  overflow: clip;
+  overflow-clip-margin: 4px;
+  transition:
+    height var(--dur-2) var(--ease-std),
+    opacity var(--dur-2) var(--ease-std);
+}
+.pj-ufold:is([data-starting-style], [data-ending-style]) {
+  height: 0;
+  opacity: 0;
+}
+.pj-ufold[data-ending-style] {
+  transition-duration: var(--dur-1);
+  transition-timing-function: var(--ease-out);
+}
+.pj-ublk {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.pj-ulg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-4);
+  color: var(--mu);
+  font-size: var(--fs-xs);
+}
+.pj-ulg > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.pj-ulv {
+  color: var(--tx2);
+  font-variant-numeric: tabular-nums;
+}
+.pj-usw {
+  display: inline-block;
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+.pj-usw-in {
+  background-color: var(--mu);
+}
+.pj-usw-cache {
+  background-color: var(--mu);
+  background-image: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--sf) 50%, transparent) 0 2px,
+    transparent 2px 4.2px
+  );
+}
+.pj-usw-out {
+  background-color: color-mix(in srgb, var(--mu) 45%, var(--sf));
+}
+.pj-urs {
+  display: flex;
+  flex-direction: column;
+}
+.pj-ur {
+  display: grid;
+  grid-template-columns: minmax(0, 160px) minmax(80px, 1fr) 48px;
+  column-gap: var(--sp-3);
+  align-items: center;
+  min-height: var(--row);
+  border-top: var(--hair) solid var(--bd2);
+}
+.pj-ur:first-child {
+  border-top: 0;
+}
+.pj-url {
+  min-width: 0;
+  color: var(--tx);
+  overflow-wrap: anywhere;
+}
+.pj-urb {
+  display: flex;
+  gap: 1px;
+  height: 12px;
+  min-width: 0;
+}
+.pj-uin {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: 3px 0 0 3px;
+  overflow: hidden;
+}
+.pj-uout {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: 0 3px 3px 0;
+}
+/* Cached input is part of input: stripes inside the input segment. */
+.pj-ucache {
+  display: block;
+  height: 100%;
+  background-image: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--sf) 50%, transparent) 0 2px,
+    transparent 2px 4.2px
+  );
+}
+.pj-un {
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.pj-uchart {
+  position: relative;
+  height: 200px;
+}
+.pj-uchart > svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+}
+.pj-uax {
+  fill: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.pj-ugl {
+  stroke: var(--bd);
+  stroke-width: 1;
+  stroke-opacity: 0.6;
+  shape-rendering: crispEdges;
+}
+.pj-uaxl {
+  stroke: var(--bd);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+.pj-uband {
+  fill: var(--sf2);
+}
+.pj-uday:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.pj-unr {
+  margin: 0;
+}
 /* Too narrow for one line: the title and reason take the first line, the measures the second. */
 @container pj-list (width < 640px) {
   .pj-it {

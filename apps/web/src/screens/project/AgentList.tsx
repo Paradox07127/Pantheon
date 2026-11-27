@@ -1,5 +1,9 @@
 import { Crown } from 'lucide-react';
-import { SPAWNED_SESSION_LIMIT, type WorkbenchSession } from '@pantheon/protocol';
+import {
+  SPAWNED_SESSION_LIMIT,
+  type ProjectOverlap,
+  type WorkbenchSession,
+} from '@pantheon/protocol';
 import { Clip } from '../../components/Clip';
 import { ContextRing } from '../../components/ContextRing';
 import { SessionStateIcon, lastTurnFailure } from '../../components/SessionStateIcon';
@@ -7,15 +11,18 @@ import { t } from '../../i18n';
 import { useShell } from '../../store';
 import { sessionRow } from '../sessions/model';
 import { conductorLabel } from '../sessions/session-groups';
-import { agentRows, takingTurns } from './project-model';
+import { agentRows, overlapText, overlapsOf, takingTurns } from './project-model';
 
 /** The main agent and the sessions it spawned, one row each that opens it. */
 export function AgentList({
   main,
   sessions,
+  overlap = null,
 }: {
   main: WorkbenchSession;
   sessions: readonly WorkbenchSession[] | null;
+  /** null while the overlap is unread or its read failed. */
+  overlap?: ProjectOverlap | null;
 }) {
   const rows = agentRows(main, sessions);
   const running = takingTurns(rows.slice(1));
@@ -44,7 +51,9 @@ export function AgentList({
       </div>
       <ul className="pj-ags">
         {rows.map((s) => {
-          const subtitle = lastTurnFailure(s) ?? s.recap?.headline;
+          const failure = lastTurnFailure(s);
+          const subtitle = failure ?? s.recap?.headline;
+          const shared = failure ? null : overlapText(overlapsOf(overlap, s.id), sessions);
           return (
             <li key={s.id}>
               <button
@@ -61,6 +70,7 @@ export function AgentList({
                     )}
                   </span>
                   {subtitle && <Clip text={subtitle} className="pj-sub" />}
+                  {shared && <Clip text={shared} className="pj-sub" />}
                 </span>
                 {s.context && <ContextRing context={s.context} />}
               </button>

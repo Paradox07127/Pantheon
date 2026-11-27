@@ -62,12 +62,14 @@ it('defines a strict input schema for each unimplemented command and the queries
     'project.intro.read',
     'project.landing.find',
     'project.landing.read',
+    'project.overlap',
     'project.plan',
     'project.read',
     'project.review.metrics',
     'project.timeline',
     'project.trace',
     'project.trace.stats',
+    'project.usage.daily',
     'project.usage.read',
     'projects.summary',
     'review.read',
@@ -87,6 +89,7 @@ it('defines a strict input schema for each unimplemented command and the queries
     'session.search',
     'session.step_diff',
     'session.tasks',
+    'session.thread',
     'session.tool_image',
     'session.trace',
     'session.turn_diff',
@@ -635,4 +638,13 @@ it('accepts a free-text question without options and at most four options per qu
   );
   const options = Array.from({ length: 5 }, (_, i) => ({ label: `Option ${i}`, description: '' }));
   expect(approvalQuestions.safeParse([{ ...question, options }]).success).toBe(false);
+});
+
+it('requires a local time zone and one to ninety calendar days of project usage', () => {
+  const schema = querySchemas['project.usage.daily'];
+  const params = { project_id: 'project', days: '90', timezone: 'America/New_York' };
+  expect(schema.parse(params)).toEqual({ ...params, days: 90 });
+  for (const days of ['0', '1.5', '91'])
+    expect(schema.safeParse({ ...params, days }).success).toBe(false);
+  expect(schema.safeParse({ ...params, timezone: 'not a zone' }).success).toBe(false);
 });

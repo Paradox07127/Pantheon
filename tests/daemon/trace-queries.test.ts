@@ -145,6 +145,17 @@ it('serves the trace queries over HTTP and keeps the trace cache in the data dir
       return { status: response.status, body: await response.json() };
     };
 
+    expect(await get('project.overlap', { project_id: project.id })).toMatchObject({
+      status: 200,
+      body: { pairs: [] },
+    });
+    expect(await get('session.thread', { session_id: session.id })).toMatchObject({
+      status: 200,
+      body: { entries: [] },
+    });
+    expect(
+      await get('project.usage.daily', { project_id: project.id, days: '1', timezone: 'UTC' }),
+    ).toMatchObject({ status: 200, body: { days: [{ roles: expect.any(Array) }] } });
     const trace = await get('project.trace', { project_id: project.id, bucket_ms: '3600000' });
     expect(trace.status).toBe(200);
     expect(trace.body).toMatchObject({

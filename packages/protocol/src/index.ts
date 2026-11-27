@@ -29,6 +29,7 @@ import type {
   Session,
   SessionRecap,
   SessionRole,
+  RoleUsage,
   SessionTask,
   TestCounts,
   RuntimeDiagnostics,
@@ -156,12 +157,17 @@ export * from './project-waiting.js';
 
 // Lives here, not in domain: the web bundle imports protocol at run time, and domain imports node:crypto.
 export function sessionRole(
-  session: Pick<Session, 'review_id' | 'baseline' | 'change_story' | 'range_story'>,
+  session: Pick<
+    Session,
+    'review_id' | 'baseline' | 'change_story' | 'range_story' | 'spawned_by' | 'conductor'
+  >,
 ): SessionRole {
   if (session.review_id) return 'reviewer';
   if (session.baseline) return 'baseline';
   if (session.change_story || session.range_story) return 'story';
-  return 'main';
+  if (session.conductor) return 'conductor';
+  if (session.spawned_by) return 'spawned';
+  return 'user';
 }
 
 // The values of domain's EffortLevel, kept here for the same reason as sessionRole.
@@ -662,6 +668,15 @@ export const userConfigSchema = z
 export type BackendProfile = z.infer<typeof backendProfileSchema>;
 export type UserConfig = z.infer<typeof userConfigSchema>;
 
+const timezone = z.string().refine((zone) => {
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
+}, 'timezone must be an IANA time zone, such as Asia/Shanghai');
+
 const visualSize = z.enum(['S', 'M', 'L']);
 const visualTime = z.union([
   z.iso.date(),
@@ -985,16 +1000,7 @@ export const visualSpecs = {
         .describe(
           'time for a clock axis of ISO date-times or Unix ms; ms for durations from 0. Absent: ms when every time is a number, else time.',
         ),
-      timezone: z
-        .string()
-        .refine((zone) => {
-          try {
-            new Intl.DateTimeFormat('en', { timeZone: zone });
-            return true;
-          } catch {
-            return false;
-          }
-        }, 'timezone must be an IANA time zone, such as Asia/Shanghai')
+      timezone: timezone
         .optional()
         .describe('The IANA time zone the clock axis reads in, such as Asia/Shanghai.'),
       lanes: z
@@ -1939,6 +1945,13 @@ export const querySchemas = {
   'project.intro.read': z.strictObject({ project_id: str }),
   'project.facts.read': z.strictObject({ project_id: str }),
   'project.read': z.strictObject({ project_id: str }),
+  'project.overlap': z.strictObject({ project_id: str }),
+  'session.thread': z.strictObject({ session_id: str }),
+  'project.usage.daily': z.strictObject({
+    project_id: str,
+    days: z.coerce.number().int().min(1).max(90),
+    timezone,
+  }),
   'project.usage.read': z.strictObject({ project_id: str }),
   'project.review.metrics': z.strictObject({ project_id: str }),
   'extensions.inventory': z.strictObject({ project_id: str, runtime: str }),
@@ -2371,6 +2384,68 @@ export type DecisionForUser =
       /** Absent for a personal principal, and when the main agent gave none. */
       reason?: string;
     };
+/**
+ * GET /v1/project.overlap. refresh_events includes session.write_detected, agent.tool.completed,
+ * turn.completed, turn.failed, turn.cancelled, session.merged, session.closed and session.discarded.
+ * Pairs share a repository. Paths are relative to its root.
+ */
+export interface ProjectOverlap {
+  pairs: { session_ids: [string, string]; paths: string[] }[];
+  refresh_events: string[];
+}
+
+/** GET /v1/session.thread. Entries run oldest first. at is Unix milliseconds. */
+export interface SessionThread {
+  entries: SessionThreadEntry[];
+}
+export type SessionThreadEntry = { id: string; at: number } & (
+  | { kind: 'started'; by: 'user' | 'main_agent'; main_agent_session_id?: string; reason?: string }
+  | { kind: 'message'; main_agent_session_id: string; turn_id: string; text?: string }
+  | {
+      kind: 'turn_ended';
+      turn_id: string;
+      state: 'completed' | 'failed' | 'cancelled';
+      error?: string;
+    }
+  | {
+      kind: 'spawner_notified';
+      main_agent_session_id: string;
+      turn_id?: string;
+      approval_id?: string;
+    }
+  | {
+      kind: 'question';
+      state: 'pending' | 'approved' | 'rejected' | 'void';
+      answered_by?: 'user' | 'main_agent';
+      questions?: string[];
+      answers?: Record<string, string>;
+    }
+  | {
+      kind: 'review';
+      round: number;
+      state: Review['state'];
+      verdicts: { runtime: string; verdict: 'pass' | 'fail' }[];
+      blocking: { id: string; location?: string; impact?: string }[];
+    }
+  | { kind: 'gate'; state: 'passed' | 'failed' | 'cancelled'; failed_steps: string[] }
+  | { kind: 'landing'; state: 'landed'; commit: string }
+  | { kind: 'landing'; state: 'blocked'; reason?: string }
+  | {
+      kind: 'main_agent_action';
+      action: 'interrupt' | 'close' | 'ready';
+      main_agent_session_id: string;
+      reason?: string;
+    }
+);
+
+/**
+ * GET /v1/project.usage.daily. Local YYYY-MM-DD dates, oldest first, including today and every role.
+ * Sessions count on opening, tool calls on start, and turns on ending (or on start/queue while live).
+ */
+export interface ProjectUsageDaily {
+  days: { date: string; roles: RoleUsage[] }[];
+}
+
 /** GET /v1/project.decisions. */
 export interface DecisionsForUser {
   items: DecisionForUser[];

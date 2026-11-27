@@ -138,6 +138,11 @@ const reads: Record<
   'needs_you.list': (f, _ids, p) => f.control.needsYou(p).items.map((item) => item.project_id),
   'project.brief': (f, ids, p) =>
     ids.filter((id) => f.control.projectBrief(p, id).items.length > 0),
+  'session.thread': (f, ids, p) =>
+    ids.filter((id) => {
+      const session = f.store.list<Session>('sessions').find((row) => row.project_id === id)!;
+      return f.control.sessionThread(p, session.id).entries.length > 0;
+    }),
   'project.decisions': (f, ids, p) =>
     ids.filter((id) => f.control.decisionsForUser(p, id).items.length > 0),
 };

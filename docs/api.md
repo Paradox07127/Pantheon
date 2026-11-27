@@ -11,7 +11,7 @@ daemon 只监听 `127.0.0.1`。客户端有桌面端(`apps/desktop`,经 preload 
 - 带 `Origin` 头的请求只接受 daemon 启动时配置的来源，否则 403 `origin_denied`。
 - 会话凭证：daemon 给挂 Pantheon MCP 的会话发凭证，24 小时到期，daemon 重启后失效。
 - 个人密钥：`personal.key.create {label}` 返回 `{key_id, token_file}`,daemon 把 token 写进状态目录下的 `personal-keys/<key_id>`(权限 0600)。对应的 principal 是 `personal:<key_id>`(role `personal`),不过期,daemon 重启后仍有效；`personal.key.revoke {key_id}` 立即吊销。`personal.key.list` 列出密钥，不含 token。
-- 个人 principal 只能用 `POST /v1/commands` 和四个查询(`projects.summary`、`needs_you.list`、`project.brief`、`project.decisions`),命令只限 `project.seen`;其余返回 403 `permission_denied`。每次写操作记一条 `personal.called` 事件。
+- 个人 principal 只能用 `POST /v1/commands` 和五个查询(`projects.summary`、`needs_you.list`、`project.brief`、`project.decisions`、`session.thread`),命令只限 `project.seen`;其余返回 403 `permission_denied`。每次写操作记一条 `personal.called` 事件。
 - `GET /v1/session-principal`:当前凭证对应的 principal。
 
 ## HTTP 端点
@@ -582,12 +582,14 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `project.intro.read` | `project_id`: string |
 | `project.landing.find` | `root`: string<br>`branch`: string |
 | `project.landing.read` | `landing_id`: string |
+| `project.overlap` | `project_id`: string |
 | `project.plan` | `project_id`: string |
 | `project.read` | `project_id`: string |
 | `project.review.metrics` | `project_id`: string |
 | `project.timeline` | `project_id`: string<br>`since?`: string |
 | `project.trace` | `project_id`: string<br>`from?`: string<br>`to?`: string<br>`bucket_ms?`: integer |
 | `project.trace.stats` | `project_id`: string<br>`since`: number<br>`until`: number |
+| `project.usage.daily` | `project_id`: string<br>`days`: integer<br>`timezone`: string |
 | `project.usage.read` | `project_id`: string |
 | `projects.summary` | — |
 | `review.read` | `review_id`: string |
@@ -607,6 +609,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `session.search` | `text`: string<br>`project_id?`: string<br>`limit?`: integer |
 | `session.step_diff` | `session_id`: string<br>`turn_id`: string<br>`span_id`: string |
 | `session.tasks` | `session_id`: string |
+| `session.thread` | `session_id`: string |
 | `session.tool_image` | `session_id`: string<br>`hash`: string |
 | `session.trace` | `project_id`: string<br>`lane_key`: string<br>`turn?`: string |
 | `session.turn_diff` | `session_id`: string<br>`turn_id`: string |

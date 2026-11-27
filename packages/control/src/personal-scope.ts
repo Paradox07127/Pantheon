@@ -8,6 +8,7 @@ export const PERSONAL_QUERIES = [
   'needs_you.list',
   'project.brief',
   'project.decisions',
+  'session.thread',
 ] as const satisfies readonly QueryMethod[];
 
 /** The commands a personal principal may send. */

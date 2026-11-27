@@ -602,6 +602,10 @@ export async function startDaemon(options: DaemonOptions) {
       'memory.recent': (p, i) => control.memoryRecent(p, i.project_id, i.limit),
       'memory.document': (p, i) => control.memoryDocument(p, i.project_id),
       'project.read': (p, i) => control.projectRead(p, i.project_id),
+      'project.overlap': (p, i) => control.projectOverlap(p, i.project_id),
+      'session.thread': (p, i) => control.sessionThread(p, i.session_id),
+      'project.usage.daily': (p, i) =>
+        control.projectUsageDaily(p, i.project_id, i.days, i.timezone),
       'project.usage.read': (p, i) => control.projectUsageRead(p, i.project_id),
       'workflow.policy': (p, i) => control.workflowPolicy(p, i.project_id),
       'project.review.metrics': (p, i) => control.projectReviewMetrics(p, i.project_id),

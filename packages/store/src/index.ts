@@ -355,6 +355,18 @@ export const migrations: readonly Migration[] = [
       );
     },
   },
+  {
+    version: 20,
+    up(db) {
+      db.exec(`
+        CREATE INDEX sessions_project ON sessions(data->>'$.project_id');
+        CREATE INDEX events_agent_turn ON events(project_id, payload->>'$.turn_id', kind, sequence)
+          WHERE kind GLOB 'agent.*' AND payload->>'$.turn_id' IS NOT NULL;
+        CREATE INDEX events_session_role ON events(aggregate_id, kind)
+          WHERE kind='session.opened' OR kind='session.main_agent_decided' OR kind='session.spawner_notified';
+      `);
+    },
+  },
 ];
 function fsyncPath(name: string): void {
   const fd = openSync(name, 'r');

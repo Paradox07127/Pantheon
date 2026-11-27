@@ -1,5 +1,6 @@
 import type {
   PlanItemView,
+  ProjectOverlap,
   ProjectPlanView,
   ProjectSummary,
   WorkbenchSession,
@@ -9,6 +10,7 @@ import { changeSessionId } from '../../data/changes';
 import { t } from '../../i18n';
 import { listText } from '../../lib/list-text';
 import { STATUS_GLYPH } from '../changes/ChangesScreen';
+import { sessionRow } from '../sessions/model';
 import { spawnedOf } from '../sessions/RunMap';
 
 // A listed session in one of these states no longer takes messages.
@@ -333,6 +335,51 @@ export const dependencyLabel = (ups: readonly Upstream[]): string =>
       ),
     },
   );
+
+export interface Overlap {
+  sessionId: string;
+  paths: readonly string[];
+}
+
+/** The other open sessions that changed a file this session changed too, each with those files. */
+export const overlapsOf = (
+  overlap: ProjectOverlap | null | undefined,
+  sessionId: string | null | undefined,
+): Overlap[] =>
+  (sessionId &&
+    overlap?.pairs.flatMap(({ session_ids: [a, b], paths }) =>
+      a === sessionId
+        ? [{ sessionId: b, paths }]
+        : b === sessionId
+          ? [{ sessionId: a, paths }]
+          : [],
+    )) ||
+  [];
+
+/** The line on a row whose session changed a file another open session changed; null without one. */
+export function overlapText(
+  others: readonly Overlap[],
+  sessions: readonly WorkbenchSession[] | null,
+): string | null {
+  if (others.length === 0) return null;
+  const other = others.length === 1 && sessions?.find((s) => s.id === others[0]!.sessionId);
+  return other
+    ? t(
+        { id: 'project.overlap.one', defaultMessage: 'Changed the same file as “{title}”' },
+        { title: sessionRow(other).title },
+      )
+    : t(
+        {
+          id: 'project.overlap.many',
+          defaultMessage:
+            '{count, plural, one {Changed the same file as # session} other {Changed the same file as # sessions}}',
+        },
+        { count: others.length },
+      );
+}
+
+/** How many of an overlap's files the inspector lists before it counts the rest. */
+export const SHOWN_PATHS = 5;
 
 export interface AcceptAction {
   /** What the button sends as accepted. */

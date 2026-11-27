@@ -23,6 +23,9 @@ import { afterSpawnedTurn, tellSpawners } from './conductor.js';
 import { recoverEnvironmentChecks } from './environment-check.js';
 import { reconciledStates } from './non-writer-audit.js';
 
+const startsWithQueuedTurn = (session: Session) =>
+  ['reviewer', 'baseline', 'story'].includes(sessionRole(session));
+
 function recoverArtifacts(ctx: ControlContext): void {
   const referenced = new Set<string>();
   // Every table with a data column is read, so a file any row names is kept.
@@ -218,7 +221,7 @@ export async function recover(ctx: ControlContext): Promise<void> {
         }
       }
       // Review, baseline and change-story sessions open running with only a queued first turn.
-      if (sessionRole(s) !== 'main' && !s.process_identity && !s.native_id) {
+      if (startsWithQueuedTurn(s) && !s.process_identity && !s.native_id) {
         const turns = ctx.store
           .list<SessionTurn>('session_turns')
           .filter((turn) => turn.session_id === s.id && ['queued', 'running'].includes(turn.state));
@@ -247,7 +250,7 @@ export async function recover(ctx: ControlContext): Promise<void> {
       .list<Session>('sessions')
       .filter((s) => s.state === 'reconciling')) {
       if (
-        sessionRole(session) !== 'main' &&
+        startsWithQueuedTurn(session) &&
         reconcilingSessions.has(session.id) &&
         !session.process_identity &&
         !session.native_id

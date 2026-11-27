@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
-import type { ProjectPlanView, WorkbenchSession } from '@pantheon/protocol';
+import type { ProjectOverlap, ProjectPlanView, WorkbenchSession } from '@pantheon/protocol';
 import { Clip } from '../../components/Clip';
 import { RuntimeGlyph, runtimeName } from '../../components/RuntimeGlyph';
 import { ContextRing } from '../../components/ContextRing';
 import { DiffCounts } from '../../components/DiffCounts';
+import { LoadError } from '../../components/LoadError';
 import { StateGlyph } from '../../components/SessionStateIcon';
 import { Tip } from '../../components/Tip';
 import { useBoard } from '../../data/board';
@@ -15,18 +16,28 @@ import { tokenText } from '../../lib/number-text';
 import { durationText } from '../../lib/time-text';
 import { useShell } from '../../store';
 import { ChangeDetails, RowMark } from '../changes/ChangesScreen';
+import { sessionRow } from '../sessions/model';
 import { EvidenceMark } from './EvidenceMark';
 import {
   acceptAction,
   dependencyLabel,
   forYouText,
+  overlapsOf,
   planGlyph,
+  SHOWN_PATHS,
   upstreamOf,
   type ShownPlanItem,
   type Upstream,
 } from './project-model';
 
 type Plan = NonNullable<ProjectPlanView['plan']>;
+
+/** The overlap read as the inspector needs it. */
+export interface OverlapRead {
+  read: ProjectOverlap | null;
+  error: string | null;
+  reload: () => void;
+}
 
 const BOX = 28;
 const GAP = 8;
@@ -73,12 +84,14 @@ export function ItemInspector({
   plan,
   projectId,
   sessions,
+  overlap,
   onClose,
 }: {
   item: ShownPlanItem;
   plan: Plan;
   projectId: string;
   sessions: readonly WorkbenchSession[] | null;
+  overlap?: OverlapRead;
   onClose: () => void;
 }) {
   const now = useNow(60_000);
@@ -123,6 +136,11 @@ export function ItemInspector({
   const acceptanceName = t({ id: 'project.inspector.acceptance', defaultMessage: 'Acceptance' });
   const usageName = t({ id: 'project.inspector.usage', defaultMessage: 'Context and use' });
   const depsName = t({ id: 'project.inspector.deps', defaultMessage: 'Dependencies' });
+  const overlapName = t({
+    id: 'project.inspector.overlap',
+    defaultMessage: 'Same files changed elsewhere',
+  });
+  const others = overlap?.error ? [] : overlapsOf(overlap?.read, sessionId);
   return (
     <aside
       className="pj-ins"
@@ -260,6 +278,57 @@ export function ItemInspector({
               </>
             )}
           </div>
+        </section>
+      )}
+      {sessionId && (overlap?.error || others.length > 0) && (
+        <section className="pj-sec" aria-label={overlapName}>
+          <h3 className="pj-h2">{overlapName}</h3>
+          {overlap?.error ? (
+            <LoadError
+              message={t(
+                {
+                  id: 'project.inspector.overlap.failed',
+                  defaultMessage: "Couldn't read which sessions changed the same files: {error}",
+                },
+                { error: overlap.error },
+              )}
+              onRetry={overlap.reload}
+            />
+          ) : (
+            others.map((other) => {
+              const listed = sessions?.find((s) => s.id === other.sessionId);
+              return (
+                <div key={other.sessionId} className="pj-ov">
+                  <button
+                    type="button"
+                    className="pj-open"
+                    onClick={() => useShell.getState().openSession(other.sessionId)}
+                  >
+                    <Clip text={listed ? sessionRow(listed).title : other.sessionId} />
+                  </button>
+                  <ul className="pj-ovf">
+                    {other.paths.slice(0, SHOWN_PATHS).map((path) => (
+                      <li key={path} className="mono">
+                        {path}
+                      </li>
+                    ))}
+                    {other.paths.length > SHOWN_PATHS && (
+                      <li className="pj-sub">
+                        {t(
+                          {
+                            id: 'project.inspector.overlap.more',
+                            defaultMessage:
+                              '{count, plural, one {# more file} other {# more files}}',
+                          },
+                          { count: other.paths.length - SHOWN_PATHS },
+                        )}
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              );
+            })
+          )}
         </section>
       )}
       {ups.length > 0 && (

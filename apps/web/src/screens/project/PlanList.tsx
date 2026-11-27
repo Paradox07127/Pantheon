@@ -1,5 +1,5 @@
 import { useMemo, type CSSProperties } from 'react';
-import type { ProjectPlanView, WorkbenchSession } from '@pantheon/protocol';
+import type { ProjectOverlap, ProjectPlanView, WorkbenchSession } from '@pantheon/protocol';
 import { Clip } from '../../components/Clip';
 import { DiffCounts } from '../../components/DiffCounts';
 import { StateGlyph } from '../../components/SessionStateIcon';
@@ -15,6 +15,8 @@ import {
   forYouText,
   gateRunsLabel,
   milestoneCount,
+  overlapText,
+  overlapsOf,
   planGlyph,
   planGroups,
   planReason,
@@ -95,12 +97,15 @@ export function ReasonLine({ reason, now }: { reason: PlanReason; now: number })
 export function PlanRow({
   item,
   reason,
+  shared = null,
   now,
   selected,
   onSelect,
 }: {
   item: ShownPlanItem;
   reason: PlanReason | null;
+  /** Which other open session changed a file of this item's session; left out under a failure. */
+  shared?: string | null;
   now: number;
   selected: boolean;
   onSelect: () => void;
@@ -115,6 +120,11 @@ export function PlanRow({
           <Clip text={item.title} />
         </button>
         {reason && <ReasonLine reason={reason} now={now} />}
+        {shared && reason?.kind !== 'failure' && (
+          <span className="pj-why">
+            <Clip text={shared} />
+          </span>
+        )}
       </span>
       <span className="pj-stg">
         <span className="pj-pips" role="img" aria-label={stage.label}>
@@ -155,6 +165,7 @@ export function PlanList({
   selected,
   onSelect,
   view = 'list',
+  overlap = null,
 }: {
   plan: ProjectPlanView['plan'] | undefined;
   sessions: readonly WorkbenchSession[] | null;
@@ -163,6 +174,8 @@ export function PlanList({
   /** null once the graph lets the item go. */
   onSelect: (itemId: string | null) => void;
   view?: 'list' | 'flow';
+  /** null while the overlap is unread or its read failed. */
+  overlap?: ProjectOverlap | null;
 }) {
   const now = useNow(60_000);
   // The graph lays out again for a new spec, so it changes only with the plan.
@@ -198,6 +211,7 @@ export function PlanList({
                   key={item.id}
                   item={item}
                   reason={planReason(item, plan.items, sessions)}
+                  shared={overlapText(overlapsOf(overlap, item.session_id), sessions)}
                   now={now}
                   selected={item.id === selected}
                   onSelect={() => onSelect(item.id)}

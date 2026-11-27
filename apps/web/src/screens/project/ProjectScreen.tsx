@@ -6,6 +6,7 @@ import { Failure } from '../../components/PanelBoundary';
 import { TopBar } from '../../components/TopBar';
 import { draftKey, useDrafts } from '../../data/drafts';
 import { useIntroRead } from '../../data/intro-read';
+import { useProjectOverlap } from '../../data/project-overlap';
 import { useProjectPlan } from '../../data/project-plan';
 import { useProjectsSummary } from '../../data/projects-summary';
 import { t } from '../../i18n';
@@ -20,6 +21,7 @@ import { PlanList } from './PlanList';
 import { mainAgent, type ShownPlanItem } from './project-model';
 import { StatusPanel } from './StatusPanel';
 import { UnplannedList } from './UnplannedList';
+import { UsagePanel } from './UsagePanel';
 import './project.css';
 
 /** The project introduction's first paragraph, or all of it in place once expanded. */
@@ -93,6 +95,9 @@ export function ProjectScreen({
   sessions: readonly WorkbenchSession[] | null;
 }) {
   const plan = useProjectPlan(projectId);
+  const overlap = useProjectOverlap(projectId);
+  // A failed read shows no overlap rather than an older one.
+  const shared = overlap.error ? null : overlap.read;
   const summaries = useProjectsSummary();
   const summary = summaries.data?.find((s) => s.project_id === projectId);
   const main = mainAgent(sessions);
@@ -158,8 +163,14 @@ export function ProjectScreen({
               selected={chosen ? chosen.id : null}
               onSelect={setSelected}
               view={view}
+              overlap={shared}
             />
-            <UnplannedList rows={plan.read?.unplanned ?? null} />
+            {projectId && <UsagePanel projectId={projectId} />}
+            <UnplannedList
+              rows={plan.read?.unplanned ?? null}
+              sessions={sessions}
+              overlap={shared}
+            />
             {main && <ConductorComposer key={main.id} main={main} />}
           </div>
           <div className="pj-pane">
@@ -170,11 +181,12 @@ export function ProjectScreen({
                 plan={shown}
                 projectId={projectId}
                 sessions={sessions}
+                overlap={overlap}
                 onClose={() => setSelected(null)}
               />
             ) : (
               <>
-                {main && <AgentList main={main} sessions={sessions} />}
+                {main && <AgentList main={main} sessions={sessions} overlap={shared} />}
                 {projectId && <IntroCard projectId={projectId} />}
               </>
             )}

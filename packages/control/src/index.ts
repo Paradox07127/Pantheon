@@ -62,7 +62,9 @@ import { personalAgentFolder, stopTurn } from './session.js';
 import { recover, reconcile } from './recovery.js';
 import { snapshot, snapshotAccess } from './snapshot.js';
 import { projectRead } from './project-facts.js';
-import { projectUsageRead } from './usage-report.js';
+import { projectOverlap } from './project-overlap.js';
+import { sessionThread } from './session-thread.js';
+import { projectUsageDaily, projectUsageRead } from './usage-report.js';
 import { inheritedPolicy, workflowPolicy } from './workflow-policy.js';
 import { projectReviewMetrics, reviewExecutionReader, reviewTimeReader } from './review.js';
 import { projectBaselineRead, projectFactsRead } from './baseline.js';
@@ -673,6 +675,15 @@ export class Control extends EventEmitter {
   }
   projectRead(principal: Principal, projectId: string): unknown {
     return projectRead(this.ctx, principal, projectId);
+  }
+  projectOverlap(principal: Principal, projectId: string) {
+    return projectOverlap(this.ctx, principal, projectId);
+  }
+  sessionThread(principal: Principal, sessionId: string) {
+    return sessionThread(this.ctx, principal, sessionId);
+  }
+  projectUsageDaily(principal: Principal, projectId: string, days: number, timezone: string) {
+    return projectUsageDaily(this.ctx, principal, projectId, days, timezone);
   }
   projectUsageRead(principal: Principal, projectId: string) {
     return projectUsageRead(this.ctx, principal, projectId);

@@ -1,16 +1,215 @@
-import type {
-  Principal,
-  Project,
-  RoleUsage,
-  Session,
-  SessionRole,
-  SessionTurn,
-  Usage,
-} from '@pantheon/domain';
-import { sessionRole } from '@pantheon/protocol';
+/// <reference lib="esnext.temporal" />
+import type { Principal, RoleUsage, Session, SessionRole, SessionTurn } from '@pantheon/domain';
+import { sessionRole, type ProjectUsageDaily } from '@pantheon/protocol';
 import { projectAccess, type ControlContext } from './context.js';
 
-const turnEnds: ReadonlySet<string> = new Set(['turn.completed', 'turn.failed', 'turn.cancelled']);
+function emptyRow(role: SessionRole): RoleUsage {
+  return {
+    role,
+    sessions: 0,
+    turns: 0,
+    tool_calls: 0,
+    input_tokens: 0,
+    cached_input_tokens: null,
+    output_tokens: 0,
+    turn_ms: 0,
+    turns_without_usage: 0,
+  };
+}
+
+const lifecycle =
+  "'turn.queued','turn.prepare_started','turn.running','turn.completed','turn.cancelled','turn.failed','session.turn.delivery'";
+const agentActivity =
+  "'agent.turn.started','agent.turn.completed','agent.usage.updated','agent.tool.started'";
+
+function foldUsage(
+  ctx: ControlContext,
+  projectId: string,
+  rowOf: (role: SessionRole, at?: number) => RoleUsage | undefined,
+  period?: { from: number; until: number },
+): void {
+  const dates = period ? 'AND created_at >= $from AND created_at < $until' : '';
+  const params = { project: projectId, ...period };
+  // Select turns by activity, then recover their timing across both edges of the window.
+  const turns = ctx.store
+    .statement(
+      `
+    WITH candidates(id) AS (
+      SELECT aggregate_id FROM events INDEXED BY events_diagnostic_window
+      WHERE project_id=$project AND kind IN (${lifecycle}) ${dates}
+      UNION
+      SELECT payload->>'$.turn_id' FROM events INDEXED BY events_diagnostic_window
+      WHERE project_id=$project AND kind IN (${agentActivity}) ${dates} AND payload->>'$.turn_id' IS NOT NULL
+      ${period ? '' : "UNION SELECT id FROM session_turns WHERE data->>'$.project_id'=$project"}
+    )
+    SELECT c.id, t.data->>'$.state' AS state,
+      coalesce(t.data->>'$.session_id', max(CASE WHEN e.kind IN ('turn.queued','turn.prepare_started') THEN e.payload->>'$.session_id' END)) AS session_id,
+      t.data->>'$.usage.input_tokens' AS input, t.data->>'$.usage.cached_input_tokens' AS cached,
+      t.data->>'$.usage.output_tokens' AS output, t.data->>'$.usage.tokens_unreported' AS unreported,
+      max(CASE WHEN e.kind='turn.queued' THEN e.payload->>'$.kind' END) AS queued_kind,
+      min(CASE WHEN e.kind='turn.queued' THEN e.created_at END) AS queued,
+      min(CASE WHEN e.kind='turn.running' THEN e.created_at END) AS start,
+      max(CASE WHEN e.kind IN ('turn.completed','turn.failed','turn.cancelled') THEN e.created_at END) AS end,
+      max(CASE WHEN e.kind='session.turn.delivery' AND e.payload->>'$.delivery'='delivered' THEN e.created_at END) AS delivered,
+      max(CASE WHEN e.kind='session.turn.delivery' AND e.payload->>'$.delivery'='failed' THEN e.created_at END) AS failed
+    FROM candidates c LEFT JOIN session_turns t ON t.id=c.id
+    LEFT JOIN events e INDEXED BY events_aggregate ON e.aggregate_id=c.id AND e.project_id=$project AND e.kind IN (${lifecycle})
+    GROUP BY c.id
+  `,
+    )
+    .all(params) as {
+    id: string;
+    session_id: string | null;
+    state: SessionTurn['state'] | null;
+    input: number | null;
+    cached: number | null;
+    output: number | null;
+    unreported: number | null;
+    queued_kind: SessionTurn['kind'] | null;
+    queued: number | null;
+    start: number | null;
+    end: number | null;
+    delivered: number | null;
+    failed: number | null;
+  }[];
+  const toolCalls = ctx.store
+    .statement(
+      `
+    SELECT aggregate_id AS session, ${period ? 'created_at AS at, 1 AS calls' : 'NULL AS at, count(*) AS calls'}
+    FROM events INDEXED BY events_diagnostic_window
+    WHERE project_id=$project AND kind='agent.tool.started' ${dates}
+    ${period ? '' : 'GROUP BY aggregate_id'}
+  `,
+    )
+    .all(params) as { session: string; at: number | null; calls: number }[];
+
+  const sessionIds = new Set(toolCalls.map((call) => call.session));
+  for (const turn of turns) {
+    if (!turn.session_id) {
+      // A helper's queue record names its purpose. Its runtime records name both turn and session.
+      const agent = ctx.store
+        .statement(
+          `
+        SELECT aggregate_id, created_at FROM events INDEXED BY events_agent_turn
+        WHERE project_id=? AND payload->>'$.turn_id'=? AND kind GLOB 'agent.*'
+        ${turn.queued === null ? 'ORDER BY sequence' : ''} LIMIT 1
+      `,
+        )
+        .get(projectId, turn.id) as { aggregate_id: string; created_at: number } | undefined;
+      if (agent) {
+        turn.session_id = agent.aggregate_id;
+        turn.queued ??= agent.created_at;
+      }
+    }
+    if (turn.session_id) sessionIds.add(turn.session_id);
+  }
+
+  const roles = new Map<string, { role: SessionRole; deleted: boolean }>();
+  const roleKeys = [
+    'review_id',
+    'baseline',
+    'change_story',
+    'range_story',
+    'conductor',
+    'spawned_by',
+    'purpose',
+  ];
+  const sessions = ctx.store
+    .statement(
+      `
+    WITH candidates(id) AS (
+      SELECT value FROM json_each($owners)
+      UNION SELECT aggregate_id FROM events INDEXED BY events_diagnostic_window
+        WHERE project_id=$project AND kind='session.opened' ${dates}
+      ${period ? '' : "UNION SELECT id FROM sessions WHERE data->>'$.project_id'=$project"}
+    ), metadata AS (
+      SELECT c.id, s.id IS NULL AS deleted, e.created_at AS opened, coalesce(s.data,e.payload) AS tags
+      FROM candidates c LEFT JOIN sessions s ON s.id=c.id
+      LEFT JOIN events e INDEXED BY events_session_role
+        ON e.aggregate_id=c.id AND e.kind='session.opened' AND e.project_id=$project
+      WHERE s.id IS NOT NULL OR e.sequence IS NOT NULL
+    )
+    SELECT id, deleted, opened, json_object(${roleKeys.map((k) => `'${k}',tags->'$.${k}'`).join(',')}) AS tags,
+      CASE WHEN deleted THEN EXISTS (
+        SELECT 1 FROM events WHERE aggregate_id=metadata.id AND kind='session.spawner_notified'
+        UNION ALL
+        SELECT 1 FROM events WHERE aggregate_id=metadata.id AND kind='session.main_agent_decided'
+          AND payload->>'$.action'='spawn'
+      ) END AS spawned
+    FROM metadata
+  `,
+    )
+    .iterate({ ...params, owners: JSON.stringify([...sessionIds]) }) as Iterable<{
+    id: string;
+    opened: number | null;
+    tags: string;
+    spawned: number | null;
+    deleted: number;
+  }>;
+  for (const session of sessions) {
+    const tags = JSON.parse(session.tags) as Partial<Session> & { purpose?: string };
+    const role =
+      tags.purpose === 'baseline'
+        ? 'baseline'
+        : tags.purpose === 'change_story' || tags.purpose === 'range_story'
+          ? 'story'
+          : session.spawned
+            ? 'spawned'
+            : sessionRole(tags);
+    roles.set(session.id, { role, deleted: !!session.deleted });
+    const row = rowOf(role, session.opened ?? undefined);
+    if (row) row.sessions++;
+  }
+  for (const call of toolCalls) {
+    const session = roles.get(call.session);
+    const row = session && rowOf(session.role, call.at ?? undefined);
+    if (row) row.tool_calls += call.calls;
+  }
+  for (const turn of turns) {
+    const session = turn.session_id && roles.get(turn.session_id);
+    if (!session || (turn.state === null && !session.deleted)) continue;
+    // Delivery can end a steer without a turn.completed. For a running send it is only a receipt.
+    const deliveryEnd = turn.state === 'failed' || session.deleted ? turn.failed : null;
+    const delivered =
+      turn.state === 'completed' ||
+      (session.deleted && turn.queued_kind === 'steer' && turn.start === null)
+        ? turn.delivered
+        : null;
+    const end = turn.end ?? deliveryEnd ?? delivered;
+    const row = rowOf(session.role, end ?? turn.start ?? turn.queued ?? undefined);
+    if (!row) continue;
+    row.turns++;
+    if (end !== null && turn.start !== null) row.turn_ms += end - turn.start;
+    if (session.deleted) {
+      const reports = ctx.store
+        .statement(
+          `
+        SELECT payload->>'$.input_tokens' AS input, payload->>'$.cached_input_tokens' AS cached,
+          payload->>'$.output_tokens' AS output
+        FROM events INDEXED BY events_agent_turn WHERE project_id=? AND payload->>'$.turn_id'=? AND
+          kind GLOB 'agent.*' AND kind='agent.usage.updated' ORDER BY sequence
+      `,
+        )
+        .iterate(projectId, turn.id) as Iterable<{
+        input: number | null;
+        cached: number | null;
+        output: number | null;
+      }>;
+      for (const report of reports) {
+        turn.input = report.input ?? turn.input;
+        turn.cached = report.cached ?? turn.cached;
+        turn.output = report.output ?? turn.output;
+      }
+    }
+    if (turn.unreported || (turn.input === null && turn.output === null)) row.turns_without_usage++;
+    else {
+      row.input_tokens += turn.input ?? 0;
+      row.output_tokens += turn.output ?? 0;
+      if (turn.cached !== null)
+        row.cached_input_tokens = (row.cached_input_tokens ?? 0) + turn.cached;
+    }
+  }
+}
 
 export function projectUsageRead(
   ctx: ControlContext,
@@ -18,118 +217,50 @@ export function projectUsageRead(
   projectId: string,
 ): RoleUsage[] {
   projectAccess(ctx, principal, projectId, 'project.usage.read');
-  ctx.store.must<Project>('projects', projectId);
+  ctx.store.must('projects', projectId);
   const rows = new Map<SessionRole, RoleUsage>();
-  const roleOf = new Map<string, RoleUsage>();
-  const rowOf = (role: SessionRole) => {
+  foldUsage(ctx, projectId, (role) => {
     let row = rows.get(role);
-    if (!row)
-      rows.set(
-        role,
-        (row = {
-          role,
-          sessions: 0,
-          turns: 0,
-          tool_calls: 0,
-          input_tokens: 0,
-          cached_input_tokens: null,
-          output_tokens: 0,
-          turn_ms: 0,
-          turns_without_usage: 0,
-        }),
-      );
+    if (!row) rows.set(role, (row = emptyRow(role)));
     return row;
-  };
-  const addUsage = (row: RoleUsage, usage: Usage | undefined) => {
-    if (!usage || usage.tokens_unreported) {
-      row.turns_without_usage++;
-      return;
-    }
-    row.input_tokens += usage.input_tokens;
-    row.output_tokens += usage.output_tokens;
-    if (usage.cached_input_tokens !== undefined)
-      row.cached_input_tokens = (row.cached_input_tokens ?? 0) + usage.cached_input_tokens;
-  };
-  for (const session of ctx.store.list<Session>('sessions')) {
-    if (session.project_id !== projectId) continue;
-    const row = rowOf(sessionRole(session));
-    row.sessions++;
-    roleOf.set(session.id, row);
-  }
-  const rowOfTurn = new Map<string, RoleUsage>();
-  for (const turn of ctx.store.list<SessionTurn>('session_turns')) {
-    const row = roleOf.get(turn.session_id);
-    if (!row) continue;
-    rowOfTurn.set(turn.id, row);
-    row.turns++;
-    addUsage(row, turn.usage);
-  }
-  // A deleted session's rows are gone; its events still tell its role, turns and usage.
-  const deleted = new Set<string>();
-  const deletedUsage = new Map<string, Usage | undefined>();
-  const deletedTurn = (turnId: string | undefined, sessionId: string | undefined) => {
-    const row = deleted.has(sessionId ?? '') ? roleOf.get(sessionId!) : undefined;
-    if (!turnId || !row || rowOfTurn.has(turnId)) return;
-    rowOfTurn.set(turnId, row);
-    row.turns++;
-    deletedUsage.set(turnId, undefined);
-  };
-  const started = new Map<string, number>();
-  const ended = new Map<string, number>();
-  for (let after = 0; ;) {
-    const events = ctx.store.events(after, projectId, 256);
-    if (events.length === 0) break;
-    for (const event of events) {
-      if (event.kind === 'session.opened' && !roleOf.has(event.aggregate_id)) {
-        // Baseline and change story sessions record only their purpose here.
-        const opened = event.payload as Partial<Session> & { purpose?: string };
-        const row = rowOf(
-          opened.purpose === 'baseline'
-            ? 'baseline'
-            : opened.purpose === 'change_story' || opened.purpose === 'range_story'
-              ? 'story'
-              : sessionRole(opened),
-        );
-        row.sessions++;
-        roleOf.set(event.aggregate_id, row);
-        deleted.add(event.aggregate_id);
-      } else if (event.kind === 'turn.queued') {
-        deletedTurn(event.aggregate_id, (event.payload as Partial<SessionTurn>).session_id);
-      }
-      if (event.kind.startsWith('agent.')) {
-        const payload = event.payload as Partial<Usage> & { turn_id?: string };
-        deletedTurn(payload.turn_id, event.aggregate_id);
-        if (event.kind === 'agent.usage.updated' && deletedUsage.has(payload.turn_id ?? '')) {
-          const usage = deletedUsage.get(payload.turn_id!);
-          // As agentEvent folds a report into the turn row.
-          deletedUsage.set(payload.turn_id!, {
-            input_tokens: payload.input_tokens ?? usage?.input_tokens ?? 0,
-            cached_input_tokens: payload.cached_input_tokens ?? usage?.cached_input_tokens,
-            output_tokens: payload.output_tokens ?? usage?.output_tokens ?? 0,
-            ...(payload.input_tokens === undefined &&
-            payload.output_tokens === undefined &&
-            (!usage || usage.tokens_unreported)
-              ? { tokens_unreported: true as const }
-              : {}),
-          });
-        }
-      }
-      if (event.kind === 'agent.tool.started') {
-        const row = roleOf.get(event.aggregate_id);
-        if (row) row.tool_calls++;
-      } else if (event.kind === 'turn.running') {
-        if (!started.has(event.aggregate_id)) started.set(event.aggregate_id, event.created_at);
-      } else if (turnEnds.has(event.kind)) {
-        ended.set(event.aggregate_id, event.created_at);
-      }
-    }
-    after = events[events.length - 1]!.sequence;
-  }
-  for (const [turnId, usage] of deletedUsage) addUsage(rowOfTurn.get(turnId)!, usage);
-  for (const [turnId, start] of started) {
-    const end = ended.get(turnId);
-    const row = rowOfTurn.get(turnId);
-    if (end !== undefined && row) row.turn_ms += end - start;
-  }
+  });
   return [...rows.values()].sort((a, b) => a.role.localeCompare(b.role));
+}
+
+export function projectUsageDaily(
+  ctx: ControlContext,
+  principal: Principal,
+  projectId: string,
+  days: number,
+  timezone: string,
+): ProjectUsageDaily {
+  projectAccess(ctx, principal, projectId, 'project.usage.daily');
+  ctx.store.must('projects', projectId);
+  const today = Temporal.Instant.fromEpochMilliseconds(ctx.store.now())
+    .toZonedDateTimeISO(timezone)
+    .toPlainDate();
+  const first = today.subtract({ days: days - 1 });
+  const byDate = new Map<string, Map<SessionRole, RoleUsage>>();
+  for (let i = 0; i < days; i++) {
+    const roles = new Map<SessionRole, RoleUsage>();
+    for (const role of ['baseline', 'conductor', 'reviewer', 'spawned', 'story', 'user'] as const)
+      roles.set(role, emptyRow(role));
+    byDate.set(first.add({ days: i }).toString(), roles);
+  }
+  const calendar = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  foldUsage(
+    ctx,
+    projectId,
+    (role, at) => (at === undefined ? undefined : byDate.get(calendar.format(at))?.get(role)),
+    {
+      from: first.toZonedDateTime(timezone).epochMilliseconds,
+      until: today.add({ days: 1 }).toZonedDateTime(timezone).epochMilliseconds,
+    },
+  );
+  return { days: [...byDate].map(([date, roles]) => ({ date, roles: [...roles.values()] })) };
 }
