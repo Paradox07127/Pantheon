@@ -2,7 +2,7 @@ import { Crown } from 'lucide-react';
 import { SPAWNED_SESSION_LIMIT, type WorkbenchSession } from '@pantheon/protocol';
 import { Clip } from '../../components/Clip';
 import { ContextRing } from '../../components/ContextRing';
-import { SessionStateIcon } from '../../components/SessionStateIcon';
+import { SessionStateIcon, lastTurnFailure } from '../../components/SessionStateIcon';
 import { t } from '../../i18n';
 import { useShell } from '../../store';
 import { sessionRow } from '../sessions/model';
@@ -43,27 +43,30 @@ export function AgentList({
         </span>
       </div>
       <ul className="pj-ags">
-        {rows.map((s) => (
-          <li key={s.id}>
-            <button
-              type="button"
-              className="pj-ag"
-              onClick={() => useShell.getState().openSession(s.id)}
-            >
-              <SessionStateIcon session={s} place="list" />
-              <span className="pj-at">
-                <span className="pj-atl">
-                  <Clip text={sessionRow(s).title} />
-                  {s === main && (
-                    <Crown className="ic-sm mu" role="img" aria-label={conductorLabel()} />
-                  )}
+        {rows.map((s) => {
+          const subtitle = lastTurnFailure(s) ?? s.recap?.headline;
+          return (
+            <li key={s.id}>
+              <button
+                type="button"
+                className="pj-ag"
+                onClick={() => useShell.getState().openSession(s.id)}
+              >
+                <SessionStateIcon session={s} place="list" />
+                <span className="pj-at">
+                  <span className="pj-atl">
+                    <Clip text={sessionRow(s).title} />
+                    {s === main && (
+                      <Crown className="ic-sm mu" role="img" aria-label={conductorLabel()} />
+                    )}
+                  </span>
+                  {subtitle && <Clip text={subtitle} className="pj-sub" />}
                 </span>
-                {s.recap?.headline && <Clip text={s.recap.headline} className="pj-sub" />}
-              </span>
-              {s.context && <ContextRing context={s.context} />}
-            </button>
-          </li>
-        ))}
+                {s.context && <ContextRing context={s.context} />}
+              </button>
+            </li>
+          );
+        })}
       </ul>
     </section>
   );

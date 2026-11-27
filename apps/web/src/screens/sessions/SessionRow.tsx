@@ -19,6 +19,7 @@ import { ModelMark, RuntimeGlyph, runtimeName } from '../../components/RuntimeGl
 import {
   GateMark,
   MergeBlockedMark,
+  lastTurnFailure,
   lastTurnLabel,
   recapLine,
   sessionGlyphName,
@@ -211,8 +212,10 @@ export function SessionRowButton(props: {
   // A session on this machine has no device mark.
   const device = session.device_id && session.device_id !== 'local' ? session.device_id : null;
   const blocked = session.merge?.state === 'blocked';
-  const turnResult = lastTurnLabel(session);
-  const recap = recapLine(session.recap, session.state === 'waiting');
+  // A failure takes the recap's line, so the row shows why.
+  const failure = lastTurnFailure(session);
+  const turnResult = failure ? null : lastTurnLabel(session);
+  const recap = failure ?? recapLine(session.recap, session.state === 'waiting');
   const inPlace = session.workspace_kind === 'in_place';
   const slot = stateSlot(session, badgeOf(session, !!props.unread));
   const name = [

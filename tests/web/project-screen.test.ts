@@ -278,6 +278,28 @@ describe('the agent list', () => {
     expect(useShell.getState()).toMatchObject({ screen: 'sessions', sessionId: 'schema' });
   });
 
+  it('says under a spawned session why its last turn failed instead of its headline', () => {
+    const recap = { headline: 'Schema drafted', happened: '', at: 1 };
+    const subtitles = (last_turn: WorkbenchSession['last_turn']) => {
+      const spawned = listed('schema', { spawned_by: { session_id: 'lead' }, recap, last_turn });
+      const h = mount(() => AgentList({ main: lead, sessions: [lead, spawned] }) as ReactElement);
+      return clipText(rows(h.value)[1]);
+    };
+    expect(
+      subtitles({ id: 't3', state: 'failed', error: 'Build failed', told_main_agent: true }),
+    ).toEqual([
+      'title of schema',
+      zhf('components.sessionState.lastTurnFailedBecause', {
+        reason: 'Build failed',
+        handler: zh('project.plan.mainAgentKnows'),
+      }),
+    ]);
+    expect(subtitles({ id: 't3', state: 'completed' })).toEqual([
+      'title of schema',
+      'Schema drafted',
+    ]);
+  });
+
   // The waiting session holds a running turn its last send does not show, as a steer would.
   it('counts the spawned sessions taking a turn against the limit in its title', () => {
     const h = mount(() => AgentList({ main: lead, sessions }) as ReactElement);

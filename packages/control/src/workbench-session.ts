@@ -1309,6 +1309,16 @@ export function sessionList(
     if (event.kind !== 'agent.turn.completed' && event.error !== null)
       latestErrors.set(turnId, JSON.parse(event.error));
   }
+  // Each spawned session's turns its main agent was told of, as session and turn id.
+  const toldTurns = new Set(
+    (
+      ctx.store
+        .statement(
+          "SELECT aggregate_id, payload->>'$.turn_id' AS turn_id FROM events INDEXED BY events_project_kind WHERE project_id=? AND kind='session.spawner_notified'",
+        )
+        .all(projectId) as { aggregate_id: string; turn_id: string | null }[]
+    ).map((event) => `${event.aggregate_id}\0${event.turn_id}`),
+  );
   const restorable = restorableTurns(ctx, projectId);
   const writer = folderWriter(ctx, ctx.store.must<Project>('projects', projectId));
   return listed.map((each): WorkbenchSession => {
@@ -1367,6 +1377,9 @@ export function sessionList(
               state: latestTurn.state,
               ...(turnError ? { error: turnError } : {}),
               ...(turnErrorCode ? { error_code: turnErrorCode } : {}),
+              ...(session.spawned_by && toldTurns.has(`${session.id}\0${latestTurn.id}`)
+                ? { told_main_agent: true as const }
+                : {}),
             },
           }
         : {}),

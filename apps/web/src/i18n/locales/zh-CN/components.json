@@ -70,6 +70,8 @@
   "components.sessionState.reconciling": "待恢复",
   "components.sessionState.stopping": "停止中",
   "components.sessionState.lastTurnFailed": "上回合失败",
+  "components.sessionState.lastTurnFailedBecause": "上回合失败 · {handler}：{reason}",
+  "components.sessionState.lastTurnFailedHandled": "上回合失败。{handler}",
   "components.sessionState.lastTurnInterrupted": "上回合已打断",
   "components.sessionState.mergeBlocked": "合并被挡",
   "components.gate.running": "门禁运行中",

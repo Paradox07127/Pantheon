@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { SessionRecap } from '@pantheon/domain';
 import type { WorkbenchSession } from '@pantheon/protocol';
+import { reasonText } from '../data/needs-you';
 import { t } from '../i18n';
 import './state-icon.css';
 
@@ -282,6 +283,39 @@ export function lastTurnLabel(session: WorkbenchSession): string | null {
       defaultMessage: 'Last turn interrupted',
     });
   return null;
+}
+
+/** Why the last turn failed, and whether the main agent or the user has it; also when the session failed. */
+export function lastTurnFailure(session: WorkbenchSession): string | null {
+  const turn = session.last_turn;
+  if (
+    turn?.state !== 'failed' ||
+    session.stopping ||
+    session.reconciling ||
+    !['idle', 'ready', 'failed'].includes(session.state)
+  )
+    return null;
+  const reason = turn.error_code ? reasonText(turn.error_code) : turn.error?.split('\n')[0];
+  // The same words a plan item's failure uses.
+  const handler =
+    session.spawned_by && turn.told_main_agent
+      ? t({ id: 'project.plan.mainAgentKnows', defaultMessage: 'Main agent knows' })
+      : t({ id: 'project.plan.forYou', defaultMessage: 'Up to you' });
+  return reason
+    ? t(
+        {
+          id: 'components.sessionState.lastTurnFailedBecause',
+          defaultMessage: 'Last turn failed · {handler}: {reason}',
+        },
+        { reason, handler },
+      )
+    : t(
+        {
+          id: 'components.sessionState.lastTurnFailedHandled',
+          defaultMessage: 'Last turn failed. {handler}',
+        },
+        { handler },
+      );
 }
 
 /** The one recap text a session row, header or board card shows: what it needs while it waits. */

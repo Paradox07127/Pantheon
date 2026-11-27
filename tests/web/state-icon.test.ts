@@ -8,6 +8,7 @@ import {
   LastTurnMark,
   MergeBlockedMark,
   SessionStateIcon,
+  lastTurnFailure,
   lastTurnLabel,
   recapLine,
 } from '../../apps/web/src/components/SessionStateIcon.js';
@@ -16,7 +17,8 @@ import {
   SessionPreview,
   SessionRowButton,
 } from '../../apps/web/src/screens/sessions/SessionRow.js';
-import { zh } from './i18n-setup.js';
+import { reasonText } from '../../apps/web/src/data/needs-you.js';
+import { zh, zhf } from './i18n-setup.js';
 
 type Place = 'list' | 'header' | 'card';
 const PLACES: Place[] = ['list', 'header', 'card'];
@@ -118,6 +120,76 @@ describe('last turn result', () => {
     for (const state of ['queued', 'running', 'completed'] as const)
       expect(mark(session({ last_turn: { id: 'turn-a', state } }))).toBe('');
     expect(mark(session())).toBe('');
+  });
+});
+
+describe('last turn failure', () => {
+  const spawned = { spawned_by: { session_id: 'lead' } };
+  const knows = zh('project.plan.mainAgentKnows'),
+    forYou = zh('project.plan.forYou');
+  const because = (reason: string, handler: string) =>
+    zhf('components.sessionState.lastTurnFailedBecause', { reason, handler });
+
+  it.each<[string, Partial<WorkbenchSession>, WorkbenchSession['last_turn'], string]>([
+    [
+      'the error code before the error, and that the main agent knows',
+      spawned,
+      {
+        id: 't',
+        state: 'failed',
+        error: 'Exit 1',
+        error_code: 'runtime_exit',
+        told_main_agent: true,
+      },
+      because('runtime_exit', knows),
+    ],
+    [
+      "the error's first line, left to the user while the main agent was not told",
+      spawned,
+      { id: 't', state: 'failed', error: 'Build failed\nat line 3' },
+      because('Build failed', forYou),
+    ],
+    [
+      'no reason when the turn gives none',
+      {},
+      { id: 't', state: 'failed' },
+      zhf('components.sessionState.lastTurnFailedHandled', { handler: forYou }),
+    ],
+    [
+      'the interface text of a known error code, also for a session that failed',
+      { state: 'failed' },
+      { id: 't', state: 'failed', error: 'Login', error_code: 'billing_channel_mismatch' },
+      because(reasonText('billing_channel_mismatch'), forYou),
+    ],
+    [
+      'the user as the one to act on a session the user opened',
+      {},
+      { id: 't', state: 'failed', error: 'Build failed', told_main_agent: true },
+      because('Build failed', forYou),
+    ],
+  ])('gives %s', (_, extra, last_turn, line) => {
+    expect(lastTurnFailure(session({ ...extra, last_turn }))).toBe(line);
+  });
+
+  it('says nothing where no failed turn is shown', () => {
+    const failed = { last_turn: { id: 't', state: 'failed' as const, error: 'Build failed' } };
+    expect(lastTurnFailure(session({ ...failed, state: 'running' }))).toBeNull();
+    expect(lastTurnFailure(session({ ...failed, stopping: true }))).toBeNull();
+    expect(lastTurnFailure(session({ ...failed, reconciling: true }))).toBeNull();
+    expect(lastTurnFailure(session({ last_turn: { id: 't', state: 'cancelled' } }))).toBeNull();
+  });
+
+  it('names the reason and who has it in the list row and on its state', () => {
+    const s = session({
+      ...spawned,
+      last_turn: { id: 't', state: 'failed', error: 'Build failed', told_main_agent: true },
+    });
+    const row = renderToStaticMarkup(
+      createElement(SessionRowButton, { session: s, on: false, now: 0, onSelect() {} }),
+    );
+    expect(attr(row, 'aria-label')).toContain(`，空闲，${because('Build failed', knows)}`);
+    // Shown under the title, where the recap line goes.
+    expect(row).toContain(`>${because('Build failed', knows)}<`);
   });
 });
 

@@ -2474,6 +2474,8 @@ export interface WorkbenchSession {
     state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
     error?: string;
     error_code?: string;
+    /** A spawned session's turn whose end its main agent was told of. */
+    told_main_agent?: true;
   };
   /**
    * The newest turn whose files session.rollback can restore: not rolled back, its checkpoint
