@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FileDiff, GitCommitHorizontal, GitMerge, X } from 'lucide-react';
+import { FileDiff, GitCommitHorizontal, GitMerge, History, X } from 'lucide-react';
 import type { RepoCommit, WorkbenchSession } from '@pantheon/protocol';
 import { Clip } from '../../components/Clip';
 import { Failure, Skeleton } from '../../components/PanelBoundary';
@@ -11,6 +11,7 @@ import { useShell } from '../../store';
 import { sessionRow } from '../sessions/session-groups';
 import { HunkLines } from '../sessions/story/parts';
 import { diffCells, fileBars } from './ChangedFiles';
+import { FileHistory } from './FileHistory';
 
 export const shortSha = (sha: string) => sha.slice(0, 7);
 
@@ -107,6 +108,7 @@ export function CommitDetail({
   const after = useRepoCommitAfter(projectId, sha);
   const now = useNow(60_000);
   const [picked, setPicked] = useState<string | null>(null);
+  const [history, setHistory] = useState<string | null>(null);
   const files = diff.read?.files ?? [];
   const file = files.find((f) => f.path === picked) ?? files[0];
   const hunks = file ? (diff.read?.hunks ?? []).filter((h) => h.file === file.path) : [];
@@ -118,6 +120,25 @@ export function CommitDetail({
     { sha: shortSha(sha) },
   );
 
+  const opened = files.find((f) => f.path === history);
+  // A deleted file has no lines at its commit; a file reached from co-changes may not exist there.
+  const at = opened ? (opened.status === 'deleted' ? `${sha}^` : sha) : undefined;
+  if (history)
+    return (
+      <FileHistory
+        key={history}
+        projectId={projectId}
+        path={history}
+        at={at}
+        sessions={sessions}
+        onOpenCommit={(commitSha) => {
+          setHistory(null);
+          onOpen(commitSha);
+        }}
+        onOpenFile={setHistory}
+        onBack={() => setHistory(null)}
+      />
+    );
   return (
     <aside className="chg-insp" aria-label={label}>
       <div className="chg-insp-h">
@@ -219,6 +240,26 @@ export function CommitDetail({
                     { path },
                   ),
                 file?.path,
+                (path) => {
+                  const name = t(
+                    {
+                      id: 'changes.commits.file.open',
+                      defaultMessage: 'Open the history of {path}',
+                    },
+                    { path },
+                  );
+                  return (
+                    <button
+                      type="button"
+                      className="ib"
+                      aria-label={name}
+                      title={name}
+                      onClick={() => setHistory(path)}
+                    >
+                      <History aria-hidden="true" />
+                    </button>
+                  );
+                },
               )
             ) : (
               <span className="chg-mu">

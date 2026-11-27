@@ -6,6 +6,8 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from 'react';
+import { Radio } from '@base-ui/react/radio';
+import { RadioGroup } from '@base-ui/react/radio-group';
 import { Tabs } from '@base-ui/react/tabs';
 import type { RepoLog, WorkbenchSession } from '@pantheon/protocol';
 import { Clip } from '../../components/Clip';
@@ -15,6 +17,7 @@ import { ageText, useNow } from '../../data/needs-you';
 import { useRepoLog } from '../../data/repo';
 import { t } from '../../i18n';
 import { shortcutMatches } from '../../lib/shortcuts';
+import { BranchCompare } from './BranchCompare';
 import { CommitAttribution, CommitDetail, shortSha } from './CommitDetail';
 import { layoutCommitGraph, type CommitGraphLayout } from './commit-graph';
 import './commit-history.css';
@@ -150,6 +153,7 @@ export function CommitHistory({
   const now = useNow(60_000);
   const [picked, pick] = usePickedCommit(projectId);
   const [active, setActive] = useState<string | null>(null);
+  const [view, setView] = useState<'graph' | 'compare'>('graph');
   const listRef = useRef<HTMLDivElement>(null);
   const { commits } = pages;
   const layout = useMemo(() => layoutCommitGraph(commits), [commits]);
@@ -158,10 +162,36 @@ export function CommitHistory({
   const name = t({ id: 'changes.commits.list', defaultMessage: 'Commits' });
 
   const panel = (body: ReactNode) => (
-    <Tabs.Panel className="chg" value="commits" data-inspector={picked ? '' : undefined}>
+    <Tabs.Panel
+      className="chg"
+      value="commits"
+      data-inspector={picked && view === 'graph' ? '' : undefined}
+    >
       {body}
     </Tabs.Panel>
   );
+  const views = (
+    <RadioGroup<'graph' | 'compare'>
+      className="tb-seg chc-view"
+      aria-label={t({ id: 'changes.commits.view', defaultMessage: 'View' })}
+      value={view}
+      onValueChange={setView}
+    >
+      <Radio.Root value="graph">
+        {t({ id: 'changes.commits.viewGraph', defaultMessage: 'Graph' })}
+      </Radio.Root>
+      <Radio.Root value="compare">
+        {t({ id: 'changes.commits.viewCompare', defaultMessage: 'Compare' })}
+      </Radio.Root>
+    </RadioGroup>
+  );
+  if (view === 'compare')
+    return panel(
+      <div className="chg-main">
+        {views}
+        <BranchCompare projectId={projectId} />
+      </div>,
+    );
   const detail = picked && (
     <CommitDetail
       key={picked}
@@ -181,6 +211,7 @@ export function CommitHistory({
     return panel(
       <>
         <div className="chg-main">
+          {views}
           {pages.head.error ? (
             <Failure error={pages.head.error} onRetry={pages.head.reload} />
           ) : (
@@ -193,6 +224,7 @@ export function CommitHistory({
   if (commits.length === 0)
     return panel(
       <div className="chg-main">
+        {views}
         <EmptyState
           inline
           title={t({ id: 'changes.commits.empty', defaultMessage: 'No commits yet' })}
@@ -222,6 +254,7 @@ export function CommitHistory({
   return panel(
     <>
       <div className="chg-main">
+        {views}
         <div
           className="chc-rows"
           style={{ '--chc-gw': `${graphWidth(layout)}px` } as CSSProperties}

@@ -1,0 +1,131 @@
+/* One file in the commit's place: its weekly commits, its history and who last changed each line. */
+.chg-insp[data-wide] {
+  width: min(640px, 60%);
+}
+.chf-weeks {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 32px;
+}
+.chf-weeks > i {
+  flex: 1;
+  min-width: 3px;
+  min-height: 1px;
+  height: var(--v);
+  border-radius: 1.5px 1.5px 0 0;
+  background: var(--mu);
+}
+.chf-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.chf-list > li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.chf-row,
+.chf-co {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: var(--row);
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--tx2);
+  font: inherit;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+.chf-row:hover,
+.chf-co:hover {
+  background: var(--sf2);
+  color: var(--tx);
+}
+.chf-row > .clip-1,
+.chf-co > .clip-1 {
+  flex: 1;
+  min-width: 0;
+}
+.chf-lines {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+.chf-chunk {
+  display: grid;
+  grid-template-columns: 136px minmax(0, 1fr);
+  border-top: var(--hair) solid var(--bd2);
+}
+.chf-chunk:first-child {
+  border-top: 0;
+}
+.chf-who {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  padding: 4px 8px;
+  border-right: var(--hair) solid var(--bd2);
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.chf-who > * {
+  max-width: 100%;
+}
+.chf-code-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 4px 0;
+}
+.chf-ln {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 8px;
+  padding-right: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 20px;
+}
+.chf-ln[data-pending] {
+  background: var(--sf2);
+}
+.chf-n {
+  color: var(--mu);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.chf-code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.chf-marks {
+  display: flex;
+  gap: 2px;
+}
+.chf-mark {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--run);
+}

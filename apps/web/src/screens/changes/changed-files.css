@@ -77,3 +77,17 @@
   color: var(--tx);
   font-weight: 600;
 }
+.chg-dfl-r {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.chg-dfl-r > .chg-dfl-h {
+  flex: 1;
+}
+.chg-dfl-r > .ib {
+  flex: none;
+  width: 22px;
+  height: 22px;
+}

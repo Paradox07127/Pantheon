@@ -71,10 +71,11 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  overflow: hidden;
 }
 .chc-ses {
   display: inline-flex;
-  flex: none;
+  flex: 0 1 auto;
   align-items: center;
   gap: 4px;
   max-width: 200px;
@@ -134,4 +135,7 @@
 }
 .chc-diff > .chg-mu {
   padding: 8px 12px;
+}
+.chc-view {
+  margin-bottom: 8px;
 }

@@ -1,0 +1,61 @@
+/* Two branches compared in the commits tab: the pickers, the facts, the conflicts and the diff. */
+.chb {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.chb-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.chb-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 32px;
+  margin: 0;
+}
+.chb-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.chb-fact > dt {
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.chb-fact > dd {
+  margin: 0;
+  font-size: var(--fs-lg);
+  line-height: var(--lh-lg);
+  font-variant-numeric: tabular-nums;
+}
+.chb-conflicts {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.chb-conflict {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: var(--row);
+}
+.chb-conflict::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--bad);
+}
+.chb-conflict > .clip-1 {
+  flex: 1;
+  min-width: 0;
+}

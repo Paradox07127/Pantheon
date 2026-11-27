@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { FileDiff } from 'lucide-react';
 import type { SessionDiff } from '@pantheon/protocol';
 import { DiffCounts } from '../../components/DiffCounts';
@@ -40,6 +41,8 @@ export function fileBars(
   openFile: (path: string) => void,
   openLabel: (path: string) => string,
   current?: string,
+  /** A control after the file's name. */
+  after?: (path: string) => ReactNode,
 ) {
   const top = Math.max(1, ...files.map((f) => (f.additions ?? 0) + (f.deletions ?? 0)));
   return (
@@ -50,20 +53,30 @@ export function fileBars(
       {files.map((file) => {
         const added = file.additions ?? 0;
         const removed = file.deletions ?? 0;
+        const open = (
+          <button
+            type="button"
+            className="chg-dfl-h"
+            aria-label={openLabel(file.path)}
+            aria-current={file.path === current || undefined}
+            onClick={() => openFile(file.path)}
+          >
+            <PathText path={file.path} className="mono" />
+            <span className="chg-num">
+              <DiffCounts additions={file.additions} deletions={file.deletions} />
+            </span>
+          </button>
+        );
         return (
           <li key={file.path}>
-            <button
-              type="button"
-              className="chg-dfl-h"
-              aria-label={openLabel(file.path)}
-              aria-current={file.path === current || undefined}
-              onClick={() => openFile(file.path)}
-            >
-              <PathText path={file.path} className="mono" />
-              <span className="chg-num">
-                <DiffCounts additions={file.additions} deletions={file.deletions} />
-              </span>
-            </button>
+            {after ? (
+              <div className="chg-dfl-r">
+                {open}
+                {after(file.path)}
+              </div>
+            ) : (
+              open
+            )}
             <span
               className="chg-dfb"
               role="img"
