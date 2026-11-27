@@ -474,6 +474,16 @@ describe('trace screen analysis focus', () => {
     expect(() => named(h.value, 'Analysis')).toThrow();
   });
 
+  it('closes the recap on Escape before the analysis behind it', () => {
+    const { h } = setup();
+    find(h.value, (n) => n.props['aria-label'] === zh('trace.recap.title')).props.onClick();
+    h.render();
+    escape();
+    h.render();
+    expect(has(h.value, 'StatusReview')).toBe(false);
+    expect(has(h.value, 'Analysis')).toBe(true);
+  });
+
   it('returns focus on Escape, or to the lanes when the row is gone', () => {
     const { h, row, main } = setup();
     row.isConnected = false;
@@ -756,6 +766,34 @@ describe('trace screen tabs', () => {
     expect(has(h.value, 'StepReplay')).toBe(false);
     expect(has(h.value, 'EventTable')).toBe(true);
     expect(backButton(h.value)).toBeUndefined();
+  });
+
+  it('opens the recap from the bar over any tab, the approved one included, and closes it', () => {
+    const h = screen();
+    const toggle = () => button(h.value, zh('trace.recap.title'))!;
+    expect(toggle().props['aria-pressed']).toBe(false);
+    expect(has(h.value, 'StatusReview')).toBe(false);
+    toggle().props.onClick();
+    h.render();
+    expect(named(h.value, 'StatusReview').props.projectId).toBe('project-a');
+    tabTo(h, 'runs');
+    expect(toggle().props['aria-pressed']).toBe(true);
+    expect(has(h.value, 'StatusReview')).toBe(true);
+    tabTo(h, 'approved');
+    expect(named(h.value, 'ApprovedForYou').props.end.props['aria-pressed']).toBe(true);
+    named(h.value, 'StatusReview').props.onClose();
+    h.render();
+    expect(has(h.value, 'StatusReview')).toBe(false);
+  });
+
+  it('keeps the recap range across tabs', () => {
+    const h = screen();
+    button(h.value, zh('trace.recap.title'))!.props.onClick();
+    h.render();
+    named(h.value, 'StatusReview').props.onRange('month');
+    h.render();
+    tabTo(h, 'approved');
+    expect(named(h.value, 'StatusReview').props.range).toBe('month');
   });
 
   it('keeps the heatmap switch inside the timeline tab', () => {

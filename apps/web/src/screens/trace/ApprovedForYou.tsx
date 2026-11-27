@@ -56,7 +56,16 @@ function DeliveryRules() {
  * What a stored rule or a main agent decided without the user in the project, over a range of
  * days, with the delivery rules beside it on demand; `tabs` are the trace's own.
  */
-export function ApprovedForYou({ projectId, tabs }: { projectId: string | null; tabs: ReactNode }) {
+export function ApprovedForYou({
+  projectId,
+  tabs,
+  end,
+}: {
+  projectId: string | null;
+  tabs: ReactNode;
+  /** The trace's own bar controls, after this view's. */
+  end?: ReactNode;
+}) {
   const [range, setRange] = useState<DecisionRange>('today');
   const [notifying, setNotifying] = useState(false);
   const [telling, setTelling] = useState<string | null>(null);
@@ -98,6 +107,7 @@ export function ApprovedForYou({ projectId, tabs }: { projectId: string | null; 
             <Bell className="ic-sm" aria-hidden="true" />
             {notifications}
           </button>
+          {end}
         </div>
       </TopBar>
       <main className="trc">

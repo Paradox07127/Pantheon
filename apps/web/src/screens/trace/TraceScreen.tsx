@@ -15,7 +15,7 @@ import { Menu } from '@base-ui/react/menu';
 import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
 import { Tabs } from '@base-ui/react/tabs';
-import { ArrowLeft, Check, ChevronRight, ListFilter, Play, X } from 'lucide-react';
+import { ArrowLeft, Check, ChevronRight, ClipboardList, ListFilter, Play, X } from 'lucide-react';
 import { DiffCounts } from '../../components/DiffCounts';
 import { ReadStatus } from '../../components/ReadStatus';
 import { SessionStateIcon, sessionStateLabel } from '../../components/SessionStateIcon';
@@ -118,6 +118,7 @@ import {
 import { StepReplay } from './StepReplay';
 import { AnalyzeMenu } from './AnalyzeMenu';
 import { ApprovedForYou } from './ApprovedForYou';
+import { type ReviewRange, StatusReview } from './StatusReview';
 import { RuntimePanel } from './RuntimeDiagnostics';
 import { TraceTimeChart } from './TraceTimeChart';
 import { EventTable } from './EventTable';
@@ -535,6 +536,8 @@ function TraceView({
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
   const [focus, setFocus] = useState<string | null>(null);
   const [picked, setPicked] = useState<Picked | null>(null);
+  const [recap, setRecap] = useState(false);
+  const [recapRange, setRecapRange] = useState<ReviewRange>('today');
   // Null until the timeline's opening window is fitted to the first trace read.
   const [preset, setPreset] = useState<TracePreset | null>(null);
   const readPreset = preset ?? WIDEST_PRESET;
@@ -660,15 +663,16 @@ function TraceView({
   }, []);
 
   useEffect(() => {
-    if (replaying || (!picked && !range)) return;
+    if (!recap && (replaying || (!picked && !range))) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return;
-      if (picked) closeAnalysis();
+      if (recap) setRecap(false);
+      else if (picked) closeAnalysis();
       else setRange(null);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [replaying, picked, range, closeAnalysis]);
+  }, [recap, replaying, picked, range, closeAnalysis]);
 
   const data = lanesShown ? shownTrace : null;
   const error = data && firstError(data);
@@ -905,10 +909,35 @@ function TraceView({
       ))}
     </Tabs.List>
   );
+  const recapName = t({ id: 'trace.recap.title', defaultMessage: 'Recap' });
+  const recapButton = projectId && (
+    <button
+      type="button"
+      className="btn ghost sm"
+      aria-label={recapName}
+      title={recapName}
+      aria-pressed={recap}
+      onClick={() => setRecap((on) => !on)}
+    >
+      <ClipboardList className="ic-sm" aria-hidden="true" />
+      <span className="tb-lbl">{recapName}</span>
+    </button>
+  );
+  const recapPanel = recap && projectId && (
+    <StatusReview
+      projectId={projectId}
+      titleOf={titleOf}
+      hasSession={(id) => sessionsById.has(id)}
+      range={recapRange}
+      onRange={setRecapRange}
+      onClose={() => setRecap(false)}
+    />
+  );
   if (tab === 'approved')
     return (
       <Tabs.Root className="tb-pg" value={tab} onValueChange={(value) => setTab(value as TraceTab)}>
-        <ApprovedForYou projectId={projectId} tabs={tabList} />
+        <ApprovedForYou projectId={projectId} tabs={tabList} end={recapButton} />
+        {recapPanel}
       </Tabs.Root>
     );
   return (
@@ -1061,6 +1090,7 @@ function TraceView({
             <ReplayModeControl mode={replayMode} onMode={setReplayMode} />
           )}
           {lanesShown && <ReplaySpeedControl speed={speed} onSpeed={setSpeed} />}
+          {recapButton}
           {tab === 'diagnose' && projectId && shownTrace?.diagnostics && (
             <AnalyzeMenu
               projectId={projectId}
@@ -1357,6 +1387,7 @@ function TraceView({
           </Tabs.Panel>
         </main>
       )}
+      {recapPanel}
     </Tabs.Root>
   );
 }

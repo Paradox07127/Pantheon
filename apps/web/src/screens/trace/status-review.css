@@ -1,0 +1,133 @@
+/* The recap lies over whichever trace view is open, under the bar. */
+.rcp {
+  position: absolute;
+  top: 12px;
+  right: 24px;
+  bottom: 16px;
+  z-index: 4;
+  width: 420px;
+  max-width: calc(100% - 48px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: 0 var(--sp-4) var(--sp-4);
+  box-sizing: border-box;
+  overflow-y: auto;
+  border: var(--hair) solid var(--bd-ov);
+  border-radius: var(--r-lg);
+  background: var(--ov);
+  backdrop-filter: blur(var(--blur-md));
+  transition: opacity var(--dur-2) var(--ease-in);
+}
+@starting-style {
+  .rcp {
+    opacity: 0;
+  }
+}
+.rcp-h {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--bar);
+  margin: 0 calc(-1 * var(--sp-2)) 0 0;
+  border-bottom: var(--hair) solid var(--bd2);
+}
+.rcp-h h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.rcp-s {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.rcp-s h3 {
+  margin: 0;
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+.rcp-l {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rcp-l li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  min-height: var(--row);
+  border-top: var(--hair) solid var(--bd2);
+}
+.rcp-l li > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+.rcp-ref {
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--tx);
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: var(--bd3);
+  text-underline-offset: 3px;
+}
+.rcp-ref:hover {
+  text-decoration-color: var(--tx);
+}
+.rcp-none {
+  color: var(--mu);
+}
+.rcp-st {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+}
+.rcp-st[data-state]::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--idle);
+}
+.rcp-st[data-state='landed']::before {
+  background: var(--ok);
+}
+.rcp-st[data-state='blocked']::before {
+  background: var(--bad);
+}
+.rcp-open {
+  flex: none;
+  color: var(--wait);
+}
+.rcp-at {
+  flex: none;
+  min-width: 56px;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.rcp-tb {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: 3px;
+}
