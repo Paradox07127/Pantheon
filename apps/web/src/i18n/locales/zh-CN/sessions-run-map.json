@@ -11,6 +11,8 @@
   "sessions.runMap.gateFailed": "门禁失败",
   "sessions.runMap.gateStale": "门禁已过时",
   "sessions.runMap.gateNone": "门禁没跑",
+  "sessions.runMap.gateCancelled": "门禁已取消",
+  "sessions.runMap.maybeStale": "{status},可能已过期",
   "sessions.runMap.reviewRunning": "审查中",
   "sessions.runMap.reviewFailed": "审查失败",
   "sessions.runMap.reviewBlocking": "{count, plural, other {外审 # 阻塞}}",

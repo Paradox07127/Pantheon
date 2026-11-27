@@ -9,6 +9,7 @@ const mock = vi.hoisted(() => ({
   asked: 0,
   loading: false,
   error: null as string | null,
+  stale: false,
   places: {} as Record<string, unknown>,
 }));
 vi.mock('@/data/project-defaults', async (actual) => ({
@@ -32,7 +33,7 @@ vi.mock('@/data/project-read', async (actual) => ({
       error: changes ? mock.error : null,
       unavailable: false,
       loading: changes && mock.loading,
-      stale: false,
+      stale: changes && mock.stale,
       reload() {},
     };
   },
@@ -138,6 +139,7 @@ const idempotency = listedOf('kid-a', 'Idempotent refunds', {
   state: 'running',
   branch: 'pt/refund-idempotency',
   ahead: 3,
+  gate: { state: 'passed', passed: 2, failed: 0, running: 0 },
 });
 const signature = listedOf('kid-b', 'Webhook signature', {
   spawned_by: { session_id: 'lead' },
@@ -145,6 +147,7 @@ const signature = listedOf('kid-b', 'Webhook signature', {
   waiting: 1,
   branch: 'pt/webhook-signature',
   ahead: 5,
+  gate: { state: 'failed', passed: 1, failed: 1, running: 0 },
 });
 // Spawned by another main agent, so not in the lead's map.
 const elsewhere = listedOf('kid-c', 'Other lead work', {
@@ -161,7 +164,10 @@ const starting = listedOf('kid-e', 'Starting probe', {
   state: 'starting',
 });
 const quiet = listedOf('kid-f', 'Quiet runtime', { spawned_by: { session_id: 'ledger' } });
-const fresh = listedOf('kid-g', 'Fresh review', { spawned_by: { session_id: 'ledger' } });
+const fresh = listedOf('kid-g', 'Fresh review', {
+  spawned_by: { session_id: 'ledger' },
+  gate: { state: 'passed', passed: 2, failed: 0, running: 0 },
+});
 const listed = [
   lead,
   solo,
@@ -258,9 +264,8 @@ beforeAll(async () => {
     reads: {},
   };
   mock.changes = [
-    change('kid-a', { gate: { state: 'passed' } }),
+    change('kid-a', {}),
     change('kid-b', {
-      gate: { state: 'failed', failed: ['unit'] },
       review: {
         id: 'review-b',
         state: 'completed',
@@ -269,7 +274,6 @@ beforeAll(async () => {
       },
     }),
     change('kid-g', {
-      gate: { state: 'passed' },
       review: { id: 'review-g', state: 'completed', verdicts: [], blocking_open: 0 },
     }),
   ];
@@ -281,6 +285,7 @@ beforeEach(() => {
   mock.asked = 0;
   mock.loading = false;
   mock.error = null;
+  mock.stale = false;
   mock.places = {};
   doc.activeElement = null;
 });
@@ -409,17 +414,91 @@ it('shows a review a reviewer left without a full result as incomplete, not pass
 });
 
 it('shows a gate that is running as running', async () => {
-  const before = mock.changes;
-  mock.changes = [change('kid-g', { gate: { state: 'running' } })];
+  const before = fresh.gate;
+  fresh.gate = { state: 'running', passed: 0, failed: 0, running: 1 };
   await show('ledger');
-  mock.changes = before;
+  fresh.gate = before;
   expect(rowOf('Fresh review').textContent).toContain(zh('sessions.runMap.gateRunning'));
+});
+
+it("shows the session's own gate, cancelled included, when the changes list has no row for it", async () => {
+  const before = { gate: quiet.gate, changes: mock.changes };
+  quiet.gate = { state: 'running', passed: 0, failed: 0, running: 1 };
+  fresh.gate = { state: 'cancelled', passed: 0, failed: 0, running: 0 };
+  mock.changes = [change('kid-g', { gate: { state: 'none' } })];
+  await show('ledger');
+  quiet.gate = before.gate;
+  fresh.gate = { state: 'passed', passed: 2, failed: 0, running: 0 };
+  mock.changes = before.changes;
+  expect(rowOf('Quiet runtime').textContent).toContain(zh('sessions.runMap.gateRunning'));
+  expect(rowOf('Fresh review').textContent).toContain(zh('sessions.runMap.gateCancelled'));
+});
+
+it('shows a gate not run for a session with changes and no gate of its own', async () => {
+  const before = fresh.gate;
+  delete fresh.gate;
+  await show('ledger');
+  fresh.gate = before;
+  expect(rowOf('Fresh review').textContent).toContain(zh('sessions.runMap.gateNone'));
+  expect(rowOf('Quiet runtime').textContent).not.toContain(zh('sessions.runMap.gateNone'));
+});
+
+it('shows a review from a stale changes read as possibly out of date, not in its failed tone', async () => {
+  mock.stale = true;
+  await show('lead');
+  const status = zhf('sessions.runMap.reviewBlocking', { count: 1 });
+  const chips = labelled(zhf('sessions.runMap.maybeStale', { status }));
+  expect(chips).toHaveLength(1);
+  expect(chips[0]!.getAttribute('data-tone')).not.toBe('bad');
 });
 
 it('shows no token count for a runtime that reports none and marks the total as partial', async () => {
   await show('ledger');
   expect(rowOf('Quiet runtime').textContent).not.toMatch(/\d/);
   expect(runMap()!.textContent).toContain(zhf('sessions.runMap.tokensPartial', { tokens: '40k' }));
+});
+
+const boardSession = (id: string) =>
+  (mock.board.board.sessions as Session[]).find((s) => s.id === id)!;
+
+it('shows no token count for a session with turns and no usage, and marks the total as partial', async () => {
+  const quietRuntime = boardSession('kid-f');
+  const before = quietRuntime.usage;
+  quietRuntime.usage = { input_tokens: 0, output_tokens: 0 } as Session['usage'];
+  await show('ledger');
+  quietRuntime.usage = before;
+  expect(rowOf('Starting probe').textContent).not.toMatch(/\d/);
+  expect(runMap()!.textContent).toContain(zhf('sessions.runMap.tokensPartial', { tokens: '40k' }));
+});
+
+it('shows a gate that is being cancelled as still running', async () => {
+  const before = fresh.gate;
+  fresh.gate = { state: 'cancelling', passed: 0, failed: 0, running: 1 };
+  await show('ledger');
+  fresh.gate = before;
+  expect(rowOf('Fresh review').textContent).toContain(zh('sessions.runMap.gateRunning'));
+});
+
+it('counts a spawned session the board has not listed yet as unreported, not as zero', async () => {
+  const sessions = mock.board.board.sessions as Session[];
+  const before = [...sessions];
+  sessions.splice(
+    sessions.findIndex((s) => s.id === 'kid-b'),
+    1,
+  );
+  await show('lead');
+  sessions.splice(0, sessions.length, ...before);
+  expect(rowOf('Webhook signature').textContent).not.toMatch(/\d$/);
+});
+
+it('rounds a partial token total down, and a row count to the nearest', async () => {
+  const freshReview = boardSession('kid-g');
+  const before = freshReview.usage;
+  freshReview.usage = { input_tokens: 1_000, output_tokens: 600 } as Session['usage'];
+  await show('ledger');
+  freshReview.usage = before;
+  expect(runMap()!.textContent).toContain(zhf('sessions.runMap.tokensPartial', { tokens: '1k' }));
+  expect(rowOf('Fresh review').textContent).toContain('2k');
 });
 
 it('leaves archived spawned sessions out of the rows and the counts', async () => {
@@ -442,7 +521,9 @@ it('keeps the gate chips in place under aria-busy while the changes load', async
   const list = all(runMap()!, (n) => n.nodeName === 'UL')[0]!;
   expect(String(list.getAttribute('aria-busy'))).toBe('true');
   expect(buttons(list)).toHaveLength(2);
-  expect(list.textContent).not.toContain(zh('sessions.runMap.gatePassed'));
+  expect(list.textContent).not.toContain(zhf('sessions.runMap.reviewBlocking', { count: 1 }));
+  expect(rowOf('Idempotent refunds').textContent).toContain(zh('sessions.runMap.gatePassed'));
+  expect(rowOf('Webhook signature').textContent).toContain(zh('sessions.runMap.gateFailed'));
 });
 
 it('shows a failed changes read in the run map', async () => {

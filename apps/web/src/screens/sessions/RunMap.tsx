@@ -5,7 +5,7 @@ import { Skeleton } from '../../components/Skeleton';
 import { useBoard } from '../../data/board';
 import { useProjectQuery } from '../../data/project-read';
 import { t } from '../../i18n';
-import { tokenText } from '../../lib/number-text';
+import { tokenFloorText, tokenText } from '../../lib/number-text';
 import { useShell } from '../../store';
 import { sessionRow } from './model';
 import { readFailed } from './shared';
@@ -33,9 +33,10 @@ const isChanges = (value: unknown): boolean =>
 
 type Tone = 'ok' | 'bad' | 'run' | 'idle';
 
-function gateOf(gate: ChangeRow['gate'] | undefined): { text: string; tone: Tone } | null {
+function gateOf(gate: WorkbenchSession['gate']): { text: string; tone: Tone } | null {
   switch (gate?.state) {
     case 'running':
+    case 'cancelling':
       return {
         text: t({ id: 'sessions.runMap.gateRunning', defaultMessage: 'Gate running' }),
         tone: 'run',
@@ -55,9 +56,9 @@ function gateOf(gate: ChangeRow['gate'] | undefined): { text: string; tone: Tone
         text: t({ id: 'sessions.runMap.gateStale', defaultMessage: 'Gate out of date' }),
         tone: 'idle',
       };
-    case 'none':
+    case 'cancelled':
       return {
-        text: t({ id: 'sessions.runMap.gateNone', defaultMessage: 'Gate not run' }),
+        text: t({ id: 'sessions.runMap.gateCancelled', defaultMessage: 'Gate cancelled' }),
         tone: 'idle',
       };
     default:
@@ -128,8 +129,13 @@ export function RunMap(props: {
   const usage = spawned.map((s) => known?.find((k) => k.id === s.id));
   const tokensOf = (i: number) =>
     (usage[i]?.usage?.input_tokens ?? 0) + (usage[i]?.usage?.output_tokens ?? 0);
-  const unreported = (i: number) => usage[i]?.usage?.tokens_unreported === true;
-  const tokens = tokenText(spawned.reduce((sum, _, i) => sum + tokensOf(i), 0));
+  // A session the board does not list yet, or one that ran turns without any usage, reported none.
+  const unreported = (i: number) =>
+    !usage[i] ||
+    usage[i]!.usage?.tokens_unreported === true ||
+    (!usage[i]!.usage && usage[i]!.turn_count > 0);
+  const partial = spawned.some((_, i) => unreported(i));
+  const total = spawned.reduce((sum, _, i) => sum + tokensOf(i), 0);
   const turns = usage.reduce((sum, k) => sum + (k?.turn_count ?? 0), 0);
   const label = t({ id: 'sessions.runMap.title', defaultMessage: 'Run map' });
   return (
@@ -166,12 +172,12 @@ export function RunMap(props: {
           <span className="cap">{t({ id: 'sessions.runMap.usage', defaultMessage: 'Usage' })}</span>
           <span className="rmap-use">
             <span className="kpi">
-              {spawned.some((_, i) => unreported(i))
+              {partial
                 ? t(
                     { id: 'sessions.runMap.tokensPartial', defaultMessage: 'At least {tokens}' },
-                    { tokens },
+                    { tokens: tokenFloorText(total) },
                   )
-                : tokens}
+                : tokenText(total)}
             </span>
             <span className="rmap-turns">
               {t(
@@ -189,7 +195,15 @@ export function RunMap(props: {
       <ul className="rmap-list" aria-busy={changes.loading || undefined}>
         {spawned.map((s, i) => {
           const change = changeOf.get(`session:${s.id}`);
-          const gate = gateOf(change?.gate);
+          // A session with changes the gate has not looked at yet.
+          const gate =
+            gateOf(s.gate) ??
+            (change
+              ? {
+                  text: t({ id: 'sessions.runMap.gateNone', defaultMessage: 'Gate not run' }),
+                  tone: 'idle' as const,
+                }
+              : null);
           const review = reviewOf(change?.review);
           return (
             <li key={s.id}>
@@ -220,11 +234,27 @@ export function RunMap(props: {
                       {gate.text}
                     </span>
                   )}
-                  {review && (
-                    <span className="rmap-st" data-tone={review.tone}>
-                      {review.text}
-                    </span>
-                  )}
+                  {review &&
+                    (changes.stale ? (
+                      <span
+                        className="rmap-st"
+                        data-tone="idle"
+                        role="img"
+                        aria-label={t(
+                          {
+                            id: 'sessions.runMap.maybeStale',
+                            defaultMessage: '{status}, may be out of date',
+                          },
+                          { status: review.text },
+                        )}
+                      >
+                        {review.text}
+                      </span>
+                    ) : (
+                      <span className="rmap-st" data-tone={review.tone}>
+                        {review.text}
+                      </span>
+                    ))}
                   {!unreported(i) && <span className="rmap-tok">{tokenText(tokensOf(i))}</span>}
                 </span>
               </button>
