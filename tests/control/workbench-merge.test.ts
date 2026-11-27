@@ -5,6 +5,8 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 import type { Principal, Project, Review, Session, SessionTurn, Workspace } from '@pantheon/domain';
 import { readProcessIdentity } from '../../packages/adapters/dist/index.js';
 import type { ControlContext } from '../../packages/control/src/context.js';
+import { runGit } from '../../packages/control/dist/git.js';
+import { BOUND } from '../../packages/control/dist/source-git.js';
 import * as validation from '../../packages/control/dist/validation-executor.js';
 import { insideSandbox, awaitWorkspaceReady, eventually, heldIndexLock, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
@@ -83,10 +85,19 @@ async function setGate(f: Fixture, commands: { name: string; argv: string[] }[])
   );
 }
 
-it('fast-forwards the source branch to the session commit and removes the worktree', async () => {
+it('attributes all three fast-forwarded commits after removing the session worktree', async () => {
   const f = await mergeFixture();
   const { session, workspace, sourceHead } = await idleSession(f);
-  const head = commit(workspace.path, 'answer.txt', 'merged\n');
+  const first = commit(workspace.path, 'answer.txt', 'first\n');
+  const second = commit(workspace.path, 'answer.txt', 'second\n');
+  writeFileSync(path.join(workspace.path, 'answer.txt'), 'merged\n');
+  const future = '2099-01-01T00:00:00Z';
+  const result = await runGit(workspace.path, ['commit', '-qam', 'Final answer'], undefined, true, {
+    ...BOUND,
+    env: { GIT_AUTHOR_DATE: future, GIT_COMMITTER_DATE: future },
+  });
+  expect(result.exit_code).toBe(0);
+  const head = git(workspace.path, 'rev-parse', 'HEAD');
   expect((await merge(f, session.id)).merge).toEqual({ state: 'running' });
   await eventually(
     () => removed(f, workspace.id),
@@ -111,6 +122,19 @@ it('fast-forwards the source branch to the session commit and removes the worktr
       deletions: 1,
     },
   ]);
+  const page = (limit: number) =>
+    f.control.repoLog(user, { project_id: f.project.id, limit, skip: 0 });
+  const full = await page(10);
+  expect(full.commits.map(({ sha, session_id }) => [sha, session_id])).toEqual([
+    [head, session.id],
+    [second, session.id],
+    [first, session.id],
+    [sourceHead, undefined],
+  ]);
+  expect((await page(1)).commits[0]).toEqual(full.commits[0]);
+  expect(
+    await f.control.repoCommitAfter(user, { project_id: f.project.id, sha: first }),
+  ).toMatchObject({ next: { sha: second, session_id: session.id } });
 });
 
 it('fast-forwards the source once another git gives up the index lock it held', async () => {

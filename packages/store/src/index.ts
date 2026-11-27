@@ -381,6 +381,27 @@ export const migrations: readonly Migration[] = [
       `);
     },
   },
+  {
+    version: 22,
+    up(db) {
+      db.exec(`
+        CREATE TABLE landing_commits (
+          project_id TEXT NOT NULL, sha TEXT NOT NULL, session_id TEXT, landing_id TEXT, ended_at INTEGER NOT NULL
+        ) STRICT;
+        CREATE INDEX landing_commits_project_sha ON landing_commits(project_id, sha);
+        INSERT INTO landing_commits
+          SELECT project_id, payload->>'$.to_sha', aggregate_id, NULL, created_at FROM events
+          WHERE kind='session.merged' AND payload->>'$.from_sha' IS NOT payload->>'$.to_sha';
+        INSERT INTO landing_commits
+          SELECT data->>'$.project_id', data->>'$.to_sha', NULL, id, data->>'$.finished_at' FROM landings
+          WHERE data->>'$.state'='landed' AND data->>'$.from_sha' IS NOT data->>'$.to_sha';
+        INSERT INTO landing_commits
+          SELECT data->>'$.project_id', data->>'$.landed_sha', data->>'$.session_id',
+            CASE WHEN data->>'$.branch' IS NOT NULL THEN id END, data->>'$.ended_at' FROM landing_records
+          WHERE data->>'$.state'='landed';
+      `);
+    },
+  },
 ];
 function fsyncPath(name: string): void {
   const fd = openSync(name, 'r');

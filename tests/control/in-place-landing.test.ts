@@ -130,6 +130,9 @@ it('runs the gates of a new folder session and lands it on the current branch on
   const f = await workbenchFixture();
   await withGate(f);
   const session = await folderSession(f);
+  const first = head(f);
+  writeFileSync(path.join(f.source, 'notes.txt'), 'notes\nmore notes\n');
+  git(f.source, 'commit', '-qam', 'Extend notes');
   expect(f.list().find((row) => row.id === session.id)?.gate).toBeUndefined();
   expect((await refusal(() => land(f, session.id))).code).toBe('gate_required');
   await runGates(f, session.id);
@@ -137,7 +140,7 @@ it('runs the gates of a new folder session and lands it on the current branch on
   const preflight = await f.control.sessionPreflight(user, session.id);
   expect(preflight).toMatchObject({
     target_branch: 'main',
-    commit_count: 1,
+    commit_count: 2,
     files_changed: 1,
     gate: { last: 'passed' },
     can_merge: true,
@@ -146,6 +149,11 @@ it('runs the gates of a new folder session and lands it on the current branch on
   await land(f, session.id);
   expect(current(f, session.id)).toMatchObject({ outcome: 'merged', state: 'closed' });
   expect(head(f)).toBe(landed);
+  const file = { project_id: f.project.id, path: 'notes.txt' };
+  const firstCommit = { sha: first, session_id: session.id };
+  const tip = { sha: landed, session_id: session.id };
+  expect((await f.control.repoBlame(user, file)).chunks).toMatchObject([firstCommit, tip]);
+  expect((await f.control.repoFileHistory(user, file)).changes).toMatchObject([tip, firstCommit]);
   expect(git(f.source, 'branch', '--show-current').trim()).toBe('main');
 });
 

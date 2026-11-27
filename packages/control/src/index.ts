@@ -62,6 +62,14 @@ import { personalAgentFolder, stopTurn } from './session.js';
 import { recover, reconcile } from './recovery.js';
 import { snapshot, snapshotAccess } from './snapshot.js';
 import { projectRead } from './project-facts.js';
+import {
+  repoLog,
+  repoCommitDiff,
+  repoCompare,
+  repoCommitAfter,
+  repoBlame,
+  repoFileHistory,
+} from './repo-history.js';
 import { projectOverlap } from './project-overlap.js';
 import { sessionThread } from './session-thread.js';
 import { projectStatusRead } from './project-status.js';
@@ -941,6 +949,30 @@ export class Control extends EventEmitter {
   }
   permissionRules(principal: Principal, projectId: string) {
     return permissionRules(this.ctx, principal, projectId);
+  }
+  repoLog(principal: Principal, input: ReturnType<(typeof querySchemas)['repo.log']['parse']>) {
+    return repoLog(this.ctx, principal, input);
+  }
+  repoCommitDiff(principal: Principal, projectId: string, sha: string) {
+    return repoCommitDiff(this.ctx, principal, projectId, sha);
+  }
+  repoCompare(principal: Principal, projectId: string, base: string, head: string) {
+    return repoCompare(this.ctx, principal, projectId, base, head);
+  }
+  repoCommitAfter(
+    principal: Principal,
+    input: ReturnType<(typeof querySchemas)['repo.commit_after']['parse']>,
+  ) {
+    return repoCommitAfter(this.ctx, principal, input);
+  }
+  repoBlame(principal: Principal, input: ReturnType<(typeof querySchemas)['repo.blame']['parse']>) {
+    return repoBlame(this.ctx, principal, input);
+  }
+  repoFileHistory(
+    principal: Principal,
+    input: ReturnType<(typeof querySchemas)['repo.file_history']['parse']>,
+  ) {
+    return repoFileHistory(this.ctx, principal, input);
   }
   projectBranches(principal: Principal, projectId: string, root?: string) {
     return projectBranches(this.ctx, principal, projectId, root);

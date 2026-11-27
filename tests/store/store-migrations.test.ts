@@ -546,6 +546,7 @@ it('creates the whole schema through known migrations in a memory and a file dat
     'events',
     'improvements',
     'inbox',
+    'landing_commits',
     'memory_search',
     'memory_search_config',
     'memory_search_content',

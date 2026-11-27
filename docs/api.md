@@ -118,6 +118,7 @@ daemon 只监听 `127.0.0.1`。客户端有桌面端(`apps/desktop`,经 preload 
 - `permission.rule.add { project_id, rule, session_id }` lets only the user store a project permission rule with its source session and the current `added_at`, recording `project.rule_allowed`; an existing rule returns the project unchanged without another event.
 - `GET permission.rules { project_id }` returns `{ rule, session_id, session_title?, added_at }[]`, newest first. A removed source session leaves the rule and session ID intact. `permission.rule.remove { project_id, rule }` removes that rule and returns the updated project.
 - `GET project.branches { project_id, root? }` returns `{ name, sha, commit_time, checked_out }[]`: local branches ordered by commit time descending, capped at 200. `root` defaults to the first project folder and must identify a project root. Times are Unix milliseconds.
+- `repo.log`, `repo.commit_after`, `repo.blame` and `repo.file_history` return `session_id` or `landing_id` when the corresponding session merge or branch landing included the commit. Each landing records up to its 1,000 newest commits. Older landings and landings whose commits could not be listed attribute only their recorded tip.
 - `project.worktree.set { project_id, copy_paths: string[], command?: { argv: string[], timeout_ms?: number } }` replaces `Project.worktree` and returns the updated project. Use the project's revision, as with `project.gate.set`; read the settings through `project.read`. Paths apply relative to each worktree's source project folder. Missing paths are skipped; existing selected files and folders are copied, preserving symlinks. Saving rejects absolute paths, parent traversal and paths resolving outside a project root. Runtime copying also checks the live source and destination boundaries.
 - Preparation runs after the existing dependency-folder copy and before the first turn. The command runs directly in the worktree with the native environment and project environment variables; its default timeout is 20 minutes, as for gate commands. Copy or command failures retain the worktree, set provisioning to `failed`, close the session with `session.closed { reason: "workspace_failed", error }`, and fail its queued turns. The session list shows `failed`. The last 4,000 characters of combined command output are stored in `Workspace.provisioning.output` and included in the failed turn's error. Workspace data is available in the board snapshot and `workspace.provisioning` events.
 - `GET workspace.stale { project_id }` returns `{ count, size_bytes?, worktree_disk?, worktree_root? }`. `count` and `size_bytes` cover existing linked worktrees whose bound sessions are all archived. `worktree_disk { count, size_bytes, unmeasured }` covers all existing linked worktrees, excluding removed records, and is absent without one; unmeasured worktrees contribute no bytes. Both totals reuse per-worktree measurements of logical file and symlink bytes without following symlinks. Measurements run asynchronously; a worktree is measured again at most every five minutes, and its last size stays until the new one lands. A measurement error emits `workspace.stale_size_failed` and leaves that worktree unmeasured. `worktree_root` is the read-only managed worktree folder, absent when none is configured.
@@ -597,6 +598,12 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `project.usage.daily` | `project_id`: string<br>`days`: integer<br>`timezone`: string |
 | `project.usage.read` | `project_id`: string |
 | `projects.summary` | — |
+| `repo.blame` | `project_id`: string<br>`path`: string<br>`ref?`: string |
+| `repo.commit_after` | `project_id`: string<br>`sha`: string |
+| `repo.commit_diff` | `project_id`: string<br>`sha`: string |
+| `repo.compare` | `project_id`: string<br>`base`: string<br>`head`: string |
+| `repo.file_history` | `project_id`: string<br>`path`: string |
+| `repo.log` | `project_id`: string<br>`ref?`: string<br>`limit?`: integer<br>`skip?`: integer |
 | `review.read` | `review_id`: string |
 | `runtime.models` | `project_id`: string<br>`runtime`: string |
 | `runtime.status` | `refresh?`: string |

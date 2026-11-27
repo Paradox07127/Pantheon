@@ -27,7 +27,12 @@ import {
   type GateCommands,
   type LandingOwner,
 } from './landing.js';
-import { gateRunPassed, insertLandingRecord, recordEndSequence } from './project-landings.js';
+import {
+  gateRunPassed,
+  insertLandingRecord,
+  listLandedCommits,
+  recordEndSequence,
+} from './project-landings.js';
 import { mergeBase } from './merge-preview.js';
 import { commitOf, projectAtRoot } from './review.js';
 import { userGit } from './source-git.js';
@@ -148,7 +153,11 @@ function gateHistory(row: Landing) {
 }
 
 type LandingOutcome = Partial<Landing> & { state: 'landed' | 'no_changes' | 'blocked' };
-type FinishLanding = (fields: LandingOutcome, commands?: GateCommands) => void;
+type FinishLanding = (
+  fields: LandingOutcome,
+  commands?: GateCommands,
+  landedCommits?: string[],
+) => void;
 
 /**
  * Ends the row, marks its job done and queues the removal of its worktree, in one transaction; a
@@ -161,6 +170,7 @@ function finish(
   commits: string[] | null,
   fields: LandingOutcome,
   commands?: GateCommands,
+  landedCommits?: string[],
 ): void {
   ctx.store.transaction(() => {
     const row = ctx.store.must<Landing>('landings', landingId);
@@ -197,22 +207,26 @@ function finish(
         $ref: `refs/heads/${branch}`,
         $commits: JSON.stringify(commits),
       });
-    insertLandingRecord(ctx, {
-      id: row.id,
-      revision: 1,
-      project_id: row.project_id,
-      branch: row.branch,
-      state: fields.state,
-      reason: next.reason ?? null,
-      ended_at: next.finished_at!,
-      landed_sha: fields.state === 'landed' ? next.to_sha! : null,
-      ...gateHistory(next),
-      review_rounds: commits === null ? null : Number(reviews!.rounds),
-      turns: 0,
-      input_tokens: 0,
-      output_tokens: 0,
-      wall_ms: null,
-    });
+    insertLandingRecord(
+      ctx,
+      {
+        id: row.id,
+        revision: 1,
+        project_id: row.project_id,
+        branch: row.branch,
+        state: fields.state,
+        reason: next.reason ?? null,
+        ended_at: next.finished_at!,
+        landed_sha: fields.state === 'landed' ? next.to_sha! : null,
+        ...gateHistory(next),
+        review_rounds: commits === null ? null : Number(reviews!.rounds),
+        turns: 0,
+        input_tokens: 0,
+        output_tokens: 0,
+        wall_ms: null,
+      },
+      landedCommits,
+    );
     if (next.state === 'landed')
       recordGateBaseline(
         ctx,
@@ -420,11 +434,12 @@ async function landBranch(
         conflicts?: string[];
         conflict_commits?: string[];
       };
+      // A rebase can drop every commit when the target already has their changes.
+      const state =
+        item.state === 'landed' && item.from_sha === item.to_sha ? 'no_changes' : item.state;
       finish(
         {
-          // A rebase can drop every commit, when the target already has their changes.
-          state:
-            item.state === 'landed' && item.from_sha === item.to_sha ? 'no_changes' : item.state,
+          state,
           reason: item.reason,
           conflicts,
           conflict_commits,
@@ -433,6 +448,7 @@ async function landBranch(
           to_sha: item.to_sha,
         },
         commands,
+        state === 'landed' ? await listLandedCommits(row.root, item.from_sha!, item.to_sha!) : [],
       );
     },
   );
@@ -462,8 +478,8 @@ export function runLanding(ctx: ControlContext, landingId: string, jobId: string
     return;
   }
   let commits: string[] | null = [];
-  const finishAttempt: FinishLanding = (fields, commands) =>
-    finish(ctx, landingId, jobId, commits, fields, commands);
+  const finishAttempt: FinishLanding = (fields, commands, landedCommits) =>
+    finish(ctx, landingId, jobId, commits, fields, commands, landedCommits);
   if (!workspace || workspace.removed_at !== undefined) {
     finishAttempt({ state: 'blocked', reason: 'workspace_missing' });
     return;

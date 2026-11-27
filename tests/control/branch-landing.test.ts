@@ -4,8 +4,10 @@ import { expect, it, vi } from 'vitest';
 import type { Landing, Principal, Project, Review, Session, Workspace } from '@pantheon/domain';
 import { projectChanges } from '../../packages/control/dist/changes.js';
 import type { ControlContext } from '../../packages/control/dist/context.js';
+import * as gitModule from '../../packages/control/dist/git.js';
 import * as landingRecords from '../../packages/control/dist/project-landings.js';
 import { startWorkspaceProvisioning } from '../../packages/control/dist/provisioning.js';
+import { BOUND } from '../../packages/control/dist/source-git.js';
 import * as validation from '../../packages/control/dist/validation-executor.js';
 import { awaitWorkspaceReady, eventually, insideSandbox, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
@@ -115,6 +117,69 @@ async function landReviewedBranch(f: Fixture, branch: string) {
   expect(record).toMatchObject({ id: started.id, state: 'landed' });
   return record;
 }
+
+it.each(['succeeds', 'fails'])(
+  'records branch attribution when listing the landed commits %s',
+  async (listing) => {
+    const f = await landFixture();
+    vi.spyOn(validation, 'runValidationCommand').mockResolvedValue(passedGate());
+    const tip = branch(f, 'feature', [
+      ['first.txt', 'first\n'],
+      ['second.txt', 'second\n'],
+    ]);
+    const first = git(f.source, 'rev-parse', 'feature^');
+    const runGit = gitModule.runGit;
+    const calls = vi.spyOn(gitModule, 'runGit');
+    if (listing === 'fails')
+      calls.mockImplementation((cwd, args, input, asynchronous, options) =>
+        runGit(
+          cwd,
+          args.includes('--max-count=1000') ? ['rev-list', 'missing-ref'] : args,
+          input,
+          asynchronous,
+          options,
+        ),
+      );
+    const record = await landReviewedBranch(f, 'feature');
+    calls.mockClear();
+    const log = await f.control.repoLog(user, { project_id: f.project.id, limit: 2, skip: 0 });
+    expect(log.commits.map(({ sha, landing_id }) => [sha, landing_id])).toEqual([
+      [tip, record.id],
+      [first, listing === 'succeeds' ? record.id : undefined],
+    ]);
+    expect(calls.mock.calls.filter(([, args]) => args[0] === 'rev-list')).toHaveLength(0);
+  },
+);
+
+it('lands a range of 1001 commits and records the newest 1000', async () => {
+  const f = await landFixture();
+  vi.spyOn(validation, 'runValidationCommand').mockResolvedValue(passedGate());
+  const base = git(f.source, 'rev-parse', 'main');
+  const commit = [
+    'commit refs/heads/feature',
+    'committer Fixture <fixture@example.invalid> 1000000000 +0000',
+    'data 6',
+    'change',
+    '',
+    '',
+  ].join('\n');
+  const imported = await gitModule.runGit(
+    f.source,
+    ['fast-import', '--quiet'],
+    Buffer.from(`reset refs/heads/feature\nfrom ${base}\n\n${commit.repeat(1001)}done\n`),
+    true,
+    BOUND,
+  );
+  expect(imported.exit_code).toBe(0);
+  const record = await landReviewedBranch(f, 'feature');
+  const page = await f.control.repoLog(user, { project_id: f.project.id, limit: 2, skip: 999 });
+  expect(page.commits.map((commit) => commit.landing_id)).toEqual([record.id, undefined]);
+  expect(
+    f.store
+      .statement('SELECT count(*) AS count FROM landing_commits WHERE landing_id=?')
+      .get(record.id),
+  ).toMatchObject({ count: 1000 });
+});
 
 it('counts only new review requests when a branch name is reused', async () => {
   const f = await landFixture();

@@ -14,8 +14,10 @@ import type {
   querySchemas,
 } from '@pantheon/protocol';
 import { projectAccess, type ControlContext } from './context.js';
+import { runGit } from './git.js';
 import { gateFailed } from './landing.js';
 import { SETTING_PROPOSALS } from './needs-you-settings.js';
+import { BOUND } from './source-git.js';
 
 export const gateRunPassed = (results: NonNullable<LandingItem['gate_results']>) =>
   !results.some(gateFailed);
@@ -23,12 +25,42 @@ export const gateRunPassed = (results: NonNullable<LandingItem['gate_results']>)
 // The event cursor at the record's end separates attempts that end and start in one millisecond.
 export const recordEndSequence = "r.data->>'$.end_sequence'";
 
-export function insertLandingRecord(ctx: ControlContext, record: LandingRecord) {
+export async function listLandedCommits(root: string, from: string, to: string): Promise<string[]> {
+  const result = await runGit(
+    root,
+    ['rev-list', '--max-count=1000', `${from}..${to}`, '--'],
+    undefined,
+    true,
+    BOUND,
+  );
+  return result.exit_code === 0
+    ? result.stdout.toString().trimEnd().split('\n').filter(Boolean)
+    : [to];
+}
+
+export function insertLandingRecord(
+  ctx: ControlContext,
+  record: LandingRecord,
+  commits: string[] = [],
+) {
   ctx.store.insert('landing_records', {
     ...record,
     first_gate_passed: record.gate_runs ? record.first_gate_passed : null,
     end_sequence: ctx.store.cursor(),
   });
+  if (commits.length)
+    ctx.store
+      .statement(
+        `INSERT INTO landing_commits (project_id, sha, session_id, landing_id, ended_at)
+         SELECT ?, value, ?, ?, ? FROM json_each(?)`,
+      )
+      .run(
+        record.project_id,
+        record.session_id ?? null,
+        record.branch === undefined ? null : record.id,
+        record.ended_at,
+        JSON.stringify(commits),
+      );
 }
 
 /** Called in the receipt transaction, before session.merged starts the next interval. */
@@ -38,6 +70,7 @@ export function recordSessionLanding(
   state: LandingRecord['state'],
   reason: string | null,
   landedSha: string | null = null,
+  commits: string[] = [],
 ) {
   const ended_at = ctx.store.now();
   const { cutoff } = ctx.store
@@ -99,23 +132,27 @@ export function recordSessionLanding(
     output_tokens: number;
     first_turn: number | null;
   };
-  insertLandingRecord(ctx, {
-    id: id(),
-    revision: 1,
-    project_id: session.project_id,
-    session_id: session.id,
-    state,
-    reason,
-    ended_at,
-    landed_sha: landedSha,
-    gate_runs,
-    first_gate_passed,
-    review_rounds: Number(reviews!.rounds),
-    turns: usage.turns,
-    input_tokens: usage.input_tokens,
-    output_tokens: usage.output_tokens,
-    wall_ms: usage.first_turn === null ? null : ended_at - usage.first_turn,
-  });
+  insertLandingRecord(
+    ctx,
+    {
+      id: id(),
+      revision: 1,
+      project_id: session.project_id,
+      session_id: session.id,
+      state,
+      reason,
+      ended_at,
+      landed_sha: landedSha,
+      gate_runs,
+      first_gate_passed,
+      review_rounds: Number(reviews!.rounds),
+      turns: usage.turns,
+      input_tokens: usage.input_tokens,
+      output_tokens: usage.output_tokens,
+      wall_ms: usage.first_turn === null ? null : ended_at - usage.first_turn,
+    },
+    commits,
+  );
 }
 
 type ReadInput = ReturnType<(typeof querySchemas)['project.landings.read']['parse']>;

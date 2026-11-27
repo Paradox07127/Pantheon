@@ -6,7 +6,7 @@ export type {
   MemorySessionTurnsResult,
 } from './memory.js';
 import { z } from 'zod';
-import { changeStoryInputSchemas } from './change-story.js';
+import { changeStoryInputSchemas, type LandingDiff } from './change-story.js';
 import type { ProjectWaiting } from './project-waiting.js';
 import { reviewerTools, workflowInputSchemas } from './workflow-tools.js';
 import type {
@@ -271,6 +271,11 @@ export const PROPOSABLE_SETTING_COMMANDS = [
 ] as const satisfies readonly ProposableSettingCommand[];
 export const USER_PRINCIPAL_ID = 'local-user';
 const str = z.string().min(1).max(65536);
+const repoRef = str.refine((ref) => !ref.startsWith('-'), 'Revision must not start with -');
+const repoPath = str.refine(
+  (path) => !path.startsWith('/') && !path.split('/').includes('..'),
+  'Path must be relative to the project folder and must not contain ..',
+);
 const findingText = str.refine((value) => value.trim().length > 0);
 const strings = z.array(str).max(256);
 /** The reason a main agent gives for a session action it takes for the user. */
@@ -1961,6 +1966,17 @@ export const querySchemas = {
   'runtime.models': z.strictObject({ project_id: str, runtime: str }),
   'permission.rules': z.strictObject({ project_id: str }),
   'project.branches': z.strictObject({ project_id: str, root: str.optional() }),
+  'repo.log': z.strictObject({
+    project_id: str,
+    ref: repoRef.optional(),
+    limit: z.coerce.number().int().min(1).max(500).default(200),
+    skip: z.coerce.number().int().min(0).default(0),
+  }),
+  'repo.commit_diff': z.strictObject({ project_id: str, sha: repoRef }),
+  'repo.compare': z.strictObject({ project_id: str, base: repoRef, head: repoRef }),
+  'repo.commit_after': z.strictObject({ project_id: str, sha: repoRef }),
+  'repo.blame': z.strictObject({ project_id: str, path: repoPath, ref: repoRef.optional() }),
+  'repo.file_history': z.strictObject({ project_id: str, path: repoPath }),
   'workspace.stale': z.strictObject({ project_id: str }),
   'project.head': z.strictObject({ project_id: str }),
   /** Without session_id the project's first folder is searched. */
@@ -3251,6 +3267,94 @@ export interface ProjectPermissionRule {
   added_at: number;
 }
 
+export interface RepoCommit {
+  sha: string;
+  /** Empty for a root commit; the first parent first. */
+  parents: string[];
+  /** Branch and tag names pointing here, as git log --decorate prints them. */
+  refs: string[];
+  author: string;
+  author_email: string;
+  /** Unix milliseconds of the commit time. */
+  committed_at: number;
+  subject: string;
+  /** The message after the subject line; empty when there is none. */
+  body: string;
+  /** The session whose merge included this commit. */
+  session_id?: string;
+  /** The branch landing that included this commit. */
+  landing_id?: string;
+}
+/** GET /v1/repo.log; commits reachable from ref, newest first. */
+export interface RepoLog {
+  commits: RepoCommit[];
+  /** True when commits beyond skip + limit exist. */
+  has_more: boolean;
+}
+/** GET /v1/repo.compare; head against base, diffed from their merge base, or from base when they share no history, to head. */
+export interface RepoCompare extends LandingDiff {
+  /** null when base and head share no history. */
+  merge_base: string | null;
+  /** Commits in head that base lacks. */
+  ahead: number;
+  /** Commits in base that head lacks. */
+  behind: number;
+  /** Files that would conflict merging head into base, at most 20; absent when this git has no merge preview or the two share no history. */
+  conflicts?: RepoConflict[];
+  /** Unix milliseconds when the merge preview ran. Present whenever conflicts is present. */
+  previewed_at?: number;
+  /** Changed files of head that no other session's worktree changes against the first folder's HEAD. */
+  single_owner_files: number;
+}
+/** The first conflict in one file of a merge preview. */
+export interface RepoConflict {
+  path: string;
+  /** Line of the merged result where the conflict starts; null when the file has no conflict markers, as when one side deleted it or it is binary. */
+  line: number | null;
+  /** Up to 5 of base's lines in that conflict. */
+  base_lines: string[];
+  /** Up to 5 of head's lines in that conflict. */
+  head_lines: string[];
+}
+export interface RepoCommitAfter {
+  /** The next commit on HEAD's first-parent line, or null if the commit has no successor there. */
+  next: RepoCommit | null;
+}
+/** GET /v1/repo.blame; line numbers start at 1. */
+export interface RepoBlame {
+  path: string;
+  /** The commit blamed. */
+  sha: string;
+  /** The file as the blamed commit has it, the lines chunks number; absent for a binary file. */
+  text?: string;
+  /** True when text stops at the read bound. */
+  truncated: boolean;
+  /** Runs of lines whose last change came from one commit; at is Unix milliseconds of its author time. */
+  chunks: {
+    start: number;
+    count: number;
+    sha: string;
+    author: string;
+    at: number;
+    /** The session whose merge included this commit. */
+    session_id?: string;
+    /** The branch landing that included this commit. */
+    landing_id?: string;
+  }[];
+  /** Committed changes of each session worktree since its merge base with the first folder's HEAD, moved onto the lines of the blamed commit's file; count 0 is an insertion after line start. */
+  pending: { session_id: string; ranges: { start: number; count: number }[] }[];
+}
+/** GET /v1/repo.file_history; read from the first folder's HEAD. */
+export interface RepoFileHistory {
+  /** The latest 50 commits that changed the file, following renames, newest first. */
+  changes: RepoCommit[];
+  /** The last 26 weeks, oldest first, the current week last; count is commits that changed the file. */
+  weekly: { start: number; count: number }[];
+  /** The 10 files changed most often in the same commit, among the scanned commits; most first. */
+  cochange: { path: string; together: number }[];
+  /** Commits scanned for cochange: the latest 500, or fewer when the history is shorter. */
+  scanned: number;
+}
 /** GET /v1/project.branches; local branches, newest commit first, at most 200. */
 export interface ProjectBranch {
   name: string;

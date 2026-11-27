@@ -1,4 +1,4 @@
-import { recordSessionLanding } from './project-landings.js';
+import { listLandedCommits, recordSessionLanding } from './project-landings.js';
 import { latestEvent } from './needs-you.js';
 import { workflowPolicy } from './workflow-policy.js';
 import { onDevice } from './remote-workspace.js';
@@ -3055,13 +3055,17 @@ async function completeMerge(ctx: ControlContext, sessionId: string, jobId: stri
     ctx.failpoint('after_fast_forward_before_receipt');
     // The pending job lands again as a no-op and retries the close.
     if (!session.conductor && !(await closeNativeProcesses(ctx, session.id))) return;
-    const numstat = await runGit(
-      item.source,
-      ['diff', '--numstat', '-z', item.from_sha!, item.to_sha!],
-      undefined,
-      true,
-      { max_buffer: 4 * PATCH_BOUND, timeout_ms: TIME_BOUND },
-    );
+    const changed = item.from_sha !== item.to_sha;
+    const [numstat, commits] = await Promise.all([
+      runGit(
+        item.source,
+        ['diff', '--numstat', '-z', item.from_sha!, item.to_sha!],
+        undefined,
+        true,
+        { max_buffer: 4 * PATCH_BOUND, timeout_ms: TIME_BOUND },
+      ),
+      changed ? listLandedCommits(item.source, item.from_sha!, item.to_sha!) : [],
+    ]);
     const files = numstat.exit_code === 0 ? numstatFiles(numstat.stdout) : [];
     ctx.store.transaction(() => {
       const current = ctx.store.must<Session>('sessions', session.id);
@@ -3073,13 +3077,13 @@ async function completeMerge(ctx: ControlContext, sessionId: string, jobId: stri
           : { ...current, state: 'closed' as const, outcome: 'merged' as const, merge: undefined },
         current.revision,
       );
-      const changed = item.from_sha !== item.to_sha;
       recordSessionLanding(
         ctx,
         next,
         changed ? 'landed' : 'no_changes',
         null,
         changed ? item.to_sha! : null,
+        commits,
       );
       ctx.store.event('session.merged', next, next.project_id, {
         branch: item.branch,
@@ -3901,6 +3905,7 @@ async function prepareLand(
           changed.stdout.toString().split('\0').filter(Boolean),
           commands,
         );
+  const commits = await listLandedCommits(workspace.path, base, worktree.head);
   return (ctx) => {
     const { session } = request(ctx);
     // A gate the user removed or turned off since that run no longer holds the landing.
@@ -3946,7 +3951,7 @@ async function prepareLand(
         : { ...session, state: 'closed' as const, outcome: 'merged' as const, merge: undefined },
       session.revision,
     );
-    recordSessionLanding(ctx, next, 'landed', null, worktree.head);
+    recordSessionLanding(ctx, next, 'landed', null, worktree.head, commits);
     ctx.store.event(
       'session.merged',
       next,

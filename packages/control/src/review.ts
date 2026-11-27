@@ -33,7 +33,7 @@ import {
   type Handlers,
 } from './context.js';
 import { sessionDefaults } from './user-config.js';
-import { runGit } from './git.js';
+import { runGit, type GitExecutionOptions } from './git.js';
 import { mergeBase } from './merge-preview.js';
 import { sessionGoal, sessionRangeAsync, type DiffRange } from './landing-diff.js';
 import { confirmTermination } from './process.js';
@@ -270,12 +270,17 @@ function rangeTarget(ctx: ControlContext, principal: Principal, command: Command
   return { input, root, project };
 }
 
-export async function commitOf(root: string, ref: string): Promise<string> {
+export async function commitOf(
+  root: string,
+  ref: string,
+  bounds?: Pick<GitExecutionOptions, 'timeout_ms' | 'max_buffer'>,
+): Promise<string> {
   const result = await runGit(
     root,
     ['rev-parse', '--verify', '--quiet', '--end-of-options', `${ref}^{commit}`],
     undefined,
     true,
+    bounds,
   );
   requireThat(result.exit_code === 0, 'invalid_input', `Not a commit: ${ref}`);
   return result.stdout.toString().trim();

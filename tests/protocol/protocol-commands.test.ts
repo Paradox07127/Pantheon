@@ -77,6 +77,12 @@ it('defines a strict input schema for each unimplemented command and the queries
     'project.usage.daily',
     'project.usage.read',
     'projects.summary',
+    'repo.blame',
+    'repo.commit_after',
+    'repo.commit_diff',
+    'repo.compare',
+    'repo.file_history',
+    'repo.log',
     'review.read',
     'runtime.models',
     'runtime.status',
@@ -652,4 +658,31 @@ it('requires a local time zone and one to ninety calendar days of project usage'
   for (const days of ['0', '1.5', '91'])
     expect(schema.safeParse({ ...params, days }).success).toBe(false);
   expect(schema.safeParse({ ...params, timezone: 'not a zone' }).success).toBe(false);
+});
+
+it('validates repository refs and project-relative paths at the query boundary', () => {
+  const input = { project_id: 'project' };
+  expect(querySchemas['repo.log'].parse(input)).toEqual({ ...input, limit: 200, skip: 0 });
+  expect(querySchemas['repo.log'].safeParse({ ...input, ref: '--all' }).success).toBe(false);
+  for (const method of ['repo.commit_diff', 'repo.commit_after'] as const)
+    expect(querySchemas[method].safeParse({ ...input, sha: '--all' }).success).toBe(false);
+  for (const field of ['base', 'head'])
+    expect(
+      querySchemas['repo.compare'].safeParse({
+        ...input,
+        base: 'main',
+        head: 'HEAD',
+        [field]: '--all',
+      }).success,
+    ).toBe(false);
+  expect(querySchemas['repo.blame'].safeParse({ ...input, path: 'a', ref: '--all' }).success).toBe(
+    false,
+  );
+  for (const method of ['repo.file_history', 'repo.blame'] as const) {
+    for (const path of ['/outside', 'dir/../../outside', 'dir/../file'])
+      expect(querySchemas[method].safeParse({ ...input, path }).success).toBe(false);
+    expect(querySchemas[method].safeParse({ ...input, path: '-release..notes' }).success).toBe(
+      true,
+    );
+  }
 });
