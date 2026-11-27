@@ -585,7 +585,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `files.list` | `project_id`: string<br>`session_id?`: string<br>`path?`: string |
 | `files.read` | `project_id`: string<br>`session_id?`: string<br>`path`: string |
 | `files.search` | `project_id`: string<br>`session_id?`: string<br>`q`: string |
-| `github.items` | `project_id`: string<br>`kind`: "pr" \| "issue" |
+| `github.items` | `project_id`: string<br>`kind`: "pr" \| "issue"<br>`assigned?`: "me" |
 | `github.pr.detail` | `project_id`: string<br>`number`: integer |
 | `import.candidates` | — |
 | `mcp.app.resource` | `session_id`: string<br>`server`: string<br>`uri`: string |

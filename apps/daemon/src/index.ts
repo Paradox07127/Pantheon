@@ -702,7 +702,7 @@ export async function startDaemon(options: DaemonOptions) {
       'mcp.status': (p, i) => control.mcpStatus(p, i),
       'session.mcp_servers': (p, i) => control.sessionMcpServers(p, i.session_id),
       'mcp.app.resource': (p, i) => control.mcpAppResource(p, i),
-      'github.items': (p, i) => control.githubItems(p, i.project_id, i.kind),
+      'github.items': (p, i) => control.githubItems(p, i.project_id, i.kind, i.assigned),
       'github.pr.detail': (p, i) => control.githubPullDetail(p, i.project_id, i.number),
       'connections.status': (p, i) => control.connectionsStatus(p, i.refresh),
       'device.list': (p, i) => control.listDevices(p, i.refresh),

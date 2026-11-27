@@ -38,6 +38,8 @@ let github: ConnectionsStatus['github'];
 let command: ReturnType<typeof vi.fn>;
 let query: ReturnType<typeof vi.fn>;
 let openLink: ReturnType<typeof vi.fn>;
+let assigned:
+  { ok: true; value: GithubItems } | { ok: false; error: { code: string; message: string } };
 
 async function mount() {
   const h = mountHook(() =>
@@ -80,6 +82,7 @@ beforeEach(() => {
   openLink = vi.fn(async () => ({ ok: true, value: null }));
   query = vi.fn(async (method: string, params: Record<string, string>) => {
     if (method === 'connections.status') return { ok: true, value: { github } };
+    if (method === 'github.items' && params.assigned === 'me') return assigned;
     if (method === 'github.items')
       return {
         ok: true,
@@ -93,6 +96,7 @@ beforeEach(() => {
       };
     return { ok: false, error: { code: 'unknown_route', message: method } };
   });
+  assigned = { ok: true, value: { repo: 'acme/app', items: [] } };
   vi.stubGlobal('navigator', { userAgent: 'Macintosh' });
   vi.stubGlobal('window', {
     pantheon: { query, command, openLink },
@@ -147,6 +151,48 @@ it('refers a pull request and an issue picked from the offer and sends them', as
   named(h.value, 'SendButton').props.onPress();
   await h.flush();
   expect((command.mock.calls[0] as any)[0].input.refs).toEqual([{ kind: 'pr', number: 12 }]);
+});
+
+it('offers the first three issues assigned to me before the open issues, which leave them out', async () => {
+  assigned = {
+    ok: true,
+    value: { repo: 'acme/app', items: [item(29), item(5), item(4), item(3)] },
+  };
+  const h = await mount();
+  expect(query).toHaveBeenCalledWith('github.items', {
+    project_id: 'project-a',
+    kind: 'issue',
+    assigned: 'me',
+  });
+  const mine = zh('sessions.newWorkspace.assignedIssues');
+  expect(rows(h, mine).map(text)).toEqual(['#29Item 29', '#5Item 5', '#4Item 4']);
+  expect(rows(h, zh('sessions.newWorkspace.openIssues')).map(text)).toEqual([
+    '#30Item 30',
+    '#28Item 28',
+    '#27Item 27',
+  ]);
+  const groups = nodes(h.value)
+    .filter((n) => n.props.role === 'group')
+    .map((n) => n.props['aria-label']);
+  expect(groups.indexOf(mine)).toBe(groups.indexOf(zh('sessions.newWorkspace.openIssues')) - 1);
+  rows(h, mine)[1]!.props.onClick();
+  h.render();
+  expect(text(find(h.value, labelled('Issue #5 Item 5')))).toContain('Item 5');
+});
+
+it.each([
+  ['none are assigned', { ok: true as const, value: { repo: 'acme/app', items: [] } }],
+  ['the read fails', { ok: false as const, error: { code: 'gh_failed', message: 'gh failed' } }],
+])('leaves out the assigned issues when %s and keeps the other groups', async (_, result) => {
+  assigned = result;
+  const h = await mount();
+  expect(has(h, zh('sessions.newWorkspace.assignedIssues'))).toBe(false);
+  expect(rows(h, zh('sessions.newWorkspace.openPulls'))).toHaveLength(3);
+  expect(rows(h, zh('sessions.newWorkspace.openIssues')).map(text)).toEqual([
+    '#30Item 30',
+    '#29Item 29',
+    '#28Item 28',
+  ]);
 });
 
 it('says GitHub is not connected and goes to the connections settings', async () => {

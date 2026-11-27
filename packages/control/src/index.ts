@@ -1043,8 +1043,8 @@ export class Control extends EventEmitter {
   ) {
     return mcpAppResource(this.ctx, principal, input);
   }
-  githubItems(principal: Principal, projectId: string, kind: 'pr' | 'issue') {
-    return githubItems(this.ctx, principal, projectId, kind);
+  githubItems(principal: Principal, projectId: string, kind: 'pr' | 'issue', assigned?: 'me') {
+    return githubItems(this.ctx, principal, projectId, kind, assigned);
   }
   githubPullDetail(principal: Principal, projectId: string, number: number) {
     return githubPullDetail(this.ctx, principal, projectId, number);

@@ -44,8 +44,13 @@ export async function searchSymbols(
 export async function listGithubItems(
   project_id: string,
   kind: 'pr' | 'issue',
+  assigned?: 'me',
 ): Promise<BridgeResult<GithubItem[]>> {
-  const result = await query('github.items', { project_id, kind });
+  const result = await query('github.items', {
+    project_id,
+    kind,
+    ...(assigned ? { assigned } : {}),
+  });
   if (!result.ok) return result;
   const items = (result.value as Partial<GithubItems> | null)?.items;
   if (!Array.isArray(items))

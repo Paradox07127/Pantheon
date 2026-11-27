@@ -255,12 +255,13 @@ export async function githubItems(
   principal: Principal,
   projectId: string,
   kind: 'pr' | 'issue',
+  assigned?: 'me',
 ): Promise<GithubItems> {
   projectAccess(ctx, principal, projectId, 'github.items');
   const project = ctx.store.must<Project>('projects', projectId);
   let entries = cached.get(ctx);
   if (!entries) cached.set(ctx, (entries = new Map()));
-  const key = `${projectId}:${kind}`,
+  const key = `${projectId}:${kind}${assigned ? ':assigned' : ''}`,
     previous = entries.get(key);
   if (previous && ctx.store.now() - previous.at < 60_000) return previous.value;
   const root = project.roots[0]!,
@@ -278,6 +279,7 @@ export async function githubItems(
         'open',
         '--limit',
         '30',
+        ...(assigned ? ['--assignee', '@me'] : []),
         '--search',
         'sort:updated-desc',
         '--json',

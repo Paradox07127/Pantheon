@@ -2204,8 +2204,12 @@ export const querySchemas = {
   'session.mcp_servers': z.strictObject({ session_id: str }),
   /** McpAppResource; the HTML of a ui:// interface, read through the live session. */
   'mcp.app.resource': z.strictObject({ session_id: str, server: str, uri: str }),
-  /** GithubItems; at most 30 open items, newest update first, cached for sixty seconds. */
-  'github.items': z.strictObject({ project_id: str, kind: z.enum(['pr', 'issue']) }),
+  /** GithubItems; at most 30 open items, newest update first, cached for sixty seconds; assigned me keeps those assigned to the gh user. */
+  'github.items': z.strictObject({
+    project_id: str,
+    kind: z.enum(['pr', 'issue']),
+    assigned: z.enum(['me']).optional(),
+  }),
   /** GithubPullDetail; one pull request with its checks and review threads, cached for sixty seconds. */
   'github.pr.detail': z.strictObject({ project_id: str, number: z.coerce.number().int().min(1) }),
   /** ConnectionsStatus; refresh bypasses the daemon's cached connection checks. */

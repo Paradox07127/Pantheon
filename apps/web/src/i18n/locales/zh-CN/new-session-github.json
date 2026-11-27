@@ -1,4 +1,5 @@
 {
+  "sessions.newWorkspace.assignedIssues": "指派给我的 issue",
   "sessions.newWorkspace.connectGithub": "去连接",
   "sessions.newWorkspace.githubOff": "GitHub 未连接",
   "sessions.newWorkspace.openIssues": "未处理的 issue",

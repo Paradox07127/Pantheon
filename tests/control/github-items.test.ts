@@ -165,6 +165,28 @@ it('keeps issue and pull request caches separate and expires them after sixty se
   expect((await f.control.githubItems(user, f.project.id, 'issue')).items).toEqual([]);
 });
 
+it('lists the items assigned to the signed-in user apart from the open ones', async () => {
+  const f = await setup();
+  f.setItems([item(1, '2026-11-14T00:00:00Z')]);
+  expect(
+    (await f.control.githubItems(user, f.project.id, 'issue', 'me')).items.map((i) => i.number),
+  ).toEqual([1]);
+  f.setItems([item(2, '2026-11-14T00:00:00Z')]);
+  expect(
+    (await f.control.githubItems(user, f.project.id, 'issue')).items.map((i) => i.number),
+  ).toEqual([2]);
+  expect(
+    (await f.control.githubItems(user, f.project.id, 'issue', 'me')).items.map((i) => i.number),
+  ).toEqual([1]);
+  const lists = vi
+    .mocked(f.run)
+    .mock.calls.map(([, args]) => args)
+    .filter((args) => args[1] === 'list');
+  expect(lists).toHaveLength(2);
+  expect(lists[0]).toEqual(expect.arrayContaining(['--assignee', '@me']));
+  expect(lists[1]).not.toContain('--assignee');
+});
+
 it('returns no repository without an eligible origin and accepts the signed-in enterprise host', async () => {
   for (const remote of ['', 'https://gitlab.com/owner/project.git']) {
     const f = await setup(remote);

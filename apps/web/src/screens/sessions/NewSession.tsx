@@ -129,24 +129,29 @@ const SUGGESTED = 3;
 const BRANCH_FILTER_FROM = 8;
 // The start menu's value for the project's own checkout; other values are the start as JSON.
 const HEAD = '';
-// Open pull requests and open issues offered each.
+// Open pull requests, issues assigned to the user and open issues offered each.
 const GITHUB_SUGGESTED = 3;
 
 type GithubKind = GithubRef['kind'];
 
-/** The project's open pull requests and issues once GitHub is connected; empty when a read fails. */
+/** The project's open pull requests, issues assigned to the user and open issues once GitHub is connected; empty when a read fails. */
 function useGithubItems(projectId: string, connected: boolean) {
-  const [read, setRead] = useState<{ for: string; pr: GithubItem[]; issue: GithubItem[] } | null>(
-    null,
-  );
+  const [read, setRead] = useState<{
+    for: string;
+    pr: GithubItem[];
+    assigned: GithubItem[];
+    issue: GithubItem[];
+  } | null>(null);
   useEffect(() => {
     if (!connected) return;
     let current = true;
-    const items = (kind: GithubKind) =>
-      listGithubItems(projectId, kind).then((result) => (result.ok ? result.value : []));
-    void Promise.all([items('pr'), items('issue')]).then(([pr, issue]) => {
-      if (current) setRead({ for: projectId, pr, issue });
-    });
+    const items = (kind: GithubKind, assigned?: 'me') =>
+      listGithubItems(projectId, kind, assigned).then((result) => (result.ok ? result.value : []));
+    void Promise.all([items('pr'), items('issue', 'me'), items('issue')]).then(
+      ([pr, assigned, issue]) => {
+        if (current) setRead({ for: projectId, pr, assigned, issue });
+      },
+    );
     return () => {
       current = false;
     };
@@ -514,15 +519,27 @@ export function NewSession(props: {
     );
   };
 
-  const githubOffered = !!githubItems && githubItems.pr.length + githubItems.issue.length > 0;
+  const githubOffered =
+    !!githubItems &&
+    githubItems.pr.length + githubItems.assigned.length + githubItems.issue.length > 0;
   const githubOff = githubState === 'signed_out' || githubState === 'missing';
-  const githubGroup = (kind: GithubKind) => {
-    const items = githubItems?.[kind].slice(0, GITHUB_SUGGESTED) ?? [];
+  const assignedOffered = githubItems?.assigned.slice(0, GITHUB_SUGGESTED) ?? [];
+  const githubGroup = (kind: GithubKind, assigned?: 'me') => {
+    const items = assigned
+      ? assignedOffered
+      : (githubItems?.[kind] ?? [])
+          .filter((item) => kind === 'pr' || !assignedOffered.some((a) => a.number === item.number))
+          .slice(0, GITHUB_SUGGESTED);
     if (items.length === 0) return null;
     const label =
       kind === 'pr'
         ? t({ id: 'sessions.newWorkspace.openPulls', defaultMessage: 'Open pull requests' })
-        : t({ id: 'sessions.newWorkspace.openIssues', defaultMessage: 'Open issues' });
+        : assigned
+          ? t({
+              id: 'sessions.newWorkspace.assignedIssues',
+              defaultMessage: 'Issues assigned to me',
+            })
+          : t({ id: 'sessions.newWorkspace.openIssues', defaultMessage: 'Open issues' });
     return (
       <div className="cr-sgg" role="group" aria-label={label}>
         <span className="cr-gh" aria-hidden="true">
@@ -1081,6 +1098,7 @@ export function NewSession(props: {
         </div>
       )}
       {githubGroup('pr')}
+      {githubGroup('issue', 'me')}
       {githubGroup('issue')}
       {githubOff && (
         <div className="cr-sgx">

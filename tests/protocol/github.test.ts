@@ -15,6 +15,19 @@ it('accepts GitHub item queries and user pull request creation', () => {
   });
 });
 
+it('narrows GitHub item queries to the signed-in user only with assigned me', () => {
+  expect(
+    querySchemas['github.items'].parse({ project_id: 'project', kind: 'issue', assigned: 'me' }),
+  ).toEqual({ project_id: 'project', kind: 'issue', assigned: 'me' });
+  expect(
+    querySchemas['github.items'].safeParse({
+      project_id: 'project',
+      kind: 'issue',
+      assigned: 'octo',
+    }).success,
+  ).toBe(false);
+});
+
 it('accepts mixed session, issue and pull request references with a shared limit of eight', () => {
   const refs = [
     { kind: 'session', id: 'earlier' },
