@@ -325,11 +325,14 @@ describe('the list or flow switch', () => {
     expect(listOf(screen().value).props.view).toBe('flow');
   });
 
-  it('has no switch and shows the list without dependencies, whatever view is stored', () => {
+  it('offers no flow and shows the list without dependencies, whatever view is stored', () => {
     stored.set('pantheon.planView.alpha', 'flow');
     read([landed, writing]);
     const h = screen();
-    expect(switchOf(h.value)).toBeUndefined();
+    const choices = nodes(switchOf(h.value))
+      .filter((n) => n.props.value !== undefined && n.props.onValueChange === undefined)
+      .map((n) => n.props.value);
+    expect(choices).toEqual(['list', 'history']);
     expect(listOf(h.value).props.view).toBe('list');
   });
 

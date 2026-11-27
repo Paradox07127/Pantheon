@@ -17,6 +17,7 @@ import { AgentList } from './AgentList';
 import { ConductorComposer } from './ConductorComposer';
 import { ItemInspector } from './ItemInspector';
 import { hasDependencies } from './plan-flow';
+import { PlanHistory } from './PlanHistory';
 import { PlanList } from './PlanList';
 import { mainAgent, type ShownPlanItem } from './project-model';
 import { StatusPanel } from './StatusPanel';
@@ -56,19 +57,20 @@ function startMainAgent(projectId: string) {
   useShell.getState().startNewSession();
 }
 
-type PlanView = 'list' | 'flow';
+type PlanView = 'list' | 'flow' | 'history';
 
 const VIEW_KEY = 'pantheon.planView.';
 
 function loadPlanView(projectId: string | null): PlanView {
   try {
-    return projectId && localStorage.getItem(VIEW_KEY + projectId) === 'flow' ? 'flow' : 'list';
+    const stored = projectId ? localStorage.getItem(VIEW_KEY + projectId) : null;
+    return stored === 'flow' || stored === 'history' ? stored : 'list';
   } catch {
     return 'list';
   }
 }
 
-/** The plan's list or graph, chosen per project. */
+/** The plan's list, graph or history, chosen per project. */
 function usePlanView(projectId: string | null) {
   const [stored, setStored] = useState(() => ({ projectId, view: loadPlanView(projectId) }));
   if (stored.projectId !== projectId) setStored({ projectId, view: loadPlanView(projectId) });
@@ -116,11 +118,11 @@ export function ProjectScreen({
   }, [gone]);
   const [chosenView, chooseView] = usePlanView(projectId);
   const flowable = hasDependencies(shown);
-  const view = flowable ? chosenView : 'list';
+  const view = chosenView === 'flow' && !flowable ? 'list' : chosenView;
   return (
     <div className="tb-pg">
       <TopBar title={SCREEN_NAMES.project}>
-        {flowable && (
+        {shown && (
           <div className="tb-end">
             <RadioGroup<PlanView>
               className="tb-seg"
@@ -131,8 +133,13 @@ export function ProjectScreen({
               <Radio.Root value="list">
                 {t({ id: 'project.plan.view.list', defaultMessage: 'List' })}
               </Radio.Root>
-              <Radio.Root value="flow">
-                {t({ id: 'project.plan.view.flow', defaultMessage: 'Flow' })}
+              {flowable && (
+                <Radio.Root value="flow">
+                  {t({ id: 'project.plan.view.flow', defaultMessage: 'Flow' })}
+                </Radio.Root>
+              )}
+              <Radio.Root value="history">
+                {t({ id: 'project.plan.view.history', defaultMessage: 'History' })}
               </Radio.Root>
             </RadioGroup>
           </div>
@@ -157,14 +164,23 @@ export function ProjectScreen({
             )}
             {summaries.error && <Failure error={summaries.error} onRetry={summaries.reload} />}
             {plan.error && <Failure error={plan.error} onRetry={plan.reload} />}
-            <PlanList
-              plan={shown}
-              sessions={sessions}
-              selected={chosen ? chosen.id : null}
-              onSelect={setSelected}
-              view={view}
-              overlap={shared}
-            />
+            {view === 'history' && shown && projectId ? (
+              <PlanHistory
+                projectId={projectId}
+                plan={shown}
+                selected={chosen ? chosen.id : null}
+                onSelect={setSelected}
+              />
+            ) : (
+              <PlanList
+                plan={shown}
+                sessions={sessions}
+                selected={chosen ? chosen.id : null}
+                onSelect={setSelected}
+                view={view === 'flow' ? 'flow' : 'list'}
+                overlap={shared}
+              />
+            )}
             {projectId && <UsagePanel projectId={projectId} />}
             <UnplannedList
               rows={plan.read?.unplanned ?? null}

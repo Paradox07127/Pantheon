@@ -987,3 +987,144 @@ button.pj-th-n:focus-visible {
     grid-area: 2 / 6;
   }
 }
+/* The plan over time: label column, then the time track; bands above and below the rows. */
+.pj-hs {
+  --lbl: clamp(112px, 30%, 240px);
+  position: relative;
+  padding: var(--sp-2) 0;
+}
+.pj-hs-band {
+  display: grid;
+  grid-template-columns: var(--lbl) minmax(0, 1fr);
+  height: 20px;
+}
+.pj-hs-trk {
+  grid-column: 2;
+  position: relative;
+  min-width: 0;
+  height: 100%;
+  margin: 0 var(--sp-3);
+}
+.pj-hs-lab {
+  position: absolute;
+  top: 0;
+  display: flex;
+  min-width: 0;
+  padding-left: 4px;
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  line-height: 20px;
+  white-space: nowrap;
+}
+.pj-hs-lab[data-end] {
+  justify-content: flex-end;
+  padding: 0 4px 0 0;
+}
+.pj-hs-lab[data-tick] {
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+}
+.pj-hs-rp {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  outline: none;
+  background: var(--tx);
+  transform: translate(-50%, -50%) rotate(45deg);
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.pj-hs-rp:hover {
+  background: var(--tx2);
+}
+.pj-hs-rp:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.pj-hs-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pj-hs-row {
+  display: grid;
+  grid-template-columns: var(--lbl) minmax(0, 1fr);
+  align-items: center;
+  height: var(--row);
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.pj-hs-row:not([data-ended]):hover {
+  background: var(--sf2);
+}
+.pj-hs-row[aria-current='true'] {
+  background: var(--sel);
+}
+.pj-hs-lbl {
+  display: flex;
+  min-width: 0;
+  padding-left: var(--sp-3);
+  font-size: var(--fs-sm);
+}
+.pj-hs-row[data-ended] > .pj-hs-lbl {
+  color: var(--mu);
+}
+.pj-hs-bar {
+  position: absolute;
+  top: 50%;
+  min-width: 2px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--e-str);
+  transform: translateY(-50%);
+}
+.pj-hs-row[data-ended] .pj-hs-bar {
+  background: var(--e-pend);
+  opacity: 0.5;
+}
+.pj-hs-dot {
+  position: absolute;
+  top: 50%;
+  box-sizing: border-box;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+  transform: translate(-50%, -50%);
+}
+.pj-hs-dot[data-state='blocked'] {
+  border: 1.5px solid var(--bad);
+  background: var(--sf);
+}
+.pj-hs-dot[data-state='no_changes'] {
+  background: var(--idle);
+}
+/* Lines through the bands and rows, over the track; the tick band stays clear. */
+.pj-hs-over {
+  position: absolute;
+  top: var(--sp-2);
+  right: var(--sp-3);
+  bottom: calc(var(--sp-2) + 20px);
+  left: calc(var(--lbl) + var(--sp-3));
+  pointer-events: none;
+}
+.pj-hs-ml {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: var(--hair) solid var(--tx2);
+}
+.pj-hs-brk {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--sf) 75%, transparent);
+}
+.pj-hs-none {
+  margin: 0;
+  padding: var(--sp-4) var(--sp-3);
+  color: var(--mu);
+  text-wrap: balance;
+}

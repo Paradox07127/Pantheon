@@ -64,10 +64,16 @@ check(
 );
 await page.click({ role: 'button', name: '项目', exact: true });
 const flatRows = await poll(async () => (await listShown()) === 2);
+const flatSwitch = await viewSwitch();
 check(
-  '对照组：没有依赖的计划只出列表，没有 "计划的视图" 切换',
-  flatRows && (await viewSwitch()) === null,
-  await viewSwitch(),
+  '对照组：没有依赖的计划不出 "流程"，切换只有 "列表 / 历史"，默认列表',
+  flatRows &&
+    JSON.stringify(flatSwitch?.radios) ===
+      JSON.stringify([
+        { name: '列表', checked: true },
+        { name: '历史', checked: false },
+      ]),
+  flatSwitch,
 );
 
 // A plan where one item waits for another.
@@ -89,12 +95,13 @@ check(
 await page.click({ role: 'button', name: '项目', exact: true });
 const sw = await poll(async () => (await viewSwitch()) ?? false);
 check(
-  '有依赖时顶栏右端出现 "列表 / 流程" 切换，默认列表',
+  '有依赖时顶栏右端出现 "列表 / 流程 / 历史" 切换，默认列表',
   sw?.inTopBar &&
     JSON.stringify(sw.radios) ===
       JSON.stringify([
         { name: '列表', checked: true },
         { name: '流程', checked: false },
+        { name: '历史', checked: false },
       ]),
   sw,
 );
