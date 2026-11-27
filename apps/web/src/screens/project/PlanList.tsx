@@ -1,14 +1,16 @@
-import type { CSSProperties } from 'react';
+import { useMemo, type CSSProperties } from 'react';
 import type { ProjectPlanView, WorkbenchSession } from '@pantheon/protocol';
 import { Clip } from '../../components/Clip';
 import { DiffCounts } from '../../components/DiffCounts';
 import { StateGlyph } from '../../components/SessionStateIcon';
+import { GraphDiagram } from '../../components/visual/GraphDiagram';
 import { useNow } from '../../data/needs-you';
 import { t } from '../../i18n';
 import { durationText } from '../../lib/time-text';
 import { useShell } from '../../store';
 import { RowMark } from '../changes/ChangesScreen';
 import { EvidenceMark } from './EvidenceMark';
+import { flowEdgeNames, itemNode, nodeItem, planFlow } from './plan-flow';
 import {
   forYouText,
   gateRunsLabel,
@@ -144,20 +146,27 @@ export function PlanRow({
   );
 }
 
-/** The main agent's plan by milestone; nothing while the project has no plan. */
+const FLOW_HEIGHT = 440;
+
+/** The main agent's plan by milestone, as rows or as a graph of what waits for what; nothing while the project has no plan. */
 export function PlanList({
   plan,
   sessions,
   selected,
   onSelect,
+  view = 'list',
 }: {
   plan: ProjectPlanView['plan'] | undefined;
   sessions: readonly WorkbenchSession[] | null;
   /** The item whose details are open. */
   selected: string | null;
-  onSelect: (itemId: string) => void;
+  /** null once the graph lets the item go. */
+  onSelect: (itemId: string | null) => void;
+  view?: 'list' | 'flow';
 }) {
   const now = useNow(60_000);
+  // The graph lays out again for a new spec, so it changes only with the plan.
+  const flow = useMemo(() => (plan && view === 'flow' ? planFlow(plan) : null), [plan, view]);
   if (!plan) return null;
   const title = t({ id: 'project.plan.title', defaultMessage: 'Plan' });
   return (
@@ -170,23 +179,34 @@ export function PlanList({
           </span>
         )}
       </div>
-      {planGroups(plan).map((group) => (
-        <div key={group.id ?? ''} role="group" aria-label={group.title}>
-          <MilestoneHead group={group} />
-          <ul className="pj-rows">
-            {group.items.map((item) => (
-              <PlanRow
-                key={item.id}
-                item={item}
-                reason={planReason(item, plan.items, sessions)}
-                now={now}
-                selected={item.id === selected}
-                onSelect={() => onSelect(item.id)}
-              />
-            ))}
-          </ul>
-        </div>
-      ))}
+      {flow ? (
+        <GraphDiagram
+          spec={flow}
+          height={FLOW_HEIGHT}
+          grows
+          selected={selected === null ? null : itemNode(selected)}
+          onSelect={(nodeId) => onSelect(nodeId === undefined ? null : nodeItem(nodeId))}
+          styleNames={flowEdgeNames()}
+        />
+      ) : (
+        planGroups(plan).map((group) => (
+          <div key={group.id ?? ''} role="group" aria-label={group.title}>
+            <MilestoneHead group={group} />
+            <ul className="pj-rows">
+              {group.items.map((item) => (
+                <PlanRow
+                  key={item.id}
+                  item={item}
+                  reason={planReason(item, plan.items, sessions)}
+                  now={now}
+                  selected={item.id === selected}
+                  onSelect={() => onSelect(item.id)}
+                />
+              ))}
+            </ul>
+          </div>
+        ))
+      )}
     </section>
   );
 }

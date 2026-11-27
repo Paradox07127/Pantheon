@@ -86,7 +86,7 @@ describe('memory diagrams tab', () => {
   it('sits after the entries tab and draws the pinned diagrams', () => {
     const tree = mount(() => MemoryScreen({ projectId: 'project-1' })).value;
     const tabs = nodes(tree).filter((n) => n.props.className === 'tb-tab');
-    expect(tabs.map((n) => n.props.value)).toEqual(['overview', 'entries', 'diagrams']);
+    expect(tabs.map((n) => n.props.value)).toEqual(['overview', 'entries', 'diagrams', 'graph']);
     expect(text(tabs[2])).toBe(zh('memory.tab.diagrams'));
     const panel = find(
       tree,

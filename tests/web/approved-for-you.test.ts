@@ -1,7 +1,7 @@
 import { createElement, type ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DecisionForUser } from '@pantheon/protocol';
-import { KeyRound, ScrollText } from '../../apps/web/node_modules/lucide-react';
+import { KeyRound, Play, ScrollText } from '../../apps/web/node_modules/lucide-react';
 import { find, mount, nodes, text, unmountAll } from './web-hook-host.js';
 
 const mock = vi.hoisted(() => ({ board: {} as any, shell: {} as any }));
@@ -24,8 +24,9 @@ vi.mock('@/data/commands', () => ({
 import { NeedsPopover } from '@/components/NeedsPopover';
 import { ApprovedForYou } from '@/screens/trace/ApprovedForYou';
 import { TellBox } from '@/screens/changes/TellBox';
-import { newestDecision } from '@/data/decisions-for-user';
-import { zh, zhf } from './i18n-setup.js';
+import { decisionRow, newestDecision, tellDecisionDraft } from '@/data/decisions-for-user';
+import { setLocaleSync } from '@/i18n';
+import { zh, zhCatalog, zhf } from './i18n-setup.js';
 
 const AT = new Date(2026, 10, 17, 14, 2).getTime();
 
@@ -95,12 +96,67 @@ it.each([
   'approval.rejected',
   'approval.refused',
   'approval.resolved',
+  'session.main_agent_decided',
   'session.deleted',
 ])('reads the decisions again after %s, which can add or remove a row', (kind) => {
   const event = (sequence: number, kind: string) => ({ sequence, kind }) as never;
   expect(newestDecision([event(1, 'approval.requested'), event(2, kind)])).toBe(2);
   expect(newestDecision([event(1, 'session.turn.delivery')])).toBe(0);
 });
+
+const closed: Extract<DecisionForUser, { kind: 'main_agent_action' }> = {
+  kind: 'main_agent_action',
+  at: AT - 240_000,
+  event_id: 'event-close',
+  session_id: 'session-worker',
+  action: 'close',
+  main_agent_session_id: 'session-lead',
+  reason: 'The other try landed',
+};
+
+it.each([
+  ['spawn', 'trace.approved.action.spawn'],
+  ['interrupt', 'trace.approved.action.interrupt'],
+  ['close', 'trace.approved.action.close'],
+  ['ready', 'trace.approved.action.ready'],
+] as const)(
+  'says what the main agent did with %s, with its reason as it wrote it',
+  (action, id) => {
+    const item = { ...closed, action };
+    expect(decisionRow(item)).toEqual({
+      key: 'event-close',
+      kind: 'main_agent_action',
+      at: closed.at,
+      action: zh(id),
+      code: false,
+      by: expect.any(String),
+      rule: null,
+      sessionId: 'session-worker',
+      mainAgent: { sessionId: 'session-lead', answers: [], decided: 'The other try landed' },
+    });
+    expect(decisionRow({ ...item, reason: undefined }).mainAgent!.decided).toBeNull();
+  },
+);
+
+it.each([
+  ['spawn', 'Start a session', '起一个会话'],
+  ['interrupt', 'Interrupt its turn', '打断它的回合'],
+  ['close', 'Close the session and discard its worktree', '关掉会话并丢弃工作树'],
+  ['ready', 'Land the work', '落地这份工作'],
+] as const)(
+  'names what the main agent decided with %s, not that it already happened',
+  (action, english, chinese) => {
+    const row = decisionRow({ ...closed, action });
+    expect(row.action).toBe(chinese);
+    expect(tellDecisionDraft(row, 'Fix login')).toBe(`关于「Fix login」的「${chinese}」：\n`);
+    setLocaleSync('en', {});
+    try {
+      expect(decisionRow({ ...closed, action }).action).toBe(english);
+    } finally {
+      setLocaleSync('zh-CN', zhCatalog());
+    }
+  },
+);
 
 describe('approved for you', () => {
   const page = async () => {
@@ -227,6 +283,35 @@ describe('approved for you', () => {
       session: { id: 'session-lead' },
       main: null,
       draft: zhf('trace.approved.tellDraft', { action: 'Which package manager?' }),
+    });
+  });
+
+  it('shows what the main agent did to a session with its reason, opens that session from the task and tells the main agent about it from the row', async () => {
+    decisions.alpha = [closed];
+    const h = await page();
+    const row = rowOf(h.value, zh('trace.approved.action.close'));
+    const action = cell(h.value, row, zh('trace.approved.column.action'));
+    expect(text(action)).toBe(`${zh('trace.approved.action.close')}The other try landed`);
+    expect(nodes(action).filter((n) => n.type === Play || n.type === KeyRound)).toEqual([
+      expect.objectContaining({ type: Play }),
+    ]);
+    expect(text(cell(h.value, row, zh('trace.approved.column.by')))).toContain('Refunds rollout');
+    expect(text(cell(h.value, row, zh('trace.approved.column.rule')))).toBe('');
+    const task = link(cell(h.value, row, zh('trace.approved.column.task')))!;
+    expect(text(task)).toBe('Refund list page');
+    task.props.onClick();
+    expect(mock.shell.openSession).toHaveBeenCalledWith('session-worker');
+
+    nodes(row)
+      .find((n) => n.type === 'button' && n.props['aria-label'] === zh('trace.approved.tellMain'))!
+      .props.onClick();
+    h.render();
+    expect(find(h.value, (n) => n.type === TellBox).props).toMatchObject({
+      session: { id: 'session-lead' },
+      draft: zhf('trace.approved.tellActionDraft', {
+        action: zh('trace.approved.action.close'),
+        task: 'Refund list page',
+      }),
     });
   });
 

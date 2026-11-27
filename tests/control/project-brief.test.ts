@@ -117,7 +117,7 @@ it('counts the prompts a stored rule answered for the user after the cursor, and
     kind: 'decided',
     ref: { kind: 'decided', id: f.project.id },
     count: 1,
-    types: { permission: 1, question: 0 },
+    types: { permission: 1, question: 0, action: 0 },
   });
   f.call('project.seen', { project_id: f.project.id });
   expect(

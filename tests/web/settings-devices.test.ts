@@ -230,6 +230,45 @@ describe('devices list', () => {
       { refresh: 'true' },
     ]);
   });
+
+  it('shows the list as every probe left it when a probe ends while all are probed again', async () => {
+    const refresh = deferred<BridgeResult<unknown>>();
+    const plain = bridge.query;
+    bridge.query = (method, params) =>
+      params?.refresh
+        ? (bridge.queries.push({ method, params }), refresh.promise)
+        : plain(method, params);
+    useBoard.setState({ events: [], resync: 0 });
+    const arrive = async (h: HookHost<any>, sequence: number) => {
+      const event = { sequence, kind: 'device.probed', event_id: `e${sequence}` } as never;
+      useBoard.setState({ events: [...useBoard.getState().events, event] });
+      h.render();
+      await h.flush();
+    };
+    try {
+      const h = await page();
+      const Tools = pageHeader('devices').tools as (props: { project: null }) => ReactNode;
+      const tools = mount(() => Tools({ project: null }));
+      await tools.flush();
+      button(tools.value as ReactNode, REPROBE_ALL).props.onClick();
+      await h.flush();
+      // The probe of pi5 ends first, while studio is still being probed; studio stays online.
+      bridge.answers['device.list'] = [thisMachine, studio, { ...unreachable, online: true }];
+      await arrive(h, 1);
+      const probed = [thisMachine, { ...studio, cpus: 32 }, { ...unreachable, online: true }];
+      bridge.answers['device.list'] = probed;
+      await arrive(h, 2);
+      refresh.resolve({ ok: true, value: probed });
+      await h.flush();
+      h.render();
+      await h.flush();
+      expect(text(row(tree(h), 'studio'))).toContain(zhf('settings.devices.cores', { count: 32 }));
+      expect(status(row(tree(h), 'pi5'))).toBe(ONLINE);
+    } finally {
+      bridge.query = plain;
+      useBoard.setState({ events: [] });
+    }
+  });
 });
 
 describe('device details', () => {

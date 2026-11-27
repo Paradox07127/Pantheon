@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState, type CSSProperties, type ReactNode } fro
 import { Activity, ChevronLeft, Copy, Plus, RefreshCw, Terminal } from 'lucide-react';
 import { create } from 'zustand';
 import type { DeviceListItem, SshHost } from '@pantheon/protocol';
+import { coresText, deviceName, offlineText, systemName } from '../../components/DevicesSummary';
 import { compareRuntimes, RuntimeGlyph, runtimeName } from '../../components/RuntimeGlyph';
 import { toast } from '../../components/Toast';
 import { useBoard } from '../../data/board';
@@ -19,15 +20,6 @@ import '../../components/state-icon.css';
 import './devices.css';
 
 const isLocal = (d: DeviceListItem) => d.id === 'local';
-
-const displayName = (d: DeviceListItem) =>
-  !isLocal(d)
-    ? d.name
-    : d.os === 'macos'
-      ? t({ id: 'settings.devices.thisMac', defaultMessage: 'This Mac' })
-      : t({ id: 'settings.devices.thisComputer', defaultMessage: 'This computer' });
-
-const offlineText = () => t({ id: 'settings.devices.offline', defaultMessage: "Can't connect" });
 
 /** The runtimes a device probe looks for, with the command that signs each in. */
 const LOGIN_COMMAND: Record<string, string> = {
@@ -237,19 +229,6 @@ export function DevicesPage() {
     );
   };
 
-  const systemName = (d: DeviceListItem) =>
-    d.os === 'macos'
-      ? ['macOS', d.os_version].filter(Boolean).join(' ')
-      : (d.os_version ?? (d.os === 'linux' ? 'Linux' : undefined));
-  const coresText = (d: DeviceListItem) =>
-    d.cpus !== undefined &&
-    t(
-      {
-        id: 'settings.devices.cores',
-        defaultMessage: '{count, plural, one {# core} other {# cores}}',
-      },
-      { count: d.cpus },
-    );
   const memoryText = (d: DeviceListItem) =>
     d.memory_bytes !== undefined &&
     t(
@@ -496,7 +475,7 @@ export function DevicesPage() {
   };
 
   const detail = (d: DeviceListItem) => {
-    const name = displayName(d);
+    const name = deviceName(d);
     return (
       <div className="dv-pg">
         <div className="dv-bar">
@@ -528,7 +507,7 @@ export function DevicesPage() {
   };
 
   const row = (d: DeviceListItem) => {
-    const name = displayName(d);
+    const name = deviceName(d);
     return (
       <li key={d.id} className="dv">
         <button type="button" className="dv-open" onClick={() => setOpen(d.id)}>

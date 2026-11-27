@@ -46,7 +46,7 @@ const inTextField = (target: EventTarget | null) => {
 };
 
 /** Keeps the last answer for the same key on screen while a fresh read of it is out. */
-function useHeld<T>(key: string | null, data: T | null): T | null {
+export function useHeld<T>(key: string | null, data: T | null): T | null {
   const [held, setHeld] = useState<{ key: string | null; data: T | null }>({
     key: null,
     data: null,

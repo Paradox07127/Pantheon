@@ -96,6 +96,25 @@ function prepareConductorReview(
   })();
 }
 
+/** Records on the session what its main agent did to it, for the decisions made for the user. */
+function mainAgentDecided(
+  ctx: ControlContext,
+  p: Principal,
+  sessionId: string,
+  action: 'spawn' | 'interrupt' | 'close' | 'ready',
+  reason: string | undefined,
+  cause: string,
+): void {
+  const session = ctx.store.must<Session>('sessions', sessionId);
+  ctx.store.event(
+    'session.main_agent_decided',
+    session,
+    session.project_id,
+    { action, main_agent_session_id: p.session_id!, ...(reason ? { reason } : {}) },
+    cause,
+  );
+}
+
 /** conductor.ready */
 function prepareConductorReady(
   ctx: ControlContext,
@@ -129,6 +148,7 @@ function prepareConductorReady(
       target.id,
     ).then((admit) => (ctx) => {
       admit(ctx);
+      mainAgentDecided(ctx, p, target.id, 'ready', input.reason, command.command_id);
       return {
         session_id: target.id,
         next: gated(ctx, target)
@@ -148,6 +168,7 @@ function prepareConductorReady(
       { ...session, ready: { turn_id: turn.id, command_id: command.command_id } },
       session.revision,
     );
+    mainAgentDecided(ctx, p, session.id, 'ready', input.reason, command.command_id);
     const when = ctx.store
       .list<SessionTurn>('session_turns')
       .some((each) => each.session_id === session.id && each.state === 'queued')
@@ -235,7 +256,7 @@ const itemLines = (items: string[]) => items.map((item) => `- ${item}`).join('\n
 function spawnInputs(ctx: ControlContext, p: Principal, command: Command) {
   requireThat(p.role === 'conductor', 'permission_denied', 'A conductor session only');
   projectAccess(ctx, p, p.project_id!, command.type);
-  const { runtime, runtimes, input, acceptance, owns, model, effort, permission_mode } =
+  const { runtime, runtimes, input, acceptance, owns, model, effort, permission_mode, reason } =
     inputSchemas['conductor.spawn'].parse(command.input);
   requireThat(
     (runtime === undefined) !== (runtimes === undefined),
@@ -281,7 +302,7 @@ function spawnInputs(ctx: ControlContext, p: Principal, command: Command) {
     ...(acceptance ? { acceptance } : {}),
     ...(owns ? { owns } : {}),
   };
-  return { inputs, contract };
+  return { inputs, contract, reason };
 }
 
 /** conductor.spawn */
@@ -294,7 +315,7 @@ function prepareConductorSpawn(
   for (const input of inputs) checkWorktreeSession(ctx, input, undefined, p);
   return Promise.all(inputs.map((input) => readSessionOpening(ctx, input))).then(
     (openings) => (ctx: ControlContext, p: Principal, command: Command) => {
-      const { inputs, contract } = spawnInputs(ctx, p, command);
+      const { inputs, contract, reason } = spawnInputs(ctx, p, command);
       const terms = inputs.length > 1 ? { ...contract, group: id() } : contract;
       const opened = inputs.map((input, index) => {
         const session = openWorktreeSession(
@@ -314,6 +335,7 @@ function prepareConductorSpawn(
           },
           session.revision,
         );
+        mainAgentDecided(ctx, p, session.id, 'spawn', reason, command.command_id);
         return session.id;
       });
       return inputs.length > 1 ? { session_ids: opened } : { session_id: opened[0]! };
@@ -400,6 +422,7 @@ const conductorStop: Handler = (ctx, p, command) => {
   const target = spawnedTarget(ctx, p, command, input.session_id);
   if (!input.close) {
     interruptSession(ctx, target, command.command_id);
+    mainAgentDecided(ctx, p, target.id, 'interrupt', input.reason, command.command_id);
     return { session_id: target.id, next: 'Its running turn stops; the session stays open.' };
   }
   requireThat(
@@ -413,6 +436,7 @@ const conductorStop: Handler = (ctx, p, command) => {
     { reason: 'Closed by the session that started it', by: 'agent' },
     command.command_id,
   );
+  mainAgentDecided(ctx, p, target.id, 'close', input.reason, command.command_id);
   return { session_id: target.id, next: 'The session closes and its worktree is discarded.' };
 };
 

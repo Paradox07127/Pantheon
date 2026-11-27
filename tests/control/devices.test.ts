@@ -362,6 +362,25 @@ it('probes only the one device it names', async () => {
   });
 });
 
+it('records a probe that changes what the list shows of a device, and not one that repeats it', async () => {
+  const ctx = context();
+  writeFileSync(
+    path.join(ctx.userConfigDir!, 'config.json'),
+    JSON.stringify({ version: 1, devices: { 'gpu-box': { ssh: 'builder@gpu-box' } } }),
+  );
+  const cores = (count: number) => () => ['/bin/sh', '-c', `printf "cpus=${count}\\n" #`];
+  const offline = () => ['/bin/sh', '-c', 'exit 1 #'];
+  await reprobeDevice(ctx, 'gpu-box', cores(4));
+  await reprobeDevice(ctx, 'gpu-box', cores(4));
+  await reprobeDevice(ctx, 'gpu-box', cores(8));
+  await reprobeDevice(ctx, 'gpu-box', offline);
+  expect(ctx.store.kindEvents('', ['device.probed']).map((event) => event.payload)).toEqual([
+    { online: true },
+    { online: true },
+    { online: false },
+  ]);
+});
+
 function sshConfig(files: Record<string, string>): string {
   const directory = path.join(context().userConfigDir!, 'ssh');
   for (const [name, text] of Object.entries(files)) {

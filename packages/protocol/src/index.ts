@@ -264,6 +264,13 @@ export const USER_PRINCIPAL_ID = 'local-user';
 const str = z.string().min(1).max(65536);
 const findingText = str.refine((value) => value.trim().length > 0);
 const strings = z.array(str).max(256);
+/** The reason a main agent gives for a session action it takes for the user. */
+const actionReason = z
+  .string()
+  .min(1)
+  .max(500)
+  .optional()
+  .describe('Why you decide this; the user reads it under "Decided for you".');
 /** The questions of an AskUserQuestion request, within the SDK limits. */
 export const approvalQuestions = z
   .array(
@@ -1702,6 +1709,7 @@ export const inputSchemas = {
       .describe(
         'An idle session you spawned whose committed changes to land; absent means your own.',
       ),
+    reason: actionReason,
   }),
   'conductor.spawn': z.strictObject({
     runtime: str
@@ -1745,6 +1753,7 @@ export const inputSchemas = {
       .describe(
         'ask (default): the user approves the requests of the new session; auto_edit: its file edits need no approval.',
       ),
+    reason: actionReason,
   }),
   'conductor.state': z.strictObject({}),
   'conductor.message': z.strictObject({
@@ -1763,6 +1772,7 @@ export const inputSchemas = {
       .describe(
         'Absent or false: interrupt its running turn and keep the session; true: close the session and discard its worktree.',
       ),
+    reason: actionReason,
   }),
   'conductor.needs_you': z.strictObject({}),
   'conductor.answer': z.strictObject({
@@ -2319,8 +2329,9 @@ export interface ProjectPlanView {
   latest_landing?: { sha: string; title: string; at: string };
 }
 /**
- * A prompt answered by the stored permission rule, or a question the main agent that spawned the
- * session answered or declined; at is Unix milliseconds.
+ * A prompt answered by the stored permission rule, a question the main agent that spawned the
+ * session answered or declined, or a session the main agent started, stopped or declared ready to
+ * land; at is Unix milliseconds.
  */
 export type DecisionForUser =
   | {
@@ -2348,14 +2359,28 @@ export type DecisionForUser =
       question?: string;
       /** Question text to the main agent's answer. */
       answers?: Record<string, string>;
+    }
+  | {
+      kind: 'main_agent_action';
+      at: number;
+      event_id: string;
+      /** Absent once the session was deleted. */
+      session_id?: string;
+      action: 'spawn' | 'interrupt' | 'close' | 'ready';
+      main_agent_session_id: string;
+      /** Absent for a personal principal, and when the main agent gave none. */
+      reason?: string;
     };
 /** GET /v1/project.decisions. */
 export interface DecisionsForUser {
   items: DecisionForUser[];
 }
 /** The type the approved-for-you list is filtered by. */
-/** permission: a stored rule allowed a request; question: the main agent answered one. */
-export type DecisionType = 'permission' | 'question';
+/**
+ * permission: a stored rule allowed a request; question: the main agent answered one; action: the
+ * main agent started, stopped or declared ready a session.
+ */
+export type DecisionType = 'permission' | 'question' | 'action';
 /** GET /v1/session.search; metadata first, then messages, newest first in each group. */
 export interface SessionSearchResult {
   hits: SessionSearchHit[];

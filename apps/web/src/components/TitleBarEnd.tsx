@@ -2,6 +2,7 @@ import { useLayoutEffect } from 'react';
 import type { NeedsYouItem } from '../data/needs-you';
 import { t } from '../i18n';
 import { holdRootFlag } from '../lib/root-flag';
+import { DevicesSummary } from './DevicesSummary';
 import { NeedsPopover } from './NeedsPopover';
 import './title-bar-end.css';
 
@@ -10,13 +11,14 @@ interface TitleBarEndProps {
   needs: readonly NeedsYouItem[];
 }
 
-/** The global controls at the right end of the window's title bar: what waits for the user. */
+/** The global controls at the right end of the window's title bar: the devices and what waits for the user. */
 export function TitleBarEnd({ needs }: TitleBarEndProps) {
   const waits = needs.length > 0;
   // The page bars in the title bar end where these controls begin (title-bar-end.css).
   useLayoutEffect(() => (waits ? holdRootFlag('title-needs') : undefined), [waits]);
   return (
     <div className="tbe">
+      <DevicesSummary />
       {needs.length > 0 && (
         <NeedsPopover
           items={needs}

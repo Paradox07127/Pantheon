@@ -13,7 +13,7 @@ const ICON: Record<Evidence['level'], ComponentType<LucideProps>> = {
   accepted: User,
 };
 
-function evidenceText({ level, reviewer }: Evidence): string {
+export function evidenceText({ level, reviewer }: Evidence): string {
   if (level === 'report')
     return t({ id: 'project.evidence.report', defaultMessage: 'Report only' });
   if (level === 'gate') return t({ id: 'project.evidence.gate', defaultMessage: 'Gate passed' });

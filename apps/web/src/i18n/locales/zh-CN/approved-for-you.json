@@ -20,5 +20,11 @@
   "trace.approved.refused": "已拒绝：{reason}",
   "trace.approved.tellMain": "告诉主 agent",
   "trace.approved.tellDraft": "关于你对「{action}」的回答：\n",
+  "trace.approved.tellActionDraft": "关于「{task}」的「{action}」：\n",
+  "trace.approved.tellActionDraftGone": "关于「{action}」：\n",
+  "trace.approved.action.spawn": "起一个会话",
+  "trace.approved.action.interrupt": "打断它的回合",
+  "trace.approved.action.close": "关掉会话并丢弃工作树",
+  "trace.approved.action.ready": "落地这份工作",
   "components.needsPopover.approved": "{count, plural, other {替你定了 # 项}}"
 }

@@ -1,10 +1,11 @@
-import type { Approval, Principal } from '@pantheon/domain';
+import type { Approval, Principal, Session } from '@pantheon/domain';
 import type { DecisionForUser, DecisionsForUser } from '@pantheon/protocol';
 import { projectAccess, type ControlContext } from './context.js';
 
 /**
  * What a stored rule, or the main agent that spawned a session, decided for the user in the
- * project from since on, newest first.
+ * project from since on, and the sessions a main agent started, stopped or declared ready, newest
+ * first.
  */
 export function decisionsForUser(
   ctx: ControlContext,
@@ -15,7 +16,13 @@ export function decisionsForUser(
   projectAccess(ctx, principal, projectId, 'project.decisions');
   const events = ctx.store.kindEventsSince(
     projectId,
-    ['approval.approved', 'approval.rejected', 'approval.refused', 'approval.resolved'],
+    [
+      'approval.approved',
+      'approval.rejected',
+      'approval.refused',
+      'approval.resolved',
+      'session.main_agent_decided',
+    ],
     since ?? 0,
   );
   // Tool input can hold secrets, and a stored rule can be a whole command line.
@@ -23,6 +30,25 @@ export function decisionsForUser(
   const seen = new Set<string>();
   // Events run newest first, so the first event of a request is the one that stands.
   const items = [...events].reverse().flatMap((event): DecisionForUser[] => {
+    if (event.kind === 'session.main_agent_decided') {
+      const decided = event.payload as Pick<
+        Extract<DecisionForUser, { kind: 'main_agent_action' }>,
+        'action' | 'main_agent_session_id' | 'reason'
+      >;
+      return [
+        {
+          kind: 'main_agent_action',
+          at: event.created_at,
+          event_id: event.event_id,
+          ...(ctx.store.get<Session>('sessions', event.aggregate_id)
+            ? { session_id: event.aggregate_id }
+            : {}),
+          action: decided.action,
+          main_agent_session_id: decided.main_agent_session_id,
+          ...(!personal && decided.reason !== undefined ? { reason: decided.reason } : {}),
+        },
+      ];
+    }
     const answered = event.payload as Omit<Approval, 'input_summary'>;
     // A delivered answer changes nothing; a refusal or a withdrawal leaves no decision standing.
     if (event.kind === 'approval.resolved' && answered.state !== 'void') return [];

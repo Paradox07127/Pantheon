@@ -19,7 +19,19 @@
   width: var(--tbe-wait);
   height: var(--h-ctl);
 }
+/* The device summary takes the same width as the waiting count. */
+.tbe .tbe-dev {
+  justify-content: center;
+  width: var(--tbe-wait);
+  height: var(--h-ctl);
+}
 /* The page bars in the title bar end where these controls begin (--end-w on .app in index.css). */
 :root[data-title-needs] .app {
   --end-w: var(--tbe-wait);
+}
+:root[data-title-devices] .app {
+  --end-w: var(--tbe-wait);
+}
+:root[data-title-needs][data-title-devices] .app {
+  --end-w: calc(var(--tbe-wait) * 2 + var(--sp-2));
 }

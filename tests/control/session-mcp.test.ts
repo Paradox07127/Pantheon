@@ -590,7 +590,7 @@ it('mounts only the conductor tools and their instructions on a conductor worktr
   ).toEqual(
     expect.arrayContaining([
       ['request_review', ['runtimes', 'session_id']],
-      ['report_ready', ['session_id']],
+      ['report_ready', ['session_id', 'reason']],
       [
         'spawn_session',
         [
@@ -602,11 +602,12 @@ it('mounts only the conductor tools and their instructions on a conductor worktr
           'model',
           'effort',
           'permission_mode',
+          'reason',
         ],
       ],
       ['read_state', []],
       ['message_session', ['session_id', 'text', 'mode']],
-      ['stop_session', ['session_id', 'close']],
+      ['stop_session', ['session_id', 'close', 'reason']],
       ['read_needs_you', []],
       ['answer_request', ['session_id', 'approval_id', 'decision', 'answers', 'reason']],
       ['propose_setting', ['command', 'input', 'reason']],

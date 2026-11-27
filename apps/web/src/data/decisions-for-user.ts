@@ -18,6 +18,7 @@ const DECISION_KINDS: ReadonlySet<string> = new Set([
   'approval.rejected',
   'approval.refused',
   'approval.resolved',
+  'session.main_agent_decided',
   'session.deleted',
 ]);
 
@@ -80,6 +81,7 @@ export function useDecisionsToday(projectIds: readonly string[]): Readonly<Recor
 /** One row of the list, as text. */
 export interface DecisionRow {
   key: string;
+  kind: DecisionForUser['kind'];
   at: number;
   /** What was decided: a prompt's input or tool. */
   action: string;
@@ -106,11 +108,47 @@ function decidedText(item: Extract<DecisionForUser, { kind: 'answered_by_main_ag
     : t({ id: 'trace.approved.answered', defaultMessage: 'Answered: {reason}' }, { reason });
 }
 
+type MainAgentAction = Extract<DecisionForUser, { kind: 'main_agent_action' }>;
+
+/** What the main agent decided to do to a session; the event is written before the action ends. */
+function actionText(action: MainAgentAction['action']) {
+  switch (action) {
+    case 'spawn':
+      return t({ id: 'trace.approved.action.spawn', defaultMessage: 'Start a session' });
+    case 'interrupt':
+      return t({ id: 'trace.approved.action.interrupt', defaultMessage: 'Interrupt its turn' });
+    case 'close':
+      return t({
+        id: 'trace.approved.action.close',
+        defaultMessage: 'Close the session and discard its worktree',
+      });
+    case 'ready':
+      return t({ id: 'trace.approved.action.ready', defaultMessage: 'Land the work' });
+  }
+}
+
 export function decisionRow(item: DecisionForUser): DecisionRow {
+  if (item.kind === 'main_agent_action')
+    return {
+      key: item.event_id,
+      kind: item.kind,
+      at: item.at,
+      action: actionText(item.action),
+      code: false,
+      by: t({ id: 'trace.approved.by.rule', defaultMessage: 'Stored rule' }),
+      rule: null,
+      sessionId: item.session_id ?? null,
+      mainAgent: {
+        sessionId: item.main_agent_session_id,
+        answers: [],
+        decided: item.reason ?? null,
+      },
+    };
   const question = item.kind === 'answered_by_main_agent' ? item.question : undefined;
   const input = item.input_summary ?? item.tool;
   return {
     key: item.approval_id,
+    kind: item.kind,
     at: item.at,
     action:
       question ?? input ?? t({ id: 'trace.approved.prompt', defaultMessage: 'Permission request' }),
@@ -134,9 +172,26 @@ export function decisionRow(item: DecisionForUser): DecisionRow {
   };
 }
 
-/** The first line of a message to the main agent about its answer. */
-export const tellDecisionDraft = (row: DecisionRow) =>
-  t(
-    { id: 'trace.approved.tellDraft', defaultMessage: 'About your answer to “{action}”:\n' },
-    { action: row.action },
-  );
+/**
+ * The first line of a message to the main agent about its answer, or about what it did to the
+ * session titled task; task is null once that session was deleted.
+ */
+export function tellDecisionDraft(row: DecisionRow, task: string | null) {
+  if (row.kind !== 'main_agent_action')
+    return t(
+      { id: 'trace.approved.tellDraft', defaultMessage: 'About your answer to “{action}”:\n' },
+      { action: row.action },
+    );
+  return task === null
+    ? t(
+        { id: 'trace.approved.tellActionDraftGone', defaultMessage: 'About “{action}”:\n' },
+        { action: row.action },
+      )
+    : t(
+        {
+          id: 'trace.approved.tellActionDraft',
+          defaultMessage: 'About “{action}” for “{task}”:\n',
+        },
+        { action: row.action, task },
+      );
+}

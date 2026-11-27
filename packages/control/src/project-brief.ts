@@ -125,6 +125,7 @@ export function projectBrief(
       types: {
         permission: decided.filter((item) => item.kind === 'prompt_by_rule').length,
         question: decided.filter((item) => item.kind === 'answered_by_main_agent').length,
+        action: decided.filter((item) => item.kind === 'main_agent_action').length,
       },
     });
   const prose = cursor?.prose;

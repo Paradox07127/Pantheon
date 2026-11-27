@@ -1,0 +1,106 @@
+.dvs-n {
+  font-size: var(--fs-xs);
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.dvs-dot {
+  flex: none;
+  box-sizing: border-box;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.dvs-dot[data-s='ok'] {
+  background: var(--ok);
+}
+.dvs-dot[data-s='bad'] {
+  border: 1.5px solid var(--bad);
+}
+.dvs-sys {
+  display: flex;
+  gap: var(--sp-3);
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+}
+.dvs-pop {
+  display: flex;
+  flex-direction: column;
+  width: min(320px, calc(100vw - 32px));
+  max-height: min(480px, 60vh);
+  overflow-y: auto;
+  padding: var(--sp-1);
+}
+.dvs-l {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.dvs-d {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-2);
+}
+.dvs-d + .dvs-d {
+  border-top: var(--hair) solid var(--bd2);
+}
+.dvs-h {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.dvs-nm {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 500;
+}
+.dvs-set {
+  align-self: flex-end;
+}
+.dvs-ss {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.dvs-s {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--row);
+  min-width: 0;
+  margin: 0 calc(-1 * var(--sp-2));
+  padding: 0 var(--sp-2);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.dvs-s:hover {
+  background: var(--st-hov);
+}
+.dvs-s:focus-visible {
+  outline: 3px solid var(--focus-ring);
+}
+.dvs-st {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.dvs-rt,
+.dvs-more {
+  flex: none;
+  font-size: var(--fs-xs);
+  color: var(--mu);
+}

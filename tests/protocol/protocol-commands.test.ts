@@ -161,6 +161,14 @@ it('gives a conductor session exactly its tools with strict inputs', () => {
     ],
     ['conductor.ready' as CommandType, {}, [{ project_id: 'project' }]],
     [
+      'conductor.ready' as CommandType,
+      { session_id: 'spawned', reason: 'Its review found nothing' },
+      [
+        { session_id: 'spawned', reason: '' },
+        { session_id: 'spawned', reason: 'x'.repeat(501) },
+      ],
+    ],
+    [
       'conductor.spawn' as CommandType,
       { runtime: 'codex', input: 'Write the docs', model: 'model', effort: 'high' },
       [
@@ -176,6 +184,14 @@ it('gives a conductor session exactly its tools with strict inputs', () => {
       'conductor.spawn' as CommandType,
       { runtime: 'codex', input: 'Write the docs', permission_mode: 'auto_edit' },
       [],
+    ],
+    [
+      'conductor.spawn' as CommandType,
+      { runtime: 'codex', input: 'Write the docs', reason: 'The docs lag the flags' },
+      [
+        { runtime: 'codex', input: 'Write the docs', reason: '' },
+        { runtime: 'codex', input: 'Write the docs', reason: 'x'.repeat(501) },
+      ],
     ],
     [
       'conductor.spawn' as CommandType,
@@ -210,6 +226,14 @@ it('gives a conductor session exactly its tools with strict inputs', () => {
       'conductor.stop' as CommandType,
       { session_id: 'spawned', close: true },
       [{}, { session_id: 'spawned', close: 'yes' }],
+    ],
+    [
+      'conductor.stop' as CommandType,
+      { session_id: 'spawned', reason: 'It edits the wrong module' },
+      [
+        { session_id: 'spawned', reason: '' },
+        { session_id: 'spawned', close: true, reason: 'x'.repeat(501) },
+      ],
     ],
     ['conductor.needs_you' as CommandType, {}, [{ project_id: 'project' }]],
     [

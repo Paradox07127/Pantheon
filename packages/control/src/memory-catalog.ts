@@ -796,6 +796,7 @@ export function memoryGraph(ctx: ControlContext, p: Principal, raw: unknown): Me
           kind: 'source',
           source_kind: ref.kind,
           uri: ref.uri,
+          ...(ref.root !== undefined && { root: ref.root }),
         },
         'source',
       );

@@ -206,6 +206,10 @@ function deviceStatus(
   return { id, name, ...described, ...probed, checked_at: checkedAt };
 }
 
+/** A device status without the times its probe ran, to tell whether a probe changed it. */
+const probeFacts = ({ checked_at: _, last_online_at: __, ...facts }: DeviceStatus) =>
+  JSON.stringify(facts);
+
 function probeAndKeep(
   ctx: ControlContext,
   id: string,
@@ -224,7 +228,14 @@ function probeAndKeep(
       else ctx.store.insert('device_observations', observation);
       status.last_online_at = status.checked_at;
     } else if (previous) status.last_online_at = previous.last_online_at;
-    if (latest.get(id) === probe) ctx.devices?.set(id, status);
+    if (latest.get(id) === probe) {
+      const before = ctx.devices?.get(id);
+      ctx.devices?.set(id, status);
+      // A reader that read the list during the probe reads again; the 5-minute refresh of an
+      // unchanged device writes nothing.
+      if (!before || probeFacts(before) !== probeFacts(status))
+        ctx.store.event('device.probed', { id, revision: 1 }, '', { online: status.online });
+    }
     return status;
   };
   const probe = keep().finally(() => {

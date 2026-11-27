@@ -1,0 +1,7 @@
+{
+  "components.devicesSummary.title": "设备",
+  "components.devicesSummary.summary": "设备，{total} 台里 {online} 台在线",
+  "components.devicesSummary.sessions": "{count, plural, other {# 个会话}}",
+  "components.devicesSummary.settings": "设备设置",
+  "components.devicesSummary.more": "还有 {count} 个"
+}

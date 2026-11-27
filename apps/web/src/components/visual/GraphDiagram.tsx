@@ -547,16 +547,20 @@ export function GraphDiagram({
   onSelect,
   grows = false,
   full = false,
+  styleNames,
 }: {
   spec: GraphSpec;
   height: number;
-  selected?: string;
+  /** The picked node; null when the caller holds the choice and none is picked. */
+  selected?: string | null;
   /** Grows past the height to the graph at the zoom that fits its width, up to `MAX_HEIGHT`. */
   grows?: boolean;
   /** Draws at full size and pans, as the Enlarge dialog does. */
   full?: boolean;
   /** A node was picked, or `undefined` once it is let go. */
   onSelect?: (id: string | undefined) => void;
+  /** The legend's names of edge styles that mean something else here. */
+  styleNames?: Partial<Record<EdgeStyle, string>>;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [laid, setLaid] = useState<Laid | null>(null);
@@ -613,7 +617,7 @@ export function GraphDiagram({
   const viewport = { x: start(drawing.x, plot.x), y: start(drawing.y, plot.y), zoom };
   // A map shows the whole and the view while the graph pans.
   const overflows = !!laid && (over(drawing.x, plot.x) || over(drawing.y, plot.y));
-  const chosen = selected ?? picked;
+  const chosen = selected === null ? undefined : (selected ?? picked);
   const pick = (id: string | undefined) => {
     setPicked(id);
     onSelect?.(id);
@@ -817,7 +821,7 @@ export function GraphDiagram({
               <svg className="vis-gl-ln" viewBox="0 0 20 8" aria-hidden="true">
                 <path d="M0 4H20" />
               </svg>
-              <span>{STYLE_NAME[style]}</span>
+              <span>{styleNames?.[style] ?? STYLE_NAME[style]}</span>
               <span className="vis-gl-n">{count}</span>
             </li>
           ))}

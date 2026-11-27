@@ -160,6 +160,8 @@ export interface MemoryGraph {
     memory_id?: string;
     summary?: string;
     uri?: string;
+    /** A file source's project root, as in its reference. */
+    root?: number;
   }[];
   edges: {
     id: string;

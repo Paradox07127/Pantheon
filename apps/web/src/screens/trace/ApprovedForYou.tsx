@@ -2,7 +2,7 @@ import { Fragment, useState, type ReactNode } from 'react';
 import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
 import { Tabs } from '@base-ui/react/tabs';
-import { Bell, Bot, KeyRound, MessageSquare, ScrollText, X } from 'lucide-react';
+import { Bell, Bot, KeyRound, MessageSquare, Play, ScrollText, X } from 'lucide-react';
 import { Clip } from '../../components/Clip';
 import { EmptyState } from '../../components/EmptyState';
 import { TopBar } from '../../components/TopBar';
@@ -140,7 +140,11 @@ export function ApprovedForYou({ projectId, tabs }: { projectId: string | null; 
                     <Fragment key={row.key}>
                       <div className="afy-r" role="row">
                         <span role="cell" className="afy-a">
-                          <KeyRound className="ic-sm" aria-hidden="true" />
+                          {row.kind === 'main_agent_action' ? (
+                            <Play className="ic-sm" aria-hidden="true" />
+                          ) : (
+                            <KeyRound className="ic-sm" aria-hidden="true" />
+                          )}
                           <span className="afy-what">
                             {main?.answers.length ? (
                               main.answers.map((answer) => <Clip key={answer} text={answer} />)
@@ -201,7 +205,10 @@ export function ApprovedForYou({ projectId, tabs }: { projectId: string | null; 
                               row={{ id: `decision:${row.key}`, title: row.action }}
                               session={{ id: main.sessionId }}
                               main={null}
-                              draft={tellDecisionDraft(row)}
+                              draft={tellDecisionDraft(
+                                row,
+                                row.sessionId === null ? null : titleOf(row.sessionId),
+                              )}
                             />
                           </div>
                         </div>

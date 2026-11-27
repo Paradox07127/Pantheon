@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { Radio } from '@base-ui/react/radio';
+import { RadioGroup } from '@base-ui/react/radio-group';
 import type { WorkbenchSession } from '@pantheon/protocol';
 import { Failure } from '../../components/PanelBoundary';
 import { TopBar } from '../../components/TopBar';
@@ -13,6 +15,7 @@ import { IntroView } from '../memory/IntroView';
 import { AgentList } from './AgentList';
 import { ConductorComposer } from './ConductorComposer';
 import { ItemInspector } from './ItemInspector';
+import { hasDependencies } from './plan-flow';
 import { PlanList } from './PlanList';
 import { mainAgent, type ShownPlanItem } from './project-model';
 import { StatusPanel } from './StatusPanel';
@@ -51,6 +54,33 @@ function startMainAgent(projectId: string) {
   useShell.getState().startNewSession();
 }
 
+type PlanView = 'list' | 'flow';
+
+const VIEW_KEY = 'pantheon.planView.';
+
+function loadPlanView(projectId: string | null): PlanView {
+  try {
+    return projectId && localStorage.getItem(VIEW_KEY + projectId) === 'flow' ? 'flow' : 'list';
+  } catch {
+    return 'list';
+  }
+}
+
+/** The plan's list or graph, chosen per project. */
+function usePlanView(projectId: string | null) {
+  const [stored, setStored] = useState(() => ({ projectId, view: loadPlanView(projectId) }));
+  if (stored.projectId !== projectId) setStored({ projectId, view: loadPlanView(projectId) });
+  const choose = (view: PlanView) => {
+    setStored({ projectId, view });
+    try {
+      if (projectId) localStorage.setItem(VIEW_KEY + projectId, view);
+    } catch {
+      // The choice holds in this window only.
+    }
+  };
+  return [stored.view, choose] as const;
+}
+
 /**
  * The project at a glance: its state, the changes outside the plan, the agents at work and the
  * introduction; a message box talks to the main agent.
@@ -79,9 +109,30 @@ export function ProjectScreen({
   useEffect(() => {
     if (gone) setSelected(null);
   }, [gone]);
+  const [chosenView, chooseView] = usePlanView(projectId);
+  const flowable = hasDependencies(shown);
+  const view = flowable ? chosenView : 'list';
   return (
     <div className="tb-pg">
-      <TopBar title={SCREEN_NAMES.project} />
+      <TopBar title={SCREEN_NAMES.project}>
+        {flowable && (
+          <div className="tb-end">
+            <RadioGroup<PlanView>
+              className="tb-seg"
+              aria-label={t({ id: 'project.plan.view', defaultMessage: 'Plan view' })}
+              value={view}
+              onValueChange={chooseView}
+            >
+              <Radio.Root value="list">
+                {t({ id: 'project.plan.view.list', defaultMessage: 'List' })}
+              </Radio.Root>
+              <Radio.Root value="flow">
+                {t({ id: 'project.plan.view.flow', defaultMessage: 'Flow' })}
+              </Radio.Root>
+            </RadioGroup>
+          </div>
+        )}
+      </TopBar>
       <div className="pj">
         <StatusPanel summary={summary} main={main} latest={plan.read?.latest_landing} />
         <div className="pj-grid" data-inspector={chosen ? '' : undefined}>
@@ -106,6 +157,7 @@ export function ProjectScreen({
               sessions={sessions}
               selected={chosen ? chosen.id : null}
               onSelect={setSelected}
+              view={view}
             />
             <UnplannedList rows={plan.read?.unplanned ?? null} />
             {main && <ConductorComposer key={main.id} main={main} />}

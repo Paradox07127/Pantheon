@@ -309,6 +309,106 @@ const elsewhere = await page.evaluate(
 check('点行的任务链接后打开这个会话：侧栏行 aria-current，主区显示其标题', opened, opened);
 check('对照组：存下规则的那个会话的行不是当前', !elsewhere, elsewhere);
 
+// A main agent that starts a session with a reason: the list has a row for it, with the reason.
+const { project_id: mainProject } = await newProject(`verify-decided-main-${stamp}`, {
+  'README.md': '# main agent action\n',
+  'src/index.ts': 'export const answer = 42;\n',
+  'package.json': '{ "name": "decided-main-fixture", "private": true }\n',
+});
+const MAIN = `verify-decided-conductor-${stamp}`;
+const CHILD = `verify-decided-child-${stamp}`;
+const REASON = `reason-${stamp}`;
+const conductor = await call('session.create', {
+  project_id: mainProject,
+  runtime: 'fixture',
+  purpose: 'conductor',
+  input: `${MAIN}\nfixture-script\n${JSON.stringify([
+    {
+      tool: {
+        name: 'spawn_session',
+        arguments: {
+          runtime: 'fixture',
+          input: `${CHILD}\nfixture-script\n${JSON.stringify([{ say: 'child' }])}`,
+          reason: REASON,
+        },
+      },
+    },
+    { say: 'spawned' },
+  ])}`,
+});
+const spawned = await poll(async () => {
+  const all = await query('session.list', { project_id: mainProject });
+  const main = all.find((s) => s.id === conductor.id);
+  const child = all.find((s) => s.spawned_by?.session_id === conductor.id);
+  return main?.last_turn?.state === 'completed' && child && { main, child };
+}, 60_000);
+check('前置：主 agent 起了一个会话', spawned, spawned && spawned.child.title);
+const mainDecided = await poll(async () => {
+  const items = (
+    await query('project.decisions', { project_id: mainProject, since: String(since('today')) })
+  ).items;
+  return items.some((i) => i.kind === 'main_agent_action') && items;
+}, 20_000);
+const action = Array.isArray(mainDecided)
+  ? mainDecided.find((i) => i.kind === 'main_agent_action')
+  : undefined;
+result.main_agent_action = mainDecided;
+check(
+  '后端对照：project.decisions 有 main_agent_action spawn，带原因，指向起的会话和主 agent',
+  action?.action === 'spawn' &&
+    action.reason === REASON &&
+    action.session_id === spawned?.child.id &&
+    action.main_agent_session_id === conductor.id,
+  action,
+);
+await page.click({ role: 'button', name: '搜索', exact: true });
+await page.waitFor(`!!document.querySelector('.cmdk input')`, 'the command palette to open');
+const paletteBox = await page.evaluate(
+  `document.querySelector('.cmdk input').getAttribute('aria-label')`,
+);
+await page.fill({ role: 'combobox', name: paletteBox, exact: true }, '最近动态');
+await page.click({ role: 'option', name: '最近动态', exact: true });
+await page.click({ role: 'tab', name: '替你定的', exact: false });
+const actionRows = () =>
+  page.evaluate(`(() => {
+    const t = [...document.querySelectorAll('[role=table]')].find((el) => el.getAttribute('aria-label') === '替你定的' && el.getClientRects().length);
+    if (!t) return null;
+    return [...t.querySelectorAll('[role=row]')].filter((r) => !r.classList.contains('afy-hd') && r.querySelector('[role=cell] .afy-what')).map((r) => {
+      const cells = [...r.querySelectorAll('[role=cell]')];
+      return {
+        what: [...cells[0].querySelectorAll('.afy-what > *')].map((c) => c.textContent.trim()),
+        by: cells[1]?.textContent.trim() ?? null,
+        task: cells[3]?.querySelector('button')?.textContent.trim() ?? null,
+      };
+    });
+  })()`);
+const isAction = (x) => x.what[0] === '起一个会话';
+const shownAction = await poll(async () => {
+  const r = await actionRows();
+  return r?.some?.(isAction) && r;
+});
+result.action_rows = shownAction || (await actionRows());
+const actionRow = Array.isArray(shownAction) ? shownAction.find(isAction) : undefined;
+check(
+  '"替你定的" 多一行 "起了一个会话"，行上显示主 agent 给的原因',
+  actionRow && actionRow.what.includes(REASON),
+  result.action_rows,
+);
+check(
+  '行数等于 project.decisions 的条数',
+  Array.isArray(shownAction) &&
+    Array.isArray(mainDecided) &&
+    shownAction.length === mainDecided.length,
+  { ui: shownAction?.length, daemon: mainDecided?.length },
+);
+check(
+  '行的决定者是主 agent 会话标题，任务是起的会话标题',
+  spawned && actionRow?.by?.includes(spawned.main.title) && actionRow.task === spawned.child.title,
+  { row: actionRow, main: spawned?.main.title, child: spawned?.child.title },
+);
+check('对照组：原因读法对另一个值判 false', !actionRow?.what.includes(`${REASON}-absent`));
+await page.screenshot('approved-main-agent-action');
+
 result.errors = await errors();
 console.log(JSON.stringify(result, null, 2));
 page.close();
