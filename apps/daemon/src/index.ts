@@ -21,7 +21,7 @@ import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { serve } from '@hono/node-server';
 import { WebSocketServer, WebSocket } from 'ws';
-import { PANTHEON_VERSION } from '@pantheon/domain/version';
+import { daemonBuildTime, PANTHEON_VERSION } from '@pantheon/domain/version';
 import {
   credentialRole,
   DomainError,
@@ -52,6 +52,8 @@ import {
 import { startRuntimeOtel } from './runtime-otel.js';
 import { createRuntimeAdapter } from './runtime-registry.js';
 
+// Snapshot at module load so a rebuild on disk cannot change the running daemon's answer.
+const buildTime = daemonBuildTime(new URL('../', import.meta.url));
 const digest = (value: string): string => createHash('sha256').update(value).digest('hex');
 
 /** A schema error as one `path: message` line per issue; the daemon does not depend on zod itself. */
@@ -489,6 +491,7 @@ export async function startDaemon(options: DaemonOptions) {
         service: 'pantheon',
         protocol_version: PROTOCOL_VERSION,
         version: PANTHEON_VERSION,
+        build_time_ms: buildTime,
         // An upgrade can delete the node this daemon runs, and every child it starts with it.
         ...(existsSync(process.execPath)
           ? {}

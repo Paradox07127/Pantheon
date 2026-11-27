@@ -144,6 +144,8 @@ macOS 上「语音输入」使用系统内置的语音引擎。
 
 门禁跑的是被测提交里的文件，所以改这些文件的改动要等你批。一次合并或落地的改动碰到门禁命令点名的仓库文件，或项目 `protected_paths`(`project.gate.set`)里的路径时，不落地。会话合并进「待办」,原因是 `gate_files_changed`,并列出这些文件;「仍然落地」放行。`pantheon land` 打印这些文件和放行它们的命令(`--allow-gate-change`)。门禁通过的测试比同名门禁在这个分支上次落地时少，或跳过的多，同样不落地，原因是 `tests_dropped`,带上两边的数;「仍然落地」和 `--allow-gate-change` 放行。
 
+如果守护进程运行的是旧版构建，`pantheon review` 和 `pantheon land` 会提示你重启 Pantheon 加载新代码(源码仓库里运行 `pnpm relaunch`),然后继续执行。如果守护进程在分支落地的门禁执行期间停止，下次启动时会从第一条命令重新运行门禁，通过后落地。
+
 ## 导入外部会话
 
 Pantheon 读取 Claude Code 和 Codex 的原生历史。

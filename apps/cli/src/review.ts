@@ -263,9 +263,14 @@ export const readHealth = async (url: string) => {
     const health = (await response.json()) as {
       service?: string;
       version?: string;
+      build_time_ms?: unknown;
       restart_required?: string;
     };
-    return response.ok && health.service === 'pantheon' ? health : undefined;
+    if (!response.ok || health.service !== 'pantheon') return;
+    return {
+      ...health,
+      build_time_ms: typeof health.build_time_ms === 'number' ? health.build_time_ms : undefined,
+    };
   } catch {
     return undefined;
   }

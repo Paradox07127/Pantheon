@@ -20,7 +20,14 @@ import { review, watchRuntimes } from '../../apps/cli/src/review.js';
 const requests: { method: string; url: string; body: string }[] = [];
 let replies: { status: number; body: unknown }[] = [];
 // The daemon's /health and runtime.status answers, kept out of requests and replies.
-const healthy = { service: 'pantheon', protocol_version: 1, version: PANTHEON_VERSION };
+const healthy = {
+  service: 'pantheon',
+  protocol_version: 1,
+  version: PANTHEON_VERSION,
+  build_time_ms: Number.MAX_SAFE_INTEGER,
+};
+const olderCode =
+  'The daemon runs older code. Restart Pantheon to load the new code; in a source checkout, run pnpm relaunch.';
 let health: unknown = healthy;
 let healthStatus = 200;
 let healthLater: unknown;
@@ -575,7 +582,9 @@ describe('pnpm cli review', () => {
         ...part('part-2', { findings: [finding({ blocking: true })] }),
         ...part('part-3', { findings: [finding({ blocking: true, resolution: resolved })] }),
       ],
+      { health: { ...healthy, build_time_ms: 1 } },
     );
+    expect(result.stderr.split('\n').filter((line) => line === olderCode)).toHaveLength(1);
     const sent = requests
       .filter((request) => request.method === 'POST')
       .map((request) => JSON.parse(request.body).input);
@@ -1041,7 +1050,9 @@ describe('pnpm cli land', () => {
         { body: landingOf({ gate_results: [gate({})] }) },
         { body: landingOf({ state: 'landed', from_sha: '0123456789ab', to_sha: 'abcdef012345' }) },
       ],
+      { health: { ...healthy, build_time_ms: undefined } },
     );
+    expect(result.stderr.split('\n')).toContain(olderCode);
     expect(sentInput()).toMatchObject({
       type: 'project.land',
       actor: 'local-user',

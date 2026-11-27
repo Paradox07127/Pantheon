@@ -144,6 +144,8 @@ Gate commands run without a sandbox. They get the same environment as a session 
 
 The gate runs the files of the commit it tests, so a change to those files waits for you. A merge or a landing whose changes touch a repository file that a gate command names, or a path in the project's `protected_paths` (`project.gate.set`), does not land. A session merge goes to "Needs you" with the reason `gate_files_changed` and the files; "Land anyway" lands it. `pantheon land` prints the files and the command that lands them (`--allow-gate-change`). A gate that passes fewer tests or skips more than the same gate did at the last landing onto the branch holds the landing the same way, with the reason `tests_dropped` and both counts; "Land anyway" and `--allow-gate-change` land it.
 
+`pantheon review` and `pantheon land` warn when the daemon runs an older build and continue. Restart Pantheon to load the new code; in a source checkout, run `pnpm relaunch`. If the daemon stops during a branch landing’s gate, the next daemon runs the gate again from the first command and lands the branch if it passes.
+
 ## Import an external session
 
 Pantheon reads the native history of Claude Code and Codex.

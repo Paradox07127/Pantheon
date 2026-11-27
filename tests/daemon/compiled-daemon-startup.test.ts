@@ -1,7 +1,18 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import {
+  globSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { expect, it } from 'vitest';
 
 it('initializes compiled control and starts the daemon in native Node without an async import cycle, reporting the release version', () => {
@@ -27,9 +38,9 @@ it('initializes compiled control and starts the daemon in native Node without an
         const board = await fetch(daemon.url + '/v1/board', {
           headers: { Authorization: 'Bearer ' + daemon.token }
         });
-        const { version } = await health.json();
+        const { version, build_time_ms } = await health.json();
         await board.text();
-        console.log(JSON.stringify({ health: health.status, version, board: board.status, imports: 'ready' }));
+        console.log(JSON.stringify({ health: health.status, version, build_time_ms, board: board.status, imports: 'ready' }));
       } finally { await daemon.close(); }
     `,
       ],
@@ -42,10 +53,30 @@ it('initializes compiled control and starts the daemon in native Node without an
       health: 200,
       version: JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'))
         .version,
+      build_time_ms: Math.max(
+        ...globSync(['apps/daemon/dist/**/*.js', 'packages/*/dist/**/*.js']).map(
+          (file) => statSync(file).mtimeMs,
+        ),
+      ),
       board: 200,
       imports: 'ready',
     });
   } finally {
     rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+it('reads the build time past a compiled file that is gone by the time it is read', async () => {
+  const { daemonBuildTime } = await import('@pantheon/domain/version');
+  const daemon = mkdtempSync(path.join(os.tmpdir(), 'pantheon-build-time-'));
+  try {
+    mkdirSync(path.join(daemon, 'dist'));
+    writeFileSync(path.join(daemon, 'dist', 'main.js'), '');
+    utimesSync(path.join(daemon, 'dist', 'main.js'), 1000, 1000);
+    // A link to a deleted file is listed by the glob, then fails stat as a file removed in between would.
+    symlinkSync(path.join(daemon, 'removed.js'), path.join(daemon, 'dist', 'gone.js'));
+    expect(daemonBuildTime(pathToFileURL(`${daemon}/`))).toBe(1_000_000);
+  } finally {
+    rmSync(daemon, { recursive: true, force: true });
   }
 });

@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, it, vi } from 'vitest';
 import type { Landing, Principal, Project, Session, Workspace } from '@pantheon/domain';
@@ -585,34 +585,50 @@ it('starts the gate of a branch landing only after a session merge of the same r
   expect(git(f.source, 'show', 'main:feature.txt')).toBe('feature');
 });
 
-it('finishes a landing whose gate the daemon stopped, once the daemon starts again', async () => {
-  const f = await landFixture();
-  const tip = branch(f, 'feature', [['feature.txt', 'feature\n']]);
-  let release: () => void = () => {};
-  const gate = vi
-    .spyOn(validation, 'runValidationCommand')
-    .mockImplementationOnce(async () => {
-      await new Promise<void>((resolve) => (release = resolve));
-      return passedGate();
-    })
-    .mockResolvedValue(passedGate());
-  const started = await land(f);
-  await eventually(
-    () => gate.mock.calls.length === 1,
-    () => f.control.tick(),
-    10000,
-  );
-  expect(row(f, started.id).state).toBe('running');
-  const stopping = f.control.shutdown();
-  release();
-  await stopping;
-  expect(row(f, started.id).state).toBe('running');
-  await f.restart(undefined, { abandon: true });
-  const done = await ended(f, started.id);
-  expect(done).toMatchObject({ state: 'landed', to_sha: tip });
-  expect(gate).toHaveBeenCalledTimes(2);
-  expect(git(f.source, 'rev-parse', 'main')).toBe(tip);
-});
+it.skipIf(insideSandbox)(
+  'reruns a branch landing gate from the start after shutdown interrupts its command',
+  async () => {
+    const f = await landFixture([]);
+    const runs = path.join(f.root, 'gate-runs');
+    const started = path.join(f.root, 'checking');
+    await setGate(f, [
+      { name: 'Prepare', argv: ['sh', '-c', 'echo prepare >> "$1"', 'sh', runs] },
+      {
+        name: 'Check',
+        argv: [
+          'sh',
+          '-c',
+          'echo check >> "$1"; if [ ! -e "$2" ]; then touch "$2"; exec tail -f /dev/null; fi',
+          'sh',
+          runs,
+          started,
+        ],
+      },
+    ]);
+    const tip = branch(f, 'feature', [['feature.txt', 'feature\n']]);
+    const { id } = await land(f);
+    await eventually(
+      () => existsSync(started),
+      () => f.control.tick(),
+    );
+    await f.control.shutdown();
+    expect(row(f, id)).toMatchObject({
+      state: 'running',
+      gate_results: [{ name: 'Prepare', state: 'passed' }],
+    });
+    await f.restart(undefined, { abandon: true });
+    expect(await ended(f, id)).toMatchObject({
+      state: 'landed',
+      to_sha: tip,
+      gate_results: [
+        { name: 'Prepare', state: 'passed' },
+        { name: 'Check', state: 'passed' },
+      ],
+    });
+    expect(readFileSync(runs, 'utf8')).toBe('prepare\ncheck\nprepare\ncheck\n');
+    expect(git(f.source, 'rev-parse', 'main')).toBe(tip);
+  },
+);
 
 it('leaves the commits of a landing that waited for the root unsquashed when the daemon stops', async () => {
   const f = await landFixture();

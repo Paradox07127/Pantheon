@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
-import { PANTHEON_VERSION } from '@pantheon/domain/version';
+import { daemonBuildTime, PANTHEON_VERSION } from '@pantheon/domain/version';
 import { defaultDataDirectory } from '@pantheon/protocol/paths';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { createMcpServer } from './mcp.js';
@@ -67,6 +67,7 @@ const connect = () => {
   };
   return { url: manifest.url, token: readFileSync(manifest.token_file, 'utf8').trim() };
 };
+let warnedAboutBuild = false;
 /**
  * The daemon for review and land; exits 2 when it is not running or, unless the command only
  * stops work, has to restart first.
@@ -90,15 +91,25 @@ const running = async (stopsOnly = false) => {
   const health = await readHealth(manifest.url);
   if (!health) return stopped();
   if (!stopsOnly) stopForRestart(health);
-  if (health.version !== PANTHEON_VERSION)
-    console.error(
-      `The daemon runs ${health.version} and this CLI is ${PANTHEON_VERSION}; run pnpm relaunch to load the new code.`,
-    );
   let token: string;
   try {
     token = readFileSync(manifest.token_file, 'utf8').trim();
   } catch {
     return stopped();
+  }
+  if (!warnedAboutBuild) {
+    const built = daemonBuildTime(new URL('../../daemon/', import.meta.url));
+    if ((health.build_time_ms ?? 0) < built) {
+      console.error(
+        'The daemon runs older code. Restart Pantheon to load the new code; in a source checkout, run pnpm relaunch.',
+      );
+      warnedAboutBuild = true;
+    } else if (health.version !== PANTHEON_VERSION) {
+      console.error(
+        `The daemon runs ${health.version} and this CLI is ${PANTHEON_VERSION}; run pnpm relaunch to load the new code.`,
+      );
+      warnedAboutBuild = true;
+    }
   }
   return { url: manifest.url, token, dataDir: directory };
 };
