@@ -1,4 +1,5 @@
-import { writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, it } from 'vitest';
 import type { Project, Session, Workspace } from '@pantheon/domain';
@@ -54,6 +55,76 @@ it('pages the commit log in order from the requested ref', async () => {
   });
   expect(await page(1)).toMatchObject({ commits: [{ sha: first, parents: [] }], has_more: false });
   expect(await page(2)).toEqual({ commits: [], has_more: false });
+});
+
+it('lists no commits while HEAD has none and still refuses an unknown ref', async () => {
+  const f = await workbenchFixture();
+  git(f.source, 'switch', '-q', '--orphan', 'empty');
+  const log = (ref?: string) =>
+    f.control.repoLog(user, {
+      project_id: f.project.id,
+      limit: 10,
+      skip: 0,
+      ...(ref ? { ref } : {}),
+    });
+  expect(await log()).toEqual({ commits: [], has_more: false });
+  await expect(log('missing')).rejects.toMatchObject({ code: 'invalid_input' });
+});
+
+it('lists every commit before its parents when commit times would put a parent first', async () => {
+  const f = await workbenchFixture();
+  // A commit dated before its parent, as a skewed clock leaves it.
+  const commitAt = (name: string, date: string) => {
+    writeFileSync(path.join(f.source, name), `${name}\n`);
+    git(f.source, 'add', '--', name);
+    execFileSync(
+      'git',
+      ['-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', 'commit', '-qm', name],
+      {
+        cwd: f.source,
+        env: {
+          PATH: process.env.PATH,
+          GIT_CONFIG_GLOBAL: '/dev/null',
+          GIT_CONFIG_NOSYSTEM: '1',
+          GIT_AUTHOR_NAME: 'Workbench Fixture',
+          GIT_AUTHOR_EMAIL: 'fixture@example.invalid',
+          GIT_COMMITTER_NAME: 'Workbench Fixture',
+          GIT_COMMITTER_EMAIL: 'fixture@example.invalid',
+          GIT_COMMITTER_DATE: date,
+        },
+        stdio: 'ignore',
+      },
+    );
+  };
+  git(f.source, 'branch', 'side');
+  for (const n of [1, 2]) {
+    git(f.source, 'switch', '-q', 'side');
+    commitAt(`side-${n}.txt`, `200${n}-01-01T00:00:00Z`);
+    git(f.source, 'switch', '-q', 'main');
+    commitFile(f.source, `main-${n}.txt`, 'main\n');
+  }
+  git(f.source, 'merge', '--no-ff', '-m', 'Merge side', 'side');
+  const { commits } = await f.control.repoLog(user, {
+    project_id: f.project.id,
+    limit: 10,
+    skip: 0,
+  });
+  expect(commits).toHaveLength(6);
+  const row = new Map(commits.map((c, i) => [c.sha, i]));
+  const parentFirst = commits.flatMap((c, i) =>
+    c.parents.filter((parent) => row.get(parent)! < i).map((parent) => [c.subject, parent]),
+  );
+  expect(parentFirst).toEqual([]);
+});
+
+it('reports a failed git read instead of an empty log', async () => {
+  const f = await workbenchFixture();
+  rmSync(path.join(f.source, '.git'), { recursive: true, force: true });
+  // An empty .git keeps git from finding the repository the test folder sits in.
+  mkdirSync(path.join(f.source, '.git'));
+  await expect(
+    f.control.repoLog(user, { project_id: f.project.id, limit: 10, skip: 0 }),
+  ).rejects.toMatchObject({ code: 'workspace_read_failed' });
 });
 
 it('preserves indentation and trailing spaces in the commit body', async () => {

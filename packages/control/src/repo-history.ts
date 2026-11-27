@@ -106,13 +106,25 @@ export async function repoLog(
   p: Principal,
   input: { project_id: string; ref?: string; limit: number; skip: number },
 ): Promise<RepoLog> {
-  const { root, read } = repository(ctx, p, input.project_id);
+  const { root, git, read } = repository(ctx, p, input.project_id);
+  if (input.ref === undefined) {
+    // A new repository's branch has no commit yet.
+    const head = await git(['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'], BOUND);
+    if (head.exit_code === 1) return { commits: [], has_more: false };
+    requireThat(
+      head.exit_code === 0,
+      'workspace_read_failed',
+      head.error ?? head.stderr.toString(),
+    );
+  }
   const start = await commitOf(root, input.ref ?? 'HEAD', BOUND);
   const lines = loggedFields(
     await read([
       'log',
       ...PARSED_DIFF,
       '-z',
+      // The graph's lanes need every commit before its parents.
+      '--topo-order',
       `--max-count=${input.limit + 1}`,
       `--skip=${input.skip}`,
       LOG_FORMAT,

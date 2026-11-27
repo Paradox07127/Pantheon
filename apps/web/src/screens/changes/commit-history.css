@@ -1,0 +1,137 @@
+/* The commits tab of the changes screen: the commit graph, and the opened commit beside it. */
+.chc-rows {
+  /* Width of the graph column; the list sets it inline from the lanes in use. */
+  --chc-gw: 0px;
+  position: relative;
+}
+.chc-lines {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+.chc-lines path {
+  fill: none;
+  stroke: var(--mu);
+  stroke-width: 1.5;
+}
+.chc-lines circle {
+  fill: var(--sf);
+  stroke: var(--mu);
+  stroke-width: 1.5;
+}
+.chc-lines circle[data-filled] {
+  fill: var(--mu);
+}
+.chc-list {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-radius: var(--r-sm);
+}
+.chc-list:focus-visible {
+  outline: 0;
+}
+.chc-list:focus-visible .chc-row[data-active] {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.chc-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 120px) 72px 64px;
+  align-items: center;
+  gap: 12px;
+  height: var(--row);
+  padding: 0 8px 0 var(--chc-gw);
+  border-radius: var(--r-sm);
+  color: var(--tx2);
+  font-variant-numeric: tabular-nums;
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+.chg[data-inspector] .chc-row {
+  grid-template-columns: minmax(0, 1fr) 64px;
+}
+.chg[data-inspector] .chc-row > :is(.clip-1, time) {
+  display: none;
+}
+.chc-row > * {
+  min-width: 0;
+}
+.chc-row:hover {
+  background: var(--sf2);
+  color: var(--tx);
+}
+.chc-row[aria-selected='true'] {
+  background: var(--sel);
+  color: var(--tx);
+}
+.chc-subj {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.chc-ses {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  max-width: 200px;
+  min-width: 0;
+  height: 20px;
+  padding: 0 6px;
+  border: var(--hair) solid var(--bd2);
+  border-radius: max(calc(var(--r-sm) - 2px), 4px);
+  background: var(--sf2);
+  color: var(--tx2);
+  font: inherit;
+  font-size: var(--fs-xs);
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+.chc-ses:hover {
+  background: var(--sf3);
+  color: var(--tx);
+}
+.chc-more {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 8px 0 var(--chc-gw);
+}
+.chc-body {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.chc-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.chc-sha {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.chc-diff {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+.chc-diff > .chg-mu {
+  padding: 8px 12px;
+}

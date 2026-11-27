@@ -35,7 +35,12 @@ export function diffCells(additions: number, deletions: number) {
 }
 
 /** One row per changed file, its bar scaled to the file with the most changed lines; a row opens the diff. */
-function fileBars(files: readonly DiffFile[], sessionId: string) {
+export function fileBars(
+  files: readonly Pick<DiffFile, 'path' | 'additions' | 'deletions'>[],
+  openFile: (path: string) => void,
+  openLabel: (path: string) => string,
+  current?: string,
+) {
   const top = Math.max(1, ...files.map((f) => (f.additions ?? 0) + (f.deletions ?? 0)));
   return (
     <ul
@@ -50,11 +55,9 @@ function fileBars(files: readonly DiffFile[], sessionId: string) {
             <button
               type="button"
               className="chg-dfl-h"
-              aria-label={t(
-                { id: 'changes.files.open', defaultMessage: "{path}, opens the session's diff" },
-                { path: file.path },
-              )}
-              onClick={() => useShell.getState().openSession(sessionId, 'diff')}
+              aria-label={openLabel(file.path)}
+              aria-current={file.path === current || undefined}
+              onClick={() => openFile(file.path)}
             >
               <PathText path={file.path} className="mono" />
               <span className="chg-num">
@@ -104,7 +107,15 @@ export function ChangedFiles({ sessionId }: { sessionId: string }) {
       </div>
       {diff.data ? (
         files.length ? (
-          fileBars(files, sessionId)
+          fileBars(
+            files,
+            () => useShell.getState().openSession(sessionId, 'diff'),
+            (path) =>
+              t(
+                { id: 'changes.files.open', defaultMessage: "{path}, opens the session's diff" },
+                { path },
+              ),
+          )
         ) : (
           <span className="chg-mu">
             {t({ id: 'changes.files.none', defaultMessage: 'No changed files.' })}

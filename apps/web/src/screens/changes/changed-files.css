@@ -73,3 +73,7 @@
 .chg-dfb > i[data-k='d'] {
   background: var(--del);
 }
+.chg-dfl-h[aria-current='true'] {
+  color: var(--tx);
+  font-weight: 600;
+}

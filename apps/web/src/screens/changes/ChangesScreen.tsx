@@ -42,6 +42,7 @@ import { GateResults } from '../sessions/GateResults';
 import { aheadText, gateFailing } from '../sessions/inspector-model';
 import { GATE_NAME } from '../sessions/SessionHeader';
 import { ChangedFiles } from './ChangedFiles';
+import { CommitHistory } from './CommitHistory';
 import { PullRequestList } from './PullRequestList';
 import { QualityStrip } from './QualityStrip';
 import { TellBox } from './TellBox';
@@ -180,7 +181,7 @@ export function ChangesScreen({
 }) {
   const read = useProjectChanges(projectId);
   const [filter, setFilter] = useState<ChangeFilter>('all');
-  const [pulls, setPulls] = useState(false);
+  const [side, setSide] = useState<'commits' | 'pulls' | null>(null);
   const [active, setActive] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const all = read.read ? sortChanges(read.read.changes) : null;
@@ -239,10 +240,11 @@ export function ChangesScreen({
   return (
     <Tabs.Root
       className="tb-pg"
-      value={pulls ? 'pulls' : filter}
+      value={side ?? filter}
       onValueChange={(value) => {
-        setPulls(value === 'pulls');
-        if (value !== 'pulls') setFilter(value as ChangeFilter);
+        const other = value === 'commits' || value === 'pulls' ? value : null;
+        setSide(other);
+        if (!other) setFilter(value as ChangeFilter);
       }}
     >
       <TopBar title={name} count={all?.length}>
@@ -253,6 +255,9 @@ export function ChangesScreen({
               <span className="tb-ct">{count(f)}</span>
             </Tabs.Tab>
           ))}
+          <Tabs.Tab className="tb-tab" value="commits">
+            {t({ id: 'changes.commits.tab', defaultMessage: 'Commits' })}
+          </Tabs.Tab>
           <Tabs.Tab className="tb-tab" value="pulls">
             {t({ id: 'changes.pulls.tab', defaultMessage: 'Pull requests' })}
           </Tabs.Tab>
@@ -376,7 +381,8 @@ export function ChangesScreen({
           <ChangeInspector key={opened.id} row={opened} sessions={sessions} onClose={close} />
         )}
       </Tabs.Panel>
-      {pulls && <PullRequestList projectId={projectId} sessions={sessions} />}
+      {side === 'commits' && <CommitHistory projectId={projectId} sessions={sessions} />}
+      {side === 'pulls' && <PullRequestList projectId={projectId} sessions={sessions} />}
     </Tabs.Root>
   );
 }
