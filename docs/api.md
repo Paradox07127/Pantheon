@@ -434,6 +434,16 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 |---|---|---|
 | `project.worktree.set` | `project_id`: string<br>`copy_paths`: string[]<br>`command?`: object |  |
 
+### repo
+
+| type | input | MCP 工具 |
+|---|---|---|
+| `repo.commit` | `project_id`: string<br>`paths`: string[]<br>`message`: string |  |
+| `repo.discard` | `project_id`: string<br>`paths`: string[] |  |
+| `repo.discard_patch` | `project_id`: string<br>`patch`: string |  |
+| `repo.discard_undo` | `project_id`: string<br>`undo_id`: string |  |
+| `repo.push` | `project_id`: string |  |
+
 ### review
 
 | type | input | MCP 工具 |
@@ -604,6 +614,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `repo.compare` | `project_id`: string<br>`base`: string<br>`head`: string |
 | `repo.file_history` | `project_id`: string<br>`path`: string |
 | `repo.log` | `project_id`: string<br>`ref?`: string<br>`limit?`: integer<br>`skip?`: integer |
+| `repo.working_diff` | `project_id`: string |
 | `review.read` | `review_id`: string |
 | `runtime.models` | `project_id`: string<br>`runtime`: string |
 | `runtime.status` | `refresh?`: string |

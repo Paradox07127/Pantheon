@@ -1,12 +1,21 @@
 import { it, expect, vi } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { AuthRegistry, startDaemon, type DaemonOptions } from '@pantheon/daemon';
 import { FixtureAdapter } from '@pantheon/adapters';
-import { command } from '@pantheon/protocol';
+import { command, type CommandType } from '@pantheon/protocol';
 import { eventually, user } from '../helpers.js';
 import type { Project, Session, SessionTurn } from '@pantheon/domain';
 import type { Approval } from '@pantheon/domain';
@@ -66,6 +75,62 @@ it('authenticates HTTP commands, rejects browser origins and does not accept act
     await f.close();
   }
 });
+it('serves the working diff and local Git commands over HTTP', async () => {
+  const f = await serverFixture();
+  const root = path.join(f.root, 'project');
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: root });
+  const post = async (type: CommandType, input: Record<string, unknown>) => {
+    const response = await fetch(f.daemon.url + '/v1/commands', {
+      method: 'POST',
+      headers: f.headers,
+      body: JSON.stringify(command(user.id, type, input)),
+    });
+    expect(response.status).toBe(200);
+    return (await response.json()).receipt;
+  };
+  try {
+    git('init', '--quiet', '--initial-branch=main');
+    git('config', 'user.name', 'Repository Owner');
+    git('config', 'user.email', 'owner@example.invalid');
+    git('config', 'commit.gpgsign', 'false');
+    git('commit', '--allow-empty', '-qm', 'Initial commit');
+    const { id: project_id } = await post('project.open', { name: 'Local Git', roots: [root] });
+    writeFileSync(path.join(root, 'notes'), 'draft\n');
+    const response = await fetch(f.daemon.url + '/v1/repo.working_diff?project_id=' + project_id, {
+      headers: f.headers,
+    });
+    expect(response.status).toBe(200);
+    const { patch } = await response.json();
+    expect(patch).toContain('+draft');
+    const discarded = await post('repo.discard_patch', { project_id, patch });
+    await post('repo.discard_undo', { project_id, undo_id: discarded.undo_id });
+    const file = await post('repo.discard', { project_id, paths: ['notes'] });
+    await post('repo.discard_undo', { project_id, undo_id: file.undo_id });
+    const { sha } = await post('repo.commit', { project_id, paths: ['notes'], message: 'Notes' });
+    const remote = path.join(f.root, 'origin.git');
+    git('init', '--bare', '--quiet', remote);
+    git('remote', 'add', 'origin', remote);
+    await post('repo.push', { project_id });
+    expect(git('--git-dir', remote, 'rev-parse', 'refs/heads/main').toString().trim()).toBe(sha);
+  } finally {
+    await f.close();
+  }
+});
+
+it('removes discard backups left by a stopped daemon at startup', async () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'pantheon-discard-recovery-'));
+  const backup = path.join(directory, 'discard-backups', 'discard-orphan');
+  mkdirSync(backup, { recursive: true });
+  writeFileSync(path.join(backup, '0'), 'discarded content');
+  const daemon = await startDaemon({ directory, adapters: [new FixtureAdapter()] });
+  try {
+    expect(existsSync(backup)).toBe(false);
+  } finally {
+    await daemon.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 it('rejects a second daemon for the same data directory', async () => {
   const f = await serverFixture();
   try {

@@ -70,6 +70,12 @@ import {
   repoBlame,
   repoFileHistory,
 } from './repo-history.js';
+import {
+  isRepoWrite,
+  prepareRepoWrite,
+  recoverDiscardBackups,
+  repoWorkingDiff,
+} from './repo-write.js';
 import { projectOverlap } from './project-overlap.js';
 import { sessionThread } from './session-thread.js';
 import { projectStatusRead } from './project-status.js';
@@ -281,6 +287,7 @@ export class Control extends EventEmitter {
   /** The desktop windows that answer the sessions' browser tools. */
   readonly browser = new BrowserRelay();
   private announcedTrace = 0;
+  private readonly repoWrites = new Map<string, Promise<unknown>>();
   private runtimeConfigChanges: Promise<unknown> = Promise.resolve();
   private readonly ctx: ControlContext;
   private readonly search: SessionSearch;
@@ -557,6 +564,22 @@ export class Control extends EventEmitter {
         command,
       );
       return prepared instanceof Promise ? prepared.then(apply) : apply(prepared);
+    }
+    if (isRepoWrite(command)) {
+      const { project_id } = command.input;
+      const write = async () => {
+        userOnly(principal);
+        projectAccess(this.ctx, principal, project_id, command.type);
+        if ([key, commandKey].some((k) => this.store.receipt(k))) return apply();
+        revision(this.ctx, command);
+        return apply(await prepareRepoWrite(this.ctx, principal, command));
+      };
+      // The next Git operation sees the index and receipt left by this one.
+      const next = (this.repoWrites.get(project_id) ?? Promise.resolve()).then(write, write);
+      this.repoWrites.set(project_id, next);
+      return next.finally(() => {
+        if (this.repoWrites.get(project_id) === next) this.repoWrites.delete(project_id);
+      });
     }
     if (isPreparedChangeStory(command.type)) {
       if ([key, commandKey].some((k) => this.store.receipt(k))) return apply();
@@ -950,6 +973,9 @@ export class Control extends EventEmitter {
   permissionRules(principal: Principal, projectId: string) {
     return permissionRules(this.ctx, principal, projectId);
   }
+  repoWorkingDiff(principal: Principal, projectId: string) {
+    return repoWorkingDiff(this.ctx, principal, projectId);
+  }
   repoLog(principal: Principal, input: ReturnType<(typeof querySchemas)['repo.log']['parse']>) {
     return repoLog(this.ctx, principal, input);
   }
@@ -1114,6 +1140,7 @@ export class Control extends EventEmitter {
     return symbolsSearch(this.ctx, principal, projectId, sessionId, q);
   }
   async recover(): Promise<void> {
+    recoverDiscardBackups(this.ctx);
     recoverWorkspaceProvisioning(this.ctx);
     await recover(this.ctx);
     // The first list after a start then finds the worktrees read or being read.
@@ -1160,7 +1187,7 @@ export class Control extends EventEmitter {
     // A start already in progress must install its handle before storage closes.
     while (ctx.busy) await new Promise((resolve) => setTimeout(resolve, 10));
     await Promise.all([...ctx.handles.keys()].map((key) => stopTurn(ctx, key, 'daemon_shutdown')));
-    await Promise.allSettled([...ctx.completions]);
+    await Promise.allSettled([...ctx.completions, ...this.repoWrites.values()]);
     for (const close of ctx.toolRelays.values()) close();
     ctx.toolRelays.clear();
   }

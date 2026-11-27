@@ -678,6 +678,7 @@ export async function startDaemon(options: DaemonOptions) {
           new DomainError('models_timeout', 'Model list exceeded 12 seconds'),
         ),
       'permission.rules': (p, i) => control.permissionRules(p, i.project_id),
+      'repo.working_diff': (p, i) => control.repoWorkingDiff(p, i.project_id),
       'repo.log': (p, i) => control.repoLog(p, i),
       'repo.commit_diff': (p, i) => control.repoCommitDiff(p, i.project_id, i.sha),
       'repo.compare': (p, i) => control.repoCompare(p, i.project_id, i.base, i.head),

@@ -83,6 +83,7 @@ it('defines a strict input schema for each unimplemented command and the queries
     'repo.compare',
     'repo.file_history',
     'repo.log',
+    'repo.working_diff',
     'review.read',
     'runtime.models',
     'runtime.status',
@@ -685,4 +686,29 @@ it('validates repository refs and project-relative paths at the query boundary',
       true,
     );
   }
+});
+
+it('defines the local repository commands and validates their file paths and commit message', () => {
+  expect(
+    Object.keys(inputSchemas)
+      .filter((type) => type.startsWith('repo.'))
+      .sort(),
+  ).toEqual([
+    'repo.commit',
+    'repo.discard',
+    'repo.discard_patch',
+    'repo.discard_undo',
+    'repo.push',
+  ]);
+  const project = { project_id: 'project' };
+  for (const type of ['repo.commit', 'repo.discard'] as const) {
+    const base = type === 'repo.commit' ? { ...project, message: 'Update notes' } : project;
+    expect(inputSchemas[type].safeParse({ ...base, paths: ['notes/file.txt'] }).success).toBe(true);
+    for (const paths of [[], ['.'], ['/outside'], ['dir/../../outside']])
+      expect(inputSchemas[type].safeParse({ ...base, paths }).success).toBe(false);
+  }
+  for (const message of ['', '   '])
+    expect(
+      inputSchemas['repo.commit'].safeParse({ ...project, paths: ['a'], message }).success,
+    ).toBe(false);
 });

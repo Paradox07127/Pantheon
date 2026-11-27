@@ -272,10 +272,19 @@ export const PROPOSABLE_SETTING_COMMANDS = [
 export const USER_PRINCIPAL_ID = 'local-user';
 const str = z.string().min(1).max(65536);
 const repoRef = str.refine((ref) => !ref.startsWith('-'), 'Revision must not start with -');
-const repoPath = str.refine(
+export const repoPath = str.refine(
   (path) => !path.startsWith('/') && !path.split('/').includes('..'),
   'Path must be relative to the project folder and must not contain ..',
 );
+// Git lists index entries with canonical relative names, including when a caller sends ./file.
+const repoWritePath = repoPath
+  .transform((file) =>
+    file
+      .split('/')
+      .filter((part) => part && part !== '.')
+      .join('/'),
+  )
+  .pipe(z.string().min(1));
 const findingText = str.refine((value) => value.trim().length > 0);
 const strings = z.array(str).max(256);
 /** The reason a main agent gives for a session action it takes for the user. */
@@ -1240,6 +1249,20 @@ export const inputSchemas = {
   ...memoryInputSchemas,
   ...changeStoryInputSchemas,
   ...workflowInputSchemas,
+  /** Restores tracked files in the index and the worktree to HEAD and deletes untracked ones; returns { undo_id }. */
+  'repo.discard': z.strictObject({ project_id: str, paths: z.array(repoWritePath).min(1) }),
+  /** Applies patch, taken from repo.working_diff, in reverse to the worktree; returns { undo_id }. */
+  'repo.discard_patch': z.strictObject({ project_id: str, patch: z.string().min(1) }),
+  /** Writes back what a discard within the last 10 minutes changed; returns {}. */
+  'repo.discard_undo': z.strictObject({ project_id: str, undo_id: str }),
+  /** Commits only paths with the user's own git identity, configuration and hooks; returns { sha }. */
+  'repo.commit': z.strictObject({
+    project_id: str,
+    paths: z.array(repoWritePath).min(1),
+    message: z.string().max(10000).regex(/\S/, 'Enter a commit message'),
+  }),
+  /** Pushes the checked-out branch to its upstream, or to origin setting it as the upstream, never forced; returns {}. */
+  'repo.push': z.strictObject({ project_id: str }),
   'terminal.open': z.strictObject({
     project_id: z.string(),
     session_id: z.string().optional(),
@@ -1966,6 +1989,7 @@ export const querySchemas = {
   'runtime.models': z.strictObject({ project_id: str, runtime: str }),
   'permission.rules': z.strictObject({ project_id: str }),
   'project.branches': z.strictObject({ project_id: str, root: str.optional() }),
+  'repo.working_diff': z.strictObject({ project_id: str }),
   'repo.log': z.strictObject({
     project_id: str,
     ref: repoRef.optional(),
@@ -3355,6 +3379,34 @@ export interface RepoFileHistory {
   /** Commits scanned for cochange: the latest 500, or fewer when the history is shorter. */
   scanned: number;
 }
+export interface RepoWorkingDiffFile {
+  /** Relative to the project's first folder. */
+  path: string;
+  /** The path before a rename; absent otherwise. */
+  old_path?: string;
+  /** untracked: not known to git; the others compare the worktree and index with HEAD. */
+  status: 'added' | 'modified' | 'deleted' | 'renamed' | 'untracked';
+  /** null for a binary file. */
+  additions: number | null;
+  /** null for a binary file. */
+  deletions: number | null;
+}
+/** GET /v1/repo.working_diff; the first folder's staged, unstaged and untracked changes against HEAD. */
+export interface RepoWorkingDiff {
+  /** The commit the changes are against. */
+  head_sha: string;
+  /** null when HEAD is detached. */
+  branch: string | null;
+  /** The branch's upstream and the commits HEAD has that it lacks (ahead) and it has that HEAD lacks (behind); null without one or when it no longer exists. */
+  upstream: { name: string; ahead: number; behind: number } | null;
+  /** Tracked changes first, then untracked files. */
+  files: RepoWorkingDiffFile[];
+  /** Every change as one patch, untracked files as new-file diffs; null when truncated. */
+  patch: string | null;
+  /** True when the patch exceeded its output bound. */
+  truncated: boolean;
+}
+
 /** GET /v1/project.branches; local branches, newest commit first, at most 200. */
 export interface ProjectBranch {
   name: string;
